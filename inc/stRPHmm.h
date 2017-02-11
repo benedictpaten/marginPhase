@@ -9,6 +9,7 @@
 #define ST_RP_HMM_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include "sonLib.h"
 
