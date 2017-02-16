@@ -13,6 +13,10 @@
 #include <stddef.h>
 #include "sonLib.h"
 
+/*
+ * Function documentation is in the .c file
+ */
+
 typedef struct _stProfileSeq stProfileSeq;
 typedef struct _stProfileProb stProfileProb;
 typedef struct _stRPHmm stRPHmm;
@@ -60,12 +64,14 @@ struct _stRPHmm {
     int64_t maxDepth;
     stRPColumn *firstColumn;
     stRPColumn *lastColumn;
+
+    //Forward/backward probability calculation things
+    double forwardProbability;
+    double backwardProbability;
+    double (*emissionProbability)(stRPColumn *, stRPCell *);
 };
 
-/*
- *
- */
-stList *stRPHmm_getHmms(stList *profileSeqs);
+stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold);
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq);
 
@@ -73,24 +79,17 @@ void stRPHmm_destruct(stRPHmm *hmm);
 
 bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2);
 
-/*
- * Align the columns to create a merged set
- */
 stRPHmm *stRPHmm_createCrossProductHmm(stRPHmm *hmm1, stRPHmm *hmm2);
 
-/*
- *  Align the input hmms, modifying them in place, so that they each
- *  (1) span the same reference interval,
- *  (2) have the same number of columns, and (3) so that for all i column i in each
- *  model span the same interval.
- */
 void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2);
+
+stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm);
 
 void stRPHmm_forward(stRPHmm *hmm);
 
 void stRPHmm_backward(stRPHmm *hmm);
 
-void stRPHmm_prune(stRPHmm *hmm, int64_t samples);
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold);
 
 /*
  * Column of read partitioning hmm
@@ -103,6 +102,7 @@ struct _stRPColumn {
     stProfileProb **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
+    double forwardProb, backwardProb;
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth, stProfileProb **seqs);
@@ -117,7 +117,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
 struct _stRPCell {
     int32_t partition;
-    float forwardProb, backwardProb;
+    double forwardProb, backwardProb;
     stRPCell *nCell;
 };
 
@@ -125,8 +125,10 @@ stRPCell *stRPCell_construct(int64_t partition);
 
 void stRPCell_destruct(stRPCell *cell, bool);
 
+double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
+
 /*
- * Merged column of read partitioning hmm
+ * Merge column of read partitioning hmm
  */
 
 struct _stRPMergeColumn {
@@ -147,14 +149,16 @@ void stRPMergeColumn_destruct(stRPMergeColumn *mColumn);
 
 void stRPMergeColumn_addCell(stRPMergeColumn *mColumn, int32_t fromPartition, int32_t toPartition);
 
+double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
+
 /*
- * Merged cell of read partitioning hmm
+ * Merge cell of read partitioning hmm
  */
 
 struct _stRPMergeCell {
     int32_t fromPartition;
     int32_t toPartition;
-    float forwardProb, backwardProb;
+    double forwardProb, backwardProb;
 };
 
 void stRPMergeCell_destruct(stRPMergeCell *mCell);
