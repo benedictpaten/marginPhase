@@ -257,7 +257,7 @@ stRPHmm *fuseTilingPath(stList *tilingPath) {
     return rightHmm;
 }
 
-stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double posteriorProbabilityThreshold) {
+stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
     /*
      *  Takes two lists tilingPath1 and tilingPath2, each of which is a set of hmms ordered by reference coordinates and
      *  non-overlapping in reference coordinates.
@@ -302,7 +302,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double pos
         stRPHmm *hmm = stRPHmm_createCrossProductHmm(hmm1, hmm2);
 
         // Prune
-        stRPHmm_prune(hmm, posteriorProbabilityThreshold);
+        stRPHmm_prune(hmm, posteriorProbabilityThreshold, minColumnDepthToFilter);
 
         // Add to output tiling path
         stList_append(newTilingPath, hmm);
@@ -315,7 +315,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double pos
     return newTilingPath;
 }
 
-stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThreshold) {
+stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
     /*
      * Like mergeTwoTilingPaths(), except instead of just two tiling paths it takes a list.
      */
@@ -344,7 +344,7 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
         for(int64_t i=0; i<stList_length(tilingPaths)/2; i++) {
             stList_append(tilingPaths1, stList_get(tilingPaths, i));
         }
-        tilingPath1 = mergeTilingPaths(tilingPaths1, posteriorProbabilityThreshold);
+        tilingPath1 = mergeTilingPaths(tilingPaths1, posteriorProbabilityThreshold, minColumnDepthToFilter);
         stList_destruct(tilingPaths1);
 
         // Recursively turn the other half of the tiling paths into the other tiling path
@@ -352,7 +352,7 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
         for(int64_t i=stList_length(tilingPaths)/2; i < stList_length(tilingPaths); i++) {
             stList_append(tilingPaths2, stList_get(tilingPaths, i));
         }
-        tilingPath2 = mergeTilingPaths(tilingPaths2, posteriorProbabilityThreshold);
+        tilingPath2 = mergeTilingPaths(tilingPaths2, posteriorProbabilityThreshold, minColumnDepthToFilter);
         stList_destruct(tilingPaths2);
     }
     // Otherwise the number of tiling paths is two
@@ -364,13 +364,18 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
     // Merge together the two tiling paths and return result
     assert(tilingPath1 != NULL);
     assert(tilingPath2 != NULL);
-    return mergeTwoTilingPaths(tilingPath1, tilingPath2, posteriorProbabilityThreshold);
+    return mergeTwoTilingPaths(tilingPath1, tilingPath2, posteriorProbabilityThreshold, minColumnDepthToFilter);
 }
 
-stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold) {
+stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter, int64_t maxCoverageDepth) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
-     * hmms (stRPHmm) ordered and non-overlapping in reference coordinates
+     * hmms (stRPHmm) ordered and non-overlapping in reference coordinates.
+     *
+     * PosteriorProbabilityThreshold is the probability threshold used to keep cells during pruning.
+     * MinColumnDepth is the size of a column to need before applying pruning.
+     * MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher than this
+     * then some profile seqs are randomly discarded.
      */
 
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
@@ -382,9 +387,19 @@ stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold) {
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
 
+    if(maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
+        st_errAbort("The maximum covergae depth %" PRIi64 " is greater than the maximum allowed by the model: %" PRIi64 "\n", maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
+    }
+
+    // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
+    while(stList_length(tilingPaths) > maxCoverageDepth) {
+        stList *tilingPath = stList_pop(tilingPaths);
+        stList_destruct(tilingPath);
+    }
+
     // Merge together the tiling paths into one merged tiling path, merging the individual hmms when
     // they overlap on the reference
-    stList *finalTilingPath = mergeTilingPaths(tilingPaths, posteriorProbabilityThreshold);
+    stList *finalTilingPath = mergeTilingPaths(tilingPaths, posteriorProbabilityThreshold, minColumnDepthToFilter);
 
     // Cleanup
     stList_destruct(tilingPaths);
@@ -536,7 +551,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         // Create merge column
         stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, INT32_MAX);
         // Add merge cell
-        stRPMergeColumn_addCell(mColumn, 0, INT32_MAX);
+        stRPMergeCell_construct(0, INT32_MAX, mColumn);
         // Create links
         hmm2->firstColumn->pColumn = mColumn;
         mColumn->nColumn = hmm2->firstColumn;
@@ -565,7 +580,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         // Create merge column
         stRPMergeColumn *mColumn = stRPMergeColumn_construct(INT32_MAX, 0);
         // Add merge cell
-        stRPMergeColumn_addCell(mColumn, INT32_MAX, 0);
+        stRPMergeCell_construct(INT32_MAX, 0, mColumn);
         // Create links
         hmm2->lastColumn->nColumn = mColumn;
         mColumn->pColumn = hmm2->lastColumn;
@@ -604,6 +619,11 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         assert(column1 != NULL);
         assert(column2 != NULL);
     }
+}
+
+int64_t mergePartitions(int64_t partition1, int64_t partition2,
+        int64_t depthOfPartition1, int64_t depthOfPartition2) {
+
 }
 
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
@@ -697,9 +717,9 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
             stHashIterator *cellIt2 = stHash_getIterator(mColumn2->mergeCellsFrom);
             stRPMergeCell *mCell2;
             while((mCell2 = stHash_getNext(cellIt2)) != NULL) {
-                stRPMergeColumn_addCell(mColumn,
+                stRPMergeCell_construct(
        (mCell1->fromPartition < mColumn2->pColumn->depth) | mCell2->fromPartition,
-       (mCell1->toPartition < mColumn2->nColumn->depth) | mCell2->toPartition);
+       (mCell1->toPartition < mColumn2->nColumn->depth) | mCell2->toPartition, mColumn);
             }
             stHash_destructIterator(cellIt2);
         }
@@ -887,7 +907,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold) {
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
     /*
      * Remove cells from hmm whos posterior probability is below the given threshold
      */
@@ -896,19 +916,22 @@ void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold) {
     stRPColumn *column = hmm->firstColumn;
     while(1) {
 
-        // For each state
-        stRPCell *cell = column->head;
-        stRPCell **pCell = &(cell); // Pointer to previous cell, used to remove cells from the linked list
-        do {
-            // If the posterior probability is below the given threshold
-            if(stRPCell_posteriorProb(cell, column) < posteriorProbabilityThreshold) {
-                // Remove the state from the linked list of states
-                *pCell = cell->nCell;
+        // If column depth is greater than a threshold
+        if(column->depth >= minColumnDepthToFilter) {
+            // For each state
+            stRPCell *cell = column->head;
+            stRPCell **pCell = &(cell); // Pointer to previous cell, used to remove cells from the linked list
+            do {
+                // If the posterior probability is below the given threshold
+                if(stRPCell_posteriorProb(cell, column) < posteriorProbabilityThreshold) {
+                    // Remove the state from the linked list of states
+                    *pCell = cell->nCell;
 
-                // Cleanup
-                stRPCell_destruct(cell, 0);
-            }
-        } while((cell = cell->nCell) != NULL);
+                    // Cleanup
+                    stRPCell_destruct(cell);
+                }
+            } while((cell = cell->nCell) != NULL);
+        }
 
         // Move on to the next merge column
         stRPMergeColumn *mColumn = column->nColumn;
@@ -917,22 +940,25 @@ void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold) {
             break;
         }
 
-        //  For each merge state
-        stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
-        for(int64_t i=0; i<stList_length(mergeCells); i++) {
-            stRPMergeCell *mCell = stList_get(mergeCells, i);
+        // If the column depth of the merge column is greater than a threshold
+        if(stRPMergeColumn_depth(mColumn) >= minColumnDepthToFilter) {
+            //  For each merge state
+            stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
+            for(int64_t i=0; i<stList_length(mergeCells); i++) {
+                stRPMergeCell *mCell = stList_get(mergeCells, i);
 
-            // If the merge state has posterior probability below the given threshold
-            if(stRPMergeCell_posteriorProb(mCell, mColumn) < posteriorProbabilityThreshold) {
-                // Remove the state from the merge column
-                stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
-                stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
+                // If the merge state has posterior probability below the given threshold
+                if(stRPMergeCell_posteriorProb(mCell, mColumn) < posteriorProbabilityThreshold) {
+                    // Remove the state from the merge column
+                    stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
+                    stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
 
-                // Cleanup
-                stRPMergeCell_destruct(mCell);
+                    // Cleanup
+                    stRPMergeCell_destruct(mCell);
+                }
             }
+            stList_destruct(mergeCells);
         }
-        stList_destruct(mergeCells);
 
         column = mColumn->nColumn;
     }
@@ -970,18 +996,43 @@ bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
  */
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth, stProfileProb **seqs) {
+    stRPColumn *column = st_malloc(sizeof(stRPColumn));
 
+    // Reference coordinates
+    column->refStart = refStart;
+    column->length = length;
+
+    // Sequences
+    column->depth = depth;
+    column->seqs = seqs;
+
+    // Initially contains not states
+    column->head = NULL;
+
+    return column;
 }
 
 void stRPColumn_destruct(stRPColumn *column) {
+    // Clean up the contained cells
+    stRPCell *cell = column->head;
+    while(cell != NULL) {
+        stRPCell *pCell = cell;
+        cell = cell->nCell;
+        stRPCell_destruct(pCell);
+    }
 
+    free(column);
 }
 
 void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm) {
+    /*
+     * Split the column into two to divide into two smaller reference intervals
+     */
+
     // Create column
     stProfileProb **seqs = st_malloc(sizeof(stProfileProb *) * column->depth);
     memcpy(seqs, column->seqs, sizeof(stProfileProb *) * column->depth);
-    stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength, column->length-firstHalfLength, seqs);
+    stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength, column->length-firstHalfLength, column->depth, seqs);
 
     // Create merge column
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
@@ -991,7 +1042,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     stRPCell **pCell = &(rColumn->head);
     do {
         *pCell = stRPCell_construct(cell->partition);
-        stRPMergeColumn_addCell(mColumn, cell->partition, cell->partition);
+        stRPMergeCell_construct(cell->partition, cell->partition, mColumn);
         pCell = &((*pCell)->nCell);
     } while((cell = cell->nCell) != NULL);
 
@@ -1015,24 +1066,70 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
  */
 
 stRPCell *stRPCell_construct(int64_t partition) {
-
+    stRPCell *cell = st_calloc(1, sizeof(stRPCell));
+    return cell;
 }
 
-void stRPCell_destruct(stRPCell *cell, bool) {
-
+void stRPCell_destruct(stRPCell *cell) {
+    free(cell);
 }
 
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
     /*
-     *
+     * Calculate the posterior probability of visiting the given cell. Requires that the
+     * forward and backward algorithms have been run.
      */
+    double p = (cell->forwardProb + cell->backwardProb)/(column->forwardProb+column->backwardProb);
+    assert(p <= 1.001);
+    assert(p >= 0.0);
+    return p > 1.0 ? 1.0 : p;
 }
 
 /*
  * Read partitioning hmm merge column (stRPMergeColumn) functions
  */
 
-stRPMergeCell *stRPMergeCell_construct(int32_t fromPartition, int32_t toPartition, stRPMergeColumn *mColumn) {
+void stRPMergeColumn_destruct(stRPMergeColumn *mColumn) {
+    stHash_destruct(mColumn->mergeCellsFrom);
+    stHash_destruct(mColumn->mergeCellsTo);
+    free(mColumn);
+}
+
+stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn) {
+    /*
+     * Get the merge cell that this cell feeds into.
+     */
+    int64_t i = cell->partition | mergeColumn->maskTo;
+    stRPMergeCell *mCell = stHash_search(mergeColumn->mergeCellsTo, &i);
+    assert(mCell != NULL);
+    return mCell;
+}
+
+stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn) {
+    /*
+     * Get the merge cell that this cell feeds from.
+     */
+    int64_t i = cell->partition | mergeColumn->maskFrom;
+    stRPMergeCell *mCell = stHash_search(mergeColumn->mergeCellsFrom, &i);
+    assert(mCell != NULL);
+    return mCell;
+}
+
+int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn) {
+    /*
+     * Returns the number of cells in the column.
+     */
+    return stHash_size(mColumn->mergeCellsFrom);
+}
+
+/*
+ * Read partitioning hmm merge cell (stRPMergeCell) functions
+ */
+
+stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition, uint64_t toPartition, stRPMergeColumn *mColumn) {
+    /*
+     * Create a merge cell, adding it to the merge column mColumn.
+     */
     stRPMergeCell *mCell = st_malloc(sizeof(stRPMergeCell));
     mCell->fromPartition = fromPartition;
     mCell->toPartition = toPartition;
@@ -1041,19 +1138,17 @@ stRPMergeCell *stRPMergeCell_construct(int32_t fromPartition, int32_t toPartitio
     return mCell;
 }
 
-void stRPMergeColumn_destruct(stRPMergeColumn *mColumn) {
-
+void stRPMergeCell_destruct(stRPMergeCell *mCell) {
+    free(mCell);
 }
 
-stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn) {
+double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn) {
     /*
-     *
+     * Calculate the posterior probability of visiting the given cell. Requires that the
+     * forward and backward algorithms have been run.
      */
+    double p = (mCell->forwardProb + mCell->backwardProb)/(mColumn->nColumn->forwardProb+mColumn->nColumn->backwardProb);
+    assert(p <= 1.001);
+    assert(p >= 0.0);
+    return p > 1.0 ? 1.0 : p;
 }
-
-stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn) {
-    /*
-     *
-     */
-}
-

@@ -25,6 +25,9 @@ typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
 
+// The maximum read depth the model can support
+#define MAX_READ_PARTITIONING_DEPTH 64
+
 /*
  * Profile sequence
  */
@@ -71,7 +74,10 @@ struct _stRPHmm {
     double (*emissionProbability)(stRPColumn *, stRPCell *);
 };
 
-stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold);
+stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
+
+stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold,
+        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth);
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq);
 
@@ -89,7 +95,9 @@ void stRPHmm_forward(stRPHmm *hmm);
 
 void stRPHmm_backward(stRPHmm *hmm);
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold);
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter);
+
+void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle);
 
 /*
  * Column of read partitioning hmm
@@ -116,14 +124,14 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
  */
 
 struct _stRPCell {
-    int32_t partition;
+    uint64_t partition;
     double forwardProb, backwardProb;
     stRPCell *nCell;
 };
 
 stRPCell *stRPCell_construct(int64_t partition);
 
-void stRPCell_destruct(stRPCell *cell, bool);
+void stRPCell_destruct(stRPCell *cell);
 
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
 
@@ -132,35 +140,37 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
  */
 
 struct _stRPMergeColumn {
-    int32_t maskFrom;
-    int32_t maskTo;
+    uint64_t maskFrom;
+    uint64_t maskTo;
     stHash *mergeCellsFrom;
     stHash *mergeCellsTo;
     stRPColumn *nColumn, *pColumn;
 };
 
-stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
-
-stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
-
-stRPMergeColumn *stRPMergeColumn_construct(int32_t maskFrom, int32_t maskTo);
+stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, int32_t maskTo);
 
 void stRPMergeColumn_destruct(stRPMergeColumn *mColumn);
 
-void stRPMergeColumn_addCell(stRPMergeColumn *mColumn, int32_t fromPartition, int32_t toPartition);
+stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
 
-double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
+stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
 
 /*
  * Merge cell of read partitioning hmm
  */
 
 struct _stRPMergeCell {
-    int32_t fromPartition;
-    int32_t toPartition;
+    uint64_t fromPartition;
+    uint64_t toPartition;
     double forwardProb, backwardProb;
 };
 
+stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition,
+        uint64_t toPartition, stRPMergeColumn *mColumn);
+
 void stRPMergeCell_destruct(stRPMergeCell *mCell);
+
+double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
+
 
 #endif /* ST_RP_HMM_H_ */
