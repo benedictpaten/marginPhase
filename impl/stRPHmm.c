@@ -6,7 +6,6 @@
  */
 
 #include "stRPHmm.h"
-#include "sonLib.h"
 
 /*
  * Math functions, putting it here for now for purpose of fiddling.
@@ -751,7 +750,7 @@ void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
-            cell->forwardProb = LOG_ZER0;
+            cell->forwardProb = LOG_ZERO;
         } while((cell = cell->nCell) != NULL);
 
         if(column->nColumn != NULL) {
@@ -837,7 +836,7 @@ void stRPHmm_initialiseBackwardProbs(stRPHmm *hmm) {
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
-            cell->backwardProb = LOG_ZER0;
+            cell->backwardProb = LOG_ZERO;
         } while((cell = cell->nCell) != NULL);
 
         if(column->nColumn != NULL) {
@@ -907,7 +906,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
     /*
      * Remove cells from hmm whos posterior probability is below the given threshold
      */

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include "sonLib.h"
+#include "fastCMaths.h"
 
 /*
  * Function documentation is in the .c file
@@ -95,7 +96,7 @@ void stRPHmm_forward(stRPHmm *hmm);
 
 void stRPHmm_backward(stRPHmm *hmm);
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter);
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter);
 
 void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle);
 
@@ -134,6 +135,8 @@ stRPCell *stRPCell_construct(int64_t partition);
 void stRPCell_destruct(stRPCell *cell);
 
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
+
+int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn);
 
 /*
  * Merge column of read partitioning hmm
