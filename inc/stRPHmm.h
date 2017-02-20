@@ -39,9 +39,12 @@ struct _stProfileSeq {
     stProfileProb *profileProbs;
 };
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(int64_t length);
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
 
 void stProfileSeq_destruct(stProfileSeq *seq);
+
+void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence);
+
 
 /*
  * Element of a profile sequence
@@ -95,9 +98,13 @@ void stRPHmm_forward(stRPHmm *hmm);
 
 void stRPHmm_backward(stRPHmm *hmm);
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter);
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter);
 
-void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle);
+void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool includeCells);
+
+stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
+
+stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path);
 
 /*
  * Column of read partitioning hmm
@@ -107,6 +114,7 @@ struct _stRPColumn {
     int64_t refStart;
     int64_t length;
     int64_t depth;
+    stProfileSeq **seqHeaders;
     stProfileProb **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
@@ -116,6 +124,8 @@ struct _stRPColumn {
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth, stProfileProb **seqs);
 
 void stRPColumn_destruct(stRPColumn *column);
+
+void stRPColumn_print(stRPColumn *column, FILE *fileHandle, bool includeCells);
 
 void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm);
 
@@ -133,7 +143,11 @@ stRPCell *stRPCell_construct(int64_t partition);
 
 void stRPCell_destruct(stRPCell *cell);
 
+void stRPCell_print(stRPCell *cell, FILE *fileHandle);
+
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
+
+bool stRPCell_seqInHap1(stRPCell *cell, int64_t seqIndex);
 
 /*
  * Merge column of read partitioning hmm
@@ -151,9 +165,13 @@ stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, int32_t maskTo);
 
 void stRPMergeColumn_destruct(stRPMergeColumn *mColumn);
 
+void stRPMergeColumn_print(stRPMergeColumn *mColumn, FILE *fileHandle, bool includeCells);
+
 stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
 
 stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
+
+int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn);
 
 /*
  * Merge cell of read partitioning hmm
@@ -169,6 +187,8 @@ stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition,
         uint64_t toPartition, stRPMergeColumn *mColumn);
 
 void stRPMergeCell_destruct(stRPMergeCell *mCell);
+
+void stRPMergeCell_print(stRPMergeCell *mCell, FILE *fileHandle);
 
 double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
 

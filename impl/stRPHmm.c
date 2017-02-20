@@ -8,6 +8,7 @@
 #include "stRPHmm.h"
 #include "sonLib.h"
 
+
 /*
  * Math functions, putting it here for now for purpose of fiddling.
  */
@@ -257,7 +258,7 @@ stRPHmm *fuseTilingPath(stList *tilingPath) {
     return rightHmm;
 }
 
-stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
+stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
     /*
      *  Takes two lists tilingPath1 and tilingPath2, each of which is a set of hmms ordered by reference coordinates and
      *  non-overlapping in reference coordinates.
@@ -315,7 +316,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double pos
     return newTilingPath;
 }
 
-stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
+stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
     /*
      * Like mergeTwoTilingPaths(), except instead of just two tiling paths it takes a list.
      */
@@ -408,6 +409,47 @@ stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int
 }
 
 /*
+ * Functions for profile sequence
+ */
+
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length) {
+    /*
+     * Creates an empty profile sequence, with all the profile probabilities set to 0.
+     */
+    stProfileSeq *seq = st_malloc(sizeof(stProfileSeq));
+    seq->referenceName = stString_copy(referenceName);
+    seq->refStart = referenceStart;
+    seq->length = length;
+    seq->profileProbs = st_calloc(length, sizeof(stProfileProb));
+    return seq;
+}
+
+void stProfileSeq_destruct(stProfileSeq *seq) {
+    /*
+     * Cleans up memory for profile sequence.
+     */
+    free(seq->profileProbs);
+    free(seq->referenceName);
+    free(seq);
+}
+
+void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence) {
+    /*
+     * Prints a debug representation of a profile sequence.
+     */
+    fprintf(fileHandle, "\tSEQUENCE REF_NAME: %s REF_START %"
+            PRIi64 " REF_LENGTH: %" PRIi64 "\n",
+            seq->referenceName, seq->refStart, seq->length);
+    if(includeSequence) {
+        for(int64_t i=0; i<seq->length; i++) {
+            stProfileProb p = seq->profileProbs[i];
+            fprintf(fileHandle, "\t\tPOS: %" PRIi64 " A: %f C: %f G: %f T: %f\n", i,
+                    (float)p.probA, (float)p.probC, (float)p.probG, (float)p.probT);
+        }
+    }
+}
+
+/*
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
@@ -460,6 +502,117 @@ void stRPHmm_destruct(stRPHmm *hmm) {
     }
 
     free(hmm);
+}
+
+stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
+    /*
+     * Traces back through the forward matrix picking the most probable path. (yes, this is non-symmetric)
+     * Returns the result as a list of cells, one from each column.
+     */
+    stList *path = stList_construct();
+
+    stRPColumn *column = hmm->lastColumn;
+
+    // Pick cell in the last column with highest probability
+    stRPCell *cell = column->head;
+    double maxProb = cell->forwardProb;
+    stRPCell *maxCell = cell;
+    while((cell = cell->nCell) != NULL) {
+        if(cell->forwardProb > maxProb) {
+            maxProb = cell->forwardProb;
+            maxCell = cell;
+        }
+    }
+
+    stList_append(path, maxCell); // Add chosen cell to output
+
+    // Walk back through previous columns
+    while(column->pColumn != NULL) {
+        // Get previous merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(maxCell, column->pColumn);
+
+        // Switch to previous column
+        column = column->pColumn->pColumn;
+
+        // The chosen cell in the next column
+        stRPCell *nMaxCell = maxCell;
+
+        // Walk through cells in the previous column to find the one with the highest forward probability that transitions
+        // to maxCell
+        cell = column->head;
+        maxCell = NULL;
+        maxProb = LOG_ZERO;
+        do {
+            // If compatible and has greater probability
+            if(stRPMergeColumn_getNextMergeCell(cell, column->nColumn) == mCell && cell->forwardProb > maxProb) {
+                maxProb = cell->forwardProb;
+                maxCell = cell;
+            }
+        } while((cell = cell->nCell) != NULL);
+
+        assert(maxCell != NULL);
+        stList_append(path, maxCell);
+    }
+
+    stList_reverse(path); // So cells go in order
+
+    return path;
+}
+
+stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path) {
+    /*
+     * For an hmm and path through the hmm (e.g. computed with stRPHmm_forwardTraceBack) returns the
+     * set of sequences in the hmm that are predicted to come from the first haplotype path.
+     */
+
+    stSet *seqsInHap1 = stSet_construct();
+
+    // For each cell/column pair
+    stRPColumn *column = hmm->firstColumn;
+    for(int64_t i=0; i<stList_length(path); i++) {
+        stRPCell *cell = stList_get(path, i);
+
+        // Get sequences in first partition
+        for(int64_t j=0; j<column->depth; j++) {
+            if(stRPCell_seqInHap1(cell, j)) {
+                stSet_insert(seqsInHap1, column->seqHeaders[j]);
+            }
+        }
+    }
+
+    return seqsInHap1;
+}
+
+void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool includeCells) {
+    /*
+     * Prints a debug friendly representation of the state of an hmm.
+     */
+    //Header line
+    fprintf(fileHandle, "HMM REF_NAME: %s REF_START: %" PRIi64 " REF_LENGTH %" PRIi64 " COLUMN_NUMBER %"
+            PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n,",
+            hmm->referenceName, hmm->refStart, hmm->refLength,
+            hmm->columnNumber, hmm->maxDepth,
+            (float)hmm->forwardProbability, (float)hmm->backwardProbability);
+
+    if(includeColumns) {
+        stRPColumn *column = hmm->firstColumn;
+        int64_t i=0;
+        while(1) {
+            fprintf(fileHandle, "Column %" PRIi64 "\n", i++);
+
+            // Print the column
+            stRPColumn_print(column, fileHandle, includeCells);
+
+            if(column->nColumn == NULL) {
+                break;
+            }
+
+            // Print the merge column
+            stRPMergeColumn_print(column->nColumn, fileHandle, includeCells);
+
+            column = column->nColumn->nColumn;
+        }
+    }
 }
 
 stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
@@ -907,7 +1060,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, minColumnDepthToFilter) {
+void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
     /*
      * Remove cells from hmm whos posterior probability is below the given threshold
      */
@@ -1024,6 +1177,28 @@ void stRPColumn_destruct(stRPColumn *column) {
     free(column);
 }
 
+void stRPColumn_print(stRPColumn *column, FILE *fileHandle, bool includeCells) {
+    /*
+     * Print a description of the column. If includeCells is true then print the
+     * state of the cells too.
+     */
+    fprintf(fileHandle, "\tCOLUMN: REF_START: %" PRIi64
+            " REF_LENGTH: %" PRIi64 " DEPTH: %" PRIi64
+            " FORWARD_PROB: %f BACKWARD_PROB: %f\n",
+            column->refStart, column->length, column->depth,
+            (float)column->forwardProb, (float)column->backwardProb);
+    for(int64_t i=0; i<column->depth; i++) {
+        stProfileSeq_print(column->seqHeaders[i], fileHandle, 0);
+    }
+    if(includeCells) {
+        stRPCell *cell = column->head;
+        do {
+            fprintf(fileHandle, "\t\t");
+            stRPCell_print(cell, fileHandle);
+        } while((cell = cell->nCell) != NULL);
+    }
+}
+
 void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm) {
     /*
      * Split the column into two to divide into two smaller reference intervals
@@ -1074,6 +1249,34 @@ void stRPCell_destruct(stRPCell *cell) {
     free(cell);
 }
 
+char * intToBinaryString(uint64_t i) {
+    /*
+     * Converts the unsigned int to a binary string.
+     */
+    int64_t bits = sizeof(uint64_t);
+    char * str = st_malloc((bits + 1) * sizeof(char));
+    str[bits] = '\0'; //terminate the string
+
+    // Decode the bits in from low to high in order
+    // so that 14 will end up as 1110 and 15 will end up as
+    // 1111 (plus some prefix bits)
+    for(int64_t bit=0; bit < bits; i >>= 1) {
+        str[bit++] = i & 1 ? '1' : '0';
+    }
+
+    return str;
+}
+
+void stRPCell_print(stRPCell *cell, FILE *fileHandle) {
+    /*
+     * Prints a debug representation of the cell.
+     */
+    char *partitionString = intToBinaryString(cell->partition);
+    fprintf(fileHandle, "CELL PARTITION: %s FORWARD_PROB: %f BACKWARD_PROB: %f\n",
+            partitionString, (float)cell->forwardProb, (float)cell->backwardProb);
+    free(partitionString);
+}
+
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
     /*
      * Calculate the posterior probability of visiting the given cell. Requires that the
@@ -1085,6 +1288,13 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
     return p > 1.0 ? 1.0 : p;
 }
 
+bool stRPCell_seqInHap1(stRPCell *cell, int64_t seqIndex) {
+    /*
+     * Indicates if a sequence is in the first or second haplotype of the partition.
+     */
+    return (cell->partition >> seqIndex) & 1;
+}
+
 /*
  * Read partitioning hmm merge column (stRPMergeColumn) functions
  */
@@ -1093,6 +1303,29 @@ void stRPMergeColumn_destruct(stRPMergeColumn *mColumn) {
     stHash_destruct(mColumn->mergeCellsFrom);
     stHash_destruct(mColumn->mergeCellsTo);
     free(mColumn);
+}
+
+void stRPMergeColumn_print(stRPMergeColumn *mColumn, FILE *fileHandle, bool includeCells) {
+    /*
+     * Print a debug representation of the merge column.
+     */
+    char *maskFromString = intToBinaryString(mColumn->maskFrom);
+    char *maskToString = intToBinaryString(mColumn->maskTo);
+    fprintf(fileHandle, "\tMERGE_COLUMN MASK_FROM: %s MASK_TO: %s"
+            " DEPTH: %" PRIi64 "\n", maskFromString, maskToString,
+            stHash_size(mColumn->mergeCellsFrom));
+    assert(stHash_size(mColumn->mergeCellsFrom) == stHash_size(mColumn->mergeCellsTo));
+    free(maskFromString);
+    free(maskToString);
+    if(includeCells) {
+        stHashIterator *it = stHash_getIterator(mColumn->mergeCellsFrom);
+        stRPMergeCell *mCell;
+        while((mCell = stHash_getNext(it)) != NULL) {
+            fprintf(fileHandle, "\t\t");
+            stRPMergeCell_print(mCell, fileHandle);
+        }
+        stHash_destructIterator(it);
+    }
 }
 
 stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn) {
@@ -1140,6 +1373,20 @@ stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition, uint64_t toPartit
 
 void stRPMergeCell_destruct(stRPMergeCell *mCell) {
     free(mCell);
+}
+
+void stRPMergeCell_print(stRPMergeCell *mCell, FILE *fileHandle) {
+    /*
+     * Prints a debug representation of the cell.
+     */
+    char *fromPartitionString = intToBinaryString(mCell->fromPartition);
+    char *toPartitionString = intToBinaryString(mCell->toPartition);
+    fprintf(fileHandle, "MERGE_CELL FROM_PARTITION: %s TO_PARTITION: %s "
+            "FORWARD_PROB: %f BACKWARD_PROB: %f\n",
+            fromPartitionString, toPartitionString,
+            (float)mCell->forwardProb, (float)mCell->backwardProb);
+    free(fromPartitionString);
+    free(toPartitionString);
 }
 
 double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn) {
