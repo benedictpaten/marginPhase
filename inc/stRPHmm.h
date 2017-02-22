@@ -88,7 +88,7 @@ void stRPHmm_destruct(stRPHmm *hmm);
 
 bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2);
 
-stRPHmm *stRPHmm_createCrossProductHmm(stRPHmm *hmm1, stRPHmm *hmm2);
+stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2);
 
 void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2);
 

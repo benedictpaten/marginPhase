@@ -29,6 +29,8 @@ static inline double lookup(double x) {
     return ((-0.000458661602210f * x + 0.009695946122598f) * x + 0.930734667215156f) * x + 0.168037164329057f;
 }
 
+#define LOG_ZERO 1
+
 double logAdd(double x, double y) {
     /*
      * Returns a reasonable approximation to log(exp(x) + exp(y)).
@@ -300,7 +302,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2, double pos
         stRPHmm_alignColumns(hmm1, hmm2);
 
         // Merge
-        stRPHmm *hmm = stRPHmm_createCrossProductHmm(hmm1, hmm2);
+        stRPHmm *hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
 
         // Prune
         stRPHmm_prune(hmm, posteriorProbabilityThreshold, minColumnDepthToFilter);
@@ -533,9 +535,6 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
 
         // Switch to previous column
         column = column->pColumn->pColumn;
-
-        // The chosen cell in the next column
-        stRPCell *nMaxCell = maxCell;
 
         // Walk through cells in the previous column to find the one with the highest forward probability that transitions
         // to maxCell
@@ -776,7 +775,8 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
 int64_t mergePartitions(int64_t partition1, int64_t partition2,
         int64_t depthOfPartition1, int64_t depthOfPartition2) {
-
+    assert(depthOfPartition1 + depthOfPartition2 <= MAX_READ_PARTITIONING_DEPTH);
+    return (partition1 < depthOfPartition2) | partition2;
 }
 
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
@@ -836,7 +836,8 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         do {
             stRPCell *cell2 = column2->head;
             do {
-                stRPCell *cell = stRPCell_construct((cell1->partition < column2->depth) | cell2->partition);
+                stRPCell *cell = stRPCell_construct(mergePartitions(cell1->partition, cell2->partition,
+                        column1->depth, column2->depth));
                 // Link cells
                 *pCell = cell;
                 pCell = &cell;
@@ -904,7 +905,7 @@ void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
-            cell->forwardProb = LOG_ZER0;
+            cell->forwardProb = LOG_ZERO;
         } while((cell = cell->nCell) != NULL);
 
         if(column->nColumn != NULL) {
@@ -990,7 +991,7 @@ void stRPHmm_initialiseBackwardProbs(stRPHmm *hmm) {
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
-            cell->backwardProb = LOG_ZER0;
+            cell->backwardProb = LOG_ZERO;
         } while((cell = cell->nCell) != NULL);
 
         if(column->nColumn != NULL) {
@@ -1298,6 +1299,15 @@ bool stRPCell_seqInHap1(stRPCell *cell, int64_t seqIndex) {
 /*
  * Read partitioning hmm merge column (stRPMergeColumn) functions
  */
+
+stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, int32_t maskTo) {
+    stRPMergeColumn *mColumn = st_calloc(1, sizeof(stRPMergeColumn));
+    mColumn->maskFrom = maskFrom;
+    mColumn->maskTo = maskTo;
+    mColumn->mergeCellsFrom = NULL; //stHash_construct3();
+
+    return mColumn;
+}
 
 void stRPMergeColumn_destruct(stRPMergeColumn *mColumn) {
     stHash_destruct(mColumn->mergeCellsFrom);

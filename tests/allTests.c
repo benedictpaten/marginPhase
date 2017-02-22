@@ -10,12 +10,12 @@
 #include <string.h>
 #include "sonLib.h"
 
-CuSuite* stRPHmmTest(void);
+CuSuite *stRPHmmTestSuite(void);
 
 int stMarginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
-	CuSuiteAddSuite(suite, stRPHmmTest());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
 	CuSuiteDetails(suite, output);
