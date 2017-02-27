@@ -50,12 +50,36 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequenc
  * Element of a profile sequence
  */
 
+#define NUCLEOTIDE_ALPHABET_SIZE 8
+#define NUCLEOTIDE_BITS sizeof(uint8_t)
+#define NUCLEOTIDE_GAP 0
+#define NUCLEOTIDE_A 1
+#define NUCLEOTIDE_C 2
+#define NUCLEOTIDE_G 3
+#define NUCLEOTIDE_T 4
+#define NUCLEOTIDE_METHYL_C 5
+#define NUCLEOTIDE_HYDROXYMETHYL_C 6
+#define NUCLEOTIDE_METHYL_A 7
+#define NUCLEOTIDE_MAX_PROB 255
+#define NUCLEOTIDE_MIN_PROB 0
+
 struct _stProfileProb {
-    double probA;
-    double probC;
-    double probG;
-    double probT;
+    // The probability of, in order, -, A, C, T, G, methyl-C, hydroxymethyl-C and methyl-A
+    // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
+    // 0xFF representing 1.0 and each step between representing a linear step in probability of
+    // 1.0/255
+    uint8_t probs[NUCLEOTIDE_ALPHABET_SIZE];
 };
+
+float stProfileProb_prob(stProfileProb *p, int64_t characterIndex);
+
+/*
+ * Emission probabilities
+ */
+
+double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, double *logSubMatrix);
+
+double *getLogSubstitutionMatrix();
 
 /*
  * Read partitioning hmm
@@ -66,23 +90,24 @@ struct _stRPHmm {
     int64_t refStart;
     int64_t refLength;
     stList *profileSeqs; // List of stProfileSeq
-    int64_t columnNumber;
+    int64_t columnNumber; // Number of columns, excluding merge columns
     int64_t maxDepth;
     stRPColumn *firstColumn;
     stRPColumn *lastColumn;
 
     //Forward/backward probability calculation things
-    double forwardProbability;
-    double backwardProbability;
-    double (*emissionProbability)(stRPColumn *, stRPCell *);
+    double forwardLogProb;
+    double backwardLogProb;
+    double *logSubMatrix;
 };
 
 stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
 
 stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth);
+        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth, double *logSubMatrix);
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq);
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq,
+        double *logSubMatrix);
 
 void stRPHmm_destruct(stRPHmm *hmm);
 
@@ -118,10 +143,11 @@ struct _stRPColumn {
     stProfileProb **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
-    double forwardProb, backwardProb;
+    double forwardLogProb, backwardLogProb;
 };
 
-stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth, stProfileProb **seqs);
+stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
+        stProfileSeq **seqHeaders, stProfileProb **seqs);
 
 void stRPColumn_destruct(stRPColumn *column);
 
@@ -135,7 +161,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
 struct _stRPCell {
     uint64_t partition;
-    double forwardProb, backwardProb;
+    double forwardLogProb, backwardLogProb;
     stRPCell *nCell;
 };
 
@@ -146,8 +172,6 @@ void stRPCell_destruct(stRPCell *cell);
 void stRPCell_print(stRPCell *cell, FILE *fileHandle);
 
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
-
-bool stRPCell_seqInHap1(stRPCell *cell, int64_t seqIndex);
 
 /*
  * Merge column of read partitioning hmm
@@ -161,7 +185,7 @@ struct _stRPMergeColumn {
     stRPColumn *nColumn, *pColumn;
 };
 
-stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, int32_t maskTo);
+stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, uint64_t maskTo);
 
 void stRPMergeColumn_destruct(stRPMergeColumn *mColumn);
 
@@ -180,7 +204,7 @@ int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn);
 struct _stRPMergeCell {
     uint64_t fromPartition;
     uint64_t toPartition;
-    double forwardProb, backwardProb;
+    double forwardLogProb, backwardLogProb;
 };
 
 stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition,
