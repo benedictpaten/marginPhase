@@ -64,7 +64,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
         char b = st_random() < readErrorRate ? getRandomBase(alphabetSize) : hapSeq[start+i];
 
         // Fill in the profile probabilities according to the chosen base
-        pSeq->profileProbs[i*4 + b - FIRST_ALPHABET_CHAR] = NUCLEOTIDE_MIN_PROB;
+        pSeq->profileProbs[i*4 + b - FIRST_ALPHABET_CHAR] = NUCLEOTIDE_MAX_PROB;
     }
 
     return pSeq;
@@ -139,6 +139,10 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList *hapSeqs2 = stList_construct3(0, free);
         stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
         stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+
+        // Set representations of the profile sequences
+        stSet *profileSeqs1Set = stList_getSet(profileSeqs1);
+        stSet *profileSeqs2Set = stList_getSet(profileSeqs2);
 
         // For each reference sequence
         for(int64_t i=0; i<referenceSeqNumber; i++) {
@@ -413,6 +417,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         }
 
         // Create traceBacks
+        int64_t totalPartitionError = 0; // The number of switch operations required to make the
+        // partitions predicted by the models perfect
+
         for(int64_t i=0; i<stList_length(hmms); i++) {
             stRPHmm *hmm = stList_get(hmms, i);
 
@@ -444,21 +451,59 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 }
             }
 
-            stSet *predictedHaplotype1Seqs = stRPHmm_partitionSequencesByStatePath(hmm, traceBackPath);
+            stSet *profileSeqsPartition1 = stRPHmm_partitionSequencesByStatePath(hmm, traceBackPath, 1);
+            stSet *profileSeqsPartition2 = stRPHmm_partitionSequencesByStatePath(hmm, traceBackPath, 0);
 
-            // Reports how close predicted partition is to actual read partition
-            stSet *actualHaplotype1Seqs = stList_getSet(profileSeqs1);
+            /*
+             * Comparing a given HMMs partition to the true read partition there are four set
+             * cardinalities we care about:
+             *
+             * p11 - the cardinality of the intersection of the first subpartition of the hmm
+             * and the profile sequences for the first haplotype sequence
+             *
+             * p12 - the cardinality of the intersection of the first subpartition of the hmm
+             * and the profile sequences for the second haplotype sequence
+             *
+             * p21 - the cardinality of the intersection of the second subpartition of the hmm
+             * and the profile sequences for the first haplotype sequence
+             *
+             * p22 - the cardinality of the intersection of the second subpartition of the hmm
+             * and the profile sequences for the second haplotype sequence
+             *
+             * Given these quantities the partitionErrors is the minimum number of "movements" of elements
+             * in the hmm partition to ensure that the HMM partition is a subset of the true partition.
+             */
 
-            stSet *hapSeq1Overlap = stSet_getIntersection(predictedHaplotype1Seqs, actualHaplotype1Seqs);
-            double precision = ((float)stSet_size(predictedHaplotype1Seqs) - stSet_size(hapSeq1Overlap))/stSet_size(predictedHaplotype1Seqs);
-            double recall = ((float)stSet_size(hapSeq1Overlap))/stSet_size(actualHaplotype1Seqs);
+            stSet *x = stSet_getIntersection(profileSeqsPartition1, profileSeqs1Set);
+            int64_t p11 = stSet_size(x);
+            stSet_destruct(x);
 
-            fprintf(stderr, " There were %" PRIi64 " hap1 seqs and %" PRIi64 "hap2 seqs, got precision: %f and recall: %f", stList_length(profileSeqs1),
-                    stList_length(profileSeqs2), (float)precision, (float)recall);
+            int64_t p12 = stSet_size(profileSeqsPartition1) - p11;
+            assert(p12 >= 0);
+
+            x = stSet_getIntersection(profileSeqsPartition2, profileSeqs2Set);
+            int64_t p21 = stSet_size(x);
+            stSet_destruct(x);
+
+            int64_t p22 = stSet_size(profileSeqsPartition2) - p21;
+            assert(p22 >= 0);
+
+            int64_t partitionErrors = p12 + p22 < p11 + p21 ? p12 + p22 : p11 + p21;
+
+            fprintf(stderr, "For HMM %" PRIi64 " there were %" PRIi64 " hap1 seqs and %" PRIi64 "hap2 seqs, "
+                    "got partition errors: %" PRIi64 "\n", i,
+                    stList_length(profileSeqs1),
+                    stList_length(profileSeqs2), partitionErrors);
+
+            totalPartitionError += partitionErrors;
 
             // Cleanup
             stList_destruct(traceBackPath);
         }
+
+        fprintf(stderr, " For %" PRIi64 " hap 1 sequences and %" PRIi64 " hap 2 sequences there were %" PRIi64
+                " hmms and %" PRIi64 " partition errors, with %f partition errors per hmm\n", stList_length(profileSeqs1), stList_length(profileSeqs2),
+                stList_length(hmms), totalPartitionError, (float)totalPartitionError/stList_length(hmms));
 
         // Cleanup
         stList_destruct(hmms);
@@ -466,6 +511,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList_destruct(referenceSeqs);
         stList_destruct(hapSeqs1);
         stList_destruct(hapSeqs2);
+        stSet_destruct(profileSeqs1Set);
+        stSet_destruct(profileSeqs2Set);
         stList_destruct(profileSeqs1);
         stList_destruct(profileSeqs2);
         stAlphabetModel_destruct(alphabetModel);
@@ -568,9 +615,12 @@ static void test_popCount64(CuTest *testCase) {
 }
 
 static double getExpectedInstanceNumberSimple(uint8_t **seqs, uint64_t partition, int64_t depth, int64_t length,
-        int64_t alphabetSize, int64_t i, int64_t j) {
-    //TODO
-    return 0;
+        int64_t alphabetSize, int64_t position, int64_t characterIndex) {
+    int64_t expectation = 0;
+    for(int64_t i=0; i<depth; i++) {
+        expectation += seqs[i][position*alphabetSize + characterIndex];
+    }
+    return (double)expectation/255;
 }
 
 static uint64_t getRandomPartition(int64_t depth) {
@@ -586,8 +636,10 @@ static void test_bitCountVectors(CuTest *testCase) {
         uint8_t **seqs = st_malloc(sizeof(uint8_t *) * depth);
         for(int64_t i=0; i<depth; i++) {
             seqs[i] = st_calloc(length * alphabetSize, sizeof(uint8_t));
-            // Initialise probs
-            //TODO
+            // Initialise probs randomly
+            for(int64_t j=0; j<alphabetSize*length; j++) {
+                seqs[i][j] = st_randomInt(0, 255);
+            }
         }
 
         // Calculate the bit vectors

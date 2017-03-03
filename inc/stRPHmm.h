@@ -136,7 +136,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
 
 stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
 
-stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path);
+stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1);
 
 /*
  * Column of read partitioning hmm

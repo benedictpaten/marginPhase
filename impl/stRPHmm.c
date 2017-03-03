@@ -820,10 +820,10 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
     return path;
 }
 
-stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path) {
+stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1) {
     /*
      * For an hmm and path through the hmm (e.g. computed with stRPHmm_forwardTraceBack) returns the
-     * set of sequences in the hmm that are predicted to come from the first haplotype path.
+     * set of sequences in the hmm that are predicted to come from one given haplotype.
      */
 
     stSet *seqsInHap1 = stSet_construct();
@@ -833,9 +833,10 @@ stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path) {
     for(int64_t i=0; i<stList_length(path); i++) {
         stRPCell *cell = stList_get(path, i);
 
-        // Get sequences in first partition
+        // Get sequences in first or second partition
         for(int64_t j=0; j<column->depth; j++) {
-            if(seqInHap1(cell->partition, j)) {
+            if((seqInHap1(cell->partition, j) && partition1) ||
+                    (!seqInHap1(cell->partition, j) && !partition1)) {
                 stSet_insert(seqsInHap1, column->seqHeaders[j]);
             }
         }
