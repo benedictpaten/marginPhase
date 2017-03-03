@@ -7,30 +7,33 @@
 #include "CuTest.h"
 #include "sonLib.h"
 #include "stRPHmm.h"
+#include <math.h>
 
 #define RANDOM_TEST_NO 100
 
-char getRandomBase() {
+#define FIRST_ALPHABET_CHAR 48 // Ascii symbol '0'
+
+char getRandomBase(int64_t alphabetSize) {
     /*
-     * Returns either an A, C, T or G character, each with equal probability.
+     * Returns an ascii character starting from ascii symbol 48: '0', '1', '2', ... alphabetsize
      */
-    return st_random() > 0.5 ? (st_random() > 0.5 ? 'A' : 'C') : (st_random() > 0.5 ? 'G' : 'T');
+    return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+alphabetSize);
 }
 
-char *getRandomSequence(int64_t referenceLength) {
+char *getRandomSequence(int64_t referenceLength, int64_t alphabetSize) {
     /*
      * Creates a random sequence of form [ACTG]*referenceLength
      */
     char *randomSequence = st_malloc(sizeof(char) * (referenceLength+1));
     for(int64_t i=0; i<referenceLength; i++) {
-        randomSequence[i] = getRandomBase();
+        randomSequence[i] = getRandomBase(alphabetSize);
     }
     randomSequence[referenceLength] = '\0';
 
     return randomSequence;
 }
 
-char *permuteSequence(char *referenceSeq, double hetRate) {
+char *permuteSequence(char *referenceSeq, double hetRate, int64_t alphabetSize) {
     /*
      * Takes a random sequence and returns a copy of it, permuting randomly each position with rate hetRate.
      */
@@ -38,40 +41,30 @@ char *permuteSequence(char *referenceSeq, double hetRate) {
     int64_t strLength = strlen(referenceSeq);
     for(int64_t i=0; i<strLength; i++) {
         if(st_random() < hetRate) {
-            referenceSeq[i] = getRandomBase();
+            referenceSeq[i] = getRandomBase(alphabetSize);
         }
     }
     return referenceSeq;
 }
 
-stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hapLength, int64_t readLength, double readErrorRate) {
+stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hapLength,
+        int64_t readLength, double readErrorRate, int64_t alphabetSize) {
     /*
-     * Creates a random "read" of the given length from a random sub-interval of the input sequence with error rate errRate.
+     * Creates a random "read" of the given length from a random sub-interval
+     * of the input sequence with error rate errRate.
      */
     assert(hapLength-readLength >= 0);
     int64_t start = st_randomInt(0, hapLength-readLength+1);
 
-    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(referenceName, start, readLength);
+    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(referenceName, start,
+            readLength, alphabetSize);
 
     for(int64_t i=0; i<readLength; i++) {
         // Haplotype base or error at random
-        char b = st_random() < readErrorRate ? getRandomBase() : hapSeq[start+i];
+        char b = st_random() < readErrorRate ? getRandomBase(alphabetSize) : hapSeq[start+i];
 
         // Fill in the profile probabilities according to the chosen base
-        switch(b) {
-            case 'A':
-                pSeq->profileProbs->probs[NUCLEOTIDE_A] = NUCLEOTIDE_MAX_PROB;
-                break;
-            case 'C':
-                pSeq->profileProbs->probs[NUCLEOTIDE_C] = NUCLEOTIDE_MAX_PROB;
-                break;
-            case 'G':
-                pSeq->profileProbs->probs[NUCLEOTIDE_G] = NUCLEOTIDE_MAX_PROB;
-                break;
-            case 'T':
-                pSeq->profileProbs->probs[NUCLEOTIDE_T] = NUCLEOTIDE_MAX_PROB;
-                break;
-        }
+        pSeq->profileProbs[i*4 + b - FIRST_ALPHABET_CHAR] = NUCLEOTIDE_MIN_PROB;
     }
 
     return pSeq;
@@ -80,7 +73,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter, double hetRate, double readErrorRate) {
+        int64_t minColumnDepthToFilter, int64_t alphabetSize, double hetRate, double readErrorRate) {
     /*
      * System level test
      *
@@ -118,6 +111,24 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
         fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
 
+        // Alphabet
+        stAlphabetModel *alphabetModel = stAlphabetModel_constructEmptyModel(alphabetSize);
+
+        // Fill in substitition matrix with simple symmetric probs matching
+        // the read error rate
+        assert(readErrorRate <= 1.0);
+        assert(readErrorRate >= 0.0);
+        for(int64_t i=0; i<alphabetSize; i++) {
+            for(int64_t j=0; j<alphabetSize; j++) {
+                if(i == j) {
+                    alphabetModel->logSubMatrix[i*alphabetSize + j] = log(1.0-readErrorRate);
+                }
+                else {
+                    alphabetModel->logSubMatrix[i*alphabetSize + j] = log(readErrorRate/(alphabetSize-1));
+                }
+            }
+        }
+
         // Creates reference sequences
         // Generates two haplotypes for each reference sequence
         // Generates profile sequences from each haplotype
@@ -133,15 +144,15 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         for(int64_t i=0; i<referenceSeqNumber; i++) {
             // Generate random reference sequence
             int64_t referenceLength = st_randomInt(minReferenceLength, maxReferenceLength);
-            char *referenceSeq = getRandomSequence(referenceLength);
+            char *referenceSeq = getRandomSequence(referenceLength, alphabetSize);
             // Reference name
             char *referenceName = stString_print("Reference_%" PRIi64 "", i);
 
             stList_append(referenceSeqs, referenceSeq);
 
             // Create haplotype sequences for reference
-            char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate);
-            char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate);
+            char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate, alphabetSize);
+            char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate, alphabetSize);
 
             stList_append(hapSeqs1, haplotypeSeq1);
             stList_append(hapSeqs2, haplotypeSeq2);
@@ -158,7 +169,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     hapSeqs = hapSeqs2;
                 }
                 int64_t readLength = st_randomInt(minReadLength, maxReadLength);
-                stList_append(hapSeqs, getRandomProfileSeq(referenceName, hapSeq, referenceLength, readLength, readErrorRate));
+                stList_append(hapSeqs, getRandomProfileSeq(referenceName, hapSeq,
+                        referenceLength, readLength, readErrorRate, alphabetSize));
                 totalBasesToSimulate -= readLength;
             }
 
@@ -175,12 +187,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList_appendAll(profileSeqs, profileSeqs1);
         stList_appendAll(profileSeqs, profileSeqs2);
 
-        // Substitution matrix
-        double *logSubstitionMatrix = getLogSubstitutionMatrix();
-
         // Creates read HMMs
         stList *hmms = getRPHmms(profileSeqs, posteriorProbabilityThreshold,
-                                 minColumnDepthToFilter, maxCoverage, logSubstitionMatrix);
+                                 minColumnDepthToFilter, maxCoverage, alphabetModel);
 
         // For each hmm
         for(int64_t i=0; i<stList_length(hmms); i++) {
@@ -459,7 +468,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList_destruct(hapSeqs2);
         stList_destruct(profileSeqs1);
         stList_destruct(profileSeqs2);
-        free(logSubstitionMatrix);
+        stAlphabetModel_destruct(alphabetModel);
     }
 }
 
@@ -476,11 +485,12 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t minColumnDepthToFilter = 10;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
+    int64_t alphabetSize = 2;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate);
+            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize);
 }
 
 static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
@@ -496,11 +506,12 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t minColumnDepthToFilter = 10;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
+    int64_t alphabetSize = 2;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate);
+            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize);
 }
 
 static void test_systemSingleReference(CuTest *testCase) {
@@ -516,11 +527,12 @@ static void test_systemSingleReference(CuTest *testCase) {
     int64_t minColumnDepthToFilter = 10;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
+    int64_t alphabetSize = 2;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate);
+            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize);
 }
 
 static void test_systemMultipleReferences(CuTest *testCase) {
@@ -536,21 +548,86 @@ static void test_systemMultipleReferences(CuTest *testCase) {
     int64_t minColumnDepthToFilter = 10;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
+    int64_t alphabetSize = 2;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate);
+            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize);
 }
 
+static void test_popCount64(CuTest *testCase) {
+    CuAssertIntEquals(testCase, popcount64(0), 0);
+    CuAssertIntEquals(testCase, popcount64(1), 1);
+    CuAssertIntEquals(testCase, popcount64(2), 1);
+    CuAssertIntEquals(testCase, popcount64(3), 2);
+    CuAssertIntEquals(testCase, popcount64(0xFF), 8);
+    CuAssertIntEquals(testCase, popcount64(0xFFFFFFFF), 32);
+    CuAssertIntEquals(testCase, popcount64(0xFFFFFFFFFFFFFFFF), 64);
+    CuAssertIntEquals(testCase, popcount64(0x1111111111111111), 16);
+}
+
+static double getExpectedInstanceNumberSimple(uint8_t **seqs, uint64_t partition, int64_t depth, int64_t length,
+        int64_t alphabetSize, int64_t i, int64_t j) {
+    //TODO
+    return 0;
+}
+
+static uint64_t getRandomPartition(int64_t depth) {
+    return st_randomInt(0, pow(2, depth));
+}
+
+static void test_bitCountVectors(CuTest *testCase) {
+    for(int64_t test=0; test<100; test++) {
+        // Make column as set of uint8_t sequences
+        int64_t depth = st_randomInt(1, 10);
+        int64_t alphabetSize = st_randomInt(1, 5);
+        int64_t length = st_randomInt(0, 10);
+        uint8_t **seqs = st_malloc(sizeof(uint8_t *) * depth);
+        for(int64_t i=0; i<depth; i++) {
+            seqs[i] = st_calloc(length * alphabetSize, sizeof(uint8_t));
+            // Initialise probs
+            //TODO
+        }
+
+        // Calculate the bit vectors
+        uint64_t *countBitVectors = calculateCountBitVectors(seqs, depth, length, alphabetSize);
+
+        // Partition
+        uint64_t partition = getRandomPartition(depth);
+
+        // Test we get the expected output
+        for(int64_t i=0; i<length; i++) {
+            for(int64_t j=0; j<alphabetSize; j++) {
+                CuAssertIntEquals(testCase,
+                        getExpectedInstanceNumberSimple(seqs, partition, depth,
+                                length, alphabetSize, i, j),
+                        getExpectedInstanceNumber(countBitVectors, depth,
+                                partition, i, j, alphabetSize));
+            }
+        }
+
+        // Cleanup
+        for(int64_t i=0; i<depth; i++) {
+            free(seqs[i]);
+        }
+        free(seqs);
+        free(countBitVectors);
+    }
+}
 
 CuSuite *stRPHmmTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
+    // System level tests
     SUITE_ADD_TEST(suite, test_systemSingleReferenceFullLengthReads);
     SUITE_ADD_TEST(suite, test_systemSingleReferenceFixedLengthReads);
     SUITE_ADD_TEST(suite, test_systemSingleReference);
     SUITE_ADD_TEST(suite, test_systemMultipleReferences);
+
+    // Constituent function tests
+    SUITE_ADD_TEST(suite, test_popCount64);
+    SUITE_ADD_TEST(suite, test_bitCountVectors);
 
     return suite;
 }

@@ -18,15 +18,35 @@
  */
 
 typedef struct _stProfileSeq stProfileSeq;
-typedef struct _stProfileProb stProfileProb;
 typedef struct _stRPHmm stRPHmm;
 typedef struct _stRPColumn stRPColumn;
 typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
+typedef struct _stAlphabetModel stAlphabetModel;
 
 // The maximum read depth the model can support
 #define MAX_READ_PARTITIONING_DEPTH 64
+
+/*
+ * Alphabet
+ */
+
+#define NUCLEOTIDE_MAX_PROB 255
+#define NUCLEOTIDE_MIN_PROB 0
+#define NUCLEOTIDE_BITS sizeof(uint8_t)
+
+struct _stAlphabetModel {
+    int64_t alphabetSize;
+    double *logSubMatrix;
+};
+
+stAlphabetModel *stAlphabetModel_constructEmptyModel(int64_t alphabetSize);
+
+void stAlphabetModel_destruct(stAlphabetModel *alphabet);
+
+double stAlphabetModel_getLogSubstitutionProb(stAlphabetModel *alphabet, int64_t sourceCharacterIndex,
+        int64_t derivedCharacterIndex);
 
 /*
  * Profile sequence
@@ -36,50 +56,37 @@ struct _stProfileSeq {
     char *referenceName;
     int64_t refStart;
     int64_t length;
-    stProfileProb *profileProbs;
+    int64_t alphabetSize;
+    // The probability of alphabet characters, as specified by stAlphabetModel
+    // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
+    // 0xFF representing 1.0 and each step between representing a linear step in probability of
+    // 1.0/255
+    uint8_t *profileProbs;
 };
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
+        int64_t referenceStart, int64_t length, int64_t alphabetSize);
 
 void stProfileSeq_destruct(stProfileSeq *seq);
 
 void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence);
 
-
-/*
- * Element of a profile sequence
- */
-
-#define NUCLEOTIDE_ALPHABET_SIZE 8
-#define NUCLEOTIDE_BITS sizeof(uint8_t)
-#define NUCLEOTIDE_GAP 0
-#define NUCLEOTIDE_A 1
-#define NUCLEOTIDE_C 2
-#define NUCLEOTIDE_G 3
-#define NUCLEOTIDE_T 4
-#define NUCLEOTIDE_METHYL_C 5
-#define NUCLEOTIDE_HYDROXYMETHYL_C 6
-#define NUCLEOTIDE_METHYL_A 7
-#define NUCLEOTIDE_MAX_PROB 255
-#define NUCLEOTIDE_MIN_PROB 0
-
-struct _stProfileProb {
-    // The probability of, in order, -, A, C, T, G, methyl-C, hydroxymethyl-C and methyl-A
-    // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
-    // 0xFF representing 1.0 and each step between representing a linear step in probability of
-    // 1.0/255
-    uint8_t probs[NUCLEOTIDE_ALPHABET_SIZE];
-};
-
-float stProfileProb_prob(stProfileProb *p, int64_t characterIndex);
+float getProb(uint8_t *p, int64_t characterIndex);
 
 /*
  * Emission probabilities
  */
 
-double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, double *logSubMatrix);
+double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stAlphabetModel *alphabet);
 
-double *getLogSubstitutionMatrix();
+// Constituent functions tested and used to do bit twiddling
+
+int popcount64(uint64_t x);
+
+double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
+        int64_t position, int64_t characterIndex, int64_t alphabetSize);
+
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length, int64_t alphabetSize);
 
 /*
  * Read partitioning hmm
@@ -98,16 +105,16 @@ struct _stRPHmm {
     //Forward/backward probability calculation things
     double forwardLogProb;
     double backwardLogProb;
-    double *logSubMatrix;
+    stAlphabetModel *alphabet;
 };
 
 stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
 
 stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth, double *logSubMatrix);
+        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth, stAlphabetModel *alphabet);
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq,
-        double *logSubMatrix);
+        stAlphabetModel *alphabet);
 
 void stRPHmm_destruct(stRPHmm *hmm);
 
@@ -140,14 +147,14 @@ struct _stRPColumn {
     int64_t length;
     int64_t depth;
     stProfileSeq **seqHeaders;
-    stProfileProb **seqs;
+    uint8_t **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double forwardLogProb, backwardLogProb;
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, stProfileProb **seqs);
+        stProfileSeq **seqHeaders, uint8_t **seqs);
 
 void stRPColumn_destruct(stRPColumn *column);
 

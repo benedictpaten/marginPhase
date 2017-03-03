@@ -422,7 +422,7 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
 }
 
 stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter,
-        int64_t maxCoverageDepth, double *logSubMatrix) {
+        int64_t maxCoverageDepth, stAlphabetModel *alphabet) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
      * hmms (stRPHmm) ordered and non-overlapping in reference coordinates.
@@ -436,7 +436,7 @@ stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stSortedSet_insert(readHmms, stRPHmm_construct(stList_get(profileSeqs, i), logSubMatrix));
+        stSortedSet_insert(readHmms, stRPHmm_construct(stList_get(profileSeqs, i), alphabet));
     }
 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
@@ -464,7 +464,8 @@ stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int
  * Functions for profile sequence
  */
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length) {
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart,
+        int64_t length, int64_t alphabetSize) {
     /*
      * Creates an empty profile sequence, with all the profile probabilities set to 0.
      */
@@ -472,7 +473,8 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t re
     seq->referenceName = stString_copy(referenceName);
     seq->refStart = referenceStart;
     seq->length = length;
-    seq->profileProbs = st_calloc(length, sizeof(stProfileProb));
+    seq->alphabetSize = alphabetSize;
+    seq->profileProbs = st_calloc(length*alphabetSize, sizeof(uint8_t));
     return seq;
 }
 
@@ -485,11 +487,11 @@ void stProfileSeq_destruct(stProfileSeq *seq) {
     free(seq);
 }
 
-float stProfileProb_prob(stProfileProb *p, int64_t characterIndex) {
+float getProb(uint8_t *p, int64_t characterIndex) {
     /*
      * Gets probability of a given character as a float.
      */
-    return ((float)p->probs[characterIndex])/255;
+    return ((float)p[characterIndex])/255;
 }
 
 void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence) {
@@ -501,13 +503,43 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequenc
             seq->referenceName, seq->refStart, seq->length);
     if(includeSequence) {
         for(int64_t i=0; i<seq->length; i++) {
-            stProfileProb *p = &seq->profileProbs[i];
-            fprintf(fileHandle, "\t\tPOS: %" PRIi64 " -: %f A: %f C: %f G: %f T: %f mC: %f hMC: %f mA: %f\n", i,
-                    stProfileProb_prob(p, 0), stProfileProb_prob(p, 1), stProfileProb_prob(p, 2),
-                    stProfileProb_prob(p, 3), stProfileProb_prob(p, 4), stProfileProb_prob(p, 5),
-                    stProfileProb_prob(p, 6), stProfileProb_prob(p, 7));
+            uint8_t *p = &seq->profileProbs[i * seq->alphabetSize];
+            // Print individual character probs
+            fprintf(fileHandle, "\t\tPOS: %" PRIi64 "", i);
+            for(int64_t j=0; j<seq->alphabetSize; j++) {
+                fprintf(fileHandle, "\t%f\t", getProb(p, j));
+            }
+            fprintf(fileHandle, "\n");
         }
     }
+}
+
+/*
+ * Character alphabet and substitutions
+ */
+
+double stAlphabetModel_getLogSubstitutionProb(stAlphabetModel *alphabet, int64_t sourceCharacterIndex,
+        int64_t derivedCharacterIndex) {
+    /*
+     * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
+     */
+    return alphabet->logSubMatrix[sourceCharacterIndex * alphabet->alphabetSize + derivedCharacterIndex];
+}
+
+stAlphabetModel *stAlphabetModel_constructEmptyModel(int64_t alphabetSize) {
+    /*
+     * Creates an empty substitution matrix model
+     */
+    stAlphabetModel *alphabet = st_malloc(sizeof(stAlphabetModel));
+    alphabet->alphabetSize = alphabetSize;
+    alphabet->logSubMatrix = st_calloc(alphabetSize * alphabetSize, sizeof(double));
+
+    return alphabet;
+}
+
+void stAlphabetModel_destruct(stAlphabetModel *alphabet) {
+    free(alphabet->logSubMatrix);
+    free(alphabet);
 }
 
 /*
@@ -541,43 +573,44 @@ int popcount64(uint64_t x) {
 }
 
 uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
-        int64_t position, int64_t characterIndex, int64_t bit) {
+        int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Returns a pointer to a bit count vector for a given position (offset in the column),
      * character index and bit.
      */
-    return &bitCountVector[position * sizeof(uint8_t) * NUCLEOTIDE_ALPHABET_SIZE + characterIndex * sizeof(uint8_t) + bit];
+    return &bitCountVector[position * sizeof(uint8_t) * alphabetSize + characterIndex * sizeof(uint8_t) + bit];
 }
 
-uint64_t calculateBitCountVector(stRPColumn *column,
-        int64_t position, int64_t characterIndex, int64_t bit) {
+uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
+        int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Calculates the bit count vector for a given position, character index and bit.
      */
     uint64_t bitCountVector = 0;
-    for(int64_t i=0; i<column->depth; i++) {
-        stProfileProb *p = &(column->seqs[i][position]);
-        bitCountVector &= (p->probs[characterIndex] >> bit) << i;
+    for(int64_t i=0; i<depth; i++) {
+        uint8_t *p = &(seqs[i][alphabetSize * position]);
+        bitCountVector &= (p[characterIndex] >> bit) << i;
     }
     return bitCountVector;
 }
 
-uint64_t *calculateCountBitVectors(stRPColumn *column) {
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length, int64_t alphabetSize) {
     /*
      * Calculates the bit count vector for every position, character and bit in the column.
      */
 
     // Array of bit vectors, for each position, for each character and for each bit in uint8_t
-    uint64_t *bitCountVectors = st_malloc(column->length * NUCLEOTIDE_ALPHABET_SIZE *
+    uint64_t *bitCountVectors = st_malloc(length * alphabetSize *
             NUCLEOTIDE_BITS * sizeof(uint64_t));
 
     // For each position
-    for(int64_t i=0; i<column->length; i++) {
+    for(int64_t i=0; i<length; i++) {
         // For each character
-        for(int64_t j=0; j<NUCLEOTIDE_ALPHABET_SIZE; j++) {
+        for(int64_t j=0; j<alphabetSize; j++) {
             // For each bit
             for(int64_t k=0; k<sizeof(uint8_t); k++) {
-                *retrieveBitCountVector(bitCountVectors, i, j, k) = calculateBitCountVector(column, i, j, k);
+                *retrieveBitCountVector(bitCountVectors, i, j, k, alphabetSize) =
+                        calculateBitCountVector(seqs, depth, i, j, k, alphabetSize);
             }
         }
     }
@@ -586,7 +619,7 @@ uint64_t *calculateCountBitVectors(stRPColumn *column) {
 }
 
 double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
-        int64_t position, int64_t characterIndex) {
+        int64_t position, int64_t characterIndex, int64_t alphabetSize) {
     /*
      * Returns the number of instances of a character, given by characterIndex, at the given position within the column for
      * the given partition.
@@ -594,89 +627,81 @@ double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint
     uint64_t rawExpectedCount = 0;
     uint64_t shift = 1;
     for(int64_t i=0; i<sizeof(uint8_t); i++) {
-        uint64_t j = *retrieveBitCountVector(bitCountVectors, position, characterIndex, i);
+        uint64_t j = *retrieveBitCountVector(bitCountVectors, position, characterIndex, i, alphabetSize);
         rawExpectedCount += popcount64(j & partition) * shift;
         shift <<= 1;
     }
-    double expectedCount = rawExpectedCount / ((pow(2, NUCLEOTIDE_ALPHABET_SIZE) - 1) * depth);
+    double expectedCount = rawExpectedCount / ((pow(2, alphabetSize) - 1) * depth);
     assert(expectedCount >= 0.0);
     assert(expectedCount <= depth);
     return expectedCount;
 }
 
-double getSubstitutionProbability(double *subMatrix, int64_t sourceCharacterIndex,
-        int64_t derivedCharacterIndex) {
-    /*
-     * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
-     */
-    return subMatrix[sourceCharacterIndex * NUCLEOTIDE_ALPHABET_SIZE + derivedCharacterIndex];
-}
-
-double getLogProbOfReadCharacters(double *expectedInstanceNumbers, double *logSubMatrix,
+double getLogProbOfReadCharacters(stAlphabetModel *alphabet, double *expectedInstanceNumbers,
         int64_t sourceCharacterIndex) {
     /*
      * Get the log probability of a given source character given the expected number of instances of each character in the reads.
      */
-    double logCharacterProb = getSubstitutionProbability(logSubMatrix, sourceCharacterIndex, 0) * expectedInstanceNumbers[0];
-    for(int64_t i=1; i<NUCLEOTIDE_ALPHABET_SIZE; i++) {
-        logCharacterProb += getSubstitutionProbability(logSubMatrix, sourceCharacterIndex, i) *
+    double logCharacterProb = stAlphabetModel_getLogSubstitutionProb(alphabet, sourceCharacterIndex, 0) * expectedInstanceNumbers[0];
+    for(int64_t i=1; i<alphabet->alphabetSize; i++) {
+        logCharacterProb += stAlphabetModel_getLogSubstitutionProb(alphabet, sourceCharacterIndex, i) *
                 expectedInstanceNumbers[i];
     }
     return logCharacterProb;
 }
 
 double columnIndexLogProbability(stRPColumn *column, uint64_t index,
-        uint64_t partition, uint64_t *bitCountVectors, double *logSubMatrix) {
+        uint64_t partition, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
     /*
      * Get the probability of a the characters in a given position within a column for a given partition.
      */
 
     // For each possible read character calculate the expected number of instances in the partition and store counts
     // in an array
-    double expectedInstanceNumbers[NUCLEOTIDE_ALPHABET_SIZE];
-    for(int64_t i=0; i<NUCLEOTIDE_ALPHABET_SIZE; i++) {
+    double expectedInstanceNumbers[alphabet->alphabetSize];
+    for(int64_t i=0; i<alphabet->alphabetSize; i++) {
         expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
-                column->depth, partition, index, i);
+                column->depth, partition, index, i, alphabet->alphabetSize);
     }
 
     // Get the sum of log probabilities of the derived characters over the possible source characters
-    double logColumnProb = getLogProbOfReadCharacters(expectedInstanceNumbers, logSubMatrix, 0);
-    for(int64_t i=1; i<NUCLEOTIDE_ALPHABET_SIZE; i++) {
-        logColumnProb = stMath_logAdd(logColumnProb, getLogProbOfReadCharacters(expectedInstanceNumbers, logSubMatrix, i));
+    double logColumnProb = getLogProbOfReadCharacters(alphabet, expectedInstanceNumbers, 0);
+    for(int64_t i=1; i<alphabet->alphabetSize; i++) {
+        logColumnProb = stMath_logAdd(logColumnProb, getLogProbOfReadCharacters(alphabet, expectedInstanceNumbers, i));
     }
 
     return logColumnProb;
 }
 
 double partitionLogProbability(stRPColumn *column,
-        uint64_t partition, uint64_t *bitCountVectors, double *logSubMatrix) {
+        uint64_t partition, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
     double logPartitionProb = columnIndexLogProbability(column, 0,
-            partition, bitCountVectors, logSubMatrix);
+            partition, bitCountVectors, alphabet);
     for(int64_t i=1; i<column->length; i++) {
         logPartitionProb += columnIndexLogProbability(column, i,
-                partition, bitCountVectors, logSubMatrix);
+                partition, bitCountVectors, alphabet);
     }
     return logPartitionProb;
 }
 
 double emissionLogProbability(stRPColumn *column,
-        stRPCell *cell, uint64_t *bitCountVectors, double *logSubMatrix) {
+        stRPCell *cell, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
     /*
      * Get the log probability of a partition for a given column.
      */
-    return partitionLogProbability(column, cell->partition, bitCountVectors, logSubMatrix) +
-            partitionLogProbability(column, ~cell->partition, bitCountVectors, logSubMatrix);
+    return partitionLogProbability(column, cell->partition, bitCountVectors, alphabet) +
+            partitionLogProbability(column, ~cell->partition, bitCountVectors, alphabet);
 }
 
 /*
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, double *logSubMatrix) {
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stAlphabetModel *alphabet) {
     /*
      * Create a read partitioning HMM representing the single sequence profile.
      */
@@ -693,7 +718,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, double *logSubMatrix) {
     stList_append(hmm->profileSeqs, profileSeq);
 
     // Emission probability function
-    hmm->logSubMatrix = logSubMatrix;
+    hmm->alphabet = alphabet;
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
@@ -701,7 +726,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, double *logSubMatrix) {
     // Create the first column of the model
     stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *));
     seqHeaders[0] = profileSeq;
-    stProfileProb **seqs = st_malloc(sizeof(stProfileProb *));
+    uint8_t **seqs = st_malloc(sizeof(uint8_t *));
     seqs[0] = profileSeq->profileProbs;
     stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs);
     hmm->firstColumn = column;
@@ -885,10 +910,10 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     // Max depth
     hmm->maxDepth = leftHmm->maxDepth > rightHmm->maxDepth ? leftHmm->maxDepth : rightHmm->maxDepth;
     // Emission prob
-    if(leftHmm->logSubMatrix != rightHmm->logSubMatrix) {
+    if(leftHmm->alphabet != rightHmm->alphabet) {
         st_errAbort("Substitution matrices differ in fuse function, panic.");
     }
-    hmm->logSubMatrix = leftHmm->logSubMatrix;
+    hmm->alphabet = leftHmm->alphabet;
 
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
@@ -1052,10 +1077,10 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     // Set column number
     hmm->columnNumber = hmm1->columnNumber;
     // Set emission function
-    if(hmm1->logSubMatrix != hmm2->logSubMatrix) {
+    if(hmm1->alphabet != hmm2->alphabet) {
         st_errAbort("Log subsitution matrix functions differ, panic.");
     }
-    hmm->logSubMatrix = hmm1->logSubMatrix;
+    hmm->alphabet = hmm1->alphabet;
 
     // For each pair of corresponding columns
     stRPColumn *column1 = hmm1->firstColumn;
@@ -1083,9 +1108,9 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         memcpy(&seqHeaders[column1->depth], column2->seqs, sizeof(stProfileSeq *) * column2->depth);
 
         // Profiles
-        stProfileProb **seqs = st_malloc(sizeof(stProfileProb *) * newColumnDepth);
-        memcpy(seqs, column1->seqs, sizeof(stProfileProb *) * column1->depth);
-        memcpy(&seqs[column1->depth], column2->seqs, sizeof(stProfileProb *) * column2->depth);
+        uint8_t **seqs = st_malloc(sizeof(uint8_t *) * newColumnDepth);
+        memcpy(seqs, column1->seqs, sizeof(uint8_t *) * column1->depth);
+        memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
 
         stRPColumn *column = stRPColumn_construct(column1->refStart, column1->length,
                 newColumnDepth, seqHeaders, seqs);
@@ -1211,7 +1236,8 @@ void stRPHmm_forward(stRPHmm *hmm) {
     // Iterate through columns from first to last
     while(1) {
         // Get the bit count vectors for the column
-        uint64_t *bitCountVectors = calculateCountBitVectors(column);
+        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
+                column->length, hmm->alphabet->alphabetSize);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1229,7 +1255,7 @@ void stRPHmm_forward(stRPHmm *hmm) {
             }
 
             // Emission prob
-            cell->forwardLogProb += emissionLogProbability(column, cell, bitCountVectors, hmm->logSubMatrix);
+            cell->forwardLogProb += emissionLogProbability(column, cell, bitCountVectors, hmm->alphabet);
 
             // If the next merge column exists then propagate forward probability to the merge state
             if(column->nColumn != NULL) {
@@ -1306,7 +1332,8 @@ void stRPHmm_backward(stRPHmm *hmm) {
     // Iterate through columns from last to first
     while(1) {
         // Get the bit count vectors for the column
-        uint64_t *bitCountVectors = calculateCountBitVectors(column);
+        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
+                column->length, hmm->alphabet->alphabetSize);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1325,7 +1352,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
 
             // Total backward prob to propagate
             double backwardLogProb = cell->backwardLogProb + emissionLogProbability(column, cell,
-                    bitCountVectors, hmm->logSubMatrix);
+                    bitCountVectors, hmm->alphabet);
 
             // If the previous merge column exists then propagate backward probability to the merge state
             if(column->pColumn != NULL) {
@@ -1443,7 +1470,7 @@ bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
  */
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, stProfileProb **seqs) {
+        stProfileSeq **seqHeaders, uint8_t **seqs) {
     stRPColumn *column = st_malloc(sizeof(stRPColumn));
 
     // Reference coordinates
@@ -1505,8 +1532,8 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     // Create column
     stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *) * column->depth);
     memcpy(seqHeaders, column->seqHeaders, sizeof(stProfileSeq *) * column->depth);
-    stProfileProb **seqs = st_malloc(sizeof(stProfileProb *) * column->depth);
-    memcpy(seqs, column->seqs, sizeof(stProfileProb *) * column->depth);
+    uint8_t **seqs = st_malloc(sizeof(uint8_t *) * column->depth);
+    memcpy(seqs, column->seqs, sizeof(uint8_t *) * column->depth);
     stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
             column->length-firstHalfLength, column->depth, seqHeaders, seqs);
 
