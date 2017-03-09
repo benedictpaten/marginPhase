@@ -13,6 +13,13 @@
 #define ST_MATH_LOG_ZERO -INFINITY
 #define ST_MATH_LOG_ONE 0.0
 
+static double logAddP(double a, double b, bool maxNotSum) {
+    /*
+     * Local function for doing addition of logs or (if doing Viterbi style calculation), to take the max.
+     */
+    return maxNotSum ? (a > b ? a : b) : stMath_logAdd(a, b);
+}
+
 /*
  * Functions for manipulating read partitions described in binary
  */
@@ -54,7 +61,7 @@ char * intToBinaryString(uint64_t i) {
     /*
      * Converts the unsigned int to a binary string.
      */
-    int64_t bits = sizeof(uint64_t);
+    int64_t bits = sizeof(uint64_t)*8;
     char * str = st_malloc((bits + 1) * sizeof(char));
     str[bits] = '\0'; //terminate the string
 
@@ -62,7 +69,7 @@ char * intToBinaryString(uint64_t i) {
     // so that 14 will end up as 1110 and 15 will end up as
     // 1111 (plus some prefix bits)
     for(int64_t bit=0; bit < bits; i >>= 1) {
-        str[bit++] = i & 1 ? '1' : '0';
+        str[(sizeof(uint64_t)*8)-++bit] = i & 1 ? '1' : '0';
     }
 
     return str;
@@ -79,6 +86,8 @@ int cmpint(int64_t i, int64_t j) {
 int stRPHmm_cmpFn(const void *a, const void *b) {
     /*
      * Compares two read partitioning HMMs by coordinate on the reference.
+     * Will return equal only if they are the same HMM, with the same memory
+     * address, otherwise compares pointers for equal HMMs.
      */
     stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
     int i = strcmp(hmm1->referenceName, hmm2->referenceName);
@@ -86,6 +95,9 @@ int stRPHmm_cmpFn(const void *a, const void *b) {
         i = cmpint(hmm1->refStart,  hmm2->refStart);
         if(i == 0) {
             i = cmpint(hmm1->refLength,  hmm2->refLength);
+            if(i == 0) {
+                i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
+            }
         }
     }
     return i;
@@ -99,6 +111,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
      */
 
     // Iterator in the set starting from hmm1
+    assert(stSortedSet_search(readHmms, hmm1) == hmm1);
     stSortedSetIterator *it = stSortedSet_getIteratorFrom(readHmms, hmm1);
     stRPHmm *hmm2 = stSortedSet_getNext(it);
     assert(hmm2 == hmm1);
@@ -107,7 +120,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
     while((hmm2 = stSortedSet_getNext(it)) != NULL) {
         // Compare the hmm coordinates just to check that hmm2 has a coordinate >= to hmm1s
         int i = stRPHmm_cmpFn(hmm1, hmm2);
-        assert(i >= 0);
+        assert(i <= 0);
 
         // If hmm1 and hmm2 are on different references, then hmm2 is the closest non-overlapping
         // hmm to hmm1 in reference space
@@ -206,8 +219,6 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
             }
             // Else hmm1 and hmm2 do not overlap
             else {
-                assert(stRPHmm_cmpFn(hmm1, hmm2) != 0); // Not equal, obviously
-
                 // If hmm1 occurs before hmm2 in the reference ordering
                 if(stRPHmm_cmpFn(hmm1, hmm2) < 0) {
 
@@ -266,16 +277,21 @@ stList *getTilingPaths(stSortedSet *hmms) {
 
         // Get the hmm with lowest reference coordinate and add to the tiling path
         stRPHmm *hmm = stSortedSet_getFirst(hmms);
+        assert(hmm != NULL);
+        assert(stSortedSet_search(hmms, hmm) == hmm);
         stList_append(tilingPath, hmm);
-        stSortedSet_remove(hmms, hmm);
 
         // While it exists, get the next closest non-overlapping hmm
-        // and add to the tiling path progressively, removing it from the
+        // and add to the tiling path progressively, removing the chain of hmms from the
         // set of hmms left to tile
-        while((hmm = getNextClosestNonoverlappingHmm(hmm, hmms)) != NULL) {
-            stList_append(tilingPath, hmm);
+        stRPHmm *hmm2;
+        while((hmm2 = getNextClosestNonoverlappingHmm(hmm, hmms)) != NULL) {
             stSortedSet_remove(hmms, hmm);
+            stList_append(tilingPath, hmm2);
+            hmm = hmm2;
+            assert(stSortedSet_search(hmms, hmm) == hmm);
         }
+        stSortedSet_remove(hmms, hmm);
     }
 
     // Cleanup the input set
@@ -303,8 +319,7 @@ stRPHmm *fuseTilingPath(stList *tilingPath) {
     return rightHmm;
 }
 
-stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2,
-        double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
+stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
     /*
      *  Takes two lists, tilingPath1 and tilingPath2, each of which is a set of hmms
      *  ordered by reference coordinates and
@@ -313,10 +328,10 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2,
      *  same format as the input lists.
      *  Destroys the input tilingPaths in the process and cleans them up.
      */
-
+    st_uglyf("Merging tiling paths\n");
     // Partition of the hmms into overlapping connected components
     stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
-
+    st_uglyf("Got %i components\n", stSet_size(components));
     // Cleanup the input tiling paths
     stList_destruct(tilingPath1);
     stList_destruct(tilingPath2);
@@ -335,6 +350,8 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2,
         // Make two sub-tiling paths (there can only be two maximal paths, by definition)
         stList *tilingPaths = getTilingPaths(component);
 
+        st_uglyf("In merge two tiling paths, have got %i subpaths to merge\n", stList_length(tilingPaths));
+
         assert(stList_length(tilingPaths) == 2);
 
         stList *subTilingPath1 = stList_get(tilingPaths, 0);
@@ -351,7 +368,8 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2,
         stRPHmm *hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
 
         // Prune
-        stRPHmm_prune(hmm, posteriorProbabilityThreshold, minColumnDepthToFilter);
+        stRPHmm_forwardBackward(hmm);
+        stRPHmm_prune(hmm);
 
         // Add to output tiling path
         stList_append(newTilingPath, hmm);
@@ -364,8 +382,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2,
     return newTilingPath;
 }
 
-stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter) {
+stList *mergeTilingPaths(stList *tilingPaths) {
     /*
      * Like mergeTwoTilingPaths(), except instead of just two tiling paths it takes a list.
      * Destroys the tiling path as it goes.
@@ -380,6 +397,7 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
 
     // If only one tiling path in the input, the output is just the single input tiling path
     if(stList_length(tilingPaths) == 1) {
+        st_uglyf("Got one tiling path\n");
         stList *tilingPath = stList_get(tilingPaths, 0);
         stList_destruct(tilingPaths);
         return tilingPath;
@@ -392,23 +410,25 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
     // split the problem into two recursively until there are just two remaining
     // tiling paths
     if(stList_length(tilingPaths) > 2) {
+        st_uglyf("Splitting tiling paths\n");
 
         // Recursively turn the first half of the tiling paths into one tiling path
         stList *tilingPaths1 = stList_construct();
         for(int64_t i=0; i<stList_length(tilingPaths)/2; i++) {
             stList_append(tilingPaths1, stList_get(tilingPaths, i));
         }
-        tilingPath1 = mergeTilingPaths(tilingPaths1, posteriorProbabilityThreshold, minColumnDepthToFilter);
+        tilingPath1 = mergeTilingPaths(tilingPaths1);
 
         // Recursively turn the other half of the tiling paths into the other tiling path
         stList *tilingPaths2 = stList_construct();
         for(int64_t i=stList_length(tilingPaths)/2; i < stList_length(tilingPaths); i++) {
             stList_append(tilingPaths2, stList_get(tilingPaths, i));
         }
-        tilingPath2 = mergeTilingPaths(tilingPaths2, posteriorProbabilityThreshold, minColumnDepthToFilter);
+        tilingPath2 = mergeTilingPaths(tilingPaths2);
     }
     // Otherwise the number of tiling paths is two
     else {
+        st_uglyf("Got two tiling paths\n");
         tilingPath1 = stList_get(tilingPaths, 0);
         tilingPath2 = stList_get(tilingPaths, 1);
     }
@@ -417,12 +437,11 @@ stList *mergeTilingPaths(stList *tilingPaths, double posteriorProbabilityThresho
     assert(tilingPath1 != NULL);
     assert(tilingPath2 != NULL);
     stList_destruct(tilingPaths);
-
-    return mergeTwoTilingPaths(tilingPath1, tilingPath2, posteriorProbabilityThreshold, minColumnDepthToFilter);
+    st_uglyf("Doing merge\n");
+    return mergeTwoTilingPaths(tilingPath1, tilingPath2);
 }
 
-stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter,
-        int64_t maxCoverageDepth, stAlphabetModel *alphabet) {
+stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
      * hmms (stRPHmm) ordered and non-overlapping in reference coordinates.
@@ -436,26 +455,31 @@ stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold, int
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stSortedSet_insert(readHmms, stRPHmm_construct(stList_get(profileSeqs, i), alphabet));
+        stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs, i), params);
+        assert(stSortedSet_search(readHmms, hmm) == NULL);
+        stSortedSet_insert(readHmms, hmm);
+        assert(stSortedSet_search(readHmms, hmm) == hmm);
     }
+
+    st_uglyf("Got read HMMs: %" PRIi64 " for %" PRIi64 " profile seqs\n", stSortedSet_size(readHmms), stList_length(profileSeqs));
 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
 
-    if(maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
-        st_errAbort("The maximum covergae depth %" PRIi64 " is greater than the maximum allowed by the model: %"
-                PRIi64 "\n", maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
-    }
+    st_uglyf("Got %" PRIi64 " tiling paths\n", stList_length(tilingPaths));
 
     // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
-    while(stList_length(tilingPaths) > maxCoverageDepth) {
+    while(stList_length(tilingPaths) > params->maxCoverageDepth) {
         stList *tilingPath = stList_pop(tilingPaths);
+        for(int64_t i=0; i<stList_length(tilingPath); i++) {
+            stRPHmm_destruct(stList_get(tilingPath, i));
+        }
         stList_destruct(tilingPath);
     }
 
     // Merge together the tiling paths into one merged tiling path, merging the individual hmms when
     // they overlap on the reference
-    stList *finalTilingPath = mergeTilingPaths(tilingPaths, posteriorProbabilityThreshold, minColumnDepthToFilter);
+    stList *finalTilingPath = mergeTilingPaths(tilingPaths);
 
     return finalTilingPath;
 }
@@ -494,14 +518,29 @@ float getProb(uint8_t *p, int64_t characterIndex) {
     return ((float)p[characterIndex])/255;
 }
 
-void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence) {
+void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) {
     /*
      * Prints a debug representation of a profile sequence.
      */
+    char profileString[seq->length+1];
+    profileString[seq->length] = '\0';
+    for(int64_t i=0; i<seq->length; i++) {
+        uint8_t *p = &seq->profileProbs[i * seq->alphabetSize];
+        float maxProb = getProb(p, 0);
+        int64_t maxChar = 0;
+        for(int64_t j=1; j<seq->alphabetSize; j++) {
+            float prob = getProb(p, j);
+            if(prob < maxProb) {
+                maxProb = prob;
+                maxChar = j;
+            }
+        }
+        profileString[i] = maxChar + FIRST_ALPHABET_CHAR;
+    }
     fprintf(fileHandle, "\tSEQUENCE REF_NAME: %s REF_START %"
-            PRIi64 " REF_LENGTH: %" PRIi64 "\n",
-            seq->referenceName, seq->refStart, seq->length);
-    if(includeSequence) {
+            PRIi64 " REF_LENGTH: %" PRIi64 " ML_STRING: %s\n",
+            seq->referenceName, seq->refStart, seq->length, profileString);
+    if(includeProbs) {
         for(int64_t i=0; i<seq->length; i++) {
             uint8_t *p = &seq->profileProbs[i * seq->alphabetSize];
             // Print individual character probs
@@ -514,30 +553,64 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequenc
     }
 }
 
+void printSeqs(FILE *fileHandle, stSet *profileSeqs) {
+    /*
+     * Prints a set of profile seqs.
+     */
+    stSetIterator *seqIt = stSet_getIterator(profileSeqs);
+    stProfileSeq *pSeq;
+    while((pSeq = stSet_getNext(seqIt)) != NULL) {
+        stProfileSeq_print(pSeq, fileHandle, 0);
+    }
+    stSet_destructIterator(seqIt);
+}
+
+void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2) {
+    /*
+     * Print a partition.
+     */
+    fprintf(fileHandle, "First partition\n");
+    printSeqs(fileHandle, profileSeqs1);
+    fprintf(fileHandle, "Second partition\n");
+    printSeqs(fileHandle, profileSeqs2);
+}
+
 /*
  * Character alphabet and substitutions
  */
 
-double stAlphabetModel_getLogSubstitutionProb(stAlphabetModel *alphabet, int64_t sourceCharacterIndex,
+static double *subProb(double *matrix, int64_t from, int64_t to, int64_t alphabetSize) {
+    return &matrix[from * alphabetSize + to];
+}
+
+double stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex) {
     /*
      * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
      */
-    return alphabet->logSubMatrix[sourceCharacterIndex * alphabet->alphabetSize + derivedCharacterIndex];
+    return *subProb(alphabet->logSubMatrix, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize);
 }
 
-stAlphabetModel *stAlphabetModel_constructEmptyModel(int64_t alphabetSize) {
+void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
+        int64_t derivedCharacterIndex, double prob) {
+    /*
+     * Sets the (log) substitution probability.
+     */
+    *subProb(alphabet->logSubMatrix, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize) = prob;
+}
+
+stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize) {
     /*
      * Creates an empty substitution matrix model
      */
-    stAlphabetModel *alphabet = st_malloc(sizeof(stAlphabetModel));
+    stSubModel *alphabet = st_malloc(sizeof(stSubModel));
     alphabet->alphabetSize = alphabetSize;
     alphabet->logSubMatrix = st_calloc(alphabetSize * alphabetSize, sizeof(double));
 
     return alphabet;
 }
 
-void stAlphabetModel_destruct(stAlphabetModel *alphabet) {
+void stSubModel_destruct(stSubModel *alphabet) {
     free(alphabet->logSubMatrix);
     free(alphabet);
 }
@@ -578,7 +651,7 @@ uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
      * Returns a pointer to a bit count vector for a given position (offset in the column),
      * character index and bit.
      */
-    return &bitCountVector[position * sizeof(uint8_t) * alphabetSize + characterIndex * sizeof(uint8_t) + bit];
+    return &bitCountVector[position * ALPHABET_CHARACTER_BITS * alphabetSize + characterIndex * ALPHABET_CHARACTER_BITS + bit];
 }
 
 uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
@@ -589,8 +662,9 @@ uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
     uint64_t bitCountVector = 0;
     for(int64_t i=0; i<depth; i++) {
         uint8_t *p = &(seqs[i][alphabetSize * position]);
-        bitCountVector &= (p[characterIndex] >> bit) << i;
+        bitCountVector |= ((((uint64_t)p[characterIndex] >> bit) & 1) << i);
     }
+
     return bitCountVector;
 }
 
@@ -601,14 +675,14 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length
 
     // Array of bit vectors, for each position, for each character and for each bit in uint8_t
     uint64_t *bitCountVectors = st_malloc(length * alphabetSize *
-            NUCLEOTIDE_BITS * sizeof(uint64_t));
+            ALPHABET_CHARACTER_BITS * sizeof(uint64_t));
 
     // For each position
     for(int64_t i=0; i<length; i++) {
         // For each character
         for(int64_t j=0; j<alphabetSize; j++) {
             // For each bit
-            for(int64_t k=0; k<sizeof(uint8_t); k++) {
+            for(int64_t k=0; k<ALPHABET_CHARACTER_BITS; k++) {
                 *retrieveBitCountVector(bitCountVectors, i, j, k, alphabetSize) =
                         calculateBitCountVector(seqs, depth, i, j, k, alphabetSize);
             }
@@ -625,88 +699,154 @@ double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint
      * the given partition.
      */
     uint64_t rawExpectedCount = 0;
-    uint64_t shift = 1;
-    for(int64_t i=0; i<sizeof(uint8_t); i++) {
+    for(int64_t i=0; i<ALPHABET_CHARACTER_BITS; i++) {
         uint64_t j = *retrieveBitCountVector(bitCountVectors, position, characterIndex, i, alphabetSize);
-        rawExpectedCount += popcount64(j & partition) * shift;
-        shift <<= 1;
+        rawExpectedCount += (popcount64(j & partition) << i);
     }
-    double expectedCount = rawExpectedCount / ((pow(2, alphabetSize) - 1) * depth);
+
+    double expectedCount = (double)rawExpectedCount / (pow(2, ALPHABET_CHARACTER_BITS) - 1.0);
     assert(expectedCount >= 0.0);
     assert(expectedCount <= depth);
     return expectedCount;
 }
 
-double getLogProbOfReadCharacters(stAlphabetModel *alphabet, double *expectedInstanceNumbers,
+double getLogProbOfReadCharacters(stSubModel *alphabet, double *expectedInstanceNumbers,
         int64_t sourceCharacterIndex) {
     /*
-     * Get the log probability of a given source character given the expected number of instances of each character in the reads.
+     * Get the log probability of a given source character given the expected number of instances of
+     * each character in the reads.
      */
-    double logCharacterProb = stAlphabetModel_getLogSubstitutionProb(alphabet, sourceCharacterIndex, 0) * expectedInstanceNumbers[0];
+    double logCharacterProb = stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, 0) *
+            expectedInstanceNumbers[0];
+
     for(int64_t i=1; i<alphabet->alphabetSize; i++) {
-        logCharacterProb += stAlphabetModel_getLogSubstitutionProb(alphabet, sourceCharacterIndex, i) *
+        logCharacterProb += stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, i) *
                 expectedInstanceNumbers[i];
     }
+
     return logCharacterProb;
 }
 
+void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
+        uint64_t partition, uint64_t *bitCountVectors, stRPHmmParameters *params, double *rootCharacterProbs) {
+    /*
+     * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
+     */
+    // For each possible read character calculate the expected number of instances in the
+    // partition and store counts in an array
+    double expectedInstanceNumbers[params->alphabetSize];
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
+                               column->depth, partition, index, i, params->alphabetSize);
+    }
+
+    // Calculate the probability of the read characters for each possible haplotype character
+    double characterProbsHap[params->alphabetSize];
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        characterProbsHap[i] = getLogProbOfReadCharacters(params->readErrorSubModel, expectedInstanceNumbers, i);
+    }
+
+    // Calculate the probability of haplotype characters and read characters for each root character
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        rootCharacterProbs[i] = characterProbsHap[0] +
+                stSubModel_getSubstitutionProb(params->hetSubModel, i, 0);
+        for(int64_t j=1; j<params->alphabetSize; j++) {
+            rootCharacterProbs[i] =
+                    logAddP(rootCharacterProbs[i],
+                            characterProbsHap[j] + stSubModel_getSubstitutionProb(params->hetSubModel, i, j), params->maxNotSumEmissions);
+        }
+    }
+}
+
 double columnIndexLogProbability(stRPColumn *column, uint64_t index,
-        uint64_t partition, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
+        uint64_t partition, uint64_t *bitCountVectors,
+        stRPHmmParameters *params) {
     /*
      * Get the probability of a the characters in a given position within a column for a given partition.
      */
-
-    // For each possible read character calculate the expected number of instances in the partition and store counts
-    // in an array
-    double expectedInstanceNumbers[alphabet->alphabetSize];
-    for(int64_t i=0; i<alphabet->alphabetSize; i++) {
-        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
-                column->depth, partition, index, i, alphabet->alphabetSize);
-    }
-
     // Get the sum of log probabilities of the derived characters over the possible source characters
-    double logColumnProb = getLogProbOfReadCharacters(alphabet, expectedInstanceNumbers, 0);
-    for(int64_t i=1; i<alphabet->alphabetSize; i++) {
-        logColumnProb = stMath_logAdd(logColumnProb, getLogProbOfReadCharacters(alphabet, expectedInstanceNumbers, i));
+    double rootCharacterProbsHap1[params->alphabetSize];
+    columnIndexLogHapProbability(column, index,
+            partition, bitCountVectors, params, rootCharacterProbsHap1);
+    double rootCharacterProbsHap2[params->alphabetSize];
+    columnIndexLogHapProbability(column, index,
+            ~partition, bitCountVectors, params, rootCharacterProbsHap2);
+
+    // Combine the probabilities to calculate the overall probability of a given position in a column
+    double logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0];
+    for(int64_t i=1; i<params->alphabetSize; i++) {
+        logColumnProb = logAddP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i], params->maxNotSumEmissions);
     }
 
-    return logColumnProb;
+    return logColumnProb + log(1.0/params->alphabetSize);
 }
 
-double partitionLogProbability(stRPColumn *column,
-        uint64_t partition, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
+double emissionLogProbability(stRPColumn *column,
+        stRPCell *cell, uint64_t *bitCountVectors,
+        stRPHmmParameters *params) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
     double logPartitionProb = columnIndexLogProbability(column, 0,
-            partition, bitCountVectors, alphabet);
+            cell->partition, bitCountVectors, params);
     for(int64_t i=1; i<column->length; i++) {
         logPartitionProb += columnIndexLogProbability(column, i,
-                partition, bitCountVectors, alphabet);
+                cell->partition, bitCountVectors, params);
     }
     return logPartitionProb;
-}
-
-double emissionLogProbability(stRPColumn *column,
-        stRPCell *cell, uint64_t *bitCountVectors, stAlphabetModel *alphabet) {
-    /*
-     * Get the log probability of a partition for a given column.
-     */
-    return partitionLogProbability(column, cell->partition, bitCountVectors, alphabet) +
-            partitionLogProbability(column, ~cell->partition, bitCountVectors, alphabet);
 }
 
 /*
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stAlphabetModel *alphabet) {
+stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
+        stSubModel *readErrorSubModel,
+        bool maxNotSumEmissions,
+        bool maxNotSumTransitions,
+        double posteriorProbabilityThreshold,
+        int64_t minColumnDepthToFilter,
+        int64_t maxCoverageDepth) {
+    /*
+     * Create an parameters object for an HMM.
+     */
+    stRPHmmParameters *params = st_malloc(sizeof(stRPHmmParameters));
+
+    params->alphabetSize = hetSubModel->alphabetSize;
+    params->hetSubModel = hetSubModel;
+    params->readErrorSubModel = readErrorSubModel;
+    params->maxNotSumEmissions = maxNotSumEmissions;
+    params->maxNotSumTransitions = maxNotSumTransitions;
+    params->posteriorProbabilityThreshold = posteriorProbabilityThreshold;
+    params->minColumnDepthToFilter = minColumnDepthToFilter;
+    params->maxCoverageDepth = maxCoverageDepth;
+
+    // Checks
+    if(params->maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
+            st_errAbort("The maximum coverage depth %" PRIi64 " is greater than the maximum allowed by the model: %"
+                    PRIi64 "\n", params->maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
+    }
+
+    if(hetSubModel->alphabetSize != readErrorSubModel->alphabetSize) {
+        st_errAbort("Read and haplotype substitution models have different alphabet sizes");
+    }
+
+    return params;
+}
+
+void stRPHmmParameters_destruct(stRPHmmParameters *params) {
+    stSubModel_destruct(params->hetSubModel);
+    stSubModel_destruct(params->readErrorSubModel);
+    free(params);
+}
+
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) {
     /*
      * Create a read partitioning HMM representing the single sequence profile.
      */
 
-    stRPHmm *hmm = st_malloc(sizeof(stRPHmm));
+    stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
 
     //  Set reference coordinates
     hmm->referenceName = stString_copy(profileSeq->referenceName);
@@ -717,8 +857,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stAlphabetModel *alphabet) 
     hmm->profileSeqs = stList_construct();
     stList_append(hmm->profileSeqs, profileSeq);
 
-    // Emission probability function
-    hmm->alphabet = alphabet;
+    hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
@@ -797,8 +936,8 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
         // Switch to previous column
         column = column->pColumn->pColumn;
 
-        // Walk through cells in the previous column to find the one with the highest forward probability that transitions
-        // to maxCell
+        // Walk through cells in the previous column to find the one with the
+        // highest forward probability that transitions to maxCell
         cell = column->head;
         maxCell = NULL;
         maxProb = ST_MATH_LOG_ZERO;
@@ -911,10 +1050,10 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     // Max depth
     hmm->maxDepth = leftHmm->maxDepth > rightHmm->maxDepth ? leftHmm->maxDepth : rightHmm->maxDepth;
     // Emission prob
-    if(leftHmm->alphabet != rightHmm->alphabet) {
+    if(leftHmm->parameters != rightHmm->parameters) {
         st_errAbort("Substitution matrices differ in fuse function, panic.");
     }
-    hmm->alphabet = leftHmm->alphabet;
+    hmm->parameters = leftHmm->parameters;
 
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
@@ -971,7 +1110,8 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     // so they have the same start coordinate
     if(hmm1->refStart < hmm2->refStart) {
         // Create column
-        stRPColumn *column = stRPColumn_construct(hmm1->refStart, hmm2->refStart - hmm1->refStart,
+        stRPColumn *column = stRPColumn_construct(hmm1->refStart,
+                hmm2->refStart - hmm1->refStart,
                 0, NULL, NULL);
         // Add cell
         column->head = stRPCell_construct(0);
@@ -1061,9 +1201,18 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
      *  cross product of all the states of the two input hmms.
      */
 
-    // If the two hmms have not been previously aligned
-    if(stRPHmm_cmpFn(hmm1, hmm2) != 0 || hmm1->columnNumber != hmm2->columnNumber) {
-        st_errAbort("Trying to create cross product of two unalignd HMMs");
+    // Do sanity checks that the two hmms have been aligned
+    if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
+        st_errAbort("Trying to create cross product of two HMMs on different reference sequences");
+    }
+    if(hmm1->refStart != hmm2->refStart) {
+        st_errAbort("Trying to create cross product of two HMMs with different reference interval starts");
+    }
+    if(hmm1->refLength != hmm2->refLength) {
+        st_errAbort("Trying to create cross product of two HMMs with different reference interval length");
+    }
+    if(hmm1->columnNumber != hmm2->columnNumber) {
+        st_errAbort("Trying to create cross product of two HMMs with different column numbers");
     }
 
     // Create a new empty hmm
@@ -1077,11 +1226,11 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     stList_appendAll(hmm->profileSeqs, hmm2->profileSeqs);
     // Set column number
     hmm->columnNumber = hmm1->columnNumber;
-    // Set emission function
-    if(hmm1->alphabet != hmm2->alphabet) {
-        st_errAbort("Log subsitution matrix functions differ, panic.");
+    // Set substitution matrices
+    if(hmm1->parameters != hmm1->parameters) {
+        st_errAbort("Hmm parameters differ in fuse function, panic.");
     }
-    hmm->alphabet = hmm1->alphabet;
+    hmm->parameters = hmm1->parameters;
 
     // For each pair of corresponding columns
     stRPColumn *column1 = hmm1->firstColumn;
@@ -1106,7 +1255,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         // Seq headers
         stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *) * newColumnDepth);
         memcpy(seqHeaders, column1->seqHeaders, sizeof(stProfileSeq *) * column1->depth);
-        memcpy(&seqHeaders[column1->depth], column2->seqs, sizeof(stProfileSeq *) * column2->depth);
+        memcpy(&seqHeaders[column1->depth], column2->seqHeaders, sizeof(stProfileSeq *) * column2->depth);
 
         // Profiles
         uint8_t **seqs = st_malloc(sizeof(uint8_t *) * newColumnDepth);
@@ -1126,7 +1275,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         }
 
         // Create cross product of columns
-        stRPCell **pCell = &(column->head);
+        stRPCell **pCell = &column->head;
         stRPCell *cell1 = column1->head;
         do {
             stRPCell *cell2 = column2->head;
@@ -1135,7 +1284,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                         column1->depth, column2->depth));
                 // Link cells
                 *pCell = cell;
-                pCell = &cell;
+                pCell = &cell->nCell;
             } while((cell2 = cell2->nCell) != NULL);
         } while((cell1 = cell1->nCell) != NULL);
 
@@ -1200,9 +1349,6 @@ void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
     // Iterate through columns from first to last
     stRPColumn *column = hmm->firstColumn;
     while(1) {
-        // Initialize column probability
-        column->forwardLogProb = ST_MATH_LOG_ZERO;
-
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
@@ -1238,7 +1384,7 @@ void stRPHmm_forward(stRPHmm *hmm) {
     while(1) {
         // Get the bit count vectors for the column
         uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->length, hmm->alphabet->alphabetSize);
+                column->length, hmm->parameters->alphabetSize);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1256,23 +1402,21 @@ void stRPHmm_forward(stRPHmm *hmm) {
             }
 
             // Emission prob
-            cell->forwardLogProb += emissionLogProbability(column, cell, bitCountVectors, hmm->alphabet);
+            cell->forwardLogProb += emissionLogProbability(column, cell, bitCountVectors,
+                    (stRPHmmParameters *)hmm->parameters);
 
             // If the next merge column exists then propagate forward probability to the merge state
             if(column->nColumn != NULL) {
                 // Add to the next merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
                 if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->forwardLogProb = stMath_logAdd(cell->forwardLogProb, mCell->forwardLogProb);
+                    mCell->forwardLogProb = logAddP(cell->forwardLogProb, mCell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
                 }
             }
             else {
                 // Else propagate probability to total forward probability of model
-                hmm->forwardLogProb = stMath_logAdd(hmm->forwardLogProb, cell->forwardLogProb);
+                hmm->forwardLogProb = logAddP(hmm->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
             }
-
-            // Add to column forward probability
-            column->forwardLogProb = stMath_logAdd(column->forwardLogProb, cell->forwardLogProb);
         }
         while((cell = cell->nCell) != NULL);
 
@@ -1296,8 +1440,8 @@ void stRPHmm_initialiseBackwardProbs(stRPHmm *hmm) {
     // Iterate through columns
     stRPColumn *column = hmm->firstColumn;
     while(1) {
-        // Initialize column probability
-        column->backwardLogProb = ST_MATH_LOG_ZERO;
+        // Set total log prob
+        column->totalLogProb = ST_MATH_LOG_ZERO;
 
         // Initialize cells in the column
         stRPCell *cell = column->head;
@@ -1334,7 +1478,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
     while(1) {
         // Get the bit count vectors for the column
         uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->length, hmm->alphabet->alphabetSize);
+                column->length, hmm->parameters->alphabetSize);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1351,24 +1495,24 @@ void stRPHmm_backward(stRPHmm *hmm) {
                 cell->backwardLogProb = ST_MATH_LOG_ONE;
             }
 
+            // Add to column forward probability
+            column->totalLogProb = logAddP(column->totalLogProb, cell->forwardLogProb + cell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
+
             // Total backward prob to propagate
             double backwardLogProb = cell->backwardLogProb + emissionLogProbability(column, cell,
-                    bitCountVectors, hmm->alphabet);
+                    bitCountVectors,  (stRPHmmParameters *)hmm->parameters);
 
             // If the previous merge column exists then propagate backward probability to the merge state
             if(column->pColumn != NULL) {
                 // Add to the previous merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
                 if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->backwardLogProb = stMath_logAdd(cell->backwardLogProb, mCell->backwardLogProb);
+                    mCell->backwardLogProb = logAddP(cell->backwardLogProb, mCell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
                 }
             }
             else {
-                hmm->backwardLogProb = stMath_logAdd(hmm->backwardLogProb, backwardLogProb);
+                hmm->backwardLogProb = logAddP(hmm->backwardLogProb, backwardLogProb, hmm->parameters->maxNotSumTransitions);
             }
-
-            // Add to column backward probability
-            column->backwardLogProb = stMath_logAdd(column->forwardLogProb, backwardLogProb);
         }
         while((cell = cell->nCell) != NULL);
 
@@ -1382,7 +1526,30 @@ void stRPHmm_backward(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter) {
+void stRPHmm_forwardBackward(stRPHmm *hmm) {
+    /*
+     * Runs the forward and backward algorithms and sets the total column probabilities.
+     *
+     * (The backward algorithm on its own is now exposed as it requires running the forward
+     * algorithm to set the total probabilities within the columns)
+     *
+     * This function must be run upon an HMM to calculate cell posterior probabilities.
+     */
+    stRPHmm_forward(hmm);
+    stRPHmm_backward(hmm);
+}
+
+static int cellCmpFn(const void *a, const void *b, const void *extraArg) {
+    /*
+     * Sort cells by posterior probability in descending order.
+     */
+    stRPCell *cell1 = (stRPCell *)a, *cell2 = (stRPCell *)b;
+    stRPColumn *column = (stRPColumn *)extraArg;
+    double p1 = stRPCell_posteriorProb(cell1, column), p2 = stRPCell_posteriorProb(cell2, column);
+    return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
+}
+
+void stRPHmm_prune(stRPHmm *hmm) {
     /*
      * Remove cells from hmm whos posterior probability is below the given threshold
      */
@@ -1390,22 +1557,67 @@ void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t m
     // For each column
     stRPColumn *column = hmm->firstColumn;
     while(1) {
-
         // If column depth is greater than a threshold
-        if(column->depth >= minColumnDepthToFilter) {
-            // For each state
-            stRPCell *cell = column->head;
-            stRPCell **pCell = &(cell); // Pointer to previous cell, used to remove cells from the linked list
-            do {
-                // If the posterior probability is below the given threshold
-                if(stRPCell_posteriorProb(cell, column) < posteriorProbabilityThreshold) {
-                    // Remove the state from the linked list of states
-                    *pCell = cell->nCell;
+        if(column->depth >= hmm->parameters->minColumnDepthToFilter) {
+            assert(hmm->parameters->minColumnDepthToFilter > 0);
+            assert(column->head != NULL);
 
-                    // Cleanup
-                    stRPCell_destruct(cell);
-                }
+            // Put cells into an array and sort by descending posterior prob
+            stList *cells = stList_construct();
+            stRPCell *cell = column->head;
+            do {
+                stList_append(cells, cell);
             } while((cell = cell->nCell) != NULL);
+            stList_sort2(cells, cellCmpFn, column);
+
+            // Remove cells from end of array with low probability
+            double pN = 0;
+            while(stList_length(cells) > 1.0/hmm->parameters->posteriorProbabilityThreshold) {
+                stRPCell *cell = stList_peek(cells);
+                double p = stRPCell_posteriorProb(cell, column);
+                assert(p >= pN);
+                if(p >= hmm->parameters->posteriorProbabilityThreshold) {
+                    break;
+                }
+                pN = p;
+                stList_pop(cells);
+            }
+
+            // Set of chosen cells not to prune
+            stSet *chosenCellSet = stList_getSet(cells);
+
+            // Walk through cells pruning those not in chosenCellSet
+            cell = column->head;
+            stRPCell **pCell = &column->head; // Pointer to previous cell, used to
+            // remove cells from the linked list
+            do {
+                // If the cell is not in the chosen set of cells to keep and is not
+                // the all in either hap1 or hap2 partition (which we keep)
+                if(stSet_search(chosenCellSet, cell) == NULL &&
+                        popcount64(cell->partition) != 0 &&
+                        popcount64(cell->partition) != column->depth) {
+                    stRPCell *nCell = cell->nCell;
+
+                    // Remove the state from the linked list of states
+                    *pCell = nCell;
+
+                    // Cleanup the old cell
+                    stRPCell_destruct(cell);
+
+                    // Point at the next cell
+                    cell = nCell;
+                }
+                else { // Keep the cell
+                    // Update pointers
+                    pCell = &cell->nCell;
+                    cell = cell->nCell;
+                }
+            } while(cell != NULL);
+            assert(column->head != NULL);
+
+            // Cleanup
+            stList_destruct(cells);
+            stSet_destruct(chosenCellSet);
         }
 
         // Move on to the next merge column
@@ -1416,14 +1628,14 @@ void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t m
         }
 
         // If the column depth of the merge column is greater than a threshold
-        if(stRPMergeColumn_depth(mColumn) >= minColumnDepthToFilter) {
+        if(stRPMergeColumn_depth(mColumn) >= hmm->parameters->minColumnDepthToFilter) {
             //  For each merge state
             stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
             for(int64_t i=0; i<stList_length(mergeCells); i++) {
                 stRPMergeCell *mCell = stList_get(mergeCells, i);
 
                 // If the merge state has posterior probability below the given threshold
-                if(stRPMergeCell_posteriorProb(mCell, mColumn) < posteriorProbabilityThreshold) {
+                if(stRPMergeCell_posteriorProb(mCell, mColumn) < hmm->parameters->posteriorProbabilityThreshold) {
                     // Remove the state from the merge column
                     stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
                     stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
@@ -1472,7 +1684,7 @@ bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
         stProfileSeq **seqHeaders, uint8_t **seqs) {
-    stRPColumn *column = st_malloc(sizeof(stRPColumn));
+    stRPColumn *column = st_calloc(1, sizeof(stRPColumn));
 
     // Reference coordinates
     column->refStart = refStart;
@@ -1510,9 +1722,9 @@ void stRPColumn_print(stRPColumn *column, FILE *fileHandle, bool includeCells) {
      */
     fprintf(fileHandle, "\tCOLUMN: REF_START: %" PRIi64
             " REF_LENGTH: %" PRIi64 " DEPTH: %" PRIi64
-            " FORWARD_PROB: %f BACKWARD_PROB: %f\n",
+            " TOTAL_PROB: %f\n",
             column->refStart, column->length, column->depth,
-            (float)column->forwardLogProb, (float)column->backwardLogProb);
+            (float)column->totalLogProb);
     for(int64_t i=0; i<column->depth; i++) {
         stProfileSeq_print(column->seqHeaders[i], fileHandle, 0);
     }
@@ -1576,6 +1788,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
 stRPCell *stRPCell_construct(int64_t partition) {
     stRPCell *cell = st_calloc(1, sizeof(stRPCell));
+    cell->partition = partition;
     return cell;
 }
 
@@ -1598,7 +1811,7 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
      * Calculate the posterior probability of visiting the given cell. Requires that the
      * forward and backward algorithms have been run.
      */
-    double p = exp(cell->forwardLogProb + cell->backwardLogProb - (column->forwardLogProb+column->backwardLogProb));
+    double p = exp(cell->forwardLogProb + cell->backwardLogProb - column->totalLogProb);
     assert(p <= 1.001);
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;
@@ -1691,7 +1904,7 @@ stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition, uint64_t toPartit
     /*
      * Create a merge cell, adding it to the merge column mColumn.
      */
-    stRPMergeCell *mCell = st_malloc(sizeof(stRPMergeCell));
+    stRPMergeCell *mCell = st_calloc(1, sizeof(stRPMergeCell));
     mCell->fromPartition = fromPartition;
     mCell->toPartition = toPartition;
     stHash_insert(mColumn->mergeCellsFrom, &mCell->fromPartition, mCell);
@@ -1723,7 +1936,7 @@ double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColum
      * forward and backward algorithms have been run.
      */
     double p = exp(mCell->forwardLogProb + mCell->backwardLogProb -
-            (mColumn->nColumn->forwardLogProb+mColumn->nColumn->backwardLogProb));
+           mColumn->nColumn->totalLogProb);
     assert(p <= 1.001);
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;

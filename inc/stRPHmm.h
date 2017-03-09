@@ -19,11 +19,12 @@
 
 typedef struct _stProfileSeq stProfileSeq;
 typedef struct _stRPHmm stRPHmm;
+typedef struct _stRPHmmParameters stRPHmmParameters;
 typedef struct _stRPColumn stRPColumn;
 typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
-typedef struct _stAlphabetModel stAlphabetModel;
+typedef struct _stSubModel stSubModel;
 
 // The maximum read depth the model can support
 #define MAX_READ_PARTITIONING_DEPTH 64
@@ -32,32 +33,39 @@ typedef struct _stAlphabetModel stAlphabetModel;
  * Alphabet
  */
 
-#define NUCLEOTIDE_MAX_PROB 255
-#define NUCLEOTIDE_MIN_PROB 0
-#define NUCLEOTIDE_BITS sizeof(uint8_t)
+#define ALPHABET_MAX_PROB 255
+#define ALPHABET_MIN_PROB 0
+#define ALPHABET_CHARACTER_BITS 8
 
-struct _stAlphabetModel {
+struct _stSubModel {
     int64_t alphabetSize;
     double *logSubMatrix;
 };
 
-stAlphabetModel *stAlphabetModel_constructEmptyModel(int64_t alphabetSize);
+stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize);
 
-void stAlphabetModel_destruct(stAlphabetModel *alphabet);
+void stSubModel_destruct(stSubModel *alphabet);
 
-double stAlphabetModel_getLogSubstitutionProb(stAlphabetModel *alphabet, int64_t sourceCharacterIndex,
+double stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex);
+
+void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
+        int64_t derivedCharacterIndex, double prob);
+
+char * intToBinaryString(uint64_t i);
 
 /*
  * Profile sequence
  */
+
+#define FIRST_ALPHABET_CHAR 48 // Ascii symbol '0'
 
 struct _stProfileSeq {
     char *referenceName;
     int64_t refStart;
     int64_t length;
     int64_t alphabetSize;
-    // The probability of alphabet characters, as specified by stAlphabetModel
+    // The probability of alphabet characters, as specified by stSubModel
     // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
     // 1.0/255
@@ -69,15 +77,20 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
 
 void stProfileSeq_destruct(stProfileSeq *seq);
 
-void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeSequence);
+void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs);
 
 float getProb(uint8_t *p, int64_t characterIndex);
+
+void printSeqs(FILE *fileHandle, stSet *profileSeqs);
+
+void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 
 /*
  * Emission probabilities
  */
 
-double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stAlphabetModel *alphabet);
+double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors,
+                                stRPHmmParameters *params);
 
 // Constituent functions tested and used to do bit twiddling
 
@@ -92,6 +105,30 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length
  * Read partitioning hmm
  */
 
+struct _stRPHmmParameters {
+    /*
+     * Parameters used for the HMM computation
+     */
+    int64_t alphabetSize;
+    stSubModel *hetSubModel;
+    stSubModel *readErrorSubModel;
+    bool maxNotSumEmissions;
+    bool maxNotSumTransitions;
+    double posteriorProbabilityThreshold;
+    int64_t minColumnDepthToFilter;
+    int64_t maxCoverageDepth;
+};
+
+stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
+        stSubModel *readErrorSubModel,
+        bool maxNotSumEmissions,
+        bool maxNotSumTransitions,
+        double posteriorProbabilityThreshold,
+        int64_t minColumnDepthToFilter,
+        int64_t maxCoverageDepth);
+
+void stRPHmmParameters_destruct(stRPHmmParameters *params);
+
 struct _stRPHmm {
     char *referenceName;
     int64_t refStart;
@@ -101,20 +138,17 @@ struct _stRPHmm {
     int64_t maxDepth;
     stRPColumn *firstColumn;
     stRPColumn *lastColumn;
-
+    const stRPHmmParameters *parameters;
     //Forward/backward probability calculation things
     double forwardLogProb;
     double backwardLogProb;
-    stAlphabetModel *alphabet;
 };
 
 stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
 
-stList *getRPHmms(stList *profileSeqs, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter, int64_t maxCoverageDepth, stAlphabetModel *alphabet);
+stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq,
-        stAlphabetModel *alphabet);
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
 
 void stRPHmm_destruct(stRPHmm *hmm);
 
@@ -128,9 +162,9 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm);
 
 void stRPHmm_forward(stRPHmm *hmm);
 
-void stRPHmm_backward(stRPHmm *hmm);
+void stRPHmm_forwardBackward(stRPHmm *hmm);
 
-void stRPHmm_prune(stRPHmm *hmm, double posteriorProbabilityThreshold, int64_t minColumnDepthToFilter);
+void stRPHmm_prune(stRPHmm *hmm);
 
 void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool includeCells);
 
@@ -150,7 +184,7 @@ struct _stRPColumn {
     uint8_t **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
-    double forwardLogProb, backwardLogProb;
+    double totalLogProb;
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
