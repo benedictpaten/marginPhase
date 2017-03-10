@@ -114,8 +114,7 @@ struct _stRPHmmParameters {
     stSubModel *readErrorSubModel;
     bool maxNotSumEmissions;
     bool maxNotSumTransitions;
-    double posteriorProbabilityThreshold;
-    int64_t minColumnDepthToFilter;
+    int64_t maxPartitionsInAColumn;
     int64_t maxCoverageDepth;
 };
 
@@ -123,8 +122,7 @@ stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
         stSubModel *readErrorSubModel,
         bool maxNotSumEmissions,
         bool maxNotSumTransitions,
-        double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter,
+        int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth);
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -236,7 +234,7 @@ stRPMergeCell *stRPMergeColumn_getNextMergeCell(stRPCell *cell, stRPMergeColumn 
 
 stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeColumn *mergeColumn);
 
-int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn);
+int64_t stRPMergeColumn_numberOfPartitions(stRPMergeColumn *mColumn);
 
 /*
  * Merge cell of read partitioning hmm

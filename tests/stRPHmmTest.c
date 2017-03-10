@@ -8,8 +8,9 @@
 #include "sonLib.h"
 #include "stRPHmm.h"
 #include <math.h>
+#include <time.h>
 
-#define RANDOM_TEST_NO 10
+#define RANDOM_TEST_NO 3
 
 char getRandomBase(int64_t alphabetSize) {
     /*
@@ -71,8 +72,8 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 
 static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
-        int64_t minReadLength, int64_t maxReadLength, double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter, double hetRate, double readErrorRate, int64_t alphabetSize,
+        int64_t minReadLength, int64_t maxReadLength,
+        int64_t maxPartitionsInAColumn, double hetRate, double readErrorRate, int64_t alphabetSize,
         bool maxNotSumEmissions, bool maxNotSumTransitions) {
     /*
      * System level test
@@ -98,8 +99,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             "\tmaxCoverage: %" PRIi64 "\n"
             "\tminReadLength: %" PRIi64 "\n"
             "\tmaxReadLength: %" PRIi64 "\n"
-            "\tposteriorProbabilityThreshold: %f\n"
-            "\tminColumnDepthToFilter: %" PRIi64 "\n"
+            "\tmaxPartitionsInAColumn: %" PRIi64 "\n"
             "\thetRate: %f\n"
             "\treadErrorRate: %f\n"
             "\talphabetSize: %" PRIi64 "\n"
@@ -107,13 +107,15 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             "\tmaxNotSumTransitions: %i\n",
             minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, (float)hetRate, (float)readErrorRate, alphabetSize,
+            minReadLength, maxReadLength,
+            maxPartitionsInAColumn, (float)hetRate, (float)readErrorRate, alphabetSize,
             maxNotSumEmissions, maxNotSumTransitions);
 
     int64_t totalProfile1SeqsOverAllTests = 0;
     int64_t totalProfile2SeqsOverAllTests = 0;
     int64_t totalPartitionErrorsOverAllTests = 0;
+
+    time_t startTime = time(NULL);
 
     for(int64_t test=0; test<RANDOM_TEST_NO; test++) {
 
@@ -208,7 +210,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
         // Creates read HMMs
         stRPHmmParameters *params = stRPHmmParameters_construct(hetSubModel, readErrorSubModel, maxNotSumEmissions,
-                maxNotSumTransitions, posteriorProbabilityThreshold, minColumnDepthToFilter, maxCoverage);
+                maxNotSumTransitions, maxPartitionsInAColumn, maxCoverage);
         stList *hmms = getRPHmms(profileSeqs, params);
 
         fprintf(stderr, "Got %" PRIi64 " hmms\n", stList_length(hmms));
@@ -407,7 +409,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     totalProb += posteriorProb;
                     cell = cell->nCell;
                 }
-                CuAssertDblEquals(testCase, 1.0, totalProb, 0.01);
+                CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
 
                 if(column->nColumn == NULL) {
                     break;
@@ -547,12 +549,15 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stRPHmmParameters_destruct(params);
     }
 
+    int64_t totalTime = time(NULL) - startTime;
+
     fprintf(stderr, " For %i tests there were avg. %f hap 1 sequences and avg. %f hap 2 sequences there were "
-            " avg. %f partition errors\n",
+            " avg. %f partition errors in %" PRIi64 " seconds \n",
                     RANDOM_TEST_NO,
                     (float)totalProfile1SeqsOverAllTests/RANDOM_TEST_NO,
                     (float)totalProfile2SeqsOverAllTests/RANDOM_TEST_NO,
-                    (float)totalPartitionErrorsOverAllTests/RANDOM_TEST_NO);
+                    (float)totalPartitionErrorsOverAllTests/RANDOM_TEST_NO,
+                    totalTime);
 }
 
 static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
@@ -560,12 +565,11 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
     int64_t maxReferenceLength = 1000;
-    int64_t minCoverage = 20;
-    int64_t maxCoverage = 20;
+    int64_t minCoverage = 10;
+    int64_t maxCoverage = 10;
     int64_t minReadLength = 1000;
     int64_t maxReadLength = 1000;
-    double posteriorProbabilityThreshold = 0.01;
-    int64_t minColumnDepthToFilter = 7;
+    int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.005;
     double readErrorRate = 0.1;
     int64_t alphabetSize = 2;
@@ -574,8 +578,7 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
             maxNotSumEmissions, maxNotSumTransitions);
 }
 
@@ -589,8 +592,7 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t maxCoverage = 20;
     int64_t minReadLength = 100;
     int64_t maxReadLength = 100;
-    double posteriorProbabilityThreshold = 0.1;
-    int64_t minColumnDepthToFilter = 10;
+    int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
     int64_t alphabetSize = 2;
@@ -599,8 +601,7 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
             maxNotSumEmissions, maxNotSumTransitions);
 }
 
@@ -614,8 +615,7 @@ static void test_systemSingleReference(CuTest *testCase) {
     int64_t maxCoverage = 20;
     int64_t minReadLength = 10;
     int64_t maxReadLength = 300;
-    double posteriorProbabilityThreshold = 0.1;
-    int64_t minColumnDepthToFilter = 10;
+    int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
     int64_t alphabetSize = 2;
@@ -624,8 +624,8 @@ static void test_systemSingleReference(CuTest *testCase) {
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize,
+            minReadLength, maxReadLength, maxPartitionsInAColumn,
+            hetRate, readErrorRate, alphabetSize,
             maxNotSumEmissions, maxNotSumTransitions);
 }
 
@@ -639,8 +639,7 @@ static void test_systemMultipleReferences(CuTest *testCase) {
     int64_t maxCoverage = 20;
     int64_t minReadLength = 10;
     int64_t maxReadLength = 300;
-    double posteriorProbabilityThreshold = 0.1;
-    int64_t minColumnDepthToFilter = 10;
+    int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
     int64_t alphabetSize = 2;
@@ -649,8 +648,7 @@ static void test_systemMultipleReferences(CuTest *testCase) {
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, posteriorProbabilityThreshold,
-            minColumnDepthToFilter, hetRate, readErrorRate, alphabetSize,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
             maxNotSumEmissions, maxNotSumTransitions);
 }
 

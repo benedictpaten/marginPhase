@@ -805,8 +805,7 @@ stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
         stSubModel *readErrorSubModel,
         bool maxNotSumEmissions,
         bool maxNotSumTransitions,
-        double posteriorProbabilityThreshold,
-        int64_t minColumnDepthToFilter,
+        int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth) {
     /*
      * Create an parameters object for an HMM.
@@ -818,8 +817,7 @@ stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
     params->readErrorSubModel = readErrorSubModel;
     params->maxNotSumEmissions = maxNotSumEmissions;
     params->maxNotSumTransitions = maxNotSumTransitions;
-    params->posteriorProbabilityThreshold = posteriorProbabilityThreshold;
-    params->minColumnDepthToFilter = minColumnDepthToFilter;
+    params->maxPartitionsInAColumn = maxPartitionsInAColumn;
     params->maxCoverageDepth = maxCoverageDepth;
 
     // Checks
@@ -827,9 +825,11 @@ stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
             st_errAbort("The maximum coverage depth %" PRIi64 " is greater than the maximum allowed by the model: %"
                     PRIi64 "\n", params->maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
     }
-
     if(hetSubModel->alphabetSize != readErrorSubModel->alphabetSize) {
         st_errAbort("Read and haplotype substitution models have different alphabet sizes");
+    }
+    if(maxPartitionsInAColumn <= 0) {
+        st_errAbort("Minimum number of partitions in a column is not a positive integer");
     }
 
     return params;
@@ -1541,11 +1541,21 @@ void stRPHmm_forwardBackward(stRPHmm *hmm) {
 
 static int cellCmpFn(const void *a, const void *b, const void *extraArg) {
     /*
-     * Sort cells by posterior probability in descending order.
+     * Sort cells by posterior probability in ascending order.
      */
     stRPCell *cell1 = (stRPCell *)a, *cell2 = (stRPCell *)b;
     stRPColumn *column = (stRPColumn *)extraArg;
     double p1 = stRPCell_posteriorProb(cell1, column), p2 = stRPCell_posteriorProb(cell2, column);
+    return p1 < p2 ? -1 : p1 > p2 ? 1 : 0;
+}
+
+static int mergeCellCmpFn(const void *a, const void *b, const void *extraArg) {
+    /*
+     * Sort merge cells by posterior probability in descending order.
+     */
+    stRPMergeCell *cell1 = (stRPMergeCell *)a, *cell2 = (stRPMergeCell *)b;
+    stRPMergeColumn *column = (stRPMergeColumn *)extraArg;
+    double p1 = stRPMergeCell_posteriorProb(cell1, column), p2 = stRPMergeCell_posteriorProb(cell2, column);
     return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
 }
 
@@ -1557,12 +1567,11 @@ void stRPHmm_prune(stRPHmm *hmm) {
     // For each column
     stRPColumn *column = hmm->firstColumn;
     while(1) {
-        // If column depth is greater than a threshold
-        if(column->depth >= hmm->parameters->minColumnDepthToFilter) {
-            assert(hmm->parameters->minColumnDepthToFilter > 0);
+        // If column potentially contains more partitions than we allow
+        if(pow(2, column->depth) > hmm->parameters->maxPartitionsInAColumn) {
             assert(column->head != NULL);
 
-            // Put cells into an array and sort by descending posterior prob
+            // Put cells into an array and sort by ascending posterior prob
             stList *cells = stList_construct();
             stRPCell *cell = column->head;
             do {
@@ -1570,21 +1579,16 @@ void stRPHmm_prune(stRPHmm *hmm) {
             } while((cell = cell->nCell) != NULL);
             stList_sort2(cells, cellCmpFn, column);
 
-            // Remove cells from end of array with low probability
-            double pN = 0;
-            while(stList_length(cells) > 1.0/hmm->parameters->posteriorProbabilityThreshold) {
-                stRPCell *cell = stList_peek(cells);
-                double p = stRPCell_posteriorProb(cell, column);
-                assert(p >= pN);
-                if(p >= hmm->parameters->posteriorProbabilityThreshold) {
+            // Find set of probable cells to keep
+            stSet *chosenCellSet = stSet_construct();
+            do {
+                stRPCell *cell = stList_pop(cells);
+                stSet_insert(chosenCellSet, cell);
+                if(stSet_size(chosenCellSet) >= hmm->parameters->maxPartitionsInAColumn) {
                     break;
                 }
-                pN = p;
-                stList_pop(cells);
-            }
-
-            // Set of chosen cells not to prune
-            stSet *chosenCellSet = stList_getSet(cells);
+            } while(stList_length(cells) > 0);
+            stList_destruct(cells);
 
             // Walk through cells pruning those not in chosenCellSet
             cell = column->head;
@@ -1616,7 +1620,6 @@ void stRPHmm_prune(stRPHmm *hmm) {
             assert(column->head != NULL);
 
             // Cleanup
-            stList_destruct(cells);
             stSet_destruct(chosenCellSet);
         }
 
@@ -1627,22 +1630,19 @@ void stRPHmm_prune(stRPHmm *hmm) {
             break;
         }
 
-        // If the column depth of the merge column is greater than a threshold
-        if(stRPMergeColumn_depth(mColumn) >= hmm->parameters->minColumnDepthToFilter) {
+        // If the number of partitions in the merge column is greater than the specified maximum
+        if(stRPMergeColumn_numberOfPartitions(mColumn) >= hmm->parameters->maxPartitionsInAColumn) {
             //  For each merge state
             stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
-            for(int64_t i=0; i<stList_length(mergeCells); i++) {
-                stRPMergeCell *mCell = stList_get(mergeCells, i);
+            stList_sort2(mergeCells, mergeCellCmpFn, mColumn);
+            while(stList_length(mergeCells) > hmm->parameters->maxPartitionsInAColumn) {
+                stRPMergeCell *mCell = stList_pop(mergeCells);
+                // Remove the state from the merge column
+                stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
+                stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
 
-                // If the merge state has posterior probability below the given threshold
-                if(stRPMergeCell_posteriorProb(mCell, mColumn) < hmm->parameters->posteriorProbabilityThreshold) {
-                    // Remove the state from the merge column
-                    stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
-                    stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
-
-                    // Cleanup
-                    stRPMergeCell_destruct(mCell);
-                }
+                // Cleanup
+                stRPMergeCell_destruct(mCell);
             }
             stList_destruct(mergeCells);
         }
@@ -1888,7 +1888,7 @@ stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeCol
     return mCell;
 }
 
-int64_t stRPMergeColumn_depth(stRPMergeColumn *mColumn) {
+int64_t stRPMergeColumn_numberOfPartitions(stRPMergeColumn *mColumn) {
     /*
      * Returns the number of cells in the column.
      */
