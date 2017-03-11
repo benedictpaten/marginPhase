@@ -141,13 +141,15 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
     return hmm2;
 }
 
-stSortedSet *makeComponent(stRPHmm *hmm, stSet *components) {
+stSortedSet *makeComponent(stRPHmm *hmm, stSet *components, stHash *componentsHash) {
     /*
      * Create a component containing hmm and add the component to components.
      */
     stSortedSet *component = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     stSortedSet_insert(component, hmm);
     stSet_insert(components, component);
+    assert(stHash_search(componentsHash, hmm) == NULL);
+    stHash_insert(componentsHash, hmm, component);
     return component;
 }
 
@@ -195,21 +197,23 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
                 if(component == NULL) {
 
                     // Look for a component for hmm2
-                    component = stSet_search(components, hmm2);
+                    component = stHash_search(componentsHash, hmm2);
 
                     // If hmm2 has no component make one
                     if(component == NULL) {
-                        component = makeComponent(hmm2, components);
-                        stHash_insert(componentsHash, hmm2, component);
+                        component = makeComponent(hmm2, components, componentsHash);
                     }
 
                     // Add hmm1 to the component
+                    assert(stSortedSet_search(component, hmm1) == NULL);
+                    assert(stHash_search(componentsHash, hmm1) == NULL);
                     stSortedSet_insert(component, hmm1);
                     stHash_insert(componentsHash, hmm1, component);
                 }
                 // Otherwise component is defined
                 else {
                     // Add hmm2 to the component
+                    assert(stSortedSet_search(component, hmm2) == NULL);
                     assert(stHash_search(componentsHash, hmm2) == NULL); // Impossible to be defined,
                     // as implies that two
                     // hmms in tilingPath2 each both overlap two hmms in tilingPath1.
@@ -225,7 +229,7 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
                     // If has no component, make a trivial component containing just hmm1
                     // (it doesn't overlap with any other hmm)
                     if(component == NULL) {
-                        makeComponent(hmm1, components);
+                        makeComponent(hmm1, components, componentsHash);
                     }
 
                     // Done with hmm1
@@ -236,7 +240,7 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
 
                     // Add hmm2 to a trivial component if it does not overlap an HMM in tiling path1
                     if(stHash_search(componentsHash, hmm2) == NULL) {
-                        makeComponent(hmm2, components);
+                        makeComponent(hmm2, components, componentsHash);
                     }
 
                     // Increase the lagging index as hmm1 and proceding hmms can not overlap with hmm2
@@ -252,7 +256,7 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
     while(j < stList_length(tilingPath2)) {
         stRPHmm *hmm2 = stList_get(tilingPath2, j++);
         if(stHash_search(componentsHash, hmm2) == NULL) {
-            makeComponent(hmm2, components);
+            makeComponent(hmm2, components, componentsHash);
         }
     }
 
@@ -352,32 +356,60 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
 
         st_uglyf("In merge two tiling paths, have got %i subpaths to merge\n", stList_length(tilingPaths));
 
-        assert(stList_length(tilingPaths) == 2);
+        stRPHmm *hmm = NULL;
 
-        stList *subTilingPath1 = stList_get(tilingPaths, 0);
-        stList *subTilingPath2 = stList_get(tilingPaths, 1);
+        if(stList_length(tilingPaths) == 2) {
+            stList *subTilingPath1 = stList_get(tilingPaths, 0);
+            stList *subTilingPath2 = stList_get(tilingPaths, 1);
 
-        // Fuse the hmms in each sub tiling path
-        stRPHmm *hmm1 = fuseTilingPath(subTilingPath1);
-        stRPHmm *hmm2 = fuseTilingPath(subTilingPath2);
+            // Fuse the hmms in each sub tiling path
+            stRPHmm *hmm1 = fuseTilingPath(subTilingPath1);
+            stRPHmm *hmm2 = fuseTilingPath(subTilingPath2);
 
-        // Align
-        stRPHmm_alignColumns(hmm1, hmm2);
+            // Align
+            stRPHmm_alignColumns(hmm1, hmm2);
 
-        // Merge
-        stRPHmm *hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
+            st_uglyf("Aligned two hmms\n");
 
-        // Prune
-        stRPHmm_forwardBackward(hmm);
-        stRPHmm_prune(hmm);
+            // Merge
+            hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
+
+            st_uglyf("Got cross product\n");
+
+            // Prune
+            stRPHmm_forwardBackward(hmm);
+            stRPHmm_prune(hmm);
+        }
+        else { // Case that component is just one hmm that does not
+            // overlap anything else
+            assert(stList_length(tilingPaths) == 1);
+            stList *subTilingPath1 = stList_get(tilingPaths, 0);
+            assert(stList_length(subTilingPath1) == 1);
+
+            hmm = stList_pop(subTilingPath1);
+            stList_destruct(subTilingPath1);
+        }
+
+        st_uglyf("Pruned\n");
 
         // Add to output tiling path
         stList_append(newTilingPath, hmm);
+
+        stList_destruct(tilingPaths);
     }
 
     //Cleanup
+
     stList_destruct(componentsList);
     stSet_destruct(components);
+
+    // Sort new tiling path
+    stList_sort(newTilingPath, stRPHmm_cmpFn);
+
+    for(int64_t i=0; i<stList_length(newTilingPath); i++) {
+        stRPHmm *hmm = stList_get(newTilingPath, i);
+        st_uglyf("BTTTTO %i %s %i %i\n", i, hmm->referenceName, hmm->refStart, hmm->refLength);
+    }
 
     return newTilingPath;
 }
@@ -455,13 +487,9 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs, i), params);
-        assert(stSortedSet_search(readHmms, hmm) == NULL);
-        stSortedSet_insert(readHmms, hmm);
-        assert(stSortedSet_search(readHmms, hmm) == hmm);
+        stSortedSet_insert(readHmms, stRPHmm_construct(stList_get(profileSeqs, i), params));
     }
-
-    st_uglyf("Got read HMMs: %" PRIi64 " for %" PRIi64 " profile seqs\n", stSortedSet_size(readHmms), stList_length(profileSeqs));
+    assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
@@ -472,7 +500,7 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
         stList *tilingPath = stList_pop(tilingPaths);
         for(int64_t i=0; i<stList_length(tilingPath); i++) {
-            stRPHmm_destruct(stList_get(tilingPath, i));
+            stRPHmm_destruct(stList_get(tilingPath, i), 1);
         }
         stList_destruct(tilingPath);
     }
@@ -879,23 +907,25 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) 
     return hmm;
 }
 
-void stRPHmm_destruct(stRPHmm *hmm) {
+void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
     /*
      * Free memory owned by the hmm, including columns.
      */
     free(hmm->referenceName);
     stList_destruct(hmm->profileSeqs);
 
-    // Cleanup the columns of the hmm
-    stRPColumn *column = hmm->firstColumn;
-    while(1) {
-        stRPMergeColumn *mColumn = column->nColumn;
-        stRPColumn_destruct(column);
-        if(mColumn == NULL) {
-            break;
+    if(destructColumns) {
+        // Cleanup the columns of the hmm
+        stRPColumn *column = hmm->firstColumn;
+        while(1) {
+            stRPMergeColumn *mColumn = column->nColumn;
+            stRPColumn_destruct(column);
+            if(mColumn == NULL) {
+                break;
+            }
+            column = mColumn->nColumn;
+            stRPMergeColumn_destruct(mColumn);
         }
-        column = mColumn->nColumn;
-        stRPMergeColumn_destruct(mColumn);
     }
 
     free(hmm);
@@ -1049,9 +1079,9 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     hmm->columnNumber = leftHmm->columnNumber + rightHmm->columnNumber;
     // Max depth
     hmm->maxDepth = leftHmm->maxDepth > rightHmm->maxDepth ? leftHmm->maxDepth : rightHmm->maxDepth;
-    // Emission prob
+    // Parameters
     if(leftHmm->parameters != rightHmm->parameters) {
-        st_errAbort("Substitution matrices differ in fuse function, panic.");
+        st_errAbort("HMM parameters differ in fuse function, panic.");
     }
     hmm->parameters = leftHmm->parameters;
 
@@ -1059,7 +1089,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
     leftHmm->lastColumn->nColumn = mColumn;
     mColumn->pColumn = leftHmm->lastColumn;
-    int64_t gapLength = rightHmm->refStart - leftHmm->refStart + leftHmm->refLength;
+    int64_t gapLength = rightHmm->refStart - (leftHmm->refStart + leftHmm->refLength);
     assert(gapLength >= 0);
     if(gapLength > 0) {
         stRPColumn *column = stRPColumn_construct(leftHmm->refStart + leftHmm->refLength,
@@ -1081,8 +1111,8 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     hmm->lastColumn = rightHmm->lastColumn;
 
     // Cleanup
-    stRPHmm_destruct(leftHmm);
-    stRPHmm_destruct(rightHmm);
+    stRPHmm_destruct(leftHmm, 0);
+    stRPHmm_destruct(rightHmm, 0);
 
     return hmm;
 }
@@ -1094,6 +1124,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
      *  (2) have the same number of columns, and
      *  (3) so that for all i, column i in each model span the same interval.
      */
+    assert(hmm1 != hmm2);
 
     // If the two hmms don't overlap in reference space then complain
     if(!stRPHmm_overlapOnReference(hmm1, hmm2)) {
@@ -1124,6 +1155,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         mColumn->nColumn = hmm2->firstColumn;
         mColumn->pColumn = column;
         column->nColumn = mColumn;
+        assert(column->pColumn == NULL);
         hmm2->firstColumn = column;
         //Adjust start and length of hmm2 interval
         hmm2->refLength += hmm2->refStart - hmm1->refStart;
@@ -1143,7 +1175,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     // interval to hmm2 to make them the same length.
     if(hmm1->refLength > hmm2->refLength) {
         // Create column
-        stRPColumn *column = stRPColumn_construct(hmm1->lastColumn->refStart + hmm1->lastColumn->length,
+        stRPColumn *column = stRPColumn_construct(hmm2->lastColumn->refStart + hmm2->lastColumn->length,
                 hmm1->refLength - hmm2->refLength, 0, NULL, NULL);
         // Add cell
         column->head = stRPCell_construct(0);
@@ -1156,6 +1188,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         mColumn->pColumn = hmm2->lastColumn;
         mColumn->nColumn = column;
         column->pColumn = mColumn;
+        assert(column->nColumn == NULL);
         hmm2->lastColumn = column;
         //Adjust start and length of hmm2 interval
         hmm2->refLength = hmm1->refLength;
@@ -1163,6 +1196,15 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         hmm2->columnNumber++;
     }
 
+    // Quick coordinate checks
+    assert(hmm1->refStart == hmm2->refStart);
+    assert(hmm1->refLength == hmm2->refLength);
+    assert(hmm1->firstColumn->refStart == hmm1->refStart);
+    assert(hmm2->firstColumn->refStart == hmm2->refStart);
+    assert(hmm1->lastColumn->refStart + hmm1->lastColumn->length == hmm1->refStart + hmm1->refLength);
+    assert(hmm2->lastColumn->refStart + hmm2->lastColumn->length == hmm2->refStart + hmm2->refLength);
+
+    st_uglyf("Aligning\n");
     // At this point both hmms have the same reference interval
 
     // While one hmm has a shorter reference interval than the other split the other interval
@@ -1173,15 +1215,24 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         assert(column1->refStart == column2->refStart);
 
         if(column1->length > column2->length) {
+            st_uglyf("Split 1\n");
             stRPColumn_split(column1, column2->length, hmm1);
+            assert(column1->nColumn->nColumn->refStart == column1->refStart + column2->length);
         }
         else if(column1->length < column2->length) {
+            st_uglyf("Split 2\n");
             stRPColumn_split(column2, column1->length, hmm2);
         }
 
+        assert(column1->refStart == column2->refStart);
+        assert(column1->length == column2->length); // Now have equal length/start
+
         // There are no more columns, so break
         if(column1->nColumn == NULL) {
+            st_uglyf("BLLLLLOOO %i %i %i %i\n", hmm1->lastColumn, column1, hmm2->lastColumn, column2);
+            assert(hmm1->lastColumn == column1);
             assert(column2->nColumn == NULL);
+            assert(hmm2->lastColumn == column2);
             break;
         }
 
@@ -1272,6 +1323,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         }
         else {
             hmm->firstColumn = column;
+            assert(column->pColumn == NULL);
         }
 
         // Create cross product of columns
@@ -1296,6 +1348,8 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         // and we can exit
         if(mColumn1 == NULL) {
             assert(mColumn2 == NULL);
+            assert(hmm1->lastColumn == column1);
+            assert(hmm2->lastColumn == column2);
 
             // Set the last column pointer
             hmm->lastColumn = column;
@@ -1308,7 +1362,10 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         uint64_t toMask = mergePartitionsOrMasks(mColumn1->maskTo, mColumn2->maskTo,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
         mColumn = stRPMergeColumn_construct(fromMask, toMask);
+
+        // Connect links
         mColumn->pColumn = column;
+        column->nColumn = mColumn;
 
         // Create cross product of merged columns
         stHashIterator *cellIt1 = stHash_getIterator(mColumn1->mergeCellsFrom);
@@ -1747,6 +1804,8 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     memcpy(seqHeaders, column->seqHeaders, sizeof(stProfileSeq *) * column->depth);
     uint8_t **seqs = st_malloc(sizeof(uint8_t *) * column->depth);
     memcpy(seqs, column->seqs, sizeof(uint8_t *) * column->depth);
+    assert(firstHalfLength > 0); // Non-zero length for first half
+    assert(column->length-firstHalfLength > 0); // Non-zero length for second half
     stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
             column->length-firstHalfLength, column->depth, seqHeaders, seqs);
 
@@ -1769,7 +1828,9 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
     // If is the last column
     if(column->nColumn == NULL) {
+       assert(hmm->lastColumn == column);
        hmm->lastColumn = rColumn;
+       assert(rColumn->nColumn == NULL);
     }
     else {
         column->nColumn->pColumn = rColumn;
@@ -1780,6 +1841,9 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
     // Increase column number
     hmm->columnNumber++;
+
+    // Adjust length of previous column
+    column->length = firstHalfLength;
 }
 
 /*

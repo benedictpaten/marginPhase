@@ -10,7 +10,7 @@
 #include <math.h>
 #include <time.h>
 
-#define RANDOM_TEST_NO 3
+#define RANDOM_TEST_NO 10
 
 char getRandomBase(int64_t alphabetSize) {
     /*
@@ -70,6 +70,94 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
     return pSeq;
 }
 
+static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn, int64_t maxCoverage,
+        double hetRate, double readErrorRate, int64_t alphabetSize,
+        bool maxNotSumEmissions, bool maxNotSumTransitions) {
+    // Substitution models
+    stSubModel *hetSubModel = stSubModel_constructEmptyModel(alphabetSize);
+    stSubModel *readErrorSubModel = stSubModel_constructEmptyModel(alphabetSize);
+
+    // Fill in substitition matrix with simple symmetric probs matching
+    // the read error rate
+    assert(readErrorRate <= 1.0);
+    assert(readErrorRate >= 0.0);
+    assert(alphabetSize >= 2);
+    for(int64_t i=0; i<alphabetSize; i++) {
+        for(int64_t j=0; j<alphabetSize; j++) {
+            stSubModel_setSubstitutionProb(readErrorSubModel, i, j, i==j ?
+                    log(1.0-readErrorRate) : log(readErrorRate/(alphabetSize-1)));
+            stSubModel_setSubstitutionProb(hetSubModel, i, j, i==j ?
+                                    log(1.0-hetRate) : log(hetRate/(alphabetSize-1)));
+        }
+    }
+
+    return stRPHmmParameters_construct(hetSubModel, readErrorSubModel, maxNotSumEmissions,
+                    maxNotSumTransitions, maxPartitionsInAColumn, maxCoverage);
+}
+
+static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSeqs2,
+        stList *profileSeqs1, stList *profileSeqs2,
+        int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
+        int64_t minReferenceLength, int64_t maxReferenceLength,
+        int64_t minCoverage, int64_t maxCoverage,
+        int64_t minReadLength, int64_t maxReadLength,
+        double hetRate, double readErrorRate, int64_t alphabetSize) {
+    /*
+     * Simulate reference sequence, haplotypes and derived reads, represented as profile
+     * sequences, placing the results in the argument lists.
+     *
+     *
+     */
+    int64_t referenceSeqNumber = st_randomInt(minReferenceSeqNumber, maxReferenceSeqNumber+1);
+
+    // For each reference sequence
+    for(int64_t i=0; i<referenceSeqNumber; i++) {
+        // Generate random reference sequence
+        int64_t referenceLength = st_randomInt(minReferenceLength, maxReferenceLength+1);
+        char *referenceSeq = getRandomSequence(referenceLength, alphabetSize);
+        // Reference name
+        char *referenceName = stString_print("Reference_%" PRIi64 "", i);
+
+        stList_append(referenceSeqs, referenceSeq);
+
+        // Create haplotype sequences for reference
+        char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate, alphabetSize);
+        char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate, alphabetSize);
+
+        stList_append(hapSeqs1, haplotypeSeq1);
+        stList_append(hapSeqs2, haplotypeSeq2);
+
+        // Print info about simulated sequences
+        fprintf(stderr, "Ref seq: %s\n", referenceSeq);
+        fprintf(stderr, "  Hap 1: %s\n", haplotypeSeq1);
+        fprintf(stderr, "  Hap 2: %s\n", haplotypeSeq2);
+
+        // Create read sequences to given coverage
+        int64_t coverage = st_randomInt(minCoverage, maxCoverage+1);
+        int64_t totalBasesToSimulate = coverage * referenceLength;
+        fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
+        while(totalBasesToSimulate > 0) {
+            // Randomly pick a haplotype sequence to template from
+            char *hapSeq = haplotypeSeq1;
+            stList *readSeqs = profileSeqs1;
+            if(st_random() > 0.5) {
+                hapSeq = haplotypeSeq2;
+                readSeqs = profileSeqs2;
+            }
+            int64_t readLength = st_randomInt(minReadLength, maxReadLength+1);
+            stProfileSeq *pSeq = getRandomProfileSeq(referenceName, hapSeq,
+                    referenceLength, readLength, readErrorRate, alphabetSize);
+            stList_append(readSeqs, pSeq);
+            totalBasesToSimulate -= readLength;
+            fprintf(stderr, "Simulating read from haplotype: %s\n", hapSeq);
+            //stProfileSeq_print(pSeq, stderr, 1);
+        }
+
+        // Cleanup
+        free(referenceName);
+    }
+}
+
 static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength,
@@ -121,86 +209,31 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
         fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
 
-        // Alphabet
-        stSubModel *hetSubModel = stSubModel_constructEmptyModel(alphabetSize);
-        stSubModel *readErrorSubModel = stSubModel_constructEmptyModel(alphabetSize);
+        stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn, maxCoverage,
+                hetRate, readErrorRate, alphabetSize,
+                maxNotSumEmissions, maxNotSumTransitions);
 
-        // Fill in substitition matrix with simple symmetric probs matching
-        // the read error rate
-        assert(readErrorRate <= 1.0);
-        assert(readErrorRate >= 0.0);
-        assert(alphabetSize >= 2);
-        for(int64_t i=0; i<alphabetSize; i++) {
-            for(int64_t j=0; j<alphabetSize; j++) {
-                stSubModel_setSubstitutionProb(readErrorSubModel, i, j, i==j ?
-                        log(1.0-readErrorRate) : log(readErrorRate/(alphabetSize-1)));
-                stSubModel_setSubstitutionProb(hetSubModel, i, j, i==j ?
-                                        log(1.0-hetRate) : log(hetRate/(alphabetSize-1)));
-            }
-        }
-
-        // Creates reference sequences
-        // Generates two haplotypes for each reference sequence
-        // Generates profile sequences from each haplotype
-
-        int64_t referenceSeqNumber = st_randomInt(minReferenceSeqNumber, maxReferenceSeqNumber+1);
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
         stList *hapSeqs2 = stList_construct3(0, free);
         stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
         stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 
-        // For each reference sequence
-        for(int64_t i=0; i<referenceSeqNumber; i++) {
-            // Generate random reference sequence
-            int64_t referenceLength = st_randomInt(minReferenceLength, maxReferenceLength+1);
-            char *referenceSeq = getRandomSequence(referenceLength, alphabetSize);
-            // Reference name
-            char *referenceName = stString_print("Reference_%" PRIi64 "", i);
-
-            stList_append(referenceSeqs, referenceSeq);
-
-            // Create haplotype sequences for reference
-            char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate, alphabetSize);
-            char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate, alphabetSize);
-
-            stList_append(hapSeqs1, haplotypeSeq1);
-            stList_append(hapSeqs2, haplotypeSeq2);
-
-            // Print info about simulated sequences
-            fprintf(stderr, "Ref seq: %s\n", referenceSeq);
-            fprintf(stderr, "  Hap 1: %s\n", haplotypeSeq1);
-            fprintf(stderr, "  Hap 2: %s\n", haplotypeSeq2);
-
-            // Create read sequences to given coverage
-            int64_t coverage = st_randomInt(minCoverage, maxCoverage+1);
-            int64_t totalBasesToSimulate = coverage * referenceLength;
-            fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
-            while(totalBasesToSimulate > 0) {
-                // Randomly pick a haplotype sequence to template from
-                char *hapSeq = haplotypeSeq1;
-                stList *readSeqs = profileSeqs1;
-                if(st_random() > 0.5) {
-                    hapSeq = haplotypeSeq2;
-                    readSeqs = profileSeqs2;
-                }
-                int64_t readLength = st_randomInt(minReadLength, maxReadLength+1);
-                stProfileSeq *pSeq = getRandomProfileSeq(referenceName, hapSeq,
-                        referenceLength, readLength, readErrorRate, alphabetSize);
-                stList_append(readSeqs, pSeq);
-                totalBasesToSimulate -= readLength;
-                fprintf(stderr, "Simulating read from haplotype: %s\n", hapSeq);
-                stProfileSeq_print(pSeq, stderr, 1);
-            }
-
-            // Cleanup
-            free(referenceName);
-        }
+        // Creates reference sequences
+        // Generates two haplotypes for each reference sequence
+        // Generates profile sequences from each haplotype
+        simulateReads(referenceSeqs, hapSeqs1, hapSeqs2,
+                        profileSeqs1, profileSeqs2,
+                        minReferenceSeqNumber, maxReferenceSeqNumber,
+                        minReferenceLength, maxReferenceLength,
+                        minCoverage, maxCoverage,
+                        minReadLength, maxReadLength,
+                        hetRate, readErrorRate, alphabetSize);
 
         stList *profileSeqs = stList_construct();
         stList_appendAll(profileSeqs, profileSeqs1);
         stList_appendAll(profileSeqs, profileSeqs2);
-        stList_shuffle(profileSeqs);
+        stList_shuffle(profileSeqs); // Ensure we don't have the reads already partitioned!
 
         // Set representations of the profile sequences
         stSet *profileSeqs1Set = stList_getSet(profileSeqs1);
@@ -209,8 +242,6 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         fprintf(stderr, "Running get hmms with %" PRIi64 " profile sequences \n", stList_length(profileSeqs));
 
         // Creates read HMMs
-        stRPHmmParameters *params = stRPHmmParameters_construct(hetSubModel, readErrorSubModel, maxNotSumEmissions,
-                maxNotSumTransitions, maxPartitionsInAColumn, maxCoverage);
         stList *hmms = getRPHmms(profileSeqs, params);
 
         fprintf(stderr, "Got %" PRIi64 " hmms\n", stList_length(hmms));
@@ -561,6 +592,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 }
 
 static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
+    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -583,7 +615,6 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
 }
 
 static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -726,6 +757,186 @@ static void test_bitCountVectors(CuTest *testCase) {
     }
 }
 
+void buildComponent(stRPHmm *hmm1, stSortedSet *component, stSet *seen) {
+    stSet_insert(seen, hmm1);
+    stSortedSetIterator *it = stSortedSet_getIterator(component);
+    stRPHmm *hmm2;
+    while((hmm2 = stSortedSet_getNext(it)) != NULL) {
+        if(stRPHmm_overlapOnReference(hmm1, hmm2) && stSet_search(seen, hmm2) == NULL) {
+            buildComponent(hmm2, component, seen);
+        }
+    }
+    stSortedSet_destructIterator(it);
+}
+
+static void test_getOverlappingComponents(CuTest *testCase) {
+    return;
+    int64_t minReferenceSeqNumber = 1;
+    int64_t maxReferenceSeqNumber = 10;
+    int64_t minReferenceLength = 1000;
+    int64_t maxReferenceLength = 1000;
+    int64_t minCoverage = 1;
+    int64_t maxCoverage = 30;
+    int64_t minReadLength = 100;
+    int64_t maxReadLength = 1000;
+    int64_t maxPartitionsInAColumn = 100;
+    double hetRate = 0.02;
+    double readErrorRate = 0.01;
+    int64_t alphabetSize = 2;
+    bool maxNotSumEmissions = 1;
+    bool maxNotSumTransitions = 0;
+
+    for(int64_t test=0; test<RANDOM_TEST_NO; test++) {
+        fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
+
+        stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn, maxCoverage,
+                        hetRate, readErrorRate, alphabetSize,
+                        maxNotSumEmissions, maxNotSumTransitions);
+
+        stList *referenceSeqs = stList_construct3(0, free);
+        stList *hapSeqs1 = stList_construct3(0, free);
+        stList *hapSeqs2 = stList_construct3(0, free);
+        stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+        stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+
+        // Creates reference sequences
+        // Generates two haplotypes for each reference sequence
+        // Generates profile sequences from each haplotype
+        simulateReads(referenceSeqs, hapSeqs1, hapSeqs2,
+                        profileSeqs1, profileSeqs2,
+                        minReferenceSeqNumber, maxReferenceSeqNumber,
+                        minReferenceLength, maxReferenceLength,
+                        minCoverage, maxCoverage,
+                        minReadLength, maxReadLength,
+                        hetRate, readErrorRate, alphabetSize);
+
+        // Make simple hmms
+        stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
+        for(int64_t i=0; i<stList_length(profileSeqs1); i++) {
+            stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs1, i), params);
+            CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == NULL);
+            stSortedSet_insert(readHmms, hmm);
+            CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == hmm);
+        }
+        for(int64_t i=0; i<stList_length(profileSeqs2); i++) {
+            stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs2, i), params);
+            CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == NULL);
+            stSortedSet_insert(readHmms, hmm);
+            CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == hmm);
+        }
+        CuAssertIntEquals(testCase, stSortedSet_size(readHmms), stList_length(profileSeqs1) + stList_length(profileSeqs2));
+
+        // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
+        stList *readHmmsList = stSortedSet_getList(readHmms);
+        stList *tilingPaths = getTilingPaths(readHmms);
+
+        // Check tiling paths - that every hmm is in a tiling path and that hmms do not overlap
+        // and that tiling paths are minimal
+        stSet *seen = stSet_construct();
+        for(int64_t i=0; i<stList_length(tilingPaths); i++) {
+            stList *tilingPath = stList_get(tilingPaths, i);
+            for(int64_t j=0; j<stList_length(tilingPath); j++) {
+                stRPHmm *hmm1 = stList_get(tilingPath, j);
+
+                // The hmm1 is in only one tiling path
+                CuAssertTrue(testCase, stSet_search(seen, hmm1) == NULL);
+                stSet_insert(seen, hmm1);
+
+                // The hmm1 does not overlap with any other hmm1 in the tiling path
+                // and precedes all subsequent hmms in tiling path
+                for(int64_t k=j+1; k<stList_length(tilingPath); k++) {
+                    stRPHmm *hmm2 = stList_get(tilingPath, k);
+                    CuAssertTrue(testCase, !stRPHmm_overlapOnReference(hmm1, hmm2));
+                    CuAssertTrue(testCase, stRPHmm_cmpFn(hmm1, hmm2) < 0);
+                }
+
+                // The next hmm1 in the tiling path is as close as possible while not overlapping
+                for(int64_t k=i+1; k<stList_length(tilingPaths); k++) {
+                    stList *tilingPath2 = stList_get(tilingPaths, k);
+                    for(int64_t l=0; l<stList_length(tilingPath2); l++) {
+                        stRPHmm *hmm2 = stList_get(tilingPath2, l);
+                        // If not overlapping and hmm2 occurs after hmm1
+                        if(!stRPHmm_overlapOnReference(hmm1, hmm2) && stRPHmm_cmpFn(hmm1, hmm2) < 0) {
+                            // There must be an hmm following hmm1 in the tiling path
+                            CuAssertTrue(testCase, j+1 < stList_length(tilingPath));
+
+                            stRPHmm *hmm3 = stList_get(tilingPath, j+1);
+                            // hmm3 must precede this next hmm in the sort
+                            CuAssertTrue(testCase, stRPHmm_cmpFn(hmm3, hmm2) <= 0);
+                        }
+                    }
+                }
+            }
+        }
+        // Check we accounted for all the hmms
+        CuAssertIntEquals(testCase, stSet_size(seen), stList_length(readHmmsList));
+        stSet_destruct(seen);
+        stList_destruct(readHmmsList);
+
+        // Get components
+        while(stList_length(tilingPaths) > 1) {
+            stList *tilingPath1 = stList_pop(tilingPaths);
+            stList *tilingPath2 = stList_pop(tilingPaths);
+
+            stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
+
+            // Check that all the hmms in the tiling paths are in one component
+            // Check that within a component hmms overlap
+            stHash *hmmToComponent = stHash_construct();
+            stSetIterator *componentsIt = stSet_getIterator(components);
+            stSortedSet *component;
+            while((component = stSet_getNext(componentsIt)) != NULL) {
+                //
+                stSortedSetIterator *componentIt = stSortedSet_getIterator(component);
+                stRPHmm *hmm;
+                while((hmm = stSortedSet_getNext(componentIt)) != NULL) {
+
+                    CuAssertTrue(testCase, stHash_search(hmmToComponent, hmm) == NULL);
+                    stHash_insert(hmmToComponent, hmm, component);
+                }
+                stSortedSet_destructIterator(componentIt);
+
+                // Check that hmms in component are single overlap component
+                seen = stSet_construct();
+                buildComponent(stSortedSet_getFirst(component), component, seen);
+                CuAssertIntEquals(testCase, stSet_size(seen), stSortedSet_size(component));
+                stSet_destruct(seen);
+            }
+            stSet_destructIterator(componentsIt);
+
+            CuAssertIntEquals(testCase, stHash_size(hmmToComponent), stList_length(tilingPath1)+stList_length(tilingPath2));
+
+            // Check that no hmms overlap between components
+            stList *hmmsInComponents = stHash_getKeys(hmmToComponent);
+            for(int64_t i=0; i<stList_length(hmmsInComponents); i++) {
+                stRPHmm *hmm1 = stList_get(hmmsInComponents, i);
+                for(int64_t j=i+1; j<stList_length(hmmsInComponents); j++) {
+                    stRPHmm *hmm2 = stList_get(hmmsInComponents, j);
+
+                    if(stRPHmm_overlapOnReference(hmm1, hmm2)) {
+                        CuAssertTrue(testCase, stHash_search(hmmToComponent, hmm1) == stHash_search(hmmToComponent, hmm2));
+                    }
+                }
+            }
+
+            // Cleanup
+            stList_destruct(tilingPath1);
+            stList_destruct(tilingPath2);
+            stHash_destruct(hmmToComponent);
+            stList_destruct(hmmsInComponents);
+            stSet_destruct(components);
+        }
+
+        // Cleanup
+        stList_destruct(referenceSeqs);
+        stList_destruct(hapSeqs1);
+        stList_destruct(hapSeqs2);
+        stList_destruct(profileSeqs1);
+        stList_destruct(profileSeqs2);
+        stRPHmmParameters_destruct(params);
+    }
+}
+
 CuSuite *stRPHmmTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
@@ -738,6 +949,7 @@ CuSuite *stRPHmmTestSuite(void) {
     // Constituent function tests
     SUITE_ADD_TEST(suite, test_popCount64);
     SUITE_ADD_TEST(suite, test_bitCountVectors);
+    SUITE_ADD_TEST(suite, test_getOverlappingComponents);
 
     return suite;
 }

@@ -146,9 +146,13 @@ stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDept
 
 stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
 
+stList *getTilingPaths(stSortedSet *hmms);
+
+stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2);
+
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
 
-void stRPHmm_destruct(stRPHmm *hmm);
+void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns);
 
 bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2);
 
@@ -169,6 +173,8 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
 stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
 
 stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1);
+
+int stRPHmm_cmpFn(const void *a, const void *b);
 
 /*
  * Column of read partitioning hmm
