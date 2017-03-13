@@ -30,7 +30,7 @@ uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
      * Take two read partitions or masks and merge them together
      */
     assert(depthOfPartition1 + depthOfPartition2 <= MAX_READ_PARTITIONING_DEPTH);
-    return (partition1 << depthOfPartition2) | partition2;
+    return (partition2 << depthOfPartition1) | partition1;
 }
 
 uint64_t maskPartition(uint64_t partition, uint64_t mask) {
@@ -164,6 +164,25 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
      * coordinates. Each component is a stSortedSet.
      */
 
+    for(int64_t i=0; i<stList_length(tilingPath1); i++) {
+            stRPHmm *hmm = stList_get(tilingPath1, i);
+            for(int64_t j=0; j<stList_length(hmm->profileSeqs); j++) {
+                st_uglyf("Got1 HMM: %i Seq: %i %s %i %i\n", hmm, stList_get(hmm->profileSeqs, j),
+                        hmm->referenceName, hmm->refStart, hmm->refLength);
+            }
+        }
+
+        for(int64_t i=0; i<stList_length(tilingPath2); i++) {
+                stRPHmm *hmm = stList_get(tilingPath2, i);
+                for(int64_t j=0; j<stList_length(hmm->profileSeqs); j++) {
+                    st_uglyf("Got2 HMM: %i Seq: %i %s %i %i\n", hmm, stList_get(hmm->profileSeqs, j),
+                            hmm->referenceName, hmm->refStart, hmm->refLength);
+                }
+            }
+
+        st_uglyf("Gurp\n");
+
+
     // A map of hmms to components
     stHash *componentsHash = stHash_construct();
 
@@ -185,7 +204,6 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
 
         // While there exists an hmm in tilingPath2 that precedes or overlaps with hmm1
         while(j+k<stList_length(tilingPath2)) {
-
             stRPHmm *hmm2 = stList_get(tilingPath2, j+k); // Note the j+k
 
             // If hmm1 and hmm2 overlap
@@ -229,13 +247,13 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
                     // If has no component, make a trivial component containing just hmm1
                     // (it doesn't overlap with any other hmm)
                     if(component == NULL) {
-                        makeComponent(hmm1, components, componentsHash);
+                        component = makeComponent(hmm1, components, componentsHash);
                     }
 
                     // Done with hmm1
                     break;
                 }
-                // else hmm2 occurs after hmm1 in the reference ordering
+                // else hmm2 occurs before hmm1 in the reference ordering
                 else {
 
                     // Add hmm2 to a trivial component if it does not overlap an HMM in tiling path1
@@ -246,8 +264,13 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
                     // Increase the lagging index as hmm1 and proceding hmms can not overlap with hmm2
                     j++;
                 }
-
             }
+        }
+
+        if(component == NULL) {
+            //
+            assert(stHash_search(componentsHash, hmm1) == NULL);
+            makeComponent(hmm1, components, componentsHash);
         }
     }
 
@@ -258,6 +281,17 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
         if(stHash_search(componentsHash, hmm2) == NULL) {
             makeComponent(hmm2, components, componentsHash);
         }
+    }
+
+    stSetIterator *setIt2 = stSet_getIterator(components);
+    stSortedSet *component;
+    while((component = stSet_getNext(setIt2)) != NULL) {
+        stSortedSetIterator *setIt = stSortedSet_getIterator(component);
+        stRPHmm *hmm6;
+        while((hmm6 = stSortedSet_getNext(setIt)) != NULL) {
+            st_uglyf("Component %i %i %i\n", component, hmm6, stHash_size(componentsHash));
+        }
+        stSortedSet_destructIterator(setIt);
     }
 
     // Cleanup
@@ -333,6 +367,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
      *  Destroys the input tilingPaths in the process and cleans them up.
      */
     st_uglyf("Merging tiling paths\n");
+
     // Partition of the hmms into overlapping connected components
     stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
     st_uglyf("Got %i components\n", stSet_size(components));
@@ -351,10 +386,20 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
         stSortedSet *component = stList_get(componentsList, i);
         stSet_remove(components, component);
 
+        stSortedSetIterator *setIt = stSortedSet_getIterator(component);
+        stRPHmm *hmm5 = NULL;
+        while((hmm5 = stSortedSet_getNext(setIt)) != NULL) {
+            for(int64_t j=0; j<stList_length(hmm5->profileSeqs); j++) {
+                st_uglyf("Got component HMM: %i Seq: %i\n", hmm5, stList_get(hmm5->profileSeqs, j));
+            }
+        }
+        stSortedSet_destructIterator(setIt);
+
         // Make two sub-tiling paths (there can only be two maximal paths, by definition)
         stList *tilingPaths = getTilingPaths(component);
 
-        st_uglyf("In merge two tiling paths, have got %i subpaths to merge\n", stList_length(tilingPaths));
+        st_uglyf("In merge two tiling paths, have got %i subpaths to merge\n",
+                stList_length(tilingPaths));
 
         stRPHmm *hmm = NULL;
 
@@ -373,6 +418,8 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
 
             // Merge
             hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
+            stRPHmm_destruct(hmm1, 1);
+            stRPHmm_destruct(hmm2, 1);
 
             st_uglyf("Got cross product\n");
 
@@ -405,11 +452,6 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
 
     // Sort new tiling path
     stList_sort(newTilingPath, stRPHmm_cmpFn);
-
-    for(int64_t i=0; i<stList_length(newTilingPath); i++) {
-        stRPHmm *hmm = stList_get(newTilingPath, i);
-        st_uglyf("BTTTTO %i %s %i %i\n", i, hmm->referenceName, hmm->refStart, hmm->refLength);
-    }
 
     return newTilingPath;
 }
@@ -484,10 +526,14 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
      * than this then some profile seqs are randomly discarded.
      */
 
+
+
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stSortedSet_insert(readHmms, stRPHmm_construct(stList_get(profileSeqs, i), params));
+        stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs, i), params);
+        stSortedSet_insert(readHmms, hmm);
+        st_uglyf("Starting with %i %i\n", hmm, stList_get(profileSeqs, i));
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
 
@@ -500,6 +546,7 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
         stList *tilingPath = stList_pop(tilingPaths);
         for(int64_t i=0; i<stList_length(tilingPath); i++) {
+            st_uglyf("Destroying hmms\n");
             stRPHmm_destruct(stList_get(tilingPath, i), 1);
         }
         stList_destruct(tilingPath);
@@ -973,7 +1020,6 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
         maxProb = ST_MATH_LOG_ZERO;
         do {
             // If compatible and has greater probability
-            assert(stRPMergeColumn_getNextMergeCell(cell, column->nColumn) != NULL);
             if(stRPMergeColumn_getNextMergeCell(cell, column->nColumn) == mCell && cell->forwardLogProb > maxProb) {
                 maxProb = cell->forwardLogProb;
                 maxCell = cell;
@@ -1087,17 +1133,34 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
 
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
+
+    // Links
     leftHmm->lastColumn->nColumn = mColumn;
     mColumn->pColumn = leftHmm->lastColumn;
+
+    // Add merge cell to connect the cells in the two columns
+    stRPMergeCell_construct(0, 0, mColumn);
+
     int64_t gapLength = rightHmm->refStart - (leftHmm->refStart + leftHmm->refLength);
     assert(gapLength >= 0);
     if(gapLength > 0) {
+        // Make column in the gap
         stRPColumn *column = stRPColumn_construct(leftHmm->refStart + leftHmm->refLength,
                 gapLength, 0, NULL, NULL);
+
+        // Links
         mColumn->nColumn = column;
         column->pColumn = mColumn;
-        column->head = stRPCell_construct(0); // Make cell for empty column
+        // Make cell for empty column
+        column->head = stRPCell_construct(0);
+
+        // Add right merge column
         mColumn = stRPMergeColumn_construct(0, 0);
+
+        // Add merge cell to connect the cells in the two columns
+        stRPMergeCell_construct(0, 0, mColumn);
+
+        // Links
         column->nColumn = mColumn;
         mColumn->pColumn = column;
         // Increase the column number to account for the introduced gap column
@@ -1215,12 +1278,10 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         assert(column1->refStart == column2->refStart);
 
         if(column1->length > column2->length) {
-            st_uglyf("Split 1\n");
             stRPColumn_split(column1, column2->length, hmm1);
             assert(column1->nColumn->nColumn->refStart == column1->refStart + column2->length);
         }
         else if(column1->length < column2->length) {
-            st_uglyf("Split 2\n");
             stRPColumn_split(column2, column1->length, hmm2);
         }
 
@@ -1229,7 +1290,6 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
         // There are no more columns, so break
         if(column1->nColumn == NULL) {
-            st_uglyf("BLLLLLOOO %i %i %i %i\n", hmm1->lastColumn, column1, hmm2->lastColumn, column2);
             assert(hmm1->lastColumn == column1);
             assert(column2->nColumn == NULL);
             assert(hmm2->lastColumn == column2);
@@ -1254,16 +1314,20 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
 
     // Do sanity checks that the two hmms have been aligned
     if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
-        st_errAbort("Trying to create cross product of two HMMs on different reference sequences");
+        st_errAbort("Trying to create cross product of two HMMs "
+                "on different reference sequences");
     }
     if(hmm1->refStart != hmm2->refStart) {
-        st_errAbort("Trying to create cross product of two HMMs with different reference interval starts");
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different reference interval starts");
     }
     if(hmm1->refLength != hmm2->refLength) {
-        st_errAbort("Trying to create cross product of two HMMs with different reference interval length");
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different reference interval length");
     }
     if(hmm1->columnNumber != hmm2->columnNumber) {
-        st_errAbort("Trying to create cross product of two HMMs with different column numbers");
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different column numbers");
     }
 
     // Create a new empty hmm
@@ -1356,7 +1420,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
             break;
         }
 
-        // Create merged column
+        // Create new merged column
         uint64_t fromMask = mergePartitionsOrMasks(mColumn1->maskFrom, mColumn2->maskFrom,
                 mColumn1->pColumn->depth, mColumn2->pColumn->depth);
         uint64_t toMask = mergePartitionsOrMasks(mColumn1->maskTo, mColumn2->maskTo,
@@ -1374,10 +1438,12 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
             stHashIterator *cellIt2 = stHash_getIterator(mColumn2->mergeCellsFrom);
             stRPMergeCell *mCell2;
             while((mCell2 = stHash_getNext(cellIt2)) != NULL) {
-                uint64_t fromPartition = mergePartitionsOrMasks(mCell1->fromPartition, mCell2->fromPartition,
+                uint64_t fromPartition = mergePartitionsOrMasks(mCell1->fromPartition,
+                        mCell2->fromPartition,
                         mColumn1->pColumn->depth, mColumn2->pColumn->depth);
 
-                uint64_t toPartition = mergePartitionsOrMasks(mCell1->toPartition, mCell2->toPartition,
+                uint64_t toPartition = mergePartitionsOrMasks(mCell1->toPartition,
+                        mCell2->toPartition,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
 
                 stRPMergeCell_construct(fromPartition, toPartition, mColumn);
@@ -1467,7 +1533,7 @@ void stRPHmm_forward(stRPHmm *hmm) {
                 // Add to the next merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
                 if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->forwardLogProb = logAddP(cell->forwardLogProb, mCell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
+                    mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
                 }
             }
             else {
@@ -1552,11 +1618,11 @@ void stRPHmm_backward(stRPHmm *hmm) {
                 cell->backwardLogProb = ST_MATH_LOG_ONE;
             }
 
-            // Add to column forward probability
+            // Add to column total probability
             column->totalLogProb = logAddP(column->totalLogProb, cell->forwardLogProb + cell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
 
             // Total backward prob to propagate
-            double backwardLogProb = cell->backwardLogProb + emissionLogProbability(column, cell,
+            double probabilityToPropagateLogProb = cell->backwardLogProb + emissionLogProbability(column, cell,
                     bitCountVectors,  (stRPHmmParameters *)hmm->parameters);
 
             // If the previous merge column exists then propagate backward probability to the merge state
@@ -1564,11 +1630,13 @@ void stRPHmm_backward(stRPHmm *hmm) {
                 // Add to the previous merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
                 if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->backwardLogProb = logAddP(cell->backwardLogProb, mCell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
+                    mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
+                            hmm->parameters->maxNotSumTransitions);
                 }
             }
             else {
-                hmm->backwardLogProb = logAddP(hmm->backwardLogProb, backwardLogProb, hmm->parameters->maxNotSumTransitions);
+                hmm->backwardLogProb = logAddP(hmm->backwardLogProb, probabilityToPropagateLogProb,
+                        hmm->parameters->maxNotSumTransitions);
             }
         }
         while((cell = cell->nCell) != NULL);
@@ -1695,6 +1763,8 @@ void stRPHmm_prune(stRPHmm *hmm) {
             while(stList_length(mergeCells) > hmm->parameters->maxPartitionsInAColumn) {
                 stRPMergeCell *mCell = stList_pop(mergeCells);
                 // Remove the state from the merge column
+                assert(stHash_search(mColumn->mergeCellsFrom, &(mCell->fromPartition)) == mCell);
+                assert(stHash_search(mColumn->mergeCellsTo, &(mCell->toPartition)) == mCell);
                 stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
                 stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
 
@@ -1803,7 +1873,10 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *) * column->depth);
     memcpy(seqHeaders, column->seqHeaders, sizeof(stProfileSeq *) * column->depth);
     uint8_t **seqs = st_malloc(sizeof(uint8_t *) * column->depth);
-    memcpy(seqs, column->seqs, sizeof(uint8_t *) * column->depth);
+    // Update the pointers to the seqs
+    for(int64_t i=0; i<column->depth; i++) {
+        seqs[i] = &(column->seqs[i][firstHalfLength * seqHeaders[i]->alphabetSize]);
+    }
     assert(firstHalfLength > 0); // Non-zero length for first half
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
     stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
