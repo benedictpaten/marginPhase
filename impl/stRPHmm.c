@@ -164,25 +164,6 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
      * coordinates. Each component is a stSortedSet.
      */
 
-    for(int64_t i=0; i<stList_length(tilingPath1); i++) {
-            stRPHmm *hmm = stList_get(tilingPath1, i);
-            for(int64_t j=0; j<stList_length(hmm->profileSeqs); j++) {
-                st_uglyf("Got1 HMM: %i Seq: %i %s %i %i\n", hmm, stList_get(hmm->profileSeqs, j),
-                        hmm->referenceName, hmm->refStart, hmm->refLength);
-            }
-        }
-
-        for(int64_t i=0; i<stList_length(tilingPath2); i++) {
-                stRPHmm *hmm = stList_get(tilingPath2, i);
-                for(int64_t j=0; j<stList_length(hmm->profileSeqs); j++) {
-                    st_uglyf("Got2 HMM: %i Seq: %i %s %i %i\n", hmm, stList_get(hmm->profileSeqs, j),
-                            hmm->referenceName, hmm->refStart, hmm->refLength);
-                }
-            }
-
-        st_uglyf("Gurp\n");
-
-
     // A map of hmms to components
     stHash *componentsHash = stHash_construct();
 
@@ -283,17 +264,6 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2) {
         }
     }
 
-    stSetIterator *setIt2 = stSet_getIterator(components);
-    stSortedSet *component;
-    while((component = stSet_getNext(setIt2)) != NULL) {
-        stSortedSetIterator *setIt = stSortedSet_getIterator(component);
-        stRPHmm *hmm6;
-        while((hmm6 = stSortedSet_getNext(setIt)) != NULL) {
-            st_uglyf("Component %i %i %i\n", component, hmm6, stHash_size(componentsHash));
-        }
-        stSortedSet_destructIterator(setIt);
-    }
-
     // Cleanup
     stHash_destruct(componentsHash);
 
@@ -366,11 +336,8 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
      *  same format as the input lists.
      *  Destroys the input tilingPaths in the process and cleans them up.
      */
-    st_uglyf("Merging tiling paths\n");
-
     // Partition of the hmms into overlapping connected components
     stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
-    st_uglyf("Got %i components\n", stSet_size(components));
     // Cleanup the input tiling paths
     stList_destruct(tilingPath1);
     stList_destruct(tilingPath2);
@@ -386,20 +353,8 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
         stSortedSet *component = stList_get(componentsList, i);
         stSet_remove(components, component);
 
-        stSortedSetIterator *setIt = stSortedSet_getIterator(component);
-        stRPHmm *hmm5 = NULL;
-        while((hmm5 = stSortedSet_getNext(setIt)) != NULL) {
-            for(int64_t j=0; j<stList_length(hmm5->profileSeqs); j++) {
-                st_uglyf("Got component HMM: %i Seq: %i\n", hmm5, stList_get(hmm5->profileSeqs, j));
-            }
-        }
-        stSortedSet_destructIterator(setIt);
-
         // Make two sub-tiling paths (there can only be two maximal paths, by definition)
         stList *tilingPaths = getTilingPaths(component);
-
-        st_uglyf("In merge two tiling paths, have got %i subpaths to merge\n",
-                stList_length(tilingPaths));
 
         stRPHmm *hmm = NULL;
 
@@ -414,14 +369,10 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
             // Align
             stRPHmm_alignColumns(hmm1, hmm2);
 
-            st_uglyf("Aligned two hmms\n");
-
             // Merge
             hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
             stRPHmm_destruct(hmm1, 1);
             stRPHmm_destruct(hmm2, 1);
-
-            st_uglyf("Got cross product\n");
 
             // Prune
             stRPHmm_forwardBackward(hmm);
@@ -436,8 +387,6 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
             hmm = stList_pop(subTilingPath1);
             stList_destruct(subTilingPath1);
         }
-
-        st_uglyf("Pruned\n");
 
         // Add to output tiling path
         stList_append(newTilingPath, hmm);
@@ -471,7 +420,6 @@ stList *mergeTilingPaths(stList *tilingPaths) {
 
     // If only one tiling path in the input, the output is just the single input tiling path
     if(stList_length(tilingPaths) == 1) {
-        st_uglyf("Got one tiling path\n");
         stList *tilingPath = stList_get(tilingPaths, 0);
         stList_destruct(tilingPaths);
         return tilingPath;
@@ -484,7 +432,6 @@ stList *mergeTilingPaths(stList *tilingPaths) {
     // split the problem into two recursively until there are just two remaining
     // tiling paths
     if(stList_length(tilingPaths) > 2) {
-        st_uglyf("Splitting tiling paths\n");
 
         // Recursively turn the first half of the tiling paths into one tiling path
         stList *tilingPaths1 = stList_construct();
@@ -502,7 +449,6 @@ stList *mergeTilingPaths(stList *tilingPaths) {
     }
     // Otherwise the number of tiling paths is two
     else {
-        st_uglyf("Got two tiling paths\n");
         tilingPath1 = stList_get(tilingPaths, 0);
         tilingPath2 = stList_get(tilingPaths, 1);
     }
@@ -511,7 +457,6 @@ stList *mergeTilingPaths(stList *tilingPaths) {
     assert(tilingPath1 != NULL);
     assert(tilingPath2 != NULL);
     stList_destruct(tilingPaths);
-    st_uglyf("Doing merge\n");
     return mergeTwoTilingPaths(tilingPath1, tilingPath2);
 }
 
@@ -533,20 +478,16 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
         stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs, i), params);
         stSortedSet_insert(readHmms, hmm);
-        st_uglyf("Starting with %i %i\n", hmm, stList_get(profileSeqs, i));
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
 
-    st_uglyf("Got %" PRIi64 " tiling paths\n", stList_length(tilingPaths));
-
     // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
         stList *tilingPath = stList_pop(tilingPaths);
         for(int64_t i=0; i<stList_length(tilingPath); i++) {
-            st_uglyf("Destroying hmms\n");
             stRPHmm_destruct(stList_get(tilingPath, i), 1);
         }
         stList_destruct(tilingPath);
@@ -1005,10 +946,7 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
     while(column->pColumn != NULL) {
         // Get previous merge cell
         stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(maxCell, column->pColumn);
-        if(mCell == NULL) {
-            st_errAbort("Traceback failed because a cell is missing from the HMM, is the pruning too aggressive?"
-                    "Total forward prob: %f Total backward prob: %f", (float)hmm->forwardLogProb, (float)hmm->backwardLogProb);
-        }
+        assert(mCell != NULL);
 
         // Switch to previous column
         column = column->pColumn->pColumn;
@@ -1054,6 +992,10 @@ stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool pa
                     (!seqInHap1(cell->partition, j) && !partition1)) {
                 stSet_insert(seqsInHap1, column->seqHeaders[j]);
             }
+        }
+
+        if(column->nColumn != NULL) {
+            column = column->nColumn->nColumn;
         }
     }
 
@@ -1267,7 +1209,6 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     assert(hmm1->lastColumn->refStart + hmm1->lastColumn->length == hmm1->refStart + hmm1->refLength);
     assert(hmm2->lastColumn->refStart + hmm2->lastColumn->length == hmm2->refStart + hmm2->refLength);
 
-    st_uglyf("Aligning\n");
     // At this point both hmms have the same reference interval
 
     // While one hmm has a shorter reference interval than the other split the other interval
@@ -1515,9 +1456,7 @@ void stRPHmm_forward(stRPHmm *hmm) {
             // If the previous merge column exists then propagate forward probability from merge state
             if(column->pColumn != NULL) {
                 stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
-                if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    cell->forwardLogProb = mCell->forwardLogProb;
-                }
+                cell->forwardLogProb = mCell->forwardLogProb;
             }
             // Otherwise initialize probability with log(1.0)
             else {
@@ -1532,9 +1471,7 @@ void stRPHmm_forward(stRPHmm *hmm) {
             if(column->nColumn != NULL) {
                 // Add to the next merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
-                if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
-                }
+                mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
             }
             else {
                 // Else propagate probability to total forward probability of model
@@ -1609,9 +1546,7 @@ void stRPHmm_backward(stRPHmm *hmm) {
             // If the next merge column exists then propagate backward probability from merge state
             if(column->nColumn != NULL) {
                 stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
-                if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    cell->backwardLogProb = mCell->backwardLogProb;
-                }
+                cell->backwardLogProb = mCell->backwardLogProb;
             }
             // Otherwise initialize probability with log(1.0)
             else {
@@ -1629,10 +1564,8 @@ void stRPHmm_backward(stRPHmm *hmm) {
             if(column->pColumn != NULL) {
                 // Add to the previous merge cell
                 stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
-                if(mCell != NULL) { // Cell could be missing if previously pruned out
-                    mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
+                mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
                             hmm->parameters->maxNotSumTransitions);
-                }
             }
             else {
                 hmm->backwardLogProb = logAddP(hmm->backwardLogProb, probabilityToPropagateLogProb,
@@ -1666,12 +1599,12 @@ void stRPHmm_forwardBackward(stRPHmm *hmm) {
 
 static int cellCmpFn(const void *a, const void *b, const void *extraArg) {
     /*
-     * Sort cells by posterior probability in ascending order.
+     * Sort cells by posterior probability in descending order.
      */
     stRPCell *cell1 = (stRPCell *)a, *cell2 = (stRPCell *)b;
     stRPColumn *column = (stRPColumn *)extraArg;
     double p1 = stRPCell_posteriorProb(cell1, column), p2 = stRPCell_posteriorProb(cell2, column);
-    return p1 < p2 ? -1 : p1 > p2 ? 1 : 0;
+    return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
 }
 
 static int mergeCellCmpFn(const void *a, const void *b, const void *extraArg) {
@@ -1684,98 +1617,200 @@ static int mergeCellCmpFn(const void *a, const void *b, const void *extraArg) {
     return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
 }
 
-void stRPHmm_prune(stRPHmm *hmm) {
+void filterMergeCells(stRPMergeColumn *mColumn, stSet *chosenMergeCellsSet) {
+    /*
+     * Removes merge cells from the column that are not in chosenMergeCellsSet
+     */
+    assert(stSet_size(chosenMergeCellsSet) > 0);
+    stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
+    for(int64_t i=0; i<stList_length(mergeCells); i++) {
+        stRPMergeCell *mCell = stList_get(mergeCells, i);
+        assert(mCell != NULL);
+        if(stSet_search(chosenMergeCellsSet, mCell) == NULL) {
+            // Remove the state from the merge column
+            assert(stHash_search(mColumn->mergeCellsFrom, &(mCell->fromPartition)) == mCell);
+            assert(stHash_search(mColumn->mergeCellsTo, &(mCell->toPartition)) == mCell);
+            stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
+            stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
+
+            // Cleanup
+            stRPMergeCell_destruct(mCell);
+        }
+    }
+    stList_destruct(mergeCells);
+    assert(stSet_size(chosenMergeCellsSet) == stHash_size(mColumn->mergeCellsFrom));
+    assert(stSet_size(chosenMergeCellsSet) == stHash_size(mColumn->mergeCellsTo));
+}
+
+stSet *getLinkedMergeCells(stRPMergeColumn *mColumn,
+        stRPMergeCell *(*getNCell)(stRPCell *, stRPMergeColumn *),
+        stList *cells) {
+    /*
+     * Returns the set of merge cells in the column that are linked to a cell
+     * in cells.
+     */
+    stSet *chosenMergeCellsSet = stSet_construct();
+    for(int64_t i=0; i<stList_length(cells); i++) {
+        stRPMergeCell *mCell = getNCell(stList_get(cells, i), mColumn);
+        assert(mCell != NULL);
+        stSet_insert(chosenMergeCellsSet, mCell);
+    }
+    assert(stSet_size(chosenMergeCellsSet) > 0);
+    return chosenMergeCellsSet;
+}
+
+void relinkCells(stRPColumn *column, stList *cells) {
+    /*
+     * Re-links the cells in the list 'cells' to make up the list of cells in the column.
+     */
+    stRPCell **pCell = &column->head; // Pointer to previous cell, used to
+    // remove cells from the linked list
+    for(int64_t i=0; i<stList_length(cells); i++) {
+        stRPCell *cell = stList_get(cells, i);
+        *pCell = cell;
+        pCell = &cell->nCell;
+    }
+    *pCell = NULL;
+    assert(column->head != NULL);
+}
+
+stList *getLinkedCells(stRPColumn *column,
+        stRPMergeCell *(*getPCell)(stRPCell *, stRPMergeColumn *),
+        stRPMergeColumn *mColumn) {
+    /*
+     * Returns the set of cells in column that are linked to a cell in mColumn.
+     */
+
+    // Put cells into an array and sort by descending posterior prob
+    // only keeping cells that still have a preceding merge cell
+
+    stList *cells = stList_construct();
+    stRPCell *cell = column->head;
+    do {
+        if(mColumn == NULL || getPCell(cell, mColumn) != NULL) {
+            stList_append(cells, cell);
+            cell = cell->nCell;
+        }
+        else {
+            stRPCell *nCell = cell->nCell;
+            stRPCell_destruct(cell);
+            cell = nCell;
+        }
+    } while(cell != NULL);
+    stList_sort2(cells, cellCmpFn, column);
+    assert(stList_length(cells) > 0);
+
+    return cells;
+}
+
+void stRPHmm_pruneForwards(stRPHmm *hmm) {
     /*
      * Remove cells from hmm whos posterior probability is below the given threshold
      */
 
     // For each column
     stRPColumn *column = hmm->firstColumn;
+    stRPMergeColumn *mColumn = NULL;
+
     while(1) {
-        // If column potentially contains more partitions than we allow
-        if(pow(2, column->depth) > hmm->parameters->maxPartitionsInAColumn) {
-            assert(column->head != NULL);
+        assert(column->head != NULL);
 
-            // Put cells into an array and sort by ascending posterior prob
-            stList *cells = stList_construct();
-            stRPCell *cell = column->head;
-            do {
-                stList_append(cells, cell);
-            } while((cell = cell->nCell) != NULL);
-            stList_sort2(cells, cellCmpFn, column);
+        // Get cells that have a valid previous cell
+        stList *cells = getLinkedCells(column, stRPMergeColumn_getPreviousMergeCell, mColumn);
 
-            // Find set of probable cells to keep
-            stSet *chosenCellSet = stSet_construct();
-            do {
-                stRPCell *cell = stList_pop(cells);
-                stSet_insert(chosenCellSet, cell);
-                if(stSet_size(chosenCellSet) >= hmm->parameters->maxPartitionsInAColumn) {
-                    break;
-                }
-            } while(stList_length(cells) > 0);
-            stList_destruct(cells);
-
-            // Walk through cells pruning those not in chosenCellSet
-            cell = column->head;
-            stRPCell **pCell = &column->head; // Pointer to previous cell, used to
-            // remove cells from the linked list
-            do {
-                // If the cell is not in the chosen set of cells to keep and is not
-                // the all in either hap1 or hap2 partition (which we keep)
-                if(stSet_search(chosenCellSet, cell) == NULL &&
-                        popcount64(cell->partition) != 0 &&
-                        popcount64(cell->partition) != column->depth) {
-                    stRPCell *nCell = cell->nCell;
-
-                    // Remove the state from the linked list of states
-                    *pCell = nCell;
-
-                    // Cleanup the old cell
-                    stRPCell_destruct(cell);
-
-                    // Point at the next cell
-                    cell = nCell;
-                }
-                else { // Keep the cell
-                    // Update pointers
-                    pCell = &cell->nCell;
-                    cell = cell->nCell;
-                }
-            } while(cell != NULL);
-            assert(column->head != NULL);
-
-            // Cleanup
-            stSet_destruct(chosenCellSet);
+        // Get rid of the excess cells
+        while(stList_length(cells) > hmm->parameters->maxPartitionsInAColumn) {
+            stRPCell_destruct(stList_pop(cells));
         }
 
+        // Relink the cells (from most probable to least probable)
+        relinkCells(column, cells);
+
         // Move on to the next merge column
-        stRPMergeColumn *mColumn = column->nColumn;
+        mColumn = column->nColumn;
 
         if(mColumn == NULL) {
+            assert(column == hmm->lastColumn);
+            stList_destruct(cells);
             break;
         }
 
-        // If the number of partitions in the merge column is greater than the specified maximum
-        if(stRPMergeColumn_numberOfPartitions(mColumn) >= hmm->parameters->maxPartitionsInAColumn) {
-            //  For each merge state
-            stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
-            stList_sort2(mergeCells, mergeCellCmpFn, mColumn);
-            while(stList_length(mergeCells) > hmm->parameters->maxPartitionsInAColumn) {
-                stRPMergeCell *mCell = stList_pop(mergeCells);
-                // Remove the state from the merge column
-                assert(stHash_search(mColumn->mergeCellsFrom, &(mCell->fromPartition)) == mCell);
-                assert(stHash_search(mColumn->mergeCellsTo, &(mCell->toPartition)) == mCell);
-                stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
-                stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
+        //  Get merge cells that are connected to a cell in the previous column
+        stSet *chosenMergeCellsSet = getLinkedMergeCells(mColumn,
+                stRPMergeColumn_getNextMergeCell, cells);
 
-                // Cleanup
-                stRPMergeCell_destruct(mCell);
-            }
-            stList_destruct(mergeCells);
+        // Shrink the the number of chosen cells to less than equal to the desired number
+        stList *chosenMergeCellsList = stSet_getList(chosenMergeCellsSet);
+        stList_sort2(chosenMergeCellsList, mergeCellCmpFn, mColumn);
+        while(stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn) {
+            stSet_remove(chosenMergeCellsSet, stList_pop(chosenMergeCellsList));
         }
+        assert(stList_length(chosenMergeCellsList) == stSet_size(chosenMergeCellsSet));
+        stList_destruct(chosenMergeCellsList);
+
+        // Get rid of merge cells we don't need
+        filterMergeCells(mColumn, chosenMergeCellsSet);
+
+        // Cleanup
+        stList_destruct(cells);
+        stSet_destruct(chosenMergeCellsSet);
 
         column = mColumn->nColumn;
     }
+}
+
+void stRPHmm_pruneBackwards(stRPHmm *hmm) {
+    /*
+     * Remove cells from hmm whos posterior probability is below the given threshold
+     */
+
+    // For each column
+    stRPColumn *column = hmm->lastColumn;
+    stRPMergeColumn *mColumn = NULL;
+
+    while(1) {
+        assert(column->head != NULL);
+
+        // Get cells that have a valid previous cell
+        stList *cells = getLinkedCells(column, stRPMergeColumn_getNextMergeCell, mColumn);
+
+        // This must be true because the forward pass has already winnowed the number below the
+        // threshold
+        assert(stList_length(cells) <= hmm->parameters->maxPartitionsInAColumn);
+
+        // Relink the cells (from most probable to least probable)
+        relinkCells(column, cells);
+
+        // Move on to the next merge column
+        mColumn = column->pColumn;
+
+        if(mColumn == NULL) {
+            assert(column == hmm->firstColumn);
+            stList_destruct(cells);
+            break;
+        }
+
+        //  Get merge cells that are connected to a cell in the previous column
+        stSet *chosenMergeCellsSet = getLinkedMergeCells(mColumn,
+                stRPMergeColumn_getPreviousMergeCell, cells);
+
+        // By the same logic, this number if pruned on the forwards pass
+        assert(stSet_size(chosenMergeCellsSet) <= hmm->parameters->maxPartitionsInAColumn);
+
+        // Get rid of merge cells we don't need
+        filterMergeCells(mColumn, chosenMergeCellsSet);
+
+        // Cleanup
+        stList_destruct(cells);
+        stSet_destruct(chosenMergeCellsSet);
+
+        column = mColumn->pColumn;
+    }
+}
+
+void stRPHmm_prune(stRPHmm *hmm) {
+    stRPHmm_pruneForwards(hmm);
+    stRPHmm_pruneBackwards(hmm);
 }
 
 bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
@@ -1949,7 +1984,7 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
      * forward and backward algorithms have been run.
      */
     double p = exp(cell->forwardLogProb + cell->backwardLogProb - column->totalLogProb);
-    assert(p <= 1.001);
+    assert(p <= 1.1);
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;
 }

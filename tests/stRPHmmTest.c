@@ -10,7 +10,7 @@
 #include <math.h>
 #include <time.h>
 
-#define RANDOM_TEST_NO 10
+#define RANDOM_TEST_NO 3
 
 char getRandomBase(int64_t alphabetSize) {
     /*
@@ -280,7 +280,6 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     if(hmm->refStart <= profileSeq->refStart && hmm->refStart + hmm->refLength > profileSeq->refStart) {
 
                         // Must be contained in the hmm
-                        st_uglyf("BOOO %i %i\n", stList_length(hmm->profileSeqs), stList_length(profileSeqs));
                         CuAssertTrue(testCase, stList_contains(hmm->profileSeqs, profileSeq));
 
                         // Must not be partially overlapping
@@ -435,14 +434,13 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 double totalProb = 0.0;
                 while(cell != NULL) {
                     double posteriorProb = stRPCell_posteriorProb(cell, column);
-                    st_uglyf(" XXXX %s %f\n", intToBinaryString(cell->partition), posteriorProb);
                     CuAssertTrue(testCase, posteriorProb >= 0.0);
                     CuAssertTrue(testCase, posteriorProb <= 1.0);
                     totalProb += posteriorProb;
                     cell = cell->nCell;
                 }
-                CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
 
+                CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
                 if(column->nColumn == NULL) {
                     break;
                 }
@@ -513,6 +511,10 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
             stSet *profileSeqsPartition1 = stRPHmm_partitionSequencesByStatePath(hmm, traceBackPath, 1);
             stSet *profileSeqsPartition2 = stRPHmm_partitionSequencesByStatePath(hmm, traceBackPath, 0);
+
+            // Check all the sequences accounted for
+            CuAssertIntEquals(testCase, stList_length(hmm->profileSeqs),
+                    stSet_size(profileSeqsPartition1)+stSet_size(profileSeqsPartition2));
 
             /*
              * Comparing a given HMMs partition to the true read partition there are four set
@@ -603,7 +605,6 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 }
 
 static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -613,7 +614,7 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t minReadLength = 1000;
     int64_t maxReadLength = 1000;
     int64_t maxPartitionsInAColumn = 100;
-    double hetRate = 0.005;
+    double hetRate = 0.01;
     double readErrorRate = 0.1;
     int64_t alphabetSize = 2;
     bool maxNotSumEmissions = 1;
@@ -630,13 +631,13 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
     int64_t maxReferenceLength = 1000;
-    int64_t minCoverage = 5;
-    int64_t maxCoverage = 5;
-    int64_t minReadLength = 100;
-    int64_t maxReadLength = 100;
+    int64_t minCoverage = 10;
+    int64_t maxCoverage = 10;
+    int64_t minReadLength = 200;
+    int64_t maxReadLength = 200;
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
-    double readErrorRate = 0.01;
+    double readErrorRate = 0.1;
     int64_t alphabetSize = 2;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
@@ -648,13 +649,12 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
 }
 
 static void test_systemSingleReference(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
     int64_t maxReferenceLength = 1000;
-    int64_t minCoverage = 20;
-    int64_t maxCoverage = 20;
+    int64_t minCoverage = 10;
+    int64_t maxCoverage = 10;
     int64_t minReadLength = 10;
     int64_t maxReadLength = 300;
     int64_t maxPartitionsInAColumn = 100;
@@ -672,11 +672,10 @@ static void test_systemSingleReference(CuTest *testCase) {
 }
 
 static void test_systemMultipleReferences(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 2;
     int64_t maxReferenceSeqNumber = 5;
-    int64_t minReferenceLength = 1000;
-    int64_t maxReferenceLength = 2000;
+    int64_t minReferenceLength = 500;
+    int64_t maxReferenceLength = 1000;
     int64_t minCoverage = 5;
     int64_t maxCoverage = 20;
     int64_t minReadLength = 10;
@@ -722,7 +721,6 @@ static uint64_t getRandomPartition(int64_t depth) {
 }
 
 static void test_bitCountVectors(CuTest *testCase) {
-    return;
     for(int64_t depth=0; depth<64; depth++) {
         for(int64_t test=0; test<100; test++) {
             // Make column as set of uint8_t sequences
@@ -781,7 +779,6 @@ void buildComponent(stRPHmm *hmm1, stSortedSet *component, stSet *seen) {
 }
 
 static void test_getOverlappingComponents(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 10;
     int64_t minReferenceLength = 1000;
@@ -889,9 +886,6 @@ static void test_getOverlappingComponents(CuTest *testCase) {
             stList *tilingPath2 = stList_pop(tilingPaths);
             stList *tilingPath1 = stList_pop(tilingPaths);
 
-
-            st_uglyf("FFFFFF %i %i %i %i\n", stList_length(tilingPath1), stList_length(tilingPath2), stList_length(profileSeqs1)+stList_length(profileSeqs2), stList_length(referenceSeqs));
-
             stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
             // Check that all the hmms in the tiling paths are in one component
             // Check that within a component hmms overlap
@@ -917,7 +911,6 @@ static void test_getOverlappingComponents(CuTest *testCase) {
             }
             stSet_destructIterator(componentsIt);
 
-            st_uglyf("Woo %i\n", stHash_size(hmmToComponent));
             CuAssertIntEquals(testCase, stHash_size(hmmToComponent), stList_length(tilingPath1)+stList_length(tilingPath2));
 
             // Check that no hmms overlap between components
