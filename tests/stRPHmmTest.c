@@ -440,7 +440,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     cell = cell->nCell;
                 }
 
-                CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
+                if(!maxNotSumTransitions) {
+                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
+                }
                 if(column->nColumn == NULL) {
                     break;
                 }
@@ -458,8 +460,10 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     CuAssertTrue(testCase, posteriorProb <= 1.0);
                     totalProb += posteriorProb;
                 }
-                CuAssertDblEquals(testCase, 1.0, totalProb, 0.03);
-
+                stHash_destructIterator(it);
+                if(!maxNotSumTransitions) {
+                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.03);
+                }
                 column = mColumn->nColumn;
             }
         }
@@ -573,6 +577,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
             // Cleanup
             stList_destruct(traceBackPath);
+            stSet_destruct(profileSeqsPartition1);
+            stSet_destruct(profileSeqsPartition2);
         }
 
         fprintf(stderr, " For %" PRIi64 " hap 1 sequences and %" PRIi64 " hap 2 sequences there were %" PRIi64
@@ -616,7 +622,7 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.01;
     double readErrorRate = 0.1;
-    int64_t alphabetSize = 2;
+    int64_t alphabetSize = 4;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
@@ -636,9 +642,9 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t minReadLength = 200;
     int64_t maxReadLength = 200;
     int64_t maxPartitionsInAColumn = 100;
-    double hetRate = 0.02;
+    double hetRate = 0.01;
     double readErrorRate = 0.1;
-    int64_t alphabetSize = 2;
+    int64_t alphabetSize = 4;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
@@ -660,7 +666,7 @@ static void test_systemSingleReference(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
-    int64_t alphabetSize = 2;
+    int64_t alphabetSize = 3;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
@@ -683,7 +689,7 @@ static void test_systemMultipleReferences(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
-    int64_t alphabetSize = 2;
+    int64_t alphabetSize = 5;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
@@ -879,7 +885,6 @@ static void test_getOverlappingComponents(CuTest *testCase) {
         // Check we accounted for all the hmms
         CuAssertIntEquals(testCase, stSet_size(seen), stList_length(readHmmsList));
         stSet_destruct(seen);
-        stList_destruct(readHmmsList);
 
         // Get components
         while(stList_length(tilingPaths) > 1) {
@@ -935,6 +940,14 @@ static void test_getOverlappingComponents(CuTest *testCase) {
         }
 
         // Cleanup
+        for(int64_t i=0; i<stList_length(readHmmsList); i++) {
+            stRPHmm_destruct(stList_get(readHmmsList, i), 1);
+        }
+        stList_destruct(readHmmsList);
+        while(stList_length(tilingPaths) > 0) {
+            stList_destruct(stList_pop(tilingPaths));
+        }
+        stList_destruct(tilingPaths);
         stList_destruct(referenceSeqs);
         stList_destruct(hapSeqs1);
         stList_destruct(hapSeqs2);

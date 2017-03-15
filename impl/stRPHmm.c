@@ -470,9 +470,6 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
      * MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
      * than this then some profile seqs are randomly discarded.
      */
-
-
-
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
@@ -496,6 +493,7 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     // Merge together the tiling paths into one merged tiling path, merging the individual hmms when
     // they overlap on the reference
     stList *finalTilingPath = mergeTilingPaths(tilingPaths);
+    stList_setDestructor(finalTilingPath, (void (*)(void *))stRPHmm_destruct2);
 
     return finalTilingPath;
 }
@@ -917,6 +915,13 @@ void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
     }
 
     free(hmm);
+}
+
+void stRPHmm_destruct2(stRPHmm *hmm) {
+    /*
+     * Cleans up hmm and columns
+     */
+    stRPHmm_destruct(hmm, 1);
 }
 
 stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
@@ -2007,7 +2012,7 @@ stRPMergeColumn *stRPMergeColumn_construct(uint64_t maskFrom, uint64_t maskTo) {
     mColumn->maskTo = maskTo;
 
     // Maps between partitions and cells
-    mColumn->mergeCellsFrom = stHash_construct3(intHashFn, intEqualsFn, NULL, NULL);
+    mColumn->mergeCellsFrom = stHash_construct3(intHashFn, intEqualsFn, NULL, (void (*)(void *))stRPMergeCell_destruct);
     mColumn->mergeCellsTo = stHash_construct3(intHashFn, intEqualsFn, NULL, NULL);
 
     return mColumn;

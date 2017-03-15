@@ -154,6 +154,8 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
 
 void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns);
 
+void stRPHmm_destruct2(stRPHmm *hmm);
+
 bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2);
 
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2);
