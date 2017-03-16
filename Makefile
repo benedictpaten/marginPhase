@@ -13,7 +13,7 @@ ${binPath}/marginPhase : ${libTests} ${libSources} ${libHeaders} ${basicLibsDepe
 	${cxx} ${cflags} -I inc -I impl -I${libPath} -o ${binPath}/marginPhase marginPhase.c ${libTests} ${libSources} ${basicLibs} 
 
 ${binPath}/stMarginPhaseTest : ${libTests} ${libSources} ${libHeaders} ${basicLibsDependencies} 
-	${cxx} ${cflags} -I inc -I impl -I${libPath} -o ${binPath}/stMarginPhaseTest ${libTests} ${libSources} ${basicLibs}  
+	${cxx} ${cflags} -mpopcnt -I inc -I impl -I${libPath} -o ${binPath}/stMarginPhaseTest ${libTests} ${libSources} ${basicLibs}  
 
 clean : 
 	rm -f *.o

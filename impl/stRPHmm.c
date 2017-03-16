@@ -646,20 +646,28 @@ const uint64_t m2  = 0x3333333333333333; //binary: 00110011..
 const uint64_t m4  = 0x0f0f0f0f0f0f0f0f; //binary:  4 zeros,  4 ones ...
 const uint64_t h01 = 0x0101010101010101; //the sum of 256 to the power of 0,1,2,3...
 
-//This uses fewer arithmetic operations than any other known
-//implementation on machines with fast multiplication.
-//This algorithm uses 12 arithmetic operations, one of which is a multiply.
-int popcount64(uint64_t x) {
+inline int popcount64NoBuiltIn(uint64_t x) {
     /*
      * Returns Hamming weight of input unsigned integer.
      */
+    //This uses fewer arithmetic operations than any other known
+    //implementation on machines with fast multiplication.
+    //This algorithm uses 12 arithmetic operations, one of which is a multiply.
     x -= (x >> 1) & m1;             //put count of each 2 bits into those 2 bits
     x = (x & m2) + ((x >> 2) & m2); //put count of each 4 bits into those 4 bits
     x = (x + (x >> 4)) & m4;        //put count of each 8 bits into those 8 bits
     return (x * h01) >> 56;  //returns left 8 bits of x + (x<<8) + (x<<16) + (x<<24) + ...
 }
 
-uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
+inline int popcount64(uint64_t x) {
+    /*
+     * Returns Hamming weight of input unsigned integer.
+     */
+    //return popcount64NoBuiltIn(x); // Use this line if the builtin is unavailable
+    return __builtin_popcountll(x);
+}
+
+inline uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
         int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Returns a pointer to a bit count vector for a given position (offset in the column),
@@ -668,7 +676,7 @@ uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
     return &bitCountVector[position * ALPHABET_CHARACTER_BITS * alphabetSize + characterIndex * ALPHABET_CHARACTER_BITS + bit];
 }
 
-uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
+inline uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
         int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Calculates the bit count vector for a given position, character index and bit.
@@ -706,25 +714,25 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length
     return bitCountVectors;
 }
 
-double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
+inline uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
         int64_t position, int64_t characterIndex, int64_t alphabetSize) {
     /*
      * Returns the number of instances of a character, given by characterIndex, at the given position within the column for
-     * the given partition.
+     * the given partition. Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
+     * is the expected number of instances of the given character in the given subpartition of the column.
      */
-    uint64_t rawExpectedCount = 0;
+    uint64_t expectedCount = 0;
     for(int64_t i=0; i<ALPHABET_CHARACTER_BITS; i++) {
         uint64_t j = *retrieveBitCountVector(bitCountVectors, position, characterIndex, i, alphabetSize);
-        rawExpectedCount += (popcount64(j & partition) << i);
+        expectedCount += (popcount64(j & partition) << i);
     }
 
-    double expectedCount = (double)rawExpectedCount / (pow(2, ALPHABET_CHARACTER_BITS) - 1.0);
     assert(expectedCount >= 0.0);
-    assert(expectedCount <= depth);
+    assert((double)expectedCount / ALPHABET_MAX_PROB <= depth);
     return expectedCount;
 }
 
-double getLogProbOfReadCharacters(stSubModel *alphabet, double *expectedInstanceNumbers,
+double getLogProbOfReadCharacters(stSubModel *alphabet, uint64_t *expectedInstanceNumbers,
         int64_t sourceCharacterIndex) {
     /*
      * Get the log probability of a given source character given the expected number of instances of
@@ -738,7 +746,7 @@ double getLogProbOfReadCharacters(stSubModel *alphabet, double *expectedInstance
                 expectedInstanceNumbers[i];
     }
 
-    return logCharacterProb;
+    return logCharacterProb/ALPHABET_CHARACTER_BITS;
 }
 
 void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
@@ -748,7 +756,7 @@ void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
      */
     // For each possible read character calculate the expected number of instances in the
     // partition and store counts in an array
-    double expectedInstanceNumbers[params->alphabetSize];
+    uint64_t expectedInstanceNumbers[params->alphabetSize];
     for(int64_t i=0; i<params->alphabetSize; i++) {
         expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
                                column->depth, partition, index, i, params->alphabetSize);

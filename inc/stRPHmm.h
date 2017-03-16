@@ -96,7 +96,7 @@ double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitC
 
 int popcount64(uint64_t x);
 
-double getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
+uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
         int64_t position, int64_t characterIndex, int64_t alphabetSize);
 
 uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length, int64_t alphabetSize);

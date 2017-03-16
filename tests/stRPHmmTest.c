@@ -10,7 +10,7 @@
 #include <math.h>
 #include <time.h>
 
-#define RANDOM_TEST_NO 3
+#define RANDOM_TEST_NO 4
 
 char getRandomBase(int64_t alphabetSize) {
     /*
@@ -654,13 +654,14 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
             maxNotSumEmissions, maxNotSumTransitions);
 }
 
+
 static void test_systemSingleReference(CuTest *testCase) {
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
     int64_t maxReferenceLength = 1000;
-    int64_t minCoverage = 10;
-    int64_t maxCoverage = 10;
+    int64_t minCoverage = 30;
+    int64_t maxCoverage = 30;
     int64_t minReadLength = 10;
     int64_t maxReadLength = 300;
     int64_t maxPartitionsInAColumn = 100;
@@ -756,8 +757,8 @@ static void test_bitCountVectors(CuTest *testCase) {
                     CuAssertDblEquals(testCase,
                             getExpectedInstanceNumberSimple(seqs, partition, depth,
                                     length, alphabetSize, i, j),
-                            getExpectedInstanceNumber(countBitVectors, depth,
-                                    partition, i, j, alphabetSize), 0.0000001);
+                            (double)getExpectedInstanceNumber(countBitVectors, depth,
+                                    partition, i, j, alphabetSize)/ALPHABET_MAX_PROB, 0.0000001);
 
                 }
             }
