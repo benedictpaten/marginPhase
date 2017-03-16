@@ -593,11 +593,15 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2) 
  * Character alphabet and substitutions
  */
 
-static double *subProb(double *matrix, int64_t from, int64_t to, int64_t alphabetSize) {
+static inline uint16_t *subProb(uint16_t *matrix, int64_t from, int64_t to, int64_t alphabetSize) {
     return &matrix[from * alphabetSize + to];
 }
 
-double stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
+static inline double *subProbSlow(double *matrix, int64_t from, int64_t to, int64_t alphabetSize) {
+    return &matrix[from * alphabetSize + to];
+}
+
+uint16_t stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex) {
     /*
      * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
@@ -605,12 +609,31 @@ double stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharac
     return *subProb(alphabet->logSubMatrix, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize);
 }
 
+uint16_t stSubModel_getSubstitutionProbSlow(stSubModel *alphabet, int64_t sourceCharacterIndex,
+        int64_t derivedCharacterIndex) {
+    /*
+     * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
+     */
+    return *subProbSlow(alphabet->logSubMatrixSlow, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize);
+}
+
 void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob) {
     /*
-     * Sets the (log) substitution probability.
+     * Sets the substitution probability, scaling it appropriately by taking the log and then storing as integer (see definition)
      */
-    *subProb(alphabet->logSubMatrix, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize) = prob;
+    if(prob <= 0 || prob > 1.0) {
+        st_errAbort("Attempting to set substitution probability out of 0-1 range");
+    }
+    double logProb = -log(prob);
+    assert(logProb >= 0);
+    if(logProb > 7) {
+        st_errAbort("Attempting to set a substitution probability smaller than x=0.0000001 (log(x) = -7)");
+    }
+    uint64_t i = ALPHABET_MIN_SUBSTITUTION_PROB * (logProb/7.0);
+    st_uglyf("Setting prob %f %f %i\n", prob, logProb, i);
+    *subProb(alphabet->logSubMatrix, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize) = i;
+    *subProbSlow(alphabet->logSubMatrixSlow, sourceCharacterIndex, derivedCharacterIndex, alphabet->alphabetSize) = log(prob);
 }
 
 stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize) {
@@ -619,7 +642,8 @@ stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize) {
      */
     stSubModel *alphabet = st_malloc(sizeof(stSubModel));
     alphabet->alphabetSize = alphabetSize;
-    alphabet->logSubMatrix = st_calloc(alphabetSize * alphabetSize, sizeof(double));
+    alphabet->logSubMatrix = st_calloc(alphabetSize * alphabetSize, sizeof(uint64_t));
+    alphabet->logSubMatrixSlow = st_calloc(alphabetSize * alphabetSize, sizeof(double));
 
     return alphabet;
 }
@@ -667,7 +691,7 @@ inline int popcount64(uint64_t x) {
     return __builtin_popcountll(x);
 }
 
-inline uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
+uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
         int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Returns a pointer to a bit count vector for a given position (offset in the column),
@@ -676,7 +700,7 @@ inline uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
     return &bitCountVector[position * ALPHABET_CHARACTER_BITS * alphabetSize + characterIndex * ALPHABET_CHARACTER_BITS + bit];
 }
 
-inline uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
+uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
         int64_t position, int64_t characterIndex, int64_t bit, int64_t alphabetSize) {
     /*
      * Calculates the bit count vector for a given position, character index and bit.
@@ -732,24 +756,24 @@ inline uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t de
     return expectedCount;
 }
 
-double getLogProbOfReadCharacters(stSubModel *alphabet, uint64_t *expectedInstanceNumbers,
+double getLogProbOfReadCharactersSlow(stSubModel *alphabet, uint64_t *expectedInstanceNumbers,
         int64_t sourceCharacterIndex) {
     /*
      * Get the log probability of a given source character given the expected number of instances of
      * each character in the reads.
      */
-    double logCharacterProb = stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, 0) *
+    double logCharacterProb = stSubModel_getSubstitutionProbSlow(alphabet, sourceCharacterIndex, 0) *
             expectedInstanceNumbers[0];
 
     for(int64_t i=1; i<alphabet->alphabetSize; i++) {
-        logCharacterProb += stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, i) *
+        logCharacterProb += stSubModel_getSubstitutionProbSlow(alphabet, sourceCharacterIndex, i) *
                 expectedInstanceNumbers[i];
     }
 
     return logCharacterProb/ALPHABET_CHARACTER_BITS;
 }
 
-void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
+void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
         uint64_t partition, uint64_t *bitCountVectors, stRPHmmParameters *params, double *rootCharacterProbs) {
     /*
      * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
@@ -765,22 +789,22 @@ void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
     // Calculate the probability of the read characters for each possible haplotype character
     double characterProbsHap[params->alphabetSize];
     for(int64_t i=0; i<params->alphabetSize; i++) {
-        characterProbsHap[i] = getLogProbOfReadCharacters(params->readErrorSubModel, expectedInstanceNumbers, i);
+        characterProbsHap[i] = getLogProbOfReadCharactersSlow(params->readErrorSubModel, expectedInstanceNumbers, i);
     }
 
     // Calculate the probability of haplotype characters and read characters for each root character
     for(int64_t i=0; i<params->alphabetSize; i++) {
         rootCharacterProbs[i] = characterProbsHap[0] +
-                stSubModel_getSubstitutionProb(params->hetSubModel, i, 0);
+                stSubModel_getSubstitutionProbSlow(params->hetSubModel, i, 0);
         for(int64_t j=1; j<params->alphabetSize; j++) {
             rootCharacterProbs[i] =
                     logAddP(rootCharacterProbs[i],
-                            characterProbsHap[j] + stSubModel_getSubstitutionProb(params->hetSubModel, i, j), params->maxNotSumEmissions);
+                            characterProbsHap[j] + stSubModel_getSubstitutionProbSlow(params->hetSubModel, i, j), params->maxNotSumEmissions);
         }
     }
 }
 
-double columnIndexLogProbability(stRPColumn *column, uint64_t index,
+double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
         uint64_t partition, uint64_t *bitCountVectors,
         stRPHmmParameters *params) {
     /*
@@ -788,10 +812,10 @@ double columnIndexLogProbability(stRPColumn *column, uint64_t index,
      */
     // Get the sum of log probabilities of the derived characters over the possible source characters
     double rootCharacterProbsHap1[params->alphabetSize];
-    columnIndexLogHapProbability(column, index,
+    columnIndexLogHapProbabilitySlow(column, index,
             partition, bitCountVectors, params, rootCharacterProbsHap1);
     double rootCharacterProbsHap2[params->alphabetSize];
-    columnIndexLogHapProbability(column, index,
+    columnIndexLogHapProbabilitySlow(column, index,
             ~partition, bitCountVectors, params, rootCharacterProbsHap2);
 
     // Combine the probabilities to calculate the overall probability of a given position in a column
@@ -803,20 +827,115 @@ double columnIndexLogProbability(stRPColumn *column, uint64_t index,
     return logColumnProb + log(1.0/params->alphabetSize);
 }
 
-double emissionLogProbability(stRPColumn *column,
+double emissionLogProbabilitySlow(stRPColumn *column,
         stRPCell *cell, uint64_t *bitCountVectors,
         stRPHmmParameters *params) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    double logPartitionProb = columnIndexLogProbability(column, 0,
+    double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
+            cell->partition, bitCountVectors, params);
+    for(int64_t i=1; i<column->length; i++) {
+        logPartitionProb += columnIndexLogProbabilitySlow(column, i,
+                cell->partition, bitCountVectors, params);
+    }
+    return logPartitionProb;
+}
+
+uint64_t getLogProbOfReadCharacters(stSubModel *alphabet, uint64_t *expectedInstanceNumbers,
+        int64_t sourceCharacterIndex) {
+    /*
+     * Get the log probability of a given source character given the expected number of instances of
+     * each character in the reads.
+     */
+    uint64_t logCharacterProb = stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, 0) *
+            expectedInstanceNumbers[0];
+
+    for(int64_t i=1; i<alphabet->alphabetSize; i++) {
+        logCharacterProb += stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, i) *
+                expectedInstanceNumbers[i];
+    }
+
+    return logCharacterProb;
+}
+
+static uint64_t minP(uint64_t a, uint64_t b) {
+    return a < b ? a : b;
+}
+
+void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
+        uint64_t partition, uint64_t *bitCountVectors, stRPHmmParameters *params, uint64_t *rootCharacterProbs) {
+    /*
+     * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
+     */
+    // For each possible read character calculate the expected number of instances in the
+    // partition and store counts in an array
+    uint64_t expectedInstanceNumbers[params->alphabetSize];
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
+                               column->depth, partition, index, i, params->alphabetSize);
+    }
+
+    // Calculate the probability of the read characters for each possible haplotype character
+    uint64_t characterProbsHap[params->alphabetSize];
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        characterProbsHap[i] = getLogProbOfReadCharacters(params->readErrorSubModel, expectedInstanceNumbers, i);
+    }
+
+    // Calculate the probability of haplotype characters and read characters for each root character
+    for(int64_t i=0; i<params->alphabetSize; i++) {
+        rootCharacterProbs[i] = characterProbsHap[0] +
+                stSubModel_getSubstitutionProb(params->hetSubModel, i, 0);
+        for(int64_t j=1; j<params->alphabetSize; j++) {
+            rootCharacterProbs[i] =
+                    minP(rootCharacterProbs[i],
+                            characterProbsHap[j] + stSubModel_getSubstitutionProb(params->hetSubModel, i, j));
+        }
+    }
+}
+
+uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t index,
+        uint64_t partition, uint64_t *bitCountVectors,
+        stRPHmmParameters *params) {
+    /*
+     * Get the probability of a the characters in a given position within a column for a given partition.
+     */
+    // Get the sum of log probabilities of the derived characters over the possible source characters
+    uint64_t rootCharacterProbsHap1[params->alphabetSize];
+    columnIndexLogHapProbability(column, index,
+            partition, bitCountVectors, params, rootCharacterProbsHap1);
+    uint64_t rootCharacterProbsHap2[params->alphabetSize];
+    columnIndexLogHapProbability(column, index,
+            ~partition, bitCountVectors, params, rootCharacterProbsHap2);
+
+    // Combine the probabilities to calculate the overall probability of a given position in a column
+    uint64_t logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0];
+    for(int64_t i=1; i<params->alphabetSize; i++) {
+        logColumnProb = minP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i]);
+    }
+
+    return logColumnProb;
+}
+
+double emissionLogProbability(stRPColumn *column,
+        stRPCell *cell, uint64_t *bitCountVectors,
+        stRPHmmParameters *params) {
+    return emissionLogProbabilitySlow(column,
+            cell, bitCountVectors,
+            params);
+    /*
+     * Get the log probability of a set of reads for a given column.
+     */
+    assert(column->length > 0);
+    uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
             cell->partition, bitCountVectors, params);
     for(int64_t i=1; i<column->length; i++) {
         logPartitionProb += columnIndexLogProbability(column, i,
                 cell->partition, bitCountVectors, params);
     }
-    return logPartitionProb;
+    //st_uglyf("Woot %" PRIi64 " \n", logPartitionProb);
+    return -((double)logPartitionProb) / (ALPHABET_MAX_PROB * ALPHABET_MIN_SUBSTITUTION_PROB);
 }
 
 /*

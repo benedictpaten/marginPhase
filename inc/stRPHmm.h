@@ -36,21 +36,24 @@ typedef struct _stSubModel stSubModel;
 #define ALPHABET_MAX_PROB 255
 #define ALPHABET_MIN_PROB 0
 #define ALPHABET_CHARACTER_BITS 8
+#define ALPHABET_MIN_SUBSTITUTION_PROB 65535 // 2^16 -1
 
 struct _stSubModel {
     int64_t alphabetSize;
-    double *logSubMatrix;
+    // Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1, with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
+    uint16_t *logSubMatrix;
+    double *logSubMatrixSlow;
 };
 
 stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize);
 
 void stSubModel_destruct(stSubModel *alphabet);
 
-double stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
+uint16_t stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex);
 
 void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
-        int64_t derivedCharacterIndex, double prob);
+        int64_t derivedCharacterIndex, double logProb);
 
 char * intToBinaryString(uint64_t i);
 

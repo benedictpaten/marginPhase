@@ -10,7 +10,7 @@
 #include <math.h>
 #include <time.h>
 
-#define RANDOM_TEST_NO 4
+#define RANDOM_TEST_NO 1
 
 char getRandomBase(int64_t alphabetSize) {
     /*
@@ -85,9 +85,9 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
     for(int64_t i=0; i<alphabetSize; i++) {
         for(int64_t j=0; j<alphabetSize; j++) {
             stSubModel_setSubstitutionProb(readErrorSubModel, i, j, i==j ?
-                    log(1.0-readErrorRate) : log(readErrorRate/(alphabetSize-1)));
+                    1.0-readErrorRate : readErrorRate/(alphabetSize-1));
             stSubModel_setSubstitutionProb(hetSubModel, i, j, i==j ?
-                                    log(1.0-hetRate) : log(hetRate/(alphabetSize-1)));
+                                    1.0-hetRate : hetRate/(alphabetSize-1));
         }
     }
 
@@ -622,7 +622,7 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.01;
     double readErrorRate = 0.1;
-    int64_t alphabetSize = 4;
+    int64_t alphabetSize = 2;
     bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
@@ -633,6 +633,7 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
 }
 
 static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
+    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -654,8 +655,8 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
             maxNotSumEmissions, maxNotSumTransitions);
 }
 
-
 static void test_systemSingleReference(CuTest *testCase) {
+    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -679,6 +680,7 @@ static void test_systemSingleReference(CuTest *testCase) {
 }
 
 static void test_systemMultipleReferences(CuTest *testCase) {
+    return;
     int64_t minReferenceSeqNumber = 2;
     int64_t maxReferenceSeqNumber = 5;
     int64_t minReferenceLength = 500;
@@ -728,6 +730,7 @@ static uint64_t getRandomPartition(int64_t depth) {
 }
 
 static void test_bitCountVectors(CuTest *testCase) {
+    return;
     for(int64_t depth=0; depth<64; depth++) {
         for(int64_t test=0; test<100; test++) {
             // Make column as set of uint8_t sequences
@@ -786,6 +789,7 @@ void buildComponent(stRPHmm *hmm1, stSortedSet *component, stSet *seen) {
 }
 
 static void test_getOverlappingComponents(CuTest *testCase) {
+    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 10;
     int64_t minReferenceLength = 1000;
