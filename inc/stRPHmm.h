@@ -60,6 +60,8 @@ void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacte
 
 char * intToBinaryString(uint64_t i);
 
+double logAddP(double a, double b, bool maxNotSum);
+
 /*
  * Profile sequence
  */
@@ -125,7 +127,6 @@ struct _stRPHmmParameters {
 
 stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
         stSubModel *readErrorSubModel,
-        bool maxNotSumEmissions,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth);

@@ -72,7 +72,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 
 static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
         double hetRate, double readErrorRate, int64_t alphabetSize,
-        bool maxNotSumEmissions, bool maxNotSumTransitions) {
+        bool maxNotSumTransitions) {
     // Substitution models
     stSubModel *hetSubModel = stSubModel_constructEmptyModel(alphabetSize);
     stSubModel *readErrorSubModel = stSubModel_constructEmptyModel(alphabetSize);
@@ -91,7 +91,7 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
         }
     }
 
-    return stRPHmmParameters_construct(hetSubModel, readErrorSubModel, maxNotSumEmissions,
+    return stRPHmmParameters_construct(hetSubModel, readErrorSubModel,
                     maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH);
 }
 
@@ -162,7 +162,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength,
         int64_t maxPartitionsInAColumn, double hetRate, double readErrorRate, int64_t alphabetSize,
-        bool maxNotSumEmissions, bool maxNotSumTransitions) {
+        bool maxNotSumTransitions) {
     /*
      * System level test
      *
@@ -191,13 +191,12 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             "\thetRate: %f\n"
             "\treadErrorRate: %f\n"
             "\talphabetSize: %" PRIi64 "\n"
-            "\tmaxNotSumEmissions: %i\n"
             "\tmaxNotSumTransitions: %i\n",
             minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength,
             maxPartitionsInAColumn, (float)hetRate, (float)readErrorRate, alphabetSize,
-            maxNotSumEmissions, maxNotSumTransitions);
+            maxNotSumTransitions);
 
     int64_t totalProfile1SeqsOverAllTests = 0;
     int64_t totalProfile2SeqsOverAllTests = 0;
@@ -211,7 +210,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
                 hetRate, readErrorRate, alphabetSize,
-                maxNotSumEmissions, maxNotSumTransitions);
+                maxNotSumTransitions);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -622,18 +621,16 @@ static void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.005;
     double readErrorRate = 0.1;
-    int64_t alphabetSize = 2;
-    bool maxNotSumEmissions = 1;
+    int64_t alphabetSize = 4;
     bool maxNotSumTransitions = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
-            maxNotSumEmissions, maxNotSumTransitions);
+            maxNotSumTransitions);
 }
 
 static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -646,17 +643,15 @@ static void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     double hetRate = 0.01;
     double readErrorRate = 0.1;
     int64_t alphabetSize = 4;
-    bool maxNotSumEmissions = 1;
     bool maxNotSumTransitions = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
-            maxNotSumEmissions, maxNotSumTransitions);
+            maxNotSumTransitions);
 }
 
 static void test_systemSingleReference(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
     int64_t minReferenceLength = 1000;
@@ -668,19 +663,17 @@ static void test_systemSingleReference(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
-    int64_t alphabetSize = 3;
-    bool maxNotSumEmissions = 1;
+    int64_t alphabetSize = 4;
     bool maxNotSumTransitions = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn,
             hetRate, readErrorRate, alphabetSize,
-            maxNotSumEmissions, maxNotSumTransitions);
+            maxNotSumTransitions);
 }
 
 static void test_systemMultipleReferences(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 2;
     int64_t maxReferenceSeqNumber = 5;
     int64_t minReferenceLength = 500;
@@ -692,14 +685,13 @@ static void test_systemMultipleReferences(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
-    int64_t alphabetSize = 5;
-    bool maxNotSumEmissions = 1;
+    int64_t alphabetSize = 4;
     bool maxNotSumTransitions = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate, alphabetSize,
-            maxNotSumEmissions, maxNotSumTransitions);
+            maxNotSumTransitions);
 }
 
 static void test_popCount64(CuTest *testCase) {
@@ -730,11 +722,10 @@ static uint64_t getRandomPartition(int64_t depth) {
 }
 
 static void test_bitCountVectors(CuTest *testCase) {
-    return;
     for(int64_t depth=0; depth<64; depth++) {
         for(int64_t test=0; test<100; test++) {
             // Make column as set of uint8_t sequences
-            int64_t alphabetSize = st_randomInt(1, 10);
+            int64_t alphabetSize = 4; //st_randomInt(1, 10);
             int64_t length = st_randomInt(0, 10);
             uint8_t **seqs = st_malloc(sizeof(uint8_t *) * depth);
             for(int64_t i=0; i<depth; i++) {
@@ -789,7 +780,6 @@ void buildComponent(stRPHmm *hmm1, stSortedSet *component, stSet *seen) {
 }
 
 static void test_getOverlappingComponents(CuTest *testCase) {
-    return;
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 10;
     int64_t minReferenceLength = 1000;
@@ -801,8 +791,7 @@ static void test_getOverlappingComponents(CuTest *testCase) {
     int64_t maxPartitionsInAColumn = 100;
     double hetRate = 0.02;
     double readErrorRate = 0.01;
-    int64_t alphabetSize = 2;
-    bool maxNotSumEmissions = 1;
+    int64_t alphabetSize = 4;
     bool maxNotSumTransitions = 0;
 
     for(int64_t test=0; test<RANDOM_TEST_NO; test++) {
@@ -810,7 +799,7 @@ static void test_getOverlappingComponents(CuTest *testCase) {
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
                         hetRate, readErrorRate, alphabetSize,
-                        maxNotSumEmissions, maxNotSumTransitions);
+                        maxNotSumTransitions);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -972,15 +961,15 @@ double getLogProbOfReadCharactersSlow(stSubModel *alphabet, uint64_t *expectedIn
      * Get the log probability of a given source character given the expected number of instances of
      * each character in the reads.
      */
-    double logCharacterProb = stSubModel_getSubstitutionProbSlow(alphabet, sourceCharacterIndex, 0) *
-            ((double)expectedInstanceNumbers[0])/ALPHABET_MAX_PROB;
+    double logCharacterProb = invertScaleToLogIntegerSubMatrix(stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, 0)) *
+            ((double)expectedInstanceNumbers[0]);
 
     for(int64_t i=1; i<alphabet->alphabetSize; i++) {
-        logCharacterProb += stSubModel_getSubstitutionProbSlow(alphabet, sourceCharacterIndex, i) *
-                ((double)expectedInstanceNumbers[i])/ALPHABET_MAX_PROB;
+        logCharacterProb += invertScaleToLogIntegerSubMatrix(stSubModel_getSubstitutionProb(alphabet, sourceCharacterIndex, i)) *
+                ((double)expectedInstanceNumbers[i]);
     }
 
-    return logCharacterProb;
+    return logCharacterProb/ALPHABET_MAX_PROB;
 }
 
 void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
@@ -1005,11 +994,11 @@ void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
     // Calculate the probability of haplotype characters and read characters for each root character
     for(int64_t i=0; i<params->alphabetSize; i++) {
         rootCharacterProbs[i] = characterProbsHap[0] +
-                stSubModel_getSubstitutionProbSlow(params->hetSubModel, i, 0);
+                invertScaleToLogIntegerSubMatrix(stSubModel_getSubstitutionProb(params->hetSubModel, i, 0));
         for(int64_t j=1; j<params->alphabetSize; j++) {
             rootCharacterProbs[i] =
                     logAddP(rootCharacterProbs[i],
-                            characterProbsHap[j] + stSubModel_getSubstitutionProbSlow(params->hetSubModel, i, j), params->maxNotSumEmissions);
+                            characterProbsHap[j] + invertScaleToLogIntegerSubMatrix(stSubModel_getSubstitutionProb(params->hetSubModel, i, j)), 1);
         }
     }
 }
@@ -1031,7 +1020,7 @@ double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
     // Combine the probabilities to calculate the overall probability of a given position in a column
     double logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0];
     for(int64_t i=1; i<params->alphabetSize; i++) {
-        logColumnProb = logAddP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i], params->maxNotSumEmissions);
+        logColumnProb = logAddP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i], 1);
     }
 
     return logColumnProb; // + log(1.0/params->alphabetSize);
