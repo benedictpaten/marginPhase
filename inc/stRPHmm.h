@@ -24,7 +24,6 @@ typedef struct _stRPColumn stRPColumn;
 typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
-typedef struct _stSubModel stSubModel;
 
 // The maximum read depth the model can support
 #define MAX_READ_PARTITIONING_DEPTH 64
@@ -33,29 +32,17 @@ typedef struct _stSubModel stSubModel;
  * Alphabet
  */
 
+#define ALPHABET_SIZE 4
 #define ALPHABET_MAX_PROB 255
 #define ALPHABET_MIN_PROB 0
 #define ALPHABET_CHARACTER_BITS 8
 #define ALPHABET_MIN_SUBSTITUTION_PROB 65535 // 2^16 -1
 
-struct _stSubModel {
-    int64_t alphabetSize;
-    // Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1, with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
-    uint16_t *logSubMatrix;
-};
-
+// Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1, with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
+uint16_t scaleToLogIntegerSubMatrix(double logProb);
 double invertScaleToLogIntegerSubMatrix(int64_t i);
 
-uint16_t scaleToLogIntegerSubMatrix(double logProb);
-
-stSubModel *stSubModel_constructEmptyModel(int64_t alphabetSize);
-
-void stSubModel_destruct(stSubModel *alphabet);
-
-uint16_t stSubModel_getSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
-        int64_t derivedCharacterIndex);
-
-void stSubModel_setSubstitutionProb(stSubModel *alphabet, int64_t sourceCharacterIndex,
+void setSubstitutionProb(uint16_t *logSubMatrix, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob);
 
 char * intToBinaryString(uint64_t i);
@@ -72,8 +59,7 @@ struct _stProfileSeq {
     char *referenceName;
     int64_t refStart;
     int64_t length;
-    int64_t alphabetSize;
-    // The probability of alphabet characters, as specified by stSubModel
+    // The probability of alphabet characters, as specified by uint16_t
     // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
     // 1.0/255
@@ -81,7 +67,7 @@ struct _stProfileSeq {
 };
 
 stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
-        int64_t referenceStart, int64_t length, int64_t alphabetSize);
+        int64_t referenceStart, int64_t length);
 
 void stProfileSeq_destruct(stProfileSeq *seq);
 
@@ -105,9 +91,9 @@ double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitC
 int popcount64(uint64_t x);
 
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
-        int64_t position, int64_t characterIndex, int64_t alphabetSize);
+        int64_t position, int64_t characterIndex);
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length, int64_t alphabetSize);
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length);
 
 /*
  * Read partitioning hmm
@@ -117,16 +103,15 @@ struct _stRPHmmParameters {
     /*
      * Parameters used for the HMM computation
      */
-    int64_t alphabetSize;
-    stSubModel *hetSubModel;
-    stSubModel *readErrorSubModel;
+    uint16_t *hetSubModel;
+    uint16_t *readErrorSubModel;
     bool maxNotSumTransitions;
     int64_t maxPartitionsInAColumn;
     int64_t maxCoverageDepth;
 };
 
-stRPHmmParameters *stRPHmmParameters_construct(stSubModel *hetSubModel,
-        stSubModel *readErrorSubModel,
+stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
+        uint16_t *readErrorSubModel,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth);
