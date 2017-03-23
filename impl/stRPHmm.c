@@ -10,6 +10,12 @@
 #include <float.h>
 #include <math.h>
 
+// OpenMP
+#if defined(_OPENMP)
+#include <omp.h>
+#define CELL_BUFFER_SIZE 1000
+#endif
+
 #define ST_MATH_LOG_ZERO -INFINITY
 #define ST_MATH_LOG_ONE 0.0
 
@@ -23,6 +29,14 @@ double logAddP(double a, double b, bool maxNotSum) {
 /*
  * Functions for manipulating read partitions described in binary
  */
+
+uint64_t makeAcceptMask(int64_t depth) {
+    /*
+     * Returns a mask to the given sequence depth that includes all the sequences
+     */
+    assert(depth <= MAX_READ_PARTITIONING_DEPTH);
+    return ~(0xFFFFFFFFFFFFFFFF << depth);
+}
 
 uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
         uint64_t depthOfPartition1, uint64_t depthOfPartition2) {
@@ -40,6 +54,20 @@ uint64_t maskPartition(uint64_t partition, uint64_t mask) {
     return partition & mask;
 }
 
+uint64_t invertPartition(uint64_t partition, int64_t depth) {
+    /*
+     * Creates the inverse partition.
+     */
+    return makeAcceptMask(depth) & ~partition;
+}
+
+uint64_t invertMergePartition(uint64_t partition, int64_t depth, uint64_t mask) {
+    /*
+     * Creates the inverse partition of a merge partition.
+     */
+    return invertPartition(partition, depth) & mask;
+}
+
 bool seqInHap1(uint64_t partition, int64_t seqIndex) {
     /*
      * Returns non-zero if the sequence indexed by seqIndex is in the first haplotype,
@@ -47,14 +75,6 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex) {
      */
     assert(seqIndex < MAX_READ_PARTITIONING_DEPTH);
     return (partition >> seqIndex) & 1;
-}
-
-uint64_t makeAcceptMask(int64_t depth) {
-    /*
-     * Returns a mask to the given sequence depth that includes all the sequences
-     */
-    assert(depth <= MAX_READ_PARTITIONING_DEPTH);
-    return ~(0xFFFFFFFFFFFFFFFF << depth);
 }
 
 char * intToBinaryString(uint64_t i) {
@@ -438,14 +458,30 @@ stList *mergeTilingPaths(stList *tilingPaths) {
         for(int64_t i=0; i<stList_length(tilingPaths)/2; i++) {
             stList_append(tilingPaths1, stList_get(tilingPaths, i));
         }
-        tilingPath1 = mergeTilingPaths(tilingPaths1);
 
         // Recursively turn the other half of the tiling paths into the other tiling path
         stList *tilingPaths2 = stList_construct();
         for(int64_t i=stList_length(tilingPaths)/2; i < stList_length(tilingPaths); i++) {
             stList_append(tilingPaths2, stList_get(tilingPaths, i));
         }
+
+#if defined(_OPENMP)
+#pragma omp parallel
+{
+#pragma omp sections nowait
+{
+#pragma omp section
+        tilingPath1 = mergeTilingPaths(tilingPaths1);
+
+#pragma omp section
         tilingPath2 = mergeTilingPaths(tilingPaths2);
+
+}
+}
+#else
+        tilingPath1 = mergeTilingPaths(tilingPaths1);
+        tilingPath2 = mergeTilingPaths(tilingPaths2);
+#endif
     }
     // Otherwise the number of tiling paths is two
     else {
@@ -635,7 +671,6 @@ void setSubstitutionProb(uint16_t *logSubMatrix, int64_t sourceCharacterIndex,
 /*
  * Following implement Hamming weight for uint64_t ints, taken from
  * https://en.wikipedia.org/wiki/Hamming_weight
- * TODO: Fiddle with built in popcount instruction
  */
 
 //types and constants used in the functions below
@@ -722,6 +757,7 @@ uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, ui
      */
     uint64_t *j = retrieveBitCountVector(bitCountVectors, position, characterIndex, 0);
     uint64_t expectedCount = popcount64(j[0] & partition);
+
     for(int64_t i=1; i<ALPHABET_CHARACTER_BITS; i++) {
         expectedCount += (popcount64(j[i] & partition) << i);
     }
@@ -816,8 +852,9 @@ double emissionLogProbability(stRPColumn *column,
     assert(column->length > 0);
     uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
             cell->partition, bitCountVectors, params);
+
     for(int64_t i=1; i<column->length; i++) {
-        logPartitionProb += columnIndexLogProbability(column, i,
+        logPartitionProb = logPartitionProb + columnIndexLogProbability(column, i,
                 cell->partition, bitCountVectors, params);
     }
 
@@ -1295,7 +1332,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     // Set column number
     hmm->columnNumber = hmm1->columnNumber;
     // Set substitution matrices
-    if(hmm1->parameters != hmm1->parameters) {
+    if(hmm1->parameters != hmm2->parameters) {
         st_errAbort("Hmm parameters differ in fuse function, panic.");
     }
     hmm->parameters = hmm1->parameters;
@@ -1415,20 +1452,25 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     return hmm;
 }
 
-void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
+static void stRPHmm_initialiseProbs(stRPHmm *hmm) {
     /*
-     * Initialize the forward matrix.
+     * Initialize the forward and backward matrices.
      */
-    // Initialise total forward probability
+    // Initialize total forward and backward probabilities
     hmm->forwardLogProb = ST_MATH_LOG_ZERO;
+    hmm->backwardLogProb = ST_MATH_LOG_ZERO;
 
     // Iterate through columns from first to last
     stRPColumn *column = hmm->firstColumn;
     while(1) {
+        // Set total log prob
+        column->totalLogProb = ST_MATH_LOG_ZERO;
+
         // Initialise cells in the column
         stRPCell *cell = column->head;
         do {
             cell->forwardLogProb = ST_MATH_LOG_ZERO;
+            cell->backwardLogProb = ST_MATH_LOG_ZERO;
         } while((cell = cell->nCell) != NULL);
 
         if(column->nColumn == NULL) {
@@ -1440,6 +1482,7 @@ void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
         for(int64_t i=0; i<stList_length(mergeCells); i++) {
             stRPMergeCell *mergeCell = stList_get(mergeCells, i);
             mergeCell->forwardLogProb = ST_MATH_LOG_ZERO;
+            mergeCell->backwardLogProb = ST_MATH_LOG_ZERO;
         }
         stList_destruct(mergeCells);
 
@@ -1447,13 +1490,46 @@ void stRPHmm_initialiseForwardProbs(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_forward(stRPHmm *hmm) {
+static inline void forwardCellCalc1(stRPHmm *hmm, stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors) {
+    // If the previous merge column exists then propagate forward probability from merge state
+    if(column->pColumn != NULL) {
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
+        cell->forwardLogProb = mCell->forwardLogProb;
+    }
+    // Otherwise initialize probability with log(1.0)
+    else {
+        cell->forwardLogProb = ST_MATH_LOG_ONE;
+    }
+
+    // Calculate the emission prob
+    double emissionProb = emissionLogProbability(column, cell, bitCountVectors,
+            (stRPHmmParameters *)hmm->parameters);
+
+    // Add emission prob to forward log prob
+    cell->forwardLogProb += emissionProb;
+
+    // Store the emission probability for the cell in the backwardLogProb field temporarily
+    // (is corrected during the backward pass)
+    cell->backwardLogProb = emissionProb;
+}
+
+static inline void forwardCellCalc2(stRPHmm *hmm, stRPColumn *column, stRPCell *cell) {
+    // If the next merge column exists then propagate forward probability to the merge state
+    if (column->nColumn != NULL) {
+        // Add to the next merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
+        mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    } else {
+        // Else propagate probability to total forward probability of model
+        hmm->forwardLogProb = logAddP(hmm->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
+    }
+}
+
+static void stRPHmm_forward(stRPHmm *hmm) {
     /*
      * Forward algorithm for hmm.
      */
-    // Initialise state values
-    stRPHmm_initialiseForwardProbs(hmm);
-
     stRPColumn *column = hmm->firstColumn;
 
     // Iterate through columns from first to last
@@ -1464,33 +1540,36 @@ void stRPHmm_forward(stRPHmm *hmm) {
 
         // Iterate through states in column
         stRPCell *cell = column->head;
+
+        // If OpenMP is available then parallelize the calculation of the emission calcs
+#if defined(_OPENMP)
+        stRPCell *cells[CELL_BUFFER_SIZE];
         do {
-            // If the previous merge column exists then propagate forward probability from merge state
-            if(column->pColumn != NULL) {
-                stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
-                cell->forwardLogProb = mCell->forwardLogProb;
-            }
-            // Otherwise initialize probability with log(1.0)
-            else {
-                cell->forwardLogProb = ST_MATH_LOG_ONE;
-            }
+            // Get as many cells as the buffer will fit / there are cells
+            int64_t cellsInBuffer=0;
+            do {
+                cells[cellsInBuffer++] = cell;
+            } while((cell = cell->nCell) != NULL && cellsInBuffer < CELL_BUFFER_SIZE);
 
-            // Emission prob
-            cell->forwardLogProb += emissionLogProbability(column, cell, bitCountVectors,
-                    (stRPHmmParameters *)hmm->parameters);
-
-            // If the next merge column exists then propagate forward probability to the merge state
-            if(column->nColumn != NULL) {
-                // Add to the next merge cell
-                stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
-                mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
+#pragma omp parallel
+{
+#pragma omp for
+            for(int64_t i=0; i<cellsInBuffer; i++) {
+                forwardCellCalc1(hmm, column, cells[i], bitCountVectors);
             }
-            else {
-                // Else propagate probability to total forward probability of model
-                hmm->forwardLogProb = logAddP(hmm->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
+}
+            for(int64_t i=0; i<cellsInBuffer; i++) {
+                forwardCellCalc2(hmm, column, cells[i]);
             }
+        } while(cell != NULL);
+#else
+        // Otherwise do it without the need for the cell buffer
+        do {
+            forwardCellCalc1(hmm, column, cell, bitCountVectors);
+            forwardCellCalc2(hmm, column, cell);
         }
         while((cell = cell->nCell) != NULL);
+#endif
 
         // Cleanup the bit count vectors
         free(bitCountVectors);
@@ -1502,92 +1581,53 @@ void stRPHmm_forward(stRPHmm *hmm) {
     }
 }
 
-void stRPHmm_initialiseBackwardProbs(stRPHmm *hmm) {
-    /*
-     * Initialize the backward matrix.
-     */
-    // Initialize total backward probability
-    hmm->backwardLogProb = ST_MATH_LOG_ZERO;
+static inline void backwardCellCalc(stRPHmm *hmm, stRPColumn *column, stRPCell *cell) {
+    // Retrieve the emission probability that was stored by the forward pass
+    double probabilityToPropagateLogProb = cell->backwardLogProb;
 
-    // Iterate through columns
-    stRPColumn *column = hmm->firstColumn;
-    while(1) {
-        // Set total log prob
-        column->totalLogProb = ST_MATH_LOG_ZERO;
-
-        // Initialize cells in the column
-        stRPCell *cell = column->head;
-        do {
-            cell->backwardLogProb = ST_MATH_LOG_ZERO;
-        } while((cell = cell->nCell) != NULL);
-
-        if(column->nColumn == NULL) {
-            break;
-        }
-
-        // Initialize cells in the next merge column
-        stList *mergeCells = stHash_getValues(column->nColumn->mergeCellsFrom);
-        for(int64_t i=0; i<stList_length(mergeCells); i++) {
-            stRPMergeCell *mergeCell = stList_get(mergeCells, i);
-            mergeCell->backwardLogProb = ST_MATH_LOG_ZERO;
-        }
-        stList_destruct(mergeCells);
-
-        column = column->nColumn->nColumn;
+    // If the next merge column exists then propagate backward probability from merge state
+    if(column->nColumn != NULL) {
+        stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
+        cell->backwardLogProb = mCell->backwardLogProb;
+        probabilityToPropagateLogProb += mCell->backwardLogProb;
     }
+    else { // Else set the backward prob to log(1)
+        cell->backwardLogProb = ST_MATH_LOG_ONE;
+    }
+
+    // If the previous merge column exists then propagate backward probability to the merge state
+    if(column->pColumn != NULL) {
+        // Add to the previous merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
+        mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    }
+    else {
+        hmm->backwardLogProb = logAddP(hmm->backwardLogProb, probabilityToPropagateLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    }
+
+    // Add to column total probability
+    column->totalLogProb = logAddP(column->totalLogProb,
+                 cell->forwardLogProb + cell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
 }
 
-void stRPHmm_backward(stRPHmm *hmm) {
+static void stRPHmm_backward(stRPHmm *hmm) {
     /*
      * Backward algorithm for hmm.
      */
     stRPColumn *column = hmm->lastColumn;
 
-    // Initialize backward probabilities
-    stRPHmm_initialiseBackwardProbs(hmm);
-
     // Iterate through columns from last to first
     while(1) {
-        // Get the bit count vectors for the column
-        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->length);
-
         // Iterate through states in column
         stRPCell *cell = column->head;
+
+        // Otherwise do it without the need for the cell buffer
         do {
-            // If the next merge column exists then propagate backward probability from merge state
-            if(column->nColumn != NULL) {
-                stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
-                cell->backwardLogProb = mCell->backwardLogProb;
-            }
-            // Otherwise initialize probability with log(1.0)
-            else {
-                cell->backwardLogProb = ST_MATH_LOG_ONE;
-            }
-
-            // Add to column total probability
-            column->totalLogProb = logAddP(column->totalLogProb, cell->forwardLogProb + cell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
-
-            // Total backward prob to propagate
-            double probabilityToPropagateLogProb = cell->backwardLogProb + emissionLogProbability(column, cell,
-                    bitCountVectors,  (stRPHmmParameters *)hmm->parameters);
-
-            // If the previous merge column exists then propagate backward probability to the merge state
-            if(column->pColumn != NULL) {
-                // Add to the previous merge cell
-                stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
-                mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
-                            hmm->parameters->maxNotSumTransitions);
-            }
-            else {
-                hmm->backwardLogProb = logAddP(hmm->backwardLogProb, probabilityToPropagateLogProb,
-                        hmm->parameters->maxNotSumTransitions);
-            }
+            backwardCellCalc(hmm, column, cell);
         }
         while((cell = cell->nCell) != NULL);
-
-        // Cleanup the bit count vectors
-        free(bitCountVectors);
 
         if(column->pColumn == NULL) {
             break;
@@ -1600,11 +1640,11 @@ void stRPHmm_forwardBackward(stRPHmm *hmm) {
     /*
      * Runs the forward and backward algorithms and sets the total column probabilities.
      *
-     * (The backward algorithm on its own is now exposed as it requires running the forward
-     * algorithm to set the total probabilities within the columns)
-     *
      * This function must be run upon an HMM to calculate cell posterior probabilities.
      */
+    // Initialise state values
+    stRPHmm_initialiseProbs(hmm);
+    // Run the forward and backward passes
     stRPHmm_forward(hmm);
     stRPHmm_backward(hmm);
 }
@@ -2088,10 +2128,16 @@ stRPMergeCell *stRPMergeCell_construct(uint64_t fromPartition, uint64_t toPartit
     /*
      * Create a merge cell, adding it to the merge column mColumn.
      */
+    assert(popcount64(fromPartition) == popcount64(toPartition));
+    assert(popcount64(mColumn->maskFrom) == popcount64(mColumn->maskTo));
+    assert(popcount64(fromPartition) <= popcount64(mColumn->maskFrom));
+
     stRPMergeCell *mCell = st_calloc(1, sizeof(stRPMergeCell));
     mCell->fromPartition = fromPartition;
     mCell->toPartition = toPartition;
+    assert(stHash_search(mColumn->mergeCellsFrom, &mCell->fromPartition) == NULL);
     stHash_insert(mColumn->mergeCellsFrom, &mCell->fromPartition, mCell);
+    assert(stHash_search(mColumn->mergeCellsTo, &mCell->toPartition) == NULL);
     stHash_insert(mColumn->mergeCellsTo, &mCell->toPartition, mCell);
     return mCell;
 }

@@ -468,7 +468,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 }
                 stHash_destructIterator(it);
                 if(!maxNotSumTransitions) {
-                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.03);
+                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
                 }
                 column = mColumn->nColumn;
             }
@@ -568,10 +568,10 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     stList_length(profileSeqs2), partitionErrors);
 
             for(int64_t k=0; k<stList_length(hapSeqs1); k++) {
-                fprintf(stderr, "Hap1: %s\n", stList_get(hapSeqs1, k));
+                fprintf(stderr, "Hap1: %s\n", (char *)stList_get(hapSeqs1, k));
             }
             for(int64_t k=0; k<stList_length(hapSeqs2); k++) {
-                fprintf(stderr, "Hap2: %s\n", stList_get(hapSeqs2, k));
+                fprintf(stderr, "Hap2: %s\n", (char *)stList_get(hapSeqs2, k));
             }
             printPartition(stderr, profileSeqsPartition1, profileSeqsPartition2);
 

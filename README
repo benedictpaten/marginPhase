@@ -13,5 +13,5 @@ Features:
 
 Optimization:
 - investigate more effective pruning in the cross product function using the probabilities
-- add in OpenMP stuff to parallelize cell calculation loop
+    DO PRUNING IN CROSS PRODUCT FUNCTION?
 - add iterative refinement step

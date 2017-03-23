@@ -155,8 +155,6 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2);
 
 stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm);
 
-void stRPHmm_forward(stRPHmm *hmm);
-
 void stRPHmm_forwardBackward(stRPHmm *hmm);
 
 void stRPHmm_prune(stRPHmm *hmm);
