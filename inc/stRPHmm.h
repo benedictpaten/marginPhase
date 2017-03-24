@@ -1,8 +1,7 @@
 /*
- * model.h
+ * Copyright (C) 2017 by Benedict Paten (benedictpaten@gmail.com)
  *
- *  Created on: Feb 4, 2017
- *      Author: benedictpaten
+ * Released under the MIT license, see LICENSE.txt
  */
 
 #ifndef ST_RP_HMM_H_
@@ -11,6 +10,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <math.h>
+#include <float.h>
+
 #include "sonLib.h"
 
 /*
@@ -25,8 +27,25 @@ typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
 
-// The maximum read depth the model can support
-#define MAX_READ_PARTITIONING_DEPTH 64
+/*
+ * Overall coordination functions
+ */
+
+stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
+
+stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
+
+stList *getTilingPaths(stSortedSet *hmms);
+
+stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2);
+
+/*
+ * Math
+ */
+#define ST_MATH_LOG_ZERO -INFINITY
+#define ST_MATH_LOG_ONE 0.0
+
+double logAddP(double a, double b, bool maxNotSum);
 
 /*
  * Alphabet
@@ -45,9 +64,23 @@ double invertScaleToLogIntegerSubMatrix(int64_t i);
 void setSubstitutionProb(uint16_t *logSubMatrix, int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob);
 
+/*
+ * Binary partition stuff
+ */
+
+// The maximum read depth the model can support
+#define MAX_READ_PARTITIONING_DEPTH 64
+
 char * intToBinaryString(uint64_t i);
 
-double logAddP(double a, double b, bool maxNotSum);
+uint64_t makeAcceptMask(int64_t depth);
+
+uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
+        uint64_t depthOfPartition1, uint64_t depthOfPartition2);
+
+uint64_t maskPartition(uint64_t partition, uint64_t mask);
+
+bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 /*
  * Profile sequence
@@ -132,14 +165,6 @@ struct _stRPHmm {
     double forwardLogProb;
     double backwardLogProb;
 };
-
-stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
-
-stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
-
-stList *getTilingPaths(stSortedSet *hmms);
-
-stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2);
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
 

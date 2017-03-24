@@ -1,0 +1,1075 @@
+/*
+ * Copyright (C) 2017 by Benedict Paten (benedictpaten@gmail.com)
+ *
+ * Released under the MIT license, see LICENSE.txt
+ */
+
+#include "stRPHmm.h"
+
+// OpenMP
+#if defined(_OPENMP)
+#include <omp.h>
+#define CELL_BUFFER_SIZE 1000
+#endif
+
+double logAddP(double a, double b, bool maxNotSum) {
+    /*
+     * Local function for doing addition of logs or (if doing Viterbi style calculation), to take the max.
+     */
+    return maxNotSum ? (a > b ? a : b) : stMath_logAdd(a, b);
+}
+
+/*
+ * Functions for the read partitioning hmm object stRPHmm.
+ */
+
+stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
+        uint16_t *readErrorSubModel,
+        bool maxNotSumTransitions,
+        int64_t maxPartitionsInAColumn,
+        int64_t maxCoverageDepth) {
+    /*
+     * Create an parameters object for an HMM.
+     */
+    stRPHmmParameters *params = st_malloc(sizeof(stRPHmmParameters));
+
+    params->hetSubModel = hetSubModel;
+    params->readErrorSubModel = readErrorSubModel;
+    params->maxNotSumTransitions = maxNotSumTransitions;
+    params->maxPartitionsInAColumn = maxPartitionsInAColumn;
+    params->maxCoverageDepth = maxCoverageDepth;
+
+    // Checks
+    if(params->maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
+            st_errAbort("The maximum coverage depth %" PRIi64 " is greater than the maximum allowed by the model: %"
+                    PRIi64 "\n", params->maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
+    }
+    if(maxPartitionsInAColumn <= 0) {
+        st_errAbort("Minimum number of partitions in a column is not a positive integer");
+    }
+
+    return params;
+}
+
+void stRPHmmParameters_destruct(stRPHmmParameters *params) {
+    free(params->hetSubModel);
+    free(params->readErrorSubModel);
+    free(params);
+}
+
+int cmpint(int64_t i, int64_t j) {
+    return i > j ? 1 : i < j ? -1 : 0;
+}
+
+int stRPHmm_cmpFn(const void *a, const void *b) {
+    /*
+     * Compares two read partitioning HMMs by coordinate on the reference.
+     * Will return equal only if they are the same HMM, with the same memory
+     * address, otherwise compares pointers for equal HMMs.
+     */
+    stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
+    int i = strcmp(hmm1->referenceName, hmm2->referenceName);
+    if(i == 0) {
+        i = cmpint(hmm1->refStart,  hmm2->refStart);
+        if(i == 0) {
+            i = cmpint(hmm1->refLength,  hmm2->refLength);
+            if(i == 0) {
+                i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
+            }
+        }
+    }
+    return i;
+}
+
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) {
+    /*
+     * Create a read partitioning HMM representing the single sequence profile.
+     */
+
+    stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
+
+    //  Set reference coordinates
+    hmm->referenceName = stString_copy(profileSeq->referenceName);
+    hmm->refStart = profileSeq->refStart;
+    hmm->refLength = profileSeq->length;
+
+    // Add the single profile sequence to the list of the hmm's sequences
+    hmm->profileSeqs = stList_construct();
+    stList_append(hmm->profileSeqs, profileSeq);
+
+    hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
+
+    hmm->columnNumber = 1; // The number of columns in the model, initially just 1
+    hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
+
+    // Create the first column of the model
+    stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *));
+    seqHeaders[0] = profileSeq;
+    uint8_t **seqs = st_malloc(sizeof(uint8_t *));
+    seqs[0] = profileSeq->profileProbs;
+    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs);
+    hmm->firstColumn = column;
+    hmm->lastColumn = column;
+
+    // Add two cells to the column to represent the two possible partitions of the single profile sequence
+    stRPCell *cell = stRPCell_construct(1);
+    column->head = cell;
+    cell->nCell = stRPCell_construct(0);
+
+    return hmm;
+}
+
+void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
+    /*
+     * Free memory owned by the hmm, including columns.
+     */
+    free(hmm->referenceName);
+    stList_destruct(hmm->profileSeqs);
+
+    if(destructColumns) {
+        // Cleanup the columns of the hmm
+        stRPColumn *column = hmm->firstColumn;
+        while(1) {
+            stRPMergeColumn *mColumn = column->nColumn;
+            stRPColumn_destruct(column);
+            if(mColumn == NULL) {
+                break;
+            }
+            column = mColumn->nColumn;
+            stRPMergeColumn_destruct(mColumn);
+        }
+    }
+
+    free(hmm);
+}
+
+void stRPHmm_destruct2(stRPHmm *hmm) {
+    /*
+     * Cleans up hmm and columns
+     */
+    stRPHmm_destruct(hmm, 1);
+}
+
+stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
+    /*
+     * Traces back through the forward matrix picking the most probable path.
+     * (yes, this is non-symmetric)
+     * Returns the result as a list of cells, one from each column.
+     */
+    stList *path = stList_construct();
+
+    stRPColumn *column = hmm->lastColumn;
+
+    // Pick cell in the last column with highest probability
+    stRPCell *cell = column->head;
+    double maxProb = cell->forwardLogProb;
+    stRPCell *maxCell = cell;
+    while((cell = cell->nCell) != NULL) {
+        if(cell->forwardLogProb > maxProb) {
+            maxProb = cell->forwardLogProb;
+            maxCell = cell;
+        }
+    }
+
+    stList_append(path, maxCell); // Add chosen cell to output
+
+    // Walk back through previous columns
+    while(column->pColumn != NULL) {
+        // Get previous merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(maxCell, column->pColumn);
+        assert(mCell != NULL);
+
+        // Switch to previous column
+        column = column->pColumn->pColumn;
+
+        // Walk through cells in the previous column to find the one with the
+        // highest forward probability that transitions to maxCell
+        cell = column->head;
+        maxCell = NULL;
+        maxProb = ST_MATH_LOG_ZERO;
+        do {
+            // If compatible and has greater probability
+            if(stRPMergeColumn_getNextMergeCell(cell, column->nColumn) == mCell && cell->forwardLogProb > maxProb) {
+                maxProb = cell->forwardLogProb;
+                maxCell = cell;
+            }
+        } while((cell = cell->nCell) != NULL);
+
+        assert(maxCell != NULL);
+        stList_append(path, maxCell);
+    }
+
+    stList_reverse(path); // So cells go in order
+
+    return path;
+}
+
+stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1) {
+    /*
+     * For an hmm and path through the hmm (e.g. computed with stRPHmm_forwardTraceBack) returns the
+     * set of sequences in the hmm that are predicted to come from one given haplotype.
+     */
+
+    stSet *seqsInHap1 = stSet_construct();
+
+    // For each cell/column pair
+    stRPColumn *column = hmm->firstColumn;
+    for(int64_t i=0; i<stList_length(path); i++) {
+        stRPCell *cell = stList_get(path, i);
+
+        // Get sequences in first or second partition
+        for(int64_t j=0; j<column->depth; j++) {
+            if((seqInHap1(cell->partition, j) && partition1) ||
+                    (!seqInHap1(cell->partition, j) && !partition1)) {
+                stSet_insert(seqsInHap1, column->seqHeaders[j]);
+            }
+        }
+
+        if(column->nColumn != NULL) {
+            column = column->nColumn->nColumn;
+        }
+    }
+
+    return seqsInHap1;
+}
+
+void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool includeCells) {
+    /*
+     * Prints a debug friendly representation of the state of an hmm.
+     */
+    //Header line
+    fprintf(fileHandle, "HMM REF_NAME: %s REF_START: %" PRIi64 " REF_LENGTH %" PRIi64
+            " COLUMN_NUMBER %" PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n,",
+            hmm->referenceName, hmm->refStart, hmm->refLength,
+            hmm->columnNumber, hmm->maxDepth,
+            (float)hmm->forwardLogProb, (float)hmm->backwardLogProb);
+
+    if(includeColumns) {
+        stRPColumn *column = hmm->firstColumn;
+        int64_t i=0;
+        while(1) {
+            fprintf(fileHandle, "Column %" PRIi64 "\n", i++);
+
+            // Print the column
+            stRPColumn_print(column, fileHandle, includeCells);
+
+            if(column->nColumn == NULL) {
+                break;
+            }
+
+            // Print the merge column
+            stRPMergeColumn_print(column->nColumn, fileHandle, includeCells);
+
+            column = column->nColumn->nColumn;
+        }
+    }
+}
+
+stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
+    /*
+     * Fuses together two hmms, such that leftHmm and rightHMM are on the same reference sequence and non-overlapping and
+     * left hmm preceds right hmm on the reference sequence.
+     * Returns fused hmm, destroys input hmms in the process.
+     */
+
+    // Checks
+    if(!stString_eq(leftHmm->referenceName, rightHmm->referenceName)) {
+        st_errAbort("Attempting to fuse two hmms not on the same reference sequence");
+    }
+
+    if(stRPHmm_overlapOnReference(leftHmm, rightHmm)) {
+        st_errAbort("Attemping to fuse two hmms that overlap in reference coordinates");
+    }
+
+    if(leftHmm->refStart >= rightHmm->refStart) {
+        st_errAbort("Left hmm does not precede right hmm in reference coordinates for merge");
+    }
+
+    // Create a new empty hmm
+    stRPHmm *hmm = st_malloc(sizeof(stRPHmm));
+    // Set the reference interval
+    hmm->referenceName = stString_copy(leftHmm->referenceName);
+    hmm->refStart = leftHmm->refStart;
+    hmm->refLength = rightHmm->refStart + rightHmm->refLength - leftHmm->refStart;
+    // Create the combined list of profile seqs
+    hmm->profileSeqs = stList_copy(leftHmm->profileSeqs, NULL);
+    stList_appendAll(hmm->profileSeqs, rightHmm->profileSeqs);
+    // Set column number
+    hmm->columnNumber = leftHmm->columnNumber + rightHmm->columnNumber;
+    // Max depth
+    hmm->maxDepth = leftHmm->maxDepth > rightHmm->maxDepth ? leftHmm->maxDepth : rightHmm->maxDepth;
+    // Parameters
+    if(leftHmm->parameters != rightHmm->parameters) {
+        st_errAbort("HMM parameters differ in fuse function, panic.");
+    }
+    hmm->parameters = leftHmm->parameters;
+
+    // Make columns to fuse left hmm and right hmm's columns
+    stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
+
+    // Links
+    leftHmm->lastColumn->nColumn = mColumn;
+    mColumn->pColumn = leftHmm->lastColumn;
+
+    // Add merge cell to connect the cells in the two columns
+    stRPMergeCell_construct(0, 0, mColumn);
+
+    int64_t gapLength = rightHmm->refStart - (leftHmm->refStart + leftHmm->refLength);
+    assert(gapLength >= 0);
+    if(gapLength > 0) {
+        // Make column in the gap
+        stRPColumn *column = stRPColumn_construct(leftHmm->refStart + leftHmm->refLength,
+                gapLength, 0, NULL, NULL);
+
+        // Links
+        mColumn->nColumn = column;
+        column->pColumn = mColumn;
+        // Make cell for empty column
+        column->head = stRPCell_construct(0);
+
+        // Add right merge column
+        mColumn = stRPMergeColumn_construct(0, 0);
+
+        // Add merge cell to connect the cells in the two columns
+        stRPMergeCell_construct(0, 0, mColumn);
+
+        // Links
+        column->nColumn = mColumn;
+        mColumn->pColumn = column;
+        // Increase the column number to account for the introduced gap column
+        hmm->columnNumber += 1;
+    }
+    mColumn->nColumn = rightHmm->firstColumn;
+    rightHmm->firstColumn->pColumn = mColumn;
+
+    // Initialise first/last columns of fused hmm
+    hmm->firstColumn = leftHmm->firstColumn;
+    hmm->lastColumn = rightHmm->lastColumn;
+
+    // Cleanup
+    stRPHmm_destruct(leftHmm, 0);
+    stRPHmm_destruct(rightHmm, 0);
+
+    return hmm;
+}
+
+void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
+    /*
+     * Align the input hmms, modifying them in place, so that they each
+     *  (1) span the same reference interval,
+     *  (2) have the same number of columns, and
+     *  (3) so that for all i, column i in each model span the same interval.
+     */
+    assert(hmm1 != hmm2);
+
+    // If the two hmms don't overlap in reference space then complain
+    if(!stRPHmm_overlapOnReference(hmm1, hmm2)) {
+        st_errAbort("Attempting to align two HMMs that do not overlap in reference coordinate space");
+    }
+
+    // If hmm1 starts after hmm2 then call the other way around
+    if(hmm1->refStart > hmm2->refStart) {
+        stRPHmm_alignColumns(hmm2, hmm1);
+        return;
+    }
+
+    // If hmm1 starts before hmm2 add an empty prefix interval to hmm2
+    // so they have the same start coordinate
+    if(hmm1->refStart < hmm2->refStart) {
+        // Create column
+        stRPColumn *column = stRPColumn_construct(hmm1->refStart,
+                hmm2->refStart - hmm1->refStart,
+                0, NULL, NULL);
+        // Add cell
+        column->head = stRPCell_construct(0);
+        // Create merge column
+        stRPMergeColumn *mColumn = stRPMergeColumn_construct(0,0);
+        // Add merge cell
+        stRPMergeCell_construct(0, 0, mColumn);
+        // Create links
+        hmm2->firstColumn->pColumn = mColumn;
+        mColumn->nColumn = hmm2->firstColumn;
+        mColumn->pColumn = column;
+        column->nColumn = mColumn;
+        assert(column->pColumn == NULL);
+        hmm2->firstColumn = column;
+        //Adjust start and length of hmm2 interval
+        hmm2->refLength += hmm2->refStart - hmm1->refStart;
+        hmm2->refStart = hmm1->refStart;
+        // Increase column number
+        hmm2->columnNumber++;
+    }
+
+    // If hmm1 has a shorter reference interval length than hmm2 then call the function
+    // with the hmms reversed.
+    if(hmm1->refLength < hmm2->refLength) {
+        stRPHmm_alignColumns(hmm2, hmm1);
+        return;
+    }
+
+    // If hmm1 has a longer reference interval than hmm2 append an empty suffix
+    // interval to hmm2 to make them the same length.
+    if(hmm1->refLength > hmm2->refLength) {
+        // Create column
+        stRPColumn *column = stRPColumn_construct(hmm2->lastColumn->refStart + hmm2->lastColumn->length,
+                hmm1->refLength - hmm2->refLength, 0, NULL, NULL);
+        // Add cell
+        column->head = stRPCell_construct(0);
+        // Create merge column
+        stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
+        // Add merge cell
+        stRPMergeCell_construct(0, 0, mColumn);
+        // Create links
+        hmm2->lastColumn->nColumn = mColumn;
+        mColumn->pColumn = hmm2->lastColumn;
+        mColumn->nColumn = column;
+        column->pColumn = mColumn;
+        assert(column->nColumn == NULL);
+        hmm2->lastColumn = column;
+        //Adjust start and length of hmm2 interval
+        hmm2->refLength = hmm1->refLength;
+        // Increase column number
+        hmm2->columnNumber++;
+    }
+
+    // Quick coordinate checks
+    assert(hmm1->refStart == hmm2->refStart);
+    assert(hmm1->refLength == hmm2->refLength);
+    assert(hmm1->firstColumn->refStart == hmm1->refStart);
+    assert(hmm2->firstColumn->refStart == hmm2->refStart);
+    assert(hmm1->lastColumn->refStart + hmm1->lastColumn->length == hmm1->refStart + hmm1->refLength);
+    assert(hmm2->lastColumn->refStart + hmm2->lastColumn->length == hmm2->refStart + hmm2->refLength);
+
+    // At this point both hmms have the same reference interval
+
+    // While one hmm has a shorter reference interval than the other split the other interval
+    // otherwise move on to the next
+    stRPColumn *column1 = hmm1->firstColumn;
+    stRPColumn *column2 = hmm2->firstColumn;
+    while(1) {
+        assert(column1->refStart == column2->refStart);
+
+        if(column1->length > column2->length) {
+            stRPColumn_split(column1, column2->length, hmm1);
+            assert(column1->nColumn->nColumn->refStart == column1->refStart + column2->length);
+        }
+        else if(column1->length < column2->length) {
+            stRPColumn_split(column2, column1->length, hmm2);
+        }
+
+        assert(column1->refStart == column2->refStart);
+        assert(column1->length == column2->length); // Now have equal length/start
+
+        // There are no more columns, so break
+        if(column1->nColumn == NULL) {
+            assert(hmm1->lastColumn == column1);
+            assert(column2->nColumn == NULL);
+            assert(hmm2->lastColumn == column2);
+            break;
+        }
+
+        column1 = column1->nColumn->nColumn;
+        assert(column2->nColumn != NULL);
+        column2 = column2->nColumn->nColumn;
+        assert(column1 != NULL);
+        assert(column2 != NULL);
+    }
+
+    assert(hmm1->columnNumber == hmm2->columnNumber);
+}
+
+stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
+    /*
+     *  For two aligned hmms (see stRPHmm_alignColumns) returns a new hmm that represents the
+     *  cross product of all the states of the two input hmms.
+     */
+
+    // Do sanity checks that the two hmms have been aligned
+    if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
+        st_errAbort("Trying to create cross product of two HMMs "
+                "on different reference sequences");
+    }
+    if(hmm1->refStart != hmm2->refStart) {
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different reference interval starts");
+    }
+    if(hmm1->refLength != hmm2->refLength) {
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different reference interval length");
+    }
+    if(hmm1->columnNumber != hmm2->columnNumber) {
+        st_errAbort("Trying to create cross product of two HMMs "
+                "with different column numbers");
+    }
+
+    // Create a new empty hmm
+    stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
+    // Set the reference interval
+    hmm->referenceName = stString_copy(hmm1->referenceName);
+    hmm->refStart = hmm1->refStart;
+    hmm->refLength = hmm1->refLength;
+    // Create the combined list of profile seqs
+    hmm->profileSeqs = stList_copy(hmm1->profileSeqs, NULL);
+    stList_appendAll(hmm->profileSeqs, hmm2->profileSeqs);
+    // Set column number
+    hmm->columnNumber = hmm1->columnNumber;
+    // Set substitution matrices
+    if(hmm1->parameters != hmm2->parameters) {
+        st_errAbort("Hmm parameters differ in fuse function, panic.");
+    }
+    hmm->parameters = hmm1->parameters;
+
+    // For each pair of corresponding columns
+    stRPColumn *column1 = hmm1->firstColumn;
+    stRPColumn *column2 = hmm2->firstColumn;
+    assert(column1 != NULL);
+    assert(column2 != NULL);
+    stRPMergeColumn *mColumn = NULL;
+
+    while(1) {
+        // Check columns aligned
+        assert(column1->refStart == column2->refStart);
+        assert(column1->length == column2->length);
+
+        // Create the new column
+
+        // Depth
+        int64_t newColumnDepth = column1->depth+column2->depth;
+        if(newColumnDepth > hmm->maxDepth) {
+            hmm->maxDepth = newColumnDepth;
+        }
+
+        // Seq headers
+        stProfileSeq **seqHeaders = st_malloc(sizeof(stProfileSeq *) * newColumnDepth);
+        memcpy(seqHeaders, column1->seqHeaders, sizeof(stProfileSeq *) * column1->depth);
+        memcpy(&seqHeaders[column1->depth], column2->seqHeaders, sizeof(stProfileSeq *) * column2->depth);
+
+        // Profiles
+        uint8_t **seqs = st_malloc(sizeof(uint8_t *) * newColumnDepth);
+        memcpy(seqs, column1->seqs, sizeof(uint8_t *) * column1->depth);
+        memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
+
+        stRPColumn *column = stRPColumn_construct(column1->refStart, column1->length,
+                newColumnDepth, seqHeaders, seqs);
+
+        // If the there is a previous column
+        if(mColumn != NULL) {
+            mColumn->nColumn = column;
+            column->pColumn = mColumn;
+        }
+        else {
+            hmm->firstColumn = column;
+            assert(column->pColumn == NULL);
+        }
+
+        // Create cross product of columns
+        stRPCell **pCell = &column->head;
+        stRPCell *cell1 = column1->head;
+        do {
+            stRPCell *cell2 = column2->head;
+            do {
+                stRPCell *cell = stRPCell_construct(mergePartitionsOrMasks(cell1->partition, cell2->partition,
+                        column1->depth, column2->depth));
+                // Link cells
+                *pCell = cell;
+                pCell = &cell->nCell;
+            } while((cell2 = cell2->nCell) != NULL);
+        } while((cell1 = cell1->nCell) != NULL);
+
+        // Get the next merged column
+        stRPMergeColumn *mColumn1 = column1->nColumn;
+        stRPMergeColumn *mColumn2 = column2->nColumn;
+
+        // If column is NULL, we have reached the last column
+        // and we can exit
+        if(mColumn1 == NULL) {
+            assert(mColumn2 == NULL);
+            assert(hmm1->lastColumn == column1);
+            assert(hmm2->lastColumn == column2);
+
+            // Set the last column pointer
+            hmm->lastColumn = column;
+            break;
+        }
+
+        // Create new merged column
+        uint64_t fromMask = mergePartitionsOrMasks(mColumn1->maskFrom, mColumn2->maskFrom,
+                mColumn1->pColumn->depth, mColumn2->pColumn->depth);
+        uint64_t toMask = mergePartitionsOrMasks(mColumn1->maskTo, mColumn2->maskTo,
+                        mColumn1->nColumn->depth, mColumn2->nColumn->depth);
+        mColumn = stRPMergeColumn_construct(fromMask, toMask);
+
+        // Connect links
+        mColumn->pColumn = column;
+        column->nColumn = mColumn;
+
+        // Create cross product of merged columns
+        stHashIterator *cellIt1 = stHash_getIterator(mColumn1->mergeCellsFrom);
+        stRPMergeCell *mCell1;
+        while((mCell1 = stHash_getNext(cellIt1)) != NULL) {
+            stHashIterator *cellIt2 = stHash_getIterator(mColumn2->mergeCellsFrom);
+            stRPMergeCell *mCell2;
+            while((mCell2 = stHash_getNext(cellIt2)) != NULL) {
+                uint64_t fromPartition = mergePartitionsOrMasks(mCell1->fromPartition,
+                        mCell2->fromPartition,
+                        mColumn1->pColumn->depth, mColumn2->pColumn->depth);
+
+                uint64_t toPartition = mergePartitionsOrMasks(mCell1->toPartition,
+                        mCell2->toPartition,
+                        mColumn1->nColumn->depth, mColumn2->nColumn->depth);
+
+                stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+            }
+            stHash_destructIterator(cellIt2);
+        }
+        stHash_destructIterator(cellIt1);
+
+        // Get next column
+        column1 = mColumn1->nColumn;
+        column2 = mColumn2->nColumn;
+        assert(column1 != NULL);
+        assert(column2 != NULL);
+    }
+
+    return hmm;
+}
+
+static void stRPHmm_initialiseProbs(stRPHmm *hmm) {
+    /*
+     * Initialize the forward and backward matrices.
+     */
+    // Initialize total forward and backward probabilities
+    hmm->forwardLogProb = ST_MATH_LOG_ZERO;
+    hmm->backwardLogProb = ST_MATH_LOG_ZERO;
+
+    // Iterate through columns from first to last
+    stRPColumn *column = hmm->firstColumn;
+    while(1) {
+        // Set total log prob
+        column->totalLogProb = ST_MATH_LOG_ZERO;
+
+        // Initialise cells in the column
+        stRPCell *cell = column->head;
+        do {
+            cell->forwardLogProb = ST_MATH_LOG_ZERO;
+            cell->backwardLogProb = ST_MATH_LOG_ZERO;
+        } while((cell = cell->nCell) != NULL);
+
+        if(column->nColumn == NULL) {
+            break;
+        }
+
+        // Initialise cells in the next merge column
+        stList *mergeCells = stHash_getValues(column->nColumn->mergeCellsFrom);
+        for(int64_t i=0; i<stList_length(mergeCells); i++) {
+            stRPMergeCell *mergeCell = stList_get(mergeCells, i);
+            mergeCell->forwardLogProb = ST_MATH_LOG_ZERO;
+            mergeCell->backwardLogProb = ST_MATH_LOG_ZERO;
+        }
+        stList_destruct(mergeCells);
+
+        column = column->nColumn->nColumn;
+    }
+}
+
+static inline void forwardCellCalc1(stRPHmm *hmm, stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors) {
+    // If the previous merge column exists then propagate forward probability from merge state
+    if(column->pColumn != NULL) {
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
+        cell->forwardLogProb = mCell->forwardLogProb;
+    }
+    // Otherwise initialize probability with log(1.0)
+    else {
+        cell->forwardLogProb = ST_MATH_LOG_ONE;
+    }
+
+    // Calculate the emission prob
+    double emissionProb = emissionLogProbability(column, cell, bitCountVectors,
+            (stRPHmmParameters *)hmm->parameters);
+
+    // Add emission prob to forward log prob
+    cell->forwardLogProb += emissionProb;
+
+    // Store the emission probability for the cell in the backwardLogProb field temporarily
+    // (is corrected during the backward pass)
+    cell->backwardLogProb = emissionProb;
+}
+
+static inline void forwardCellCalc2(stRPHmm *hmm, stRPColumn *column, stRPCell *cell) {
+    // If the next merge column exists then propagate forward probability to the merge state
+    if (column->nColumn != NULL) {
+        // Add to the next merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
+        mCell->forwardLogProb = logAddP(mCell->forwardLogProb, cell->forwardLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    } else {
+        // Else propagate probability to total forward probability of model
+        hmm->forwardLogProb = logAddP(hmm->forwardLogProb, cell->forwardLogProb, hmm->parameters->maxNotSumTransitions);
+    }
+}
+
+static void stRPHmm_forward(stRPHmm *hmm) {
+    /*
+     * Forward algorithm for hmm.
+     */
+    stRPColumn *column = hmm->firstColumn;
+
+    // Iterate through columns from first to last
+    while(1) {
+        // Get the bit count vectors for the column
+        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
+                column->length);
+
+        // Iterate through states in column
+        stRPCell *cell = column->head;
+
+        // If OpenMP is available then parallelize the calculation of the emission calcs
+#if defined(_OPENMP)
+        stRPCell *cells[CELL_BUFFER_SIZE];
+        do {
+            // Get as many cells as the buffer will fit / there are cells
+            int64_t cellsInBuffer=0;
+            do {
+                cells[cellsInBuffer++] = cell;
+            } while((cell = cell->nCell) != NULL && cellsInBuffer < CELL_BUFFER_SIZE);
+
+#pragma omp parallel
+{
+#pragma omp for
+            for(int64_t i=0; i<cellsInBuffer; i++) {
+                forwardCellCalc1(hmm, column, cells[i], bitCountVectors);
+            }
+}
+            for(int64_t i=0; i<cellsInBuffer; i++) {
+                forwardCellCalc2(hmm, column, cells[i]);
+            }
+        } while(cell != NULL);
+#else
+        // Otherwise do it without the need for the cell buffer
+        do {
+            forwardCellCalc1(hmm, column, cell, bitCountVectors);
+            forwardCellCalc2(hmm, column, cell);
+        }
+        while((cell = cell->nCell) != NULL);
+#endif
+
+        // Cleanup the bit count vectors
+        free(bitCountVectors);
+
+        if(column->nColumn == NULL) {
+            break;
+        }
+        column = column->nColumn->nColumn;
+    }
+}
+
+static inline void backwardCellCalc(stRPHmm *hmm, stRPColumn *column, stRPCell *cell) {
+    // Retrieve the emission probability that was stored by the forward pass
+    double probabilityToPropagateLogProb = cell->backwardLogProb;
+
+    // If the next merge column exists then propagate backward probability from merge state
+    if(column->nColumn != NULL) {
+        stRPMergeCell *mCell = stRPMergeColumn_getNextMergeCell(cell, column->nColumn);
+        cell->backwardLogProb = mCell->backwardLogProb;
+        probabilityToPropagateLogProb += mCell->backwardLogProb;
+    }
+    else { // Else set the backward prob to log(1)
+        cell->backwardLogProb = ST_MATH_LOG_ONE;
+    }
+
+    // If the previous merge column exists then propagate backward probability to the merge state
+    if(column->pColumn != NULL) {
+        // Add to the previous merge cell
+        stRPMergeCell *mCell = stRPMergeColumn_getPreviousMergeCell(cell, column->pColumn);
+        mCell->backwardLogProb = logAddP(mCell->backwardLogProb, probabilityToPropagateLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    }
+    else {
+        hmm->backwardLogProb = logAddP(hmm->backwardLogProb, probabilityToPropagateLogProb,
+                hmm->parameters->maxNotSumTransitions);
+    }
+
+    // Add to column total probability
+    column->totalLogProb = logAddP(column->totalLogProb,
+                 cell->forwardLogProb + cell->backwardLogProb, hmm->parameters->maxNotSumTransitions);
+}
+
+static void stRPHmm_backward(stRPHmm *hmm) {
+    /*
+     * Backward algorithm for hmm.
+     */
+    stRPColumn *column = hmm->lastColumn;
+
+    // Iterate through columns from last to first
+    while(1) {
+        // Iterate through states in column
+        stRPCell *cell = column->head;
+
+        // Otherwise do it without the need for the cell buffer
+        do {
+            backwardCellCalc(hmm, column, cell);
+        }
+        while((cell = cell->nCell) != NULL);
+
+        if(column->pColumn == NULL) {
+            break;
+        }
+        column = column->pColumn->pColumn;
+    }
+}
+
+void stRPHmm_forwardBackward(stRPHmm *hmm) {
+    /*
+     * Runs the forward and backward algorithms and sets the total column probabilities.
+     *
+     * This function must be run upon an HMM to calculate cell posterior probabilities.
+     */
+    // Initialise state values
+    stRPHmm_initialiseProbs(hmm);
+    // Run the forward and backward passes
+    stRPHmm_forward(hmm);
+    stRPHmm_backward(hmm);
+}
+
+static int cellCmpFn(const void *a, const void *b, const void *extraArg) {
+    /*
+     * Sort cells by posterior probability in descending order.
+     */
+    stRPCell *cell1 = (stRPCell *)a, *cell2 = (stRPCell *)b;
+    stRPColumn *column = (stRPColumn *)extraArg;
+    double p1 = stRPCell_posteriorProb(cell1, column), p2 = stRPCell_posteriorProb(cell2, column);
+    return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
+}
+
+static int mergeCellCmpFn(const void *a, const void *b, const void *extraArg) {
+    /*
+     * Sort merge cells by posterior probability in descending order.
+     */
+    stRPMergeCell *cell1 = (stRPMergeCell *)a, *cell2 = (stRPMergeCell *)b;
+    stRPMergeColumn *column = (stRPMergeColumn *)extraArg;
+    double p1 = stRPMergeCell_posteriorProb(cell1, column), p2 = stRPMergeCell_posteriorProb(cell2, column);
+    return p1 > p2 ? -1 : p1 < p2 ? 1 : 0;
+}
+
+void filterMergeCells(stRPMergeColumn *mColumn, stSet *chosenMergeCellsSet) {
+    /*
+     * Removes merge cells from the column that are not in chosenMergeCellsSet
+     */
+    assert(stSet_size(chosenMergeCellsSet) > 0);
+    stList *mergeCells = stHash_getValues(mColumn->mergeCellsFrom);
+    for(int64_t i=0; i<stList_length(mergeCells); i++) {
+        stRPMergeCell *mCell = stList_get(mergeCells, i);
+        assert(mCell != NULL);
+        if(stSet_search(chosenMergeCellsSet, mCell) == NULL) {
+            // Remove the state from the merge column
+            assert(stHash_search(mColumn->mergeCellsFrom, &(mCell->fromPartition)) == mCell);
+            assert(stHash_search(mColumn->mergeCellsTo, &(mCell->toPartition)) == mCell);
+            stHash_remove(mColumn->mergeCellsFrom, &(mCell->fromPartition));
+            stHash_remove(mColumn->mergeCellsTo, &(mCell->toPartition));
+
+            // Cleanup
+            stRPMergeCell_destruct(mCell);
+        }
+    }
+    stList_destruct(mergeCells);
+    assert(stSet_size(chosenMergeCellsSet) == stHash_size(mColumn->mergeCellsFrom));
+    assert(stSet_size(chosenMergeCellsSet) == stHash_size(mColumn->mergeCellsTo));
+}
+
+stSet *getLinkedMergeCells(stRPMergeColumn *mColumn,
+        stRPMergeCell *(*getNCell)(stRPCell *, stRPMergeColumn *),
+        stList *cells) {
+    /*
+     * Returns the set of merge cells in the column that are linked to a cell
+     * in cells.
+     */
+    stSet *chosenMergeCellsSet = stSet_construct();
+    for(int64_t i=0; i<stList_length(cells); i++) {
+        stRPMergeCell *mCell = getNCell(stList_get(cells, i), mColumn);
+        assert(mCell != NULL);
+        stSet_insert(chosenMergeCellsSet, mCell);
+    }
+    assert(stSet_size(chosenMergeCellsSet) > 0);
+    return chosenMergeCellsSet;
+}
+
+void relinkCells(stRPColumn *column, stList *cells) {
+    /*
+     * Re-links the cells in the list 'cells' to make up the list of cells in the column.
+     */
+    stRPCell **pCell = &column->head; // Pointer to previous cell, used to
+    // remove cells from the linked list
+    for(int64_t i=0; i<stList_length(cells); i++) {
+        stRPCell *cell = stList_get(cells, i);
+        *pCell = cell;
+        pCell = &cell->nCell;
+    }
+    *pCell = NULL;
+    assert(column->head != NULL);
+}
+
+stList *getLinkedCells(stRPColumn *column,
+        stRPMergeCell *(*getPCell)(stRPCell *, stRPMergeColumn *),
+        stRPMergeColumn *mColumn) {
+    /*
+     * Returns the set of cells in column that are linked to a cell in mColumn.
+     */
+
+    // Put cells into an array and sort by descending posterior prob
+    // only keeping cells that still have a preceding merge cell
+
+    stList *cells = stList_construct();
+    stRPCell *cell = column->head;
+    do {
+        if(mColumn == NULL || getPCell(cell, mColumn) != NULL) {
+            stList_append(cells, cell);
+            cell = cell->nCell;
+        }
+        else {
+            stRPCell *nCell = cell->nCell;
+            stRPCell_destruct(cell);
+            cell = nCell;
+        }
+    } while(cell != NULL);
+    stList_sort2(cells, cellCmpFn, column);
+    assert(stList_length(cells) > 0);
+
+    return cells;
+}
+
+void stRPHmm_pruneForwards(stRPHmm *hmm) {
+    /*
+     * Remove cells from hmm whos posterior probability is below the given threshold
+     */
+
+    // For each column
+    stRPColumn *column = hmm->firstColumn;
+    stRPMergeColumn *mColumn = NULL;
+
+    while(1) {
+        assert(column->head != NULL);
+
+        // Get cells that have a valid previous cell
+        stList *cells = getLinkedCells(column, stRPMergeColumn_getPreviousMergeCell, mColumn);
+
+        // Get rid of the excess cells
+        while(stList_length(cells) > hmm->parameters->maxPartitionsInAColumn) {
+            stRPCell_destruct(stList_pop(cells));
+        }
+
+        // Relink the cells (from most probable to least probable)
+        relinkCells(column, cells);
+
+        // Move on to the next merge column
+        mColumn = column->nColumn;
+
+        if(mColumn == NULL) {
+            assert(column == hmm->lastColumn);
+            stList_destruct(cells);
+            break;
+        }
+
+        //  Get merge cells that are connected to a cell in the previous column
+        stSet *chosenMergeCellsSet = getLinkedMergeCells(mColumn,
+                stRPMergeColumn_getNextMergeCell, cells);
+
+        // Shrink the the number of chosen cells to less than equal to the desired number
+        stList *chosenMergeCellsList = stSet_getList(chosenMergeCellsSet);
+        stList_sort2(chosenMergeCellsList, mergeCellCmpFn, mColumn);
+        while(stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn) {
+            stSet_remove(chosenMergeCellsSet, stList_pop(chosenMergeCellsList));
+        }
+        assert(stList_length(chosenMergeCellsList) == stSet_size(chosenMergeCellsSet));
+        stList_destruct(chosenMergeCellsList);
+
+        // Get rid of merge cells we don't need
+        filterMergeCells(mColumn, chosenMergeCellsSet);
+
+        // Cleanup
+        stList_destruct(cells);
+        stSet_destruct(chosenMergeCellsSet);
+
+        column = mColumn->nColumn;
+    }
+}
+
+void stRPHmm_pruneBackwards(stRPHmm *hmm) {
+    /*
+     * Remove cells from hmm whos posterior probability is below the given threshold
+     */
+
+    // For each column
+    stRPColumn *column = hmm->lastColumn;
+    stRPMergeColumn *mColumn = NULL;
+
+    while(1) {
+        assert(column->head != NULL);
+
+        // Get cells that have a valid previous cell
+        stList *cells = getLinkedCells(column, stRPMergeColumn_getNextMergeCell, mColumn);
+
+        // This must be true because the forward pass has already winnowed the number below the
+        // threshold
+        assert(stList_length(cells) <= hmm->parameters->maxPartitionsInAColumn);
+
+        // Relink the cells (from most probable to least probable)
+        relinkCells(column, cells);
+
+        // Move on to the next merge column
+        mColumn = column->pColumn;
+
+        if(mColumn == NULL) {
+            assert(column == hmm->firstColumn);
+            stList_destruct(cells);
+            break;
+        }
+
+        //  Get merge cells that are connected to a cell in the previous column
+        stSet *chosenMergeCellsSet = getLinkedMergeCells(mColumn,
+                stRPMergeColumn_getPreviousMergeCell, cells);
+
+        // By the same logic, this number if pruned on the forwards pass
+        assert(stSet_size(chosenMergeCellsSet) <= hmm->parameters->maxPartitionsInAColumn);
+
+        // Get rid of merge cells we don't need
+        filterMergeCells(mColumn, chosenMergeCellsSet);
+
+        // Cleanup
+        stList_destruct(cells);
+        stSet_destruct(chosenMergeCellsSet);
+
+        column = mColumn->pColumn;
+    }
+}
+
+void stRPHmm_prune(stRPHmm *hmm) {
+    stRPHmm_pruneForwards(hmm);
+    stRPHmm_pruneBackwards(hmm);
+}
+
+bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
+    /*
+     * Return non-zero iff hmm1 and hmm2 have the same reference sequence and overlapping
+     * coordinates intervals on that reference sequence.
+     */
+
+    // If either interval is zero length this is not a well defined comparison
+    if(hmm1->refLength <= 0 || hmm2->refLength <= 0) {
+        st_errAbort("Trying to compare HMMs with a zero length coordinate interval");
+    }
+
+    // Check if on the same reference sequence
+    if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
+        return 0;
+    }
+
+    // Check if intervals overlap
+
+    // If hmm1 starts after hmm2's start coordinate then switch hmm1 for hmm2
+    if(hmm1->refStart > hmm2->refStart) {
+        return stRPHmm_overlapOnReference(hmm2, hmm1);
+    }
+
+    // The coordinates of the first interval overlap the second
+    return hmm1->refStart + hmm1->refLength > hmm2->refStart;
+}

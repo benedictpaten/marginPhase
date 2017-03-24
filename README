@@ -11,6 +11,9 @@ Features:
 - add code to break up haplotypes where less certain
 - add interface code
 
+Organization:
+- Documentation / readme
+
 Optimization:
 - investigate more effective pruning in the cross product function using the probabilities
     DO PRUNING IN CROSS PRODUCT FUNCTION?
