@@ -26,6 +26,7 @@ typedef struct _stRPColumn stRPColumn;
 typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
+typedef struct _stGenomeFragment stGenomeFragment;
 
 /*
  * Overall coordination functions
@@ -61,7 +62,8 @@ double logAddP(double a, double b, bool maxNotSum);
 uint16_t scaleToLogIntegerSubMatrix(double logProb);
 double invertScaleToLogIntegerSubMatrix(int64_t i);
 
-void setSubstitutionProb(uint16_t *logSubMatrix, int64_t sourceCharacterIndex,
+void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
+        int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob);
 
 /*
@@ -119,6 +121,13 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors,
                                 stRPHmmParameters *params);
 
+double emissionLogProbabilitySlow(stRPColumn *column,
+        stRPCell *cell, uint64_t *bitCountVectors,
+        stRPHmmParameters *params, bool maxNotSum);
+
+void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
+        stRPColumn *column, stRPHmmParameters *params);
+
 // Constituent functions tested and used to do bit twiddling
 
 int popcount64(uint64_t x);
@@ -138,13 +147,17 @@ struct _stRPHmmParameters {
      */
     uint16_t *hetSubModel;
     uint16_t *readErrorSubModel;
+    double *hetSubModelSlow;
+    double *readErrorSubModelSlow;
     bool maxNotSumTransitions;
     int64_t maxPartitionsInAColumn;
     int64_t maxCoverageDepth;
 };
 
 stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
+        double *hetSubModelSlow,
         uint16_t *readErrorSubModel,
+        double *readErrorSubModelSlow,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth);
@@ -277,5 +290,42 @@ void stRPMergeCell_print(stRPMergeCell *mCell, FILE *fileHandle);
 
 double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
 
+/*
+ * String to represent genotype and haplotype inference from an HMM
+ */
+
+struct _stGenomeFragment {
+    // A string where each element represents the predicted genotype at the corresponding
+    // position.
+    // A genotype is represented by an integer in the range [0, ALPHABET_SIZE**2)
+    // A genotype expresses two characters. For two characters x, y represented by two integers
+    // in [0, ALPHABET_SIZE) then the genotype is expressed as x * ALPHABET_SIZE + y
+    uint64_t *genotypeString;
+
+    // An array of genotype posterior probabilities,
+    // each between 0 and 1, for the corresponding genotypes
+    // in the genotype string
+    float *genotypeProbs;
+
+    // Strings representing the predicted haplotypes, where each element is an alphabet character
+    // index in [0, ALPHABET_SIZE)
+    uint64_t *haplotypeString1;
+    uint64_t *haplotypeString2;
+
+    // An array of haplotype posterior probabilities,
+    // each between 0 and 1, for the corresponding haplotypes
+    // in the haplotype strings
+    float *haplotypeProbs1;
+    float *haplotypeProbs2;
+
+    // The reference coordinates of the genotypes
+    char *referenceName;
+    int64_t refStart;
+    int64_t length;
+};
+
+stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
+
+void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
 #endif /* ST_RP_HMM_H_ */

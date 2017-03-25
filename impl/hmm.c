@@ -12,7 +12,7 @@
 #define CELL_BUFFER_SIZE 1000
 #endif
 
-double logAddP(double a, double b, bool maxNotSum) {
+inline double logAddP(double a, double b, bool maxNotSum) {
     /*
      * Local function for doing addition of logs or (if doing Viterbi style calculation), to take the max.
      */
@@ -24,7 +24,9 @@ double logAddP(double a, double b, bool maxNotSum) {
  */
 
 stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
+        double *hetSubModelSlow,
         uint16_t *readErrorSubModel,
+        double *readErrorSubModelSlow,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
         int64_t maxCoverageDepth) {
@@ -34,7 +36,9 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
     stRPHmmParameters *params = st_malloc(sizeof(stRPHmmParameters));
 
     params->hetSubModel = hetSubModel;
+    params->hetSubModelSlow = hetSubModelSlow;
     params->readErrorSubModel = readErrorSubModel;
+    params->readErrorSubModelSlow = readErrorSubModelSlow;
     params->maxNotSumTransitions = maxNotSumTransitions;
     params->maxPartitionsInAColumn = maxPartitionsInAColumn;
     params->maxCoverageDepth = maxCoverageDepth;
@@ -53,15 +57,17 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params) {
     free(params->hetSubModel);
+    free(params->hetSubModelSlow);
     free(params->readErrorSubModel);
+    free(params->readErrorSubModelSlow);
     free(params);
 }
 
-int cmpint(int64_t i, int64_t j) {
+inline int cmpint(int64_t i, int64_t j) {
     return i > j ? 1 : i < j ? -1 : 0;
 }
 
-int stRPHmm_cmpFn(const void *a, const void *b) {
+inline int stRPHmm_cmpFn(const void *a, const void *b) {
     /*
      * Compares two read partitioning HMMs by coordinate on the reference.
      * Will return equal only if they are the same HMM, with the same memory

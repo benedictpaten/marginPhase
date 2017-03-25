@@ -76,6 +76,8 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
     // Substitution models
     uint16_t *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     uint16_t *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
+    double *readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+    double *hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
 
     // Fill in substitition matrix with simple symmetric probs matching
     // the read error rate
@@ -83,15 +85,16 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
     assert(readErrorRate >= 0.0);
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            setSubstitutionProb(readErrorSubModel, i, j, i==j ?
+            setSubstitutionProb(readErrorSubModel, readErrorSubModelSlow, i, j, i==j ?
                     1.0-readErrorRate : readErrorRate/(ALPHABET_SIZE-1));
-            setSubstitutionProb(hetSubModel, i, j, i==j ?
+            setSubstitutionProb(hetSubModel, hetSubModelSlow, i, j, i==j ?
                     1.0-hetRate : hetRate/(ALPHABET_SIZE-1));
         }
     }
 
-    return stRPHmmParameters_construct(hetSubModel, readErrorSubModel,
-                    maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH);
+    return stRPHmmParameters_construct(hetSubModel, hetSubModelSlow,
+            readErrorSubModel, readErrorSubModelSlow,
+            maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH);
 }
 
 static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSeqs2,
@@ -581,7 +584,85 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             totalProfile2SeqsOverAllTests += stList_length(profileSeqs2);
             totalPartitionErrorsOverAllTests += partitionErrors;
 
+            /*
+             * Test genome fragment code
+             */
+            stGenomeFragment *gF = stGenomeFragment_construct(hmm, traceBackPath);
+
+            // Check coordinates
+            CuAssertStrEquals(testCase, hmm->referenceName, gF->referenceName);
+            CuAssertIntEquals(testCase, hmm->refStart, gF->refStart);
+            CuAssertIntEquals(testCase, hmm->refLength, gF->length);
+
+            // Get the haplotype sequences
+            stList *tokens = stString_splitByString(hmm->referenceName, "_");
+            int64_t refSeqIndex = stSafeStrToInt64(stList_peek(tokens));
+            stList_destruct(tokens);
+            char *hap1Seq = stList_get(hapSeqs1, refSeqIndex);
+            char *hap2Seq = stList_get(hapSeqs1, refSeqIndex);
+
+            int64_t correctGenotypes = 0;
+            double probsOfCorrectGenotypes = 0.0;
+            double probsOfIncorrectGenotypes = 0.0;
+            int64_t hap1ToPredictedHap1Diffs = 0;
+            int64_t hap1ToPredictedHap2Diffs = 0;
+            int64_t hap2ToPredictedHap1Diffs = 0;
+            int64_t hap2ToPredictedHap2Diffs = 0;
+            // For each character
+            for(int64_t j=0; j<gF->length; j++) {
+                // Check genotype
+                CuAssertTrue(testCase, gF->genotypeString[j] <= ALPHABET_SIZE * ALPHABET_SIZE);
+                uint64_t trueGenotype = (hap1Seq[j] - FIRST_ALPHABET_CHAR) * ALPHABET_SIZE + (hap2Seq[j] - FIRST_ALPHABET_CHAR);
+
+                if(gF->genotypeString[j] == trueGenotype) {
+                    correctGenotypes++;
+                    probsOfCorrectGenotypes += gF->genotypeProbs[j];
+                }
+                else {
+                    probsOfIncorrectGenotypes += gF->genotypeProbs[j];
+                }
+
+                // Check genotype posterior probability
+                CuAssertTrue(testCase, gF->genotypeProbs[j] >= 0.0);
+                CuAssertTrue(testCase, gF->genotypeProbs[j] <= 1.0);
+
+                // Check haplotypes
+                CuAssertTrue(testCase, gF->haplotypeString1[j] <= ALPHABET_SIZE);
+                CuAssertTrue(testCase, gF->haplotypeString2[j] <= ALPHABET_SIZE);
+                CuAssertTrue(testCase, gF->haplotypeString1[j] * ALPHABET_SIZE + gF->haplotypeString2[j] == gF->genotypeString[j]);
+
+                hap1ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap1Seq[j] ? 0 : 1;
+                hap1ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap1Seq[j] ? 0 : 1;
+                hap2ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap2Seq[j] ? 0 : 1;
+                hap2ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap2Seq[j] ? 0 : 1;
+
+                // Check haplotype posterior probabilities
+                CuAssertTrue(testCase, gF->haplotypeProbs1[j] >= 0.0);
+                CuAssertTrue(testCase, gF->haplotypeProbs1[j] <= 1.0);
+                CuAssertTrue(testCase, gF->haplotypeProbs2[j] >= 0.0);
+                CuAssertTrue(testCase, gF->haplotypeProbs2[j] <= 1.0);
+            }
+
+            // Pick the best pairing of the haplotypes to report
+            if(hap1ToPredictedHap1Diffs + hap2ToPredictedHap2Diffs >
+                    hap2ToPredictedHap1Diffs + hap1ToPredictedHap2Diffs) {
+                hap1ToPredictedHap1Diffs = hap2ToPredictedHap1Diffs;
+                hap2ToPredictedHap2Diffs = hap1ToPredictedHap2Diffs;
+            }
+
+            fprintf(stderr, "For an HMM of length: %" PRIi64 " got %" PRIi64 " genotypes correct, rate: %f"
+                    " Got %" PRIi64 " hap1 differences, rate: %f"
+                    " Got %" PRIi64 " hap2 differences, rate: %f\n", hmm->refLength,
+                    correctGenotypes, (float)correctGenotypes/hmm->refLength,
+                    hap1ToPredictedHap1Diffs, (float)hap1ToPredictedHap1Diffs/hmm->refLength,
+                    hap2ToPredictedHap2Diffs, (float)hap2ToPredictedHap2Diffs/hmm->refLength);
+
+            fprintf(stderr, "Avg posterior prob. of correct genotype call: %f, avg. posterior"
+                    " prob. of incorrect genotype call: %f\n", probsOfCorrectGenotypes/hmm->refLength,
+                    probsOfIncorrectGenotypes/hmm->refLength);
+
             // Cleanup
+            stGenomeFragment_destruct(gF);
             stList_destruct(traceBackPath);
             stSet_destruct(profileSeqsPartition1);
             stSet_destruct(profileSeqsPartition2);
@@ -957,99 +1038,6 @@ void test_getOverlappingComponents(CuTest *testCase) {
  * Functions to test emission function
  */
 
-static double *getSubstitutionProb(double *subMatrix, int64_t sourceCharacterIndex,
-        int64_t derivedCharacterIndex) {
-    return &subMatrix[sourceCharacterIndex * ALPHABET_SIZE + derivedCharacterIndex];
-}
-
-double getLogProbOfReadCharactersSlow(double *logSubMatrix, uint64_t *expectedInstanceNumbers,
-        int64_t sourceCharacterIndex) {
-    /*
-     * Get the log probability of a given source character given the expected number of instances of
-     * each character in the reads.
-     */
-    double logCharacterProb = *getSubstitutionProb(logSubMatrix, sourceCharacterIndex, 0) *
-            ((double)expectedInstanceNumbers[0]);
-
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logCharacterProb += *getSubstitutionProb(logSubMatrix, sourceCharacterIndex, i) *
-                ((double)expectedInstanceNumbers[i]);
-    }
-
-    return logCharacterProb/ALPHABET_MAX_PROB;
-}
-
-void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
-        uint64_t partition, uint64_t *bitCountVectors, double *readErrorSubModel,
-        double *hetSubModel, double *rootCharacterProbs) {
-    /*
-     * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
-     */
-    // For each possible read character calculate the expected number of instances in the
-    // partition and store counts in an array
-    uint64_t expectedInstanceNumbers[ALPHABET_SIZE];
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
-                               column->depth, partition, index, i);
-    }
-
-    // Calculate the probability of the read characters for each possible haplotype character
-    double characterProbsHap[ALPHABET_SIZE];
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        characterProbsHap[i] = getLogProbOfReadCharactersSlow(readErrorSubModel, expectedInstanceNumbers, i);
-    }
-
-    // Calculate the probability of haplotype characters and read characters for each root character
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        rootCharacterProbs[i] = characterProbsHap[0] +
-                *getSubstitutionProb(hetSubModel, i, 0);
-        for(int64_t j=1; j<ALPHABET_SIZE; j++) {
-            rootCharacterProbs[i] =
-                    logAddP(rootCharacterProbs[i],
-                            characterProbsHap[j] + *getSubstitutionProb(hetSubModel, i, j), 1);
-        }
-    }
-}
-
-double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
-        uint64_t partition, uint64_t *bitCountVectors,
-        double *readErrorSubModel, double *hetSubModel) {
-    /*
-     * Get the probability of a the characters in a given position within a column for a given partition.
-     */
-    // Get the sum of log probabilities of the derived characters over the possible source characters
-    double rootCharacterProbsHap1[ALPHABET_SIZE];
-    columnIndexLogHapProbabilitySlow(column, index,
-            partition, bitCountVectors, readErrorSubModel, hetSubModel, rootCharacterProbsHap1);
-    double rootCharacterProbsHap2[ALPHABET_SIZE];
-    columnIndexLogHapProbabilitySlow(column, index,
-            ~partition, bitCountVectors, readErrorSubModel, hetSubModel, rootCharacterProbsHap2);
-
-    // Combine the probabilities to calculate the overall probability of a given position in a column
-    double logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0];
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logColumnProb = logAddP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i], 1);
-    }
-
-    return logColumnProb; // + log(1.0/params->alphabetSize);
-}
-
-double emissionLogProbabilitySlow(stRPColumn *column,
-        stRPCell *cell, uint64_t *bitCountVectors,
-        double *readErrorSubModel, double *hetSubModel) {
-    /*
-     * Get the log probability of a set of reads for a given column.
-     */
-    assert(column->length > 0);
-    double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
-            cell->partition, bitCountVectors, readErrorSubModel, hetSubModel);
-    for(int64_t i=1; i<column->length; i++) {
-        logPartitionProb += columnIndexLogProbabilitySlow(column, i,
-                cell->partition, bitCountVectors, readErrorSubModel, hetSubModel);
-    }
-    return logPartitionProb;
-}
-
 void test_emissionLogProbability(CuTest *testCase) {
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 10;
@@ -1070,15 +1058,6 @@ void test_emissionLogProbability(CuTest *testCase) {
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
                         hetRate, readErrorRate,
                         maxNotSumTransitions);
-
-        double *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-        double *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-        for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                *getSubstitutionProb(readErrorSubModel, i, j) = log(i == j ? 1.0 - readErrorRate : readErrorRate/(ALPHABET_SIZE-1));
-                *getSubstitutionProb(hetSubModel, i, j) = log(i == j ? 1.0 - hetRate : hetRate/(ALPHABET_SIZE-1));
-            }
-        }
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -1120,7 +1099,7 @@ void test_emissionLogProbability(CuTest *testCase) {
                     // Check slow and fast way to calculate emission probabilities
                     // are equivalent
                     double e1 = emissionLogProbabilitySlow(column, cell,
-                            bitCountVectors, readErrorSubModel, hetSubModel);
+                            bitCountVectors, params, 1);
                     double e2 = emissionLogProbability(column,
                                                         cell, bitCountVectors, params);
                     //st_uglyf("Boo %f %f\n", e1, e2);
@@ -1141,8 +1120,6 @@ void test_emissionLogProbability(CuTest *testCase) {
         }
 
         // Clean up
-        free(readErrorSubModel);
-        free(hetSubModel);
         stList_destruct(profileSeqs);
         stList_destruct(hmms);
         stList_destruct(referenceSeqs);

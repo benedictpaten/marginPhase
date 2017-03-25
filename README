@@ -7,9 +7,8 @@ Given this requirement a simple 'make all' should be enough to build the project
 TODOs:
 
 Features:
-- add in genotype functions / and code to spit out genotypes / best guess haplotypes
-- add code to break up haplotypes where less certain
 - add interface code
+- add code to break up haplotypes where less certain
 
 Organization:
 - Documentation / readme
