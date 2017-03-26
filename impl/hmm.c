@@ -63,7 +63,7 @@ void stRPHmmParameters_destruct(stRPHmmParameters *params) {
     free(params);
 }
 
-inline int cmpint(int64_t i, int64_t j) {
+int cmpint64(int64_t i, int64_t j) {
     return i > j ? 1 : i < j ? -1 : 0;
 }
 
@@ -76,9 +76,9 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
     stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
     int i = strcmp(hmm1->referenceName, hmm2->referenceName);
     if(i == 0) {
-        i = cmpint(hmm1->refStart,  hmm2->refStart);
+        i = cmpint64(hmm1->refStart,  hmm2->refStart);
         if(i == 0) {
-            i = cmpint(hmm1->refLength,  hmm2->refLength);
+            i = cmpint64(hmm1->refLength,  hmm2->refLength);
             if(i == 0) {
                 i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
             }

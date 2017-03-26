@@ -596,26 +596,39 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
             // Get the haplotype sequences
             stList *tokens = stString_splitByString(hmm->referenceName, "_");
+            assert(stList_length(tokens) == 2);
+            assert(stString_eq(stList_get(tokens, 0), "Reference"));
             int64_t refSeqIndex = stSafeStrToInt64(stList_peek(tokens));
             stList_destruct(tokens);
             char *hap1Seq = stList_get(hapSeqs1, refSeqIndex);
-            char *hap2Seq = stList_get(hapSeqs1, refSeqIndex);
+            char *hap2Seq = stList_get(hapSeqs2, refSeqIndex);
 
             int64_t correctGenotypes = 0;
+            int64_t totalHets = 0;
+            int64_t correctHets = 0;
             double probsOfCorrectGenotypes = 0.0;
             double probsOfIncorrectGenotypes = 0.0;
             int64_t hap1ToPredictedHap1Diffs = 0;
             int64_t hap1ToPredictedHap2Diffs = 0;
             int64_t hap2ToPredictedHap1Diffs = 0;
             int64_t hap2ToPredictedHap2Diffs = 0;
+            int64_t hap1ToPredictedHap1HetDiffs = 0;
+            int64_t hap1ToPredictedHap2HetDiffs = 0;
+            int64_t hap2ToPredictedHap1HetDiffs = 0;
+            int64_t hap2ToPredictedHap2HetDiffs = 0;
             // For each character
             for(int64_t j=0; j<gF->length; j++) {
                 // Check genotype
                 CuAssertTrue(testCase, gF->genotypeString[j] <= ALPHABET_SIZE * ALPHABET_SIZE);
-                uint64_t trueGenotype = (hap1Seq[j] - FIRST_ALPHABET_CHAR) * ALPHABET_SIZE + (hap2Seq[j] - FIRST_ALPHABET_CHAR);
+                char hap1Char = hap1Seq[j + gF->refStart] - FIRST_ALPHABET_CHAR;
+                char hap2Char = hap2Seq[j + gF->refStart] - FIRST_ALPHABET_CHAR;
+                uint64_t trueGenotype = hap1Char < hap2Char ? hap1Char * ALPHABET_SIZE + hap2Char : hap2Char * ALPHABET_SIZE + hap1Char;
+
+                totalHets += hap1Char != hap2Char ? 1 : 0;
 
                 if(gF->genotypeString[j] == trueGenotype) {
                     correctGenotypes++;
+                    correctHets += hap1Char != hap2Char ? 1 : 0;
                     probsOfCorrectGenotypes += gF->genotypeProbs[j];
                 }
                 else {
@@ -629,12 +642,24 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 // Check haplotypes
                 CuAssertTrue(testCase, gF->haplotypeString1[j] <= ALPHABET_SIZE);
                 CuAssertTrue(testCase, gF->haplotypeString2[j] <= ALPHABET_SIZE);
-                CuAssertTrue(testCase, gF->haplotypeString1[j] * ALPHABET_SIZE + gF->haplotypeString2[j] == gF->genotypeString[j]);
+                if(gF->haplotypeString1[j] < gF->haplotypeString2[j]) {
+                    CuAssertTrue(testCase, gF->haplotypeString1[j] * ALPHABET_SIZE + gF->haplotypeString2[j] == gF->genotypeString[j]);
+                }
+                else {
+                    CuAssertTrue(testCase, gF->haplotypeString2[j] * ALPHABET_SIZE + gF->haplotypeString1[j] == gF->genotypeString[j]);
+                }
 
-                hap1ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap1Seq[j] ? 0 : 1;
-                hap1ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap1Seq[j] ? 0 : 1;
-                hap2ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap2Seq[j] ? 0 : 1;
-                hap2ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap2Seq[j] ? 0 : 1;
+                hap1ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap1Char ? 0 : 1;
+                hap1ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap1Char ? 0 : 1;
+                hap2ToPredictedHap1Diffs += gF->haplotypeString1[j] == hap2Char ? 0 : 1;
+                hap2ToPredictedHap2Diffs += gF->haplotypeString2[j] == hap2Char ? 0 : 1;
+
+                if(hap1Char != hap2Char) {
+                    hap1ToPredictedHap1HetDiffs += gF->haplotypeString1[j] == hap1Char ? 0 : 1;
+                    hap1ToPredictedHap2HetDiffs += gF->haplotypeString2[j] == hap1Char ? 0 : 1;
+                    hap2ToPredictedHap1HetDiffs += gF->haplotypeString1[j] == hap2Char ? 0 : 1;
+                    hap2ToPredictedHap2HetDiffs += gF->haplotypeString2[j] == hap2Char ? 0 : 1;
+                }
 
                 // Check haplotype posterior probabilities
                 CuAssertTrue(testCase, gF->haplotypeProbs1[j] >= 0.0);
@@ -648,18 +673,28 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     hap2ToPredictedHap1Diffs + hap1ToPredictedHap2Diffs) {
                 hap1ToPredictedHap1Diffs = hap2ToPredictedHap1Diffs;
                 hap2ToPredictedHap2Diffs = hap1ToPredictedHap2Diffs;
+
+                hap1ToPredictedHap1HetDiffs = hap2ToPredictedHap1HetDiffs;
+                hap2ToPredictedHap2HetDiffs = hap1ToPredictedHap2HetDiffs;
             }
 
-            fprintf(stderr, "For an HMM of length: %" PRIi64 " got %" PRIi64 " genotypes correct, rate: %f"
-                    " Got %" PRIi64 " hap1 differences, rate: %f"
-                    " Got %" PRIi64 " hap2 differences, rate: %f\n", hmm->refLength,
+            fprintf(stderr, "For an HMM of length: %" PRIi64 " got %" PRIi64 " genotypes correct, rate: %f\n"
+                    " Got %" PRIi64 " hets, correct: %" PRIi64 ", rate: %f\n"
+                    " Got %" PRIi64 " hap1 differences, rate: %f\n"
+                    " Got %" PRIi64 " hap2 differences, rate: %f\n"
+                    " Got %" PRIi64 " hap1 het differences, rate: %f\n"
+                    " Got %" PRIi64 " hap2 het differences, rate: %f\n",
+                    hmm->refLength,
                     correctGenotypes, (float)correctGenotypes/hmm->refLength,
+                    totalHets, correctHets, (float)correctHets/totalHets,
                     hap1ToPredictedHap1Diffs, (float)hap1ToPredictedHap1Diffs/hmm->refLength,
-                    hap2ToPredictedHap2Diffs, (float)hap2ToPredictedHap2Diffs/hmm->refLength);
+                    hap2ToPredictedHap2Diffs, (float)hap2ToPredictedHap2Diffs/hmm->refLength,
+                    hap1ToPredictedHap1HetDiffs, (float)hap1ToPredictedHap1HetDiffs/totalHets,
+                    hap2ToPredictedHap2HetDiffs, (float)hap2ToPredictedHap2HetDiffs/totalHets);
 
             fprintf(stderr, "Avg posterior prob. of correct genotype call: %f, avg. posterior"
-                    " prob. of incorrect genotype call: %f\n", probsOfCorrectGenotypes/hmm->refLength,
-                    probsOfIncorrectGenotypes/hmm->refLength);
+                    " prob. of incorrect genotype call: %f\n", probsOfCorrectGenotypes/correctGenotypes,
+                    probsOfIncorrectGenotypes/(hmm->refLength - correctGenotypes));
 
             // Cleanup
             stGenomeFragment_destruct(gF);
@@ -720,15 +755,15 @@ void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
 void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
-    int64_t minReferenceLength = 1000;
-    int64_t maxReferenceLength = 1000;
+    int64_t minReferenceLength = 10000;
+    int64_t maxReferenceLength = 10000;
     int64_t minCoverage = 30;
     int64_t maxCoverage = 30;
-    int64_t minReadLength = 200;
-    int64_t maxReadLength = 200;
+    int64_t minReadLength = 300;
+    int64_t maxReadLength = 300;
     int64_t maxPartitionsInAColumn = 50;
-    double hetRate = 0.01;
-    double readErrorRate = 0.01;
+    double hetRate = 0.0007;
+    double readErrorRate = 0.05;
     bool maxNotSumTransitions = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,

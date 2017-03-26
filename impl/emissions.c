@@ -301,7 +301,8 @@ void calculateRootCharacterProbs(double *characterProbsHap, stRPHmmParameters *p
         for(int64_t j=1; j<ALPHABET_SIZE; j++) {
             rootCharacterProbs[i] =
                     logAddP(rootCharacterProbs[i],
-                            characterProbsHap[j] + *getSubstitutionProbSlow(params->hetSubModelSlow, i, j),
+                            characterProbsHap[j] +
+                            *getSubstitutionProbSlow(params->hetSubModelSlow, i, j),
                             maxNotSum);
         }
     }
@@ -446,7 +447,7 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-    int64_t j = column->refStart + index;
+    int64_t j = column->refStart + index - gF->refStart;
 
     // Get the haplotype characters with highest posterior probability.
     uint64_t hapChar1  = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
@@ -461,7 +462,8 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
             hapChar2, rootCharacterProbsHap1, params) - logColumnProbSum);
 
     // Get combined genotype
-    gF->genotypeString[j] = gF->haplotypeProbs1[j] * ALPHABET_SIZE + gF->haplotypeProbs2[j];
+    gF->genotypeString[j] = hapChar1 < hapChar2 ? hapChar1 * ALPHABET_SIZE + hapChar2 :
+            hapChar2 * ALPHABET_SIZE + hapChar1;
 
     // Calculate genotype posterior probability
     double genotypeProb = ST_MATH_LOG_ZERO;

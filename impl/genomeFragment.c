@@ -31,6 +31,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     stRPColumn *column = hmm->firstColumn;
     for(int64_t i=0; i<stList_length(path)-1; i++) {
         stRPCell *cell = stList_get(path, i);
+        assert(cell != NULL);
 
         // Calculate the predicted genotype/haplotypes for the given cell
         fillInPredictedGenome(gF, cell, column, (stRPHmmParameters *)hmm->parameters);
@@ -39,7 +40,9 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     }
 
     // Get predictions for the last column
-    fillInPredictedGenome(gF, stList_peek(path), column, (stRPHmmParameters *)hmm);
+    assert(column != NULL);
+    assert(column->nColumn == NULL);
+    fillInPredictedGenome(gF, stList_peek(path), column, (stRPHmmParameters *)hmm->parameters);
 
     return gF;
 }

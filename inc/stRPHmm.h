@@ -299,7 +299,8 @@ struct _stGenomeFragment {
     // position.
     // A genotype is represented by an integer in the range [0, ALPHABET_SIZE**2)
     // A genotype expresses two characters. For two characters x, y represented by two integers
-    // in [0, ALPHABET_SIZE) then the genotype is expressed as x * ALPHABET_SIZE + y
+    // in [0, ALPHABET_SIZE) then the genotype is expressed as x * ALPHABET_SIZE + y if x <= y
+    // else y * ALPHABET_SIZE + x
     uint64_t *genotypeString;
 
     // An array of genotype posterior probabilities,
