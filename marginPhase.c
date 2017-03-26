@@ -23,6 +23,7 @@ int main(int argc, char *argv[]) {
     char * logLevelString = NULL;
     char *bamFile = NULL;
     char *vcfFile = NULL;
+    char *paramsFile = NULL;
 
     // Parse the options
     while (1) {
@@ -58,50 +59,88 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
-    stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
+    stList *profileSequences = NULL;
+    /*
+     * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
+     * and create a list of profile sequences using
+     * stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
             int64_t referenceStart, int64_t length);
+       where for each position you turn the character into a profile probability, as shown in the tests
+
+       In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
+       use the posterior probabilities.
+     */
 
     // Parse any model parameters
     st_logInfo("Parsing model parameters\n");
 
-    stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
+    stRPHmmParameters *params = NULL;
+    /*
+     * TODO: Get model parameters. I suggest we make a simple json or yaml file to hold these parameters.
+     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
+     * haplotypes (excluding gaps)
+     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
+     * Once these are read in we need to construct (as shown in the tests) the different matrices.
+     * We will need:
+     * stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
             double *hetSubModelSlow,
             uint16_t *readErrorSubModel,
             double *readErrorSubModelSlow,
             bool maxNotSumTransitions,
             int64_t maxPartitionsInAColumn,
             int64_t maxCoverageDepth);
-
-    void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
+       And:
+       void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
             int64_t sourceCharacterIndex,
             int64_t derivedCharacterIndex, double prob);
+     */
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
 
-    // Here we will call
-
-    stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
+    stList *hmms = getRPHmms(profileSequences, params);
 
     // Create HMM traceback and genome fragments
-    st_logInfo("Creating genome fragments\n");
 
-    void stRPHmm_forwardBackward(stRPHmm *hmm);
+    // For each read partitioning HMM
+    for(int64_t i=0; i<stList_length(hmms); i++) {
+        stRPHmm *hmm = stList_get(hmms, i);
 
-    stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
+        st_logInfo("Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
+                    hmm->referenceName, hmm->refStart, hmm->refLength);
 
-    stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1);
+        // Run the forward-backward algorithm
+        stRPHmm_forwardBackward(hmm);
 
-    stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
+        // Now compute a high probability path through the hmm
+        stList *path = stRPHmm_forwardTraceBack(hmm);
 
-    // Write out VCF
-    st_logInfo("Writing out VCF\n");
+        /*
+         * TODO: BENEDICT: Break up the path in places where we can not be sure about the phasing
+         */
 
-    // Optionally write out two BAMs, one for each read partition
-    st_logInfo("Writing out BAM partitions\n");
+        // Compute the genome fragment
+        stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
+        // Write out VCF
+        st_logInfo("Writing out VCF for fragment\n");
+        /*
+         * TODO: Convert the genome fragment into a portion of a VCF file (we'll need to write the header out earlier)
+         * We can express the genotypes and (using phase sets) the phasing relationships.
+         */
 
-    //while(1);
+        // Optionally write out two BAMs, one for each read partition
+        st_logInfo("Writing out BAM partitions for fragment\n");
+        /*
+         * TODO: Optionally, write out a new BAM file expressing the partition (which reads belong in which partition)
+         * Not sure if we need to write out multiple files or if we can add a per read flag to express this information.
+         */
+    }
+
+    // Cleanup
+    stList_destruct(hmms);
+
+    //while(1); // Use this for testing for memory leaks
 
     return 0;
 }
