@@ -6,11 +6,10 @@ libHeaders = inc/*.h
 libTests = tests/*.c
 testBin = tests/testBin
 
-all : ${binPath}/stMarginPhaseTest 
-#${binPath}/marginPhase
+all : ${binPath}/stMarginPhaseTest ${binPath}/marginPhase
 
 ${binPath}/marginPhase : ${libTests} ${libSources} ${libHeaders} ${basicLibsDependencies} 
-	${cxx} ${cflags} -I inc -I impl -I${libPath} -o ${binPath}/marginPhase marginPhase.c ${libTests} ${libSources} ${basicLibs} 
+	${cxx} ${cflags} -mpopcnt -I inc -I impl -I${libPath} -o ${binPath}/marginPhase marginPhase.c ${libSources} ${basicLibs} 
 
 ${binPath}/stMarginPhaseTest : ${libTests} ${libSources} ${libHeaders} ${basicLibsDependencies} 
 	${cxx} ${cflags} -mpopcnt -I inc -I impl -I${libPath} -o ${binPath}/stMarginPhaseTest ${libTests} ${libSources} ${basicLibs}  
