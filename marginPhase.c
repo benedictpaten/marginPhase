@@ -98,7 +98,17 @@ int main(int argc, char *argv[]) {
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
 
+
     stList *hmms = getRPHmms(profileSequences, params);
+
+    // Break up the hmms where the phasing is uncertain
+    st_logInfo("Breaking apart HMMs where the phasing is uncertain\n");
+
+    stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
+    while(stList_length(hmms) > 0) {
+        stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
+    }
+    hmms = l;
 
     // Create HMM traceback and genome fragments
 
@@ -114,10 +124,6 @@ int main(int argc, char *argv[]) {
 
         // Now compute a high probability path through the hmm
         stList *path = stRPHmm_forwardTraceBack(hmm);
-
-        /*
-         * TODO: BENEDICT: Break up the path in places where we can not be sure about the phasing
-         */
 
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);

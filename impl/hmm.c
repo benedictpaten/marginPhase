@@ -29,7 +29,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
         double *readErrorSubModelSlow,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth) {
+        int64_t maxCoverageDepth,
+        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
     /*
      * Create an parameters object for an HMM.
      */
@@ -42,6 +43,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
     params->maxNotSumTransitions = maxNotSumTransitions;
     params->maxPartitionsInAColumn = maxPartitionsInAColumn;
     params->maxCoverageDepth = maxCoverageDepth;
+    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites =
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites;
 
     // Checks
     if(params->maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
@@ -1078,4 +1081,191 @@ bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
 
     // The coordinates of the first interval overlap the second
     return hmm1->refStart + hmm1->refLength > hmm2->refStart;
+}
+
+static stRPColumn *getColumn(stRPColumn *column, int64_t site) {
+    /*
+     * Returns column containing the given reference position, starting from the linked, preceding column "column".
+     */
+    assert(column != NULL);
+    while(1) {
+        assert(site >= column->refStart);
+        if(site < column->refStart + column->length) {
+            return column;
+        }
+        if(column->nColumn == NULL) {
+            break;
+        }
+        column = column->nColumn->nColumn;
+    }
+    st_errAbort("Site: %" PRIi64 " not contained in hmm\n", site);
+    return column;
+}
+
+void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm) {
+    /*
+     * Walk through the hmm calculate and set the maxDepth and column number.
+     */
+    hmm->columnNumber = 0;
+    hmm->maxDepth = 0;
+    stRPColumn *column = hmm->firstColumn;
+    while(1) {
+        hmm->columnNumber++;
+        if(hmm->maxDepth < column->depth) {
+            hmm->maxDepth = column->depth;
+        }
+        if(column->nColumn == NULL) {
+            break;
+        }
+        column = column->nColumn->nColumn;
+    }
+}
+
+stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
+    /*
+     * Splits the hmm into two at the specified point, given by the reference coordinate splitPiunt. The return value
+     * is the suffix of the split, whose reference start is splitPoint.
+     * The prefix of the split is the input hmm, which has its suffix cleaved off. Its length is then splitPoint-hmm->refStart.
+     */
+
+    if(splitPoint <= hmm->refStart) {
+        st_errAbort("The split point is at or before the start of the reference interval\n");
+    }
+    assert(splitPoint < hmm->refStart + hmm->refLength);
+    if(splitPoint >= hmm->refStart + hmm->refLength) {
+        st_errAbort("The split point %" PRIi64 " is after the last position of the reference interval\n", splitPoint);
+    }
+
+    stRPHmm *suffixHmm = st_calloc(1, sizeof(stRPHmm));
+
+    // Set the reference interval for the two hmms
+    suffixHmm->referenceName = stString_copy(hmm->referenceName);
+    suffixHmm->refStart = splitPoint;
+    suffixHmm->refLength = hmm->refLength + hmm->refStart - splitPoint;
+    hmm->refLength = splitPoint - hmm->refStart;
+    assert(hmm->refLength > 0);
+    assert(suffixHmm->refLength > 0);
+
+    // Parameters
+    suffixHmm->parameters = hmm->parameters;
+
+    // Divide the profile sequences between the two hmms (some may end in both if they span the interval)
+    suffixHmm->profileSeqs = stList_construct();
+    stList *prefixProfileSeqs = stList_construct();
+    for(int64_t i=0; i<stList_length(hmm->profileSeqs); i++) {
+        stProfileSeq *pSeq = stList_get(hmm->profileSeqs, i);
+        if(pSeq->refStart < splitPoint) {
+            stList_append(prefixProfileSeqs, pSeq);
+        }
+        if(pSeq->refStart + pSeq->length > splitPoint) {
+            stList_append(suffixHmm->profileSeqs, pSeq);
+        }
+    }
+    stList_destruct(hmm->profileSeqs);
+    hmm->profileSeqs = prefixProfileSeqs;
+
+    // Get the column containing the split point
+    stRPColumn *splitColumn = getColumn(hmm->firstColumn, splitPoint);
+    assert(splitColumn != NULL);
+    assert(splitColumn->refStart <= splitPoint);
+    assert(splitPoint < splitColumn->refStart + splitColumn->length);
+
+    // If the split point is within the column, split the column
+    if(splitPoint > splitColumn->refStart) {
+        stRPColumn_split(splitColumn, splitPoint-splitColumn->refStart, hmm);
+        splitColumn = splitColumn->nColumn->nColumn;
+        assert(splitPoint == splitColumn->refStart);
+    }
+
+    // Set links between columns
+    suffixHmm->firstColumn = splitColumn;
+    suffixHmm->lastColumn = hmm->lastColumn;
+    hmm->lastColumn = splitColumn->pColumn->pColumn;
+    hmm->lastColumn->nColumn = NULL;
+    stRPMergeColumn_destruct(splitColumn->pColumn); // Cleanup the merge column that is deleted by this pointer setting
+    splitColumn->pColumn = NULL;
+
+    // Set depth and column numbers
+    stRPHmm_resetColumnNumberAndDepth(hmm);
+    stRPHmm_resetColumnNumberAndDepth(suffixHmm);
+
+    return suffixHmm;
+}
+
+static bool sitesLinkageIsWellSupported(stRPHmm *hmm, int64_t leftSite, int64_t rightSite) {
+    /*
+     * Returns true if the two sites, specified by reference coordinates leftSite and rightSite, are linked by
+     * hmm->parameters->minReadCoverageToSupportPhasingBetweenHeterozygousSites, otherwise false.
+     */
+    stRPColumn *leftColumn = getColumn(hmm->firstColumn, leftSite);
+    stRPColumn *rightColumn = getColumn(leftColumn, rightSite);
+
+    stSet *sequencesInCommon = stRPColumn_getSequencesInCommon(leftColumn, rightColumn);
+
+    // Condition to determine if well supported by reads
+    bool wellSupported = stSet_size(sequencesInCommon) >= hmm->parameters->minReadCoverageToSupportPhasingBetweenHeterozygousSites;
+
+    // Cleanup
+    stSet_destruct(sequencesInCommon);
+
+    return wellSupported;
+}
+
+stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
+    /*
+     * Takes the input hmm and splits into a sequence of contiguous fragments covering the same reference interval,
+     * returned as an ordered list of hmm fragments. Hmms are split where there is insufficient support between heterozygous
+     * sites to support phasing between the two haplotypes. See sitesLinkageIsWellSupported for details.
+     */
+
+    // Run the forward-backward algorithm
+    stRPHmm_forwardBackward(hmm);
+
+    // Now compute a high probability path through the hmm
+    stList *path = stRPHmm_forwardTraceBack(hmm);
+
+    // Get two haplotypes for the path through the HMM
+    stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
+
+    // Find high confidence heterozygous sites
+    stList *hetSites = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
+    for(int64_t i=0; i<gF->length; i++) {
+        // If heterozygous site
+        if(gF->haplotypeString1[i] != gF->haplotypeString2[i]) {
+            stList_append(hetSites, stIntTuple_construct1(gF->refStart + i));
+        }
+    }
+
+    // Split hmms
+    stList *splitHmms = stList_construct3(0,  (void (*)(void *))stRPHmm_destruct2);
+
+    // For each pair of contiguous het sites if not supported by sufficient reads split the hmm
+    for(int64_t i=0; i<stList_length(hetSites)-1; i++) {
+        int64_t j = stIntTuple_get(stList_get(hetSites, i), 0);
+        int64_t k = stIntTuple_get(stList_get(hetSites, i+1), 0);
+        assert(k > j);
+
+        // If not well supported by reads
+        if(!sitesLinkageIsWellSupported(hmm, j, k)) {
+            // Split hmm
+            int64_t splitPoint = j+(k-j+1)/2;
+            stRPHmm *rightHmm = stRPHmm_split(hmm, splitPoint);
+            assert(rightHmm->refStart == splitPoint);
+            assert(hmm->refStart + hmm->refLength == splitPoint);
+            // Add prefix of hmm to list of split hmms
+            stList_append(splitHmms, hmm);
+            // Set hmm as right hmm
+            hmm = rightHmm;
+        }
+    }
+
+    // Add the remaining part of the hmm to split hmms
+    stList_append(splitHmms, hmm);
+
+    // Cleanup
+    stList_destruct(hetSites);
+    stList_destruct(path);
+    stGenomeFragment_destruct(gF);
+
+    return splitHmms;
 }

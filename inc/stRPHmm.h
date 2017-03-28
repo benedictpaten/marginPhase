@@ -152,6 +152,7 @@ struct _stRPHmmParameters {
     bool maxNotSumTransitions;
     int64_t maxPartitionsInAColumn;
     int64_t maxCoverageDepth;
+    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
 };
 
 stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
@@ -160,7 +161,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
         double *readErrorSubModelSlow,
         bool maxNotSumTransitions,
         int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth);
+        int64_t maxCoverageDepth,
+        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
@@ -205,6 +207,12 @@ stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool pa
 
 int stRPHmm_cmpFn(const void *a, const void *b);
 
+stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint);
+
+void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm);
+
+stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm);
+
 /*
  * Column of read partitioning hmm
  */
@@ -228,6 +236,10 @@ void stRPColumn_destruct(stRPColumn *column);
 void stRPColumn_print(stRPColumn *column, FILE *fileHandle, bool includeCells);
 
 void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm);
+
+stSet *stRPColumn_getSequencesInCommon(stRPColumn *column1, stRPColumn *column2);
+
+stSet *stRPColumn_getColumnSequencesAsSet(stRPColumn *column);
 
 /*
  * State of read partitioning hmm

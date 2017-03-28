@@ -120,6 +120,33 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     column->length = firstHalfLength;
 }
 
+stSet *stRPColumn_getColumnSequencesAsSet(stRPColumn *column) {
+    /*
+     * Get profile sequences in the column as a set.
+     */
+    stSet *seqSet = stSet_construct();
+    for(int64_t i=0; i<column->depth; i++) {
+        stSet_insert(seqSet, column->seqHeaders[i]);
+    }
+    return seqSet;
+}
+
+stSet *stRPColumn_getSequencesInCommon(stRPColumn *column1, stRPColumn *column2) {
+    /*
+     * Returns set (as stSet) of profile sequences shared by both columns.
+     */
+    stSet *seqSet1 = stRPColumn_getColumnSequencesAsSet(column1);
+    stSet *seqSet2 = stRPColumn_getColumnSequencesAsSet(column2);
+
+    stSet *seqsShared = stSet_getIntersection(seqSet1, seqSet2);
+
+    // Cleanup
+    stSet_destruct(seqSet1);
+    stSet_destruct(seqSet2);
+
+    return seqsShared;
+}
+
 /*
  * Read partitioning hmm state (stRPCell) functions
  */
@@ -154,3 +181,4 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;
 }
+

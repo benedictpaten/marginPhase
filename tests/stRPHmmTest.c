@@ -72,7 +72,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 
 static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
         double hetRate, double readErrorRate,
-        bool maxNotSumTransitions) {
+        bool maxNotSumTransitions, int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
     // Substitution models
     uint16_t *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     uint16_t *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
@@ -94,7 +94,8 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
 
     return stRPHmmParameters_construct(hetSubModel, hetSubModelSlow,
             readErrorSubModel, readErrorSubModelSlow,
-            maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH);
+            maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH,
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 }
 
 static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSeqs2,
@@ -130,9 +131,9 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         stList_append(hapSeqs2, haplotypeSeq2);
 
         // Print info about simulated sequences
-        fprintf(stderr, "Ref seq: %s\n", referenceSeq);
+        /*fprintf(stderr, "Ref seq: %s\n", referenceSeq);
         fprintf(stderr, "  Hap 1: %s\n", haplotypeSeq1);
-        fprintf(stderr, "  Hap 2: %s\n", haplotypeSeq2);
+        fprintf(stderr, "  Hap 2: %s\n", haplotypeSeq2);*/
 
         int64_t diffs = 0;
         for(int64_t j=0; j<strlen(haplotypeSeq1); j++) {
@@ -174,7 +175,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength,
         int64_t maxPartitionsInAColumn, double hetRate, double readErrorRate,
-        bool maxNotSumTransitions) {
+        bool maxNotSumTransitions, bool splitHmmsWherePhasingUncertain,
+        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites,
+        bool printHmm) {
     /*
      * System level test
      *
@@ -202,12 +205,13 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             "\tmaxPartitionsInAColumn: %" PRIi64 "\n"
             "\thetRate: %f\n"
             "\treadErrorRate: %f\n"
-            "\tmaxNotSumTransitions: %i\n",
+            "\tmaxNotSumTransitions: %i\n"
+            "\tsplitHmmsWherePhasingUncertain: %i\n",
             minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength,
             maxPartitionsInAColumn, (float)hetRate, (float)readErrorRate,
-            maxNotSumTransitions);
+            maxNotSumTransitions, splitHmmsWherePhasingUncertain);
 
     int64_t totalProfile1SeqsOverAllTests = 0;
     int64_t totalProfile2SeqsOverAllTests = 0;
@@ -220,7 +224,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
-                hetRate, readErrorRate, maxNotSumTransitions);
+                hetRate, readErrorRate, maxNotSumTransitions,
+                minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -253,6 +258,19 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         // Creates read HMMs
         stList *hmms = getRPHmms(profileSeqs, params);
 
+        // Split hmms where phasing is uncertain
+        if(splitHmmsWherePhasingUncertain) {
+            stList *splitHmms = stList_construct3(0,  (void (*)(void *))stRPHmm_destruct2);
+            while(stList_length(hmms) > 0) {
+                stList *l = stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms));
+                stList_appendAll(splitHmms, l);
+                stList_setDestructor(l, NULL);
+                stList_destruct(l);
+            }
+            stList_destruct(hmms);
+            hmms = splitHmms;
+        }
+
         fprintf(stderr, "Got %" PRIi64 " hmms\n", stList_length(hmms));
 
         // For each hmm
@@ -270,8 +288,16 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 stProfileSeq *profileSeq = stList_get(hmm->profileSeqs, j);
                 // Check reference coordinate containment
                 CuAssertTrue(testCase, stString_eq(profileSeq->referenceName, hmm->referenceName));
-                CuAssertTrue(testCase, hmm->refStart <= profileSeq->refStart);
-                CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                if(!splitHmmsWherePhasingUncertain) { // The profile sequence is only guaranteed to be wholly contained
+                    // in the hmm if the hmm was not split at points where the phasing is uncertain
+                    CuAssertTrue(testCase, hmm->refStart <= profileSeq->refStart);
+                    CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                }
+                else {
+                    // Must overlap
+                    assert(hmm->refStart + hmm->refLength > profileSeq->refStart);
+                    assert(profileSeq->refStart + profileSeq->length > hmm->refStart);
+                }
             }
         }
 
@@ -291,8 +317,16 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                         // Must be contained in the hmm
                         CuAssertTrue(testCase, stList_contains(hmm->profileSeqs, profileSeq));
 
-                        // Must not be partially overlapping
-                        CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                        if(!splitHmmsWherePhasingUncertain) { // The profile sequence is only guaranteed to be wholly contained
+                                            // in the hmm if the hmm was not split at points where the phasing is uncertain
+                            // Must not be partially overlapping
+                            CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                        }
+                        else {
+                            // Must overlap
+                            assert(hmm->refStart + hmm->refLength > profileSeq->refStart);
+                            assert(profileSeq->refStart + profileSeq->length > hmm->refStart);
+                        }
 
                         // Is not contained in another hmm.
                         CuAssertTrue(testCase, !containedInHmm);
@@ -426,7 +460,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             stRPHmm_forwardBackward(hmm);
 
             // Print HMM info, which will contain forward and backward probs
-            stRPHmm_print(hmm, stderr, 1, 1);
+            if(printHmm) {
+                stRPHmm_print(hmm, stderr, 1, 1);
+            }
 
             // Check the forward and backward probs are close
             CuAssertDblEquals(testCase, hmm->forwardLogProb, hmm->backwardLogProb, 0.1);
@@ -567,16 +603,16 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
             fprintf(stderr, "For HMM %" PRIi64 " there were %" PRIi64 " hap1 seqs and %" PRIi64 " hap2 seqs, "
                     "got partition errors: %" PRIi64 "\n", i,
-                    stList_length(profileSeqs1),
-                    stList_length(profileSeqs2), partitionErrors);
+                    stSet_size(profileSeqsPartition1),
+                    stSet_size(profileSeqsPartition2), partitionErrors);
 
-            for(int64_t k=0; k<stList_length(hapSeqs1); k++) {
+            /*for(int64_t k=0; k<stList_length(hapSeqs1); k++) {
                 fprintf(stderr, "Hap1: %s\n", (char *)stList_get(hapSeqs1, k));
             }
             for(int64_t k=0; k<stList_length(hapSeqs2); k++) {
                 fprintf(stderr, "Hap2: %s\n", (char *)stList_get(hapSeqs2, k));
             }
-            printPartition(stderr, profileSeqsPartition1, profileSeqsPartition2);
+            printPartition(stderr, profileSeqsPartition1, profileSeqsPartition2);*/
 
             totalPartitionError += partitionErrors;
 
@@ -745,31 +781,39 @@ void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     double hetRate = 0.001;
     double readErrorRate = 0.1;
     bool maxNotSumTransitions = 0;
+    bool splitHmmsWherePhasingUncertain = 0;
+    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
+    bool printHmm = 1;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
-            maxNotSumTransitions);
+            maxNotSumTransitions, splitHmmsWherePhasingUncertain,
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
 
 void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
-    int64_t minReferenceLength = 10000;
-    int64_t maxReferenceLength = 10000;
+    int64_t minReferenceLength = 40000;
+    int64_t maxReferenceLength = 40000;
     int64_t minCoverage = 30;
     int64_t maxCoverage = 30;
-    int64_t minReadLength = 300;
-    int64_t maxReadLength = 300;
+    int64_t minReadLength = 3000;
+    int64_t maxReadLength = 3000;
     int64_t maxPartitionsInAColumn = 50;
     double hetRate = 0.0007;
     double readErrorRate = 0.05;
     bool maxNotSumTransitions = 0;
+    bool splitHmmsWherePhasingUncertain = 1;
+    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 3;
+    bool printHmm = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
-            maxNotSumTransitions);
+            maxNotSumTransitions, splitHmmsWherePhasingUncertain,
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
 
 void test_systemSingleReference(CuTest *testCase) {
@@ -785,12 +829,16 @@ void test_systemSingleReference(CuTest *testCase) {
     double hetRate = 0.01;
     double readErrorRate = 0.01;
     bool maxNotSumTransitions = 0;
+    bool splitHmmsWherePhasingUncertain = 1;
+    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 15;
+    bool printHmm = 1;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn,
             hetRate, readErrorRate,
-            maxNotSumTransitions);
+            maxNotSumTransitions, splitHmmsWherePhasingUncertain,
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
 
 void test_systemMultipleReferences(CuTest *testCase) {
@@ -806,11 +854,15 @@ void test_systemMultipleReferences(CuTest *testCase) {
     double hetRate = 0.01;
     double readErrorRate = 0.01;
     bool maxNotSumTransitions = 0;
+    bool splitHmmsWherePhasingUncertain = 1;
+    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 15;
+    bool printHmm = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
-            maxNotSumTransitions);
+            maxNotSumTransitions, splitHmmsWherePhasingUncertain,
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
 
 void test_popCount64(CuTest *testCase) {
@@ -917,7 +969,7 @@ void test_getOverlappingComponents(CuTest *testCase) {
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
                         hetRate, readErrorRate,
-                        maxNotSumTransitions);
+                        maxNotSumTransitions, 0);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -1092,7 +1144,7 @@ void test_emissionLogProbability(CuTest *testCase) {
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
                         hetRate, readErrorRate,
-                        maxNotSumTransitions);
+                        maxNotSumTransitions, 0);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
