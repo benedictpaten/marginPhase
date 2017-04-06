@@ -1,0 +1,6 @@
+[submodule "externalTools/htslib"]
+	path = externalTools/htslib
+	url = https://github.com/samtools/htslib.git
+[submodule "externalTools/sonLib"]
+	path = externalTools/sonLib
+	url = https://github.com/benedictpaten/sonLib.git
