@@ -3,7 +3,6 @@ project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -D_XOPEN_SOURCE ")
-
 include_directories(inc)
 
 
