@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include "stRPHmm.h"
+#include "sam.h"
 
 void usage() {
     fprintf(stderr, "marginPhase [options] BAM_FILE\n");
@@ -20,10 +21,13 @@ void usage() {
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
-    char * logLevelString = NULL;
+    //char * logLevelString = NULL;
+    char * logLevelString = "debug";
     char *bamFile = NULL;
     char *vcfFile = NULL;
     char *paramsFile = NULL;
+
+
 
     // Parse the options
     while (1) {
@@ -56,10 +60,19 @@ int main(int argc, char *argv[]) {
 
     st_setLogLevelFromString(logLevelString);
 
+    st_logInfo("Starting marginPhase...\n");
+
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
     stList *profileSequences = NULL;
+
+
+    samFile *fp_in = hts_open(argv[1],"r"); //open bam file
+    bam_hdr_t *bamHdr = sam_hdr_read(fp_in); //read header
+    bam1_t *aln = bam_init1(); //initialize an alignment
+
+
     /*
      * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
      * and create a list of profile sequences using

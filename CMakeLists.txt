@@ -2,19 +2,29 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -D_XOPEN_SOURCE ")
 
 include_directories(inc)
-include_directories(/usr/local/include)
-include_directories(
+
+
+set(HTSLIB_HEADERS
         externalTools/htslib
+        externalTools/htslib/htslib
         externalTools/htslib/cram
-)
-include_directories(
+        )
+set(SONLIB_HEADERS
         externalTools/sonLib/lib
         externalTools/sonLib/C/inc
+        externalTools/sonLib/C/tests
         externalTools/sonLib/externalTools/cutest
         externalTools/sonLib/externalTools/quicktree_1.1/include
         )
+include_directories(${HTSLIB_HEADERS})
+include_directories(${SONLIB_HEADERS})
+
+include_directories(/usr/include)
+include_directories(/usr/local/include)
+
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -130,7 +140,6 @@ set(SONLIB_SOURCES
         #externalTools/sonLib/C/tests/kt_connect_test.cpp
         externalTools/sonLib/C/tests/kvDatabaseTest.c
         externalTools/sonLib/C/tests/kvDatabaseTestCommon.c
-        externalTools/sonLib/C/tests/kvDatabaseTestCommon.h
         externalTools/sonLib/C/tests/sonLibAlignTest.c
         externalTools/sonLib/C/tests/sonLibCacheTest.c
         externalTools/sonLib/C/tests/sonLibCommonTest.c
@@ -141,7 +150,6 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/tests/sonLibEulerTest.c
         externalTools/sonLib/C/tests/sonLibExceptTest.c
         externalTools/sonLib/C/tests/sonLibFileTest.c
-        externalTools/sonLib/C/tests/sonLibGlobalsTest.h
         externalTools/sonLib/C/tests/sonLibGraphTest.c
         externalTools/sonLib/C/tests/sonLibHashTest.c
         externalTools/sonLib/C/tests/sonLibIntTuplesTest.c
@@ -185,16 +193,41 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/partitions.c
         impl/profileSeq.c
-        inc/stRPHmm.h
         )
 
-add_library(htslib ${HTSLIB_SOURCES})
-add_library(sonlib ${SONLIB_SOURCES})
+
+# Dependencies for htslib
+find_library(ZLIB NAMES z)
+if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'z' library")
+endif()
+message(${ZLIB})
+find_library(BZ2LIB bz2)
+if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'bz2' library")
+endif()
+message(${BZ2LIB})
+find_library(LZMALIB lzma)
+if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'lzma' library")
+endif()
+message(${LZMALIB})
+find_library(CURLLIB curl)
+if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'curl' library")
+endif()
+message(${CURLLIB})
+
+
+add_library(son ${SONLIB_SOURCES})
+add_library(hts ${HTSLIB_SOURCES})
+target_link_libraries(hts bz2 lzma z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
-add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
-target_link_libraries(marginPhase htslib sonlib)
-target_link_libraries(allTests htslib sonlib)
+target_link_libraries(marginPhase son hts)
+
 
 enable_testing()
+add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
+target_link_libraries(allTests hts son)
 add_test(stRPHmm allTests)
