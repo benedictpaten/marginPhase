@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -D_XOPEN_SOURCE ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE ")
 include_directories(inc)
 
 
@@ -216,11 +216,21 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 message(${CURLLIB})
+find_library(CRYPTOLIB crypto)
+if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'crypto' library")
+endif()
+message(${CRYPTOLIB})
+find_library(PTHREADLIB pthread)
+if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'pthread' library")
+endif()
+message(${PTHREADLIB})
 
 
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
-target_link_libraries(hts bz2 lzma z curl)
+target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase son hts)
