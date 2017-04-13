@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include "stRPHmm.h"
 #include "sam.h"
+#include "bgzf.h"
 
 void usage() {
     fprintf(stderr, "marginPhase [options] BAM_FILE\n");
@@ -17,28 +18,42 @@ void usage() {
             "giving genotypes and haplotypes for region.\n");
     fprintf(stderr, "-a --logLevel : Set the log level\n");
     fprintf(stderr, "-h --help : Print this help screen\n");
+    fprintf(stderr, "-b --bamFile : Set the input BAM file\n");
+    fprintf(stderr, "-v --vcfFile : Set the output VCF file\n");
+    fprintf(stderr, "-p --paramsFile : Set the input params file\n");
+}
+
+char baseToAlphabet(char b) {
+    // As far as I can tell, it wasn't actually specified which of '0,1,2,3' correspond
+    // to 'A,C,G,T', so I chose arbitrarily
+    if (b == 'A') return FIRST_ALPHABET_CHAR;
+    if (b == 'C') return FIRST_ALPHABET_CHAR + 1;
+    if (b == 'G') return FIRST_ALPHABET_CHAR + 2;
+    if (b == 'T') return FIRST_ALPHABET_CHAR + 3;
+    return  FIRST_ALPHABET_CHAR - 1;
 }
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
-    //char * logLevelString = NULL;
-    char * logLevelString = "debug";
+
+    char * logLevelString = NULL;
     char *bamFile = NULL;
     char *vcfFile = NULL;
     char *paramsFile = NULL;
-
-
 
     // Parse the options
     while (1) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+                { "bamFile", required_argument, 0, 'b'},
+                { "vcfFile", required_argument, 0, 'v'},
+                { "paramsFile", required_argument, 0, 'p'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
 
-        int key = getopt_long(argc, argv, "a:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:b:v:p:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -52,26 +67,23 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage();
             return 0;
+        case 'b':
+            bamFile = stString_copy(optarg);
+            break;
+        case 'v':
+            vcfFile = stString_copy(optarg);
+            break;
+        case 'p':
+            paramsFile = stString_copy(optarg);
+            break;
         default:
             usage();
             return 1;
         }
     }
 
-    st_setLogLevelFromString(logLevelString);
-
-    st_logInfo("Starting marginPhase...\n");
-
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
-
-    stList *profileSequences = NULL;
-
-
-    samFile *fp_in = hts_open(argv[1],"r"); //open bam file
-    bam_hdr_t *bamHdr = sam_hdr_read(fp_in); //read header
-    bam1_t *aln = bam_init1(); //initialize an alignment
-
 
     /*
      * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
@@ -83,6 +95,42 @@ int main(int argc, char *argv[]) {
        In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
        use the posterior probabilities.
      */
+
+    stList *profileSequences = stList_construct();
+
+    st_logDebug("Bam file: %s \n", bamFile);
+    BGZF *in = bgzf_open(bamFile,"r"); //open bam file
+    bam_hdr_t *bamHdr = bam_hdr_read(in); //read header
+    bam1_t *aln = bam_init1(); //initialize an alignment
+
+    while(bam_read1(in,aln) > 0){
+
+        int32_t pos = aln->core.pos +1; //left most position of alignment in zero based coordianate (+1)
+        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
+        uint32_t len = aln->core.l_qseq; //length of the read.
+        uint8_t *q = bam_get_seq(aln);  // DNA sequence
+
+
+        // TODO: only include reads within certain interval
+        bool withinInputInterval = true;
+        if (withinInputInterval) {
+            stProfileSeq *seq = stProfileSeq_constructEmptyProfile(chr, pos, len);
+
+            for(int64_t i=0; i<len; i++) {
+                // For each position turn character into profile probability
+                // As is, this makes the probability 1 for the base read by the file, and 0 otherwise
+                // Should this be modified to take into account error rates?
+                char b = baseToAlphabet(seq_nt16_str[bam_seqi(q,i)]);
+                seq->profileProbs[i*ALPHABET_SIZE + b - FIRST_ALPHABET_CHAR] = ALPHABET_MAX_PROB;
+            }
+            stList_append(profileSequences, seq);
+            // stProfileSeq_print(seq, stderr, true);
+        }
+    }
+
+    bam_destroy1(aln);
+    bgzf_close(in);
+
 
     // Parse any model parameters
     st_logInfo("Parsing model parameters\n");
@@ -110,7 +158,6 @@ int main(int argc, char *argv[]) {
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
-
 
     stList *hmms = getRPHmms(profileSequences, params);
 
