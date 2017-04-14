@@ -18,9 +18,12 @@ void usage() {
             "giving genotypes and haplotypes for region.\n");
     fprintf(stderr, "-a --logLevel : Set the log level\n");
     fprintf(stderr, "-h --help : Print this help screen\n");
-    fprintf(stderr, "-b --bamFile : Set the input BAM file\n");
-    fprintf(stderr, "-v --vcfFile : Set the output VCF file\n");
-    fprintf(stderr, "-p --paramsFile : Set the input params file\n");
+    fprintf(stderr, "-b --bamFile : Input BAM file\n");
+    fprintf(stderr, "-v --vcfFile : Output VCF file\n");
+    fprintf(stderr, "-p --paramsFile : Input params file\n");
+    fprintf(stderr, "-n --refSeqName : Name of reference sequence\n");
+    fprintf(stderr, "-s --intervalStart : Starting position of interval to read\n");
+    fprintf(stderr, "-e --intervalEnd : Ending position of interval to read\n");
 }
 
 char baseToAlphabet(char b) {
@@ -33,6 +36,77 @@ char baseToAlphabet(char b) {
     return  FIRST_ALPHABET_CHAR - 1;
 }
 
+void parseReads(stList *profileSequences, char *bamFile, char *refSeqName, int32_t intervalStart, int32_t intervalEnd) {
+
+    /*
+     * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
+     * and create a list of profile sequences using
+     * stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
+            int64_t referenceStart, int64_t length);
+       where for each position you turn the character into a profile probability, as shown in the tests
+
+       In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
+       use the posterior probabilities.
+     */
+
+    st_logDebug("Bam file: %s \n", bamFile);
+    BGZF *in = bgzf_open(bamFile,"r"); //open bam file
+    bam_hdr_t *bamHdr = bam_hdr_read(in); //read header
+    bam1_t *aln = bam_init1(); //initialize an alignment
+
+    bool readWholeFile = false;
+    if (!refSeqName) {
+        st_logInfo("No reference sequence name given, reading whole file.\n");
+        readWholeFile = true;
+    }
+    if (intervalStart < 0) {
+        intervalStart = 0;
+        st_logInfo("Reading from start of chromosome.\n");
+    }
+    if (intervalEnd < 0) {
+        st_logInfo("Reading until end of chromosome.\n", intervalEnd);
+    }
+    int32_t readCount = 0;
+
+    while(bam_read1(in,aln) > 0){
+
+        int32_t pos = aln->core.pos +1; //left most position of alignment in zero based coordianate (+1)
+        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
+        uint32_t len = aln->core.l_qseq; //length of the read.
+        uint8_t *q = bam_get_seq(aln);  // DNA sequence
+
+        // TODO: is this the right way to deal with the reference sequence / input interval?
+        if(readWholeFile || strcmp(chr, refSeqName) == 0) {
+            // Should reads that cross boundaries be counted?
+            if (pos >= intervalStart && (intervalEnd < 0 || pos + len <= intervalEnd)) {
+                readCount++;
+
+                stProfileSeq *seq = stProfileSeq_constructEmptyProfile(chr, pos, len);
+
+                for(int64_t i=0; i<len; i++) {
+                    // For each position turn character into profile probability
+                    // As is, this makes the probability 1 for the base read by the file, and 0 otherwise
+                    // Should this be modified to take into account error rates?
+                    char b = baseToAlphabet(seq_nt16_str[bam_seqi(q,i)]);
+                    seq->profileProbs[i*ALPHABET_SIZE + b - FIRST_ALPHABET_CHAR] = ALPHABET_MAX_PROB;
+                }
+                stList_append(profileSequences, seq);
+            }
+        }
+
+
+        bool withinInputInterval = true;
+        if (withinInputInterval) {
+
+            // stProfileSeq_print(seq, stderr, true);
+        }
+    }
+    st_logDebug("Number of reads found with name: %s in interval %d - %d : %d\n", refSeqName, intervalStart, intervalEnd, readCount);
+
+    bam_destroy1(aln);
+    bgzf_close(in);
+}
+
 int main(int argc, char *argv[]) {
     // Parameters / arguments
 
@@ -40,6 +114,10 @@ int main(int argc, char *argv[]) {
     char *bamFile = NULL;
     char *vcfFile = NULL;
     char *paramsFile = NULL;
+
+    char *refSeqName = NULL;
+    int32_t intervalStart = -1;
+    int32_t intervalEnd = -1;
 
     // Parse the options
     while (1) {
@@ -49,11 +127,14 @@ int main(int argc, char *argv[]) {
                 { "bamFile", required_argument, 0, 'b'},
                 { "vcfFile", required_argument, 0, 'v'},
                 { "paramsFile", required_argument, 0, 'p'},
+                { "refSeqName", required_argument, 0, 'n'},
+                { "intervalStart", required_argument, 0, 's'},
+                { "intervalEnd", required_argument, 0, 'e'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
 
-        int key = getopt_long(argc, argv, "a:b:v:p:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:b:v:p:n:s:e:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -76,6 +157,15 @@ int main(int argc, char *argv[]) {
         case 'p':
             paramsFile = stString_copy(optarg);
             break;
+        case 'n':
+            refSeqName = stString_copy(optarg);
+            break;
+        case 's':
+            intervalStart = atoi(optarg);
+            break;
+        case 'e':
+            intervalEnd = atoi(optarg);
+            break;
         default:
             usage();
             return 1;
@@ -85,51 +175,8 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
-    /*
-     * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
-     * and create a list of profile sequences using
-     * stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
-            int64_t referenceStart, int64_t length);
-       where for each position you turn the character into a profile probability, as shown in the tests
-
-       In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
-       use the posterior probabilities.
-     */
-
     stList *profileSequences = stList_construct();
-
-    st_logDebug("Bam file: %s \n", bamFile);
-    BGZF *in = bgzf_open(bamFile,"r"); //open bam file
-    bam_hdr_t *bamHdr = bam_hdr_read(in); //read header
-    bam1_t *aln = bam_init1(); //initialize an alignment
-
-    while(bam_read1(in,aln) > 0){
-
-        int32_t pos = aln->core.pos +1; //left most position of alignment in zero based coordianate (+1)
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
-        uint32_t len = aln->core.l_qseq; //length of the read.
-        uint8_t *q = bam_get_seq(aln);  // DNA sequence
-
-
-        // TODO: only include reads within certain interval
-        bool withinInputInterval = true;
-        if (withinInputInterval) {
-            stProfileSeq *seq = stProfileSeq_constructEmptyProfile(chr, pos, len);
-
-            for(int64_t i=0; i<len; i++) {
-                // For each position turn character into profile probability
-                // As is, this makes the probability 1 for the base read by the file, and 0 otherwise
-                // Should this be modified to take into account error rates?
-                char b = baseToAlphabet(seq_nt16_str[bam_seqi(q,i)]);
-                seq->profileProbs[i*ALPHABET_SIZE + b - FIRST_ALPHABET_CHAR] = ALPHABET_MAX_PROB;
-            }
-            stList_append(profileSequences, seq);
-            // stProfileSeq_print(seq, stderr, true);
-        }
-    }
-
-    bam_destroy1(aln);
-    bgzf_close(in);
+    parseReads(profileSequences, bamFile, refSeqName, intervalStart, intervalEnd);
 
 
     // Parse any model parameters
