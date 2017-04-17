@@ -17,6 +17,35 @@ void usage() {
             "giving genotypes and haplotypes for region.\n");
     fprintf(stderr, "-a --logLevel : Set the log level\n");
     fprintf(stderr, "-h --help : Print this help screen\n");
+    fprintf(stderr, "-p --params [FILE_NAME] : File containing parameters for model.\n");
+}
+
+stRPHmmParameters *parseParameters(char *paramsFile) {
+    /*
+     * TODO: Read model parameters from params file
+     * See params.json.
+     * Suggest writing basic parser / tests and putting in impl/parser.c (or something similar)
+     * Suggest using http://zserge.com/jsmn.html for parsing the json
+     *
+     * Notes:
+     *      "alphabet" is an array specifying the conversion of symbols from the read alignments into the non-negative integer space
+     *      used by the program.  e.g. "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ] specifies an alphabet of cardinality 5,
+     *      with each string in the array specifying which characters map to which integer, starting from 0. In the example,
+     *      "C" or a "c" character is mapped to 1 while "-" is mapped to 4.
+     *
+     *      The wildcard symbols are treated as mapping to each possible integer symbol with equal probability
+     *      Any other symbol encountered by the parsing of reads should be treated as an error
+     *
+     *      If ALPHABET_SIZE does not equal the cardinality of the input alphabet then an error should be thrown.
+     *
+     *      The "haplotypeSubstitutionModel" gives probabilities of substitutions between haplotypes in the model, the "readErrorModel"
+     *      gives the probabilities of errors in the reads.
+     *      Each is a square matrix of size alphabet size * alphabet size
+     *      Each should be
+     *      converted to log space for the model. Each row of each matrix should sum to 1.0 (roughly) and be normalised to 1.0
+     *
+     */
+    return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -25,7 +54,7 @@ int main(int argc, char *argv[]) {
     char * logLevelString = "debug";
     char *bamFile = NULL;
     char *vcfFile = NULL;
-    char *paramsFile = NULL;
+    char *paramsFile = "params.json";
 
 
 
@@ -34,11 +63,12 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+                { "params", required_argument, 0, 'p' },
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
 
-        int key = getopt_long(argc, argv, "a:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:hp:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -52,6 +82,9 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage();
             return 0;
+        case 'p':
+            paramsFile = stString_copy(optarg);
+            break;
         default:
             usage();
             return 1;
@@ -86,32 +119,10 @@ int main(int argc, char *argv[]) {
 
     // Parse any model parameters
     st_logInfo("Parsing model parameters\n");
-
-    stRPHmmParameters *params = NULL;
-    /*
-     * TODO: Get model parameters. I suggest we make a simple json or yaml file to hold these parameters.
-     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
-     * haplotypes (excluding gaps)
-     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
-     * Once these are read in we need to construct (as shown in the tests) the different matrices.
-     * We will need:
-     * stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
-            double *hetSubModelSlow,
-            uint16_t *readErrorSubModel,
-            double *readErrorSubModelSlow,
-            bool maxNotSumTransitions,
-            int64_t maxPartitionsInAColumn,
-            int64_t maxCoverageDepth);
-       And:
-       void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
-            int64_t sourceCharacterIndex,
-            int64_t derivedCharacterIndex, double prob);
-     */
+    stRPHmmParameters *params = parseParameters(paramsFile);
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
-
-
     stList *hmms = getRPHmms(profileSequences, params);
 
     // Break up the hmms where the phasing is uncertain
