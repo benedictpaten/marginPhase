@@ -1,2 +1,10 @@
 .idea
 cmake-build-debug/
+CMakeCache.txt
+CMakeFiles
+CTestTestfile.cmake
+allTests
+cmake_install.cmake
+libhts.a
+libson.a
+marginPhase
