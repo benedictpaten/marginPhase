@@ -235,6 +235,9 @@ target_link_libraries(hts pthread crypto bz2 lzma z curl)
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase son hts)
 
+add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
+target_link_libraries(vcfCompare son hts)
+
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
