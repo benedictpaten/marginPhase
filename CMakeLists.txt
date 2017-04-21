@@ -222,10 +222,10 @@ if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
 
-
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
 add_library(jsmn externalTools/jsmn/jsmn.c)
+
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})

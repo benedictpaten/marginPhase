@@ -314,7 +314,7 @@ int main(int argc, char *argv[]) {
     char * logLevelString = NULL;
     char *bamFile = NULL;
     char *vcfFile = NULL;
-    char *paramsFile = NULL;
+    char *paramsFile = "params.json";
 
     char *refSeqName = NULL;
     int32_t intervalStart = -1;
@@ -377,6 +377,17 @@ int main(int argc, char *argv[]) {
     }
 
     // Parse any model parameters
+    /*
+     * TODO: Get model parameters. I suggest we make a simple json or yaml file to hold these parameters.
+     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
+     * haplotypes (excluding gaps)
+     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
+     * Once these are read in we need to construct (as shown in the tests) the different matrices.
+     * We will need:
+     * stRPHmmParameters *stRPHmmParameters_construct
+       And:
+       void setSubstitutionProb
+     */
     st_logInfo("Parsing model parameters\n");
 
     char *alphabet[ALPHABET_SIZE];
@@ -409,26 +420,10 @@ int main(int argc, char *argv[]) {
     stList *profileSequences = stList_construct();
     parseReads(profileSequences, bamFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
 
-
-
-
-
-    /*
-     * TODO: Get model parameters. I suggest we make a simple json or yaml file to hold these parameters.
-     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
-     * haplotypes (excluding gaps)
-     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
-     * Once these are read in we need to construct (as shown in the tests) the different matrices.
-     * We will need:
-     * stRPHmmParameters *stRPHmmParameters_construct
-       And:
-       void setSubstitutionProb
-     */
+    
 
     // Create HMMs
-
     st_logInfo("Creating read partitioning HMMs\n");
-
     stList *hmms = getRPHmms(profileSequences, params);
 
     // Break up the hmms where the phasing is uncertain
