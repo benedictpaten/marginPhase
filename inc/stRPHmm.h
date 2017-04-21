@@ -52,7 +52,7 @@ double logAddP(double a, double b, bool maxNotSum);
  * Alphabet
  */
 
-#define ALPHABET_SIZE 4
+#define ALPHABET_SIZE 5
 #define ALPHABET_MAX_PROB 255
 #define ALPHABET_MIN_PROB 0
 #define ALPHABET_CHARACTER_BITS 8
