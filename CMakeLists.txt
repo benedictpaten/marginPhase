@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE ")
-include_directories(inc)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3 -DNDEBUG")
 
+include_directories(inc)
 
 set(HTSLIB_HEADERS
         externalTools/htslib
@@ -20,9 +20,10 @@ set(SONLIB_HEADERS
         )
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
+include_directories(externalTools/jsmn)
 
-include_directories(/usr/include)
-include_directories(/usr/local/include)
+#include_directories(/usr/include)
+#include_directories(/usr/local/include)
 
 
 set(HTSLIB_SOURCES
@@ -200,40 +201,35 @@ find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'z' library")
 endif()
-message(${ZLIB})
 find_library(BZ2LIB bz2)
 if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'bz2' library")
 endif()
-message(${BZ2LIB})
 find_library(LZMALIB lzma)
 if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'lzma' library")
 endif()
-message(${LZMALIB})
 find_library(CURLLIB curl)
 if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
-message(${CURLLIB})
 find_library(CRYPTOLIB crypto)
 if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'crypto' library")
 endif()
-message(${CRYPTOLIB})
 find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
-message(${PTHREADLIB})
-
 
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
+add_library(jsmn externalTools/jsmn/jsmn.c)
+
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
-target_link_libraries(marginPhase son hts)
+target_link_libraries(marginPhase son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare son hts)
