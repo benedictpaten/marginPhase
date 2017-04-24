@@ -9,3 +9,5 @@ libhts.a
 libson.a
 marginPhase
 Makefile
+vcfCompare
+marginPhase.cbp
