@@ -30,8 +30,8 @@ void usage() {
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char * logLevelString = NULL;
-    char *bamFile = NULL;
-    char *vcfFile = NULL;
+    char *bamInFile = NULL;
+    char *vcfOutFile = NULL;
     char *paramsFile = "params.json";
 
     char *refSeqName = NULL;
@@ -71,10 +71,10 @@ int main(int argc, char *argv[]) {
             usage();
             return 0;
         case 'b':
-            bamFile = stString_copy(optarg);
+            bamInFile = stString_copy(optarg);
             break;
         case 'v':
-            vcfFile = stString_copy(optarg);
+            vcfOutFile = stString_copy(optarg);
             break;
         case 'p':
             paramsFile = stString_copy(optarg);
@@ -101,18 +101,11 @@ int main(int argc, char *argv[]) {
     char *wildcard;
     stRPHmmParameters *params = parseParameters(paramsFile, alphabet, &wildcard);
 
-    st_logDebug("Alphabet array: \n");
-    for (int j = 0; j < ALPHABET_SIZE; j++ ) {
-        st_logDebug("%d: %s \t%d\n", j, alphabet[j], strlen(alphabet[j]));
-    }
-    st_logDebug("Wildcard: %s\n", wildcard);
-
-
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
     stList *profileSequences = stList_construct();
-    parseReads(profileSequences, bamFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
+    parseReads(profileSequences, bamInFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
 
 
 
@@ -148,8 +141,38 @@ int main(int argc, char *argv[]) {
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
+        st_logDebug("*** Genome Fragment Information ***\n");
+        st_logDebug("Reference name: %s\n", gF->referenceName);
+        st_logDebug("Ref start: %d \n", gF->refStart);
+        st_logDebug("Length: %d \n", gF->length);
+
+        st_logDebug("Genotype string: %u\n", gF->genotypeString);
+        for (int64_t j = 0; j < gF->length; j++) {
+            st_logDebug("%u\t", gF->genotypeString[j]);
+        }
+//        st_logDebug("Genotype Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->genotypeProbs[j]);
+//        }
+        st_logDebug("\nHaplotype 1 string: %u\n", gF->haplotypeString1);
+        for (int64_t j = 0; j < gF->length; j++) {
+            st_logDebug("%u\t", gF->haplotypeString1[j]);
+        }
+//        st_logDebug("\nHaplotype 1 Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->haplotypeProbs1[j]);
+//        }
+        st_logDebug("\nHaplotype 2 string: %u\n", gF->haplotypeString2);
+        for (int64_t j = 0; j < gF->length; j++) {
+            st_logDebug("%u\t", gF->haplotypeString2[j]);
+        }
+//        st_logDebug("\nHaplotype 2 Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->haplotypeProbs2[j]);
+//        }
+
         // Write out VCF
-        st_logInfo("Writing out VCF for fragment\n");
+        st_logInfo("\nWriting out VCF for fragment\n");
         /*
          * TODO: Convert the genome fragment into a portion of a VCF file (we'll need to write the header out earlier)
          * We can express the genotypes and (using phase sets) the phasing relationships.
