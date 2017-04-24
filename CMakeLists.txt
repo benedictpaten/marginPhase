@@ -2,9 +2,7 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE ")
-include_directories(inc)
-
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3 -DNDEBUG")
 
 set(HTSLIB_HEADERS
         externalTools/htslib
@@ -18,13 +16,11 @@ set(SONLIB_HEADERS
         externalTools/sonLib/externalTools/cutest
         externalTools/sonLib/externalTools/quicktree_1.1/include
         )
+
+include_directories(inc)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(externalTools/jsmn)
-
-#include_directories(/usr/include)
-#include_directories(/usr/local/include)
-
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -193,6 +189,7 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/partitions.c
         impl/profileSeq.c
+        impl/parser.c
         )
 
 

@@ -341,4 +341,10 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
+/* Parsing stuff
+ * */
+
+stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wildcard);
+void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *wildcard, char *refSeqName, int32_t intervalStart, int32_t intervalEnd);
+
 #endif /* ST_RP_HMM_H_ */
