@@ -28,122 +28,93 @@ void usage() {
 }
 
 void create_vcf() {
+    // HEADER // (source:bam_plcmd.mpileup)
 
-    // BCF header creation bam_plcmd.mpileup
+    // header objects
     bcf_hdr_t *bcf_hdr = bcf_hdr_init("w");
-
     kstring_t str = {0,0,NULL};
 
+    // generic info
     ksprintf(&str, "##vcfCompare=htslib-%s\n",hts_version());
     bcf_hdr_append(bcf_hdr, str.s);
 
+    // reference file used
     str.l = 0;
     ksprintf(&str, "##reference=file://%s\n", "TODO");
     bcf_hdr_append(bcf_hdr, str.s);
 
+    // contig
     str.l = 0;
-    ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
+    //ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
+    ksprintf(&str, "##contig=<ID=%s>\n", "chr1");
     bcf_hdr_append(bcf_hdr, str.s);
 
-//    bcf_hdr_append(bcf_hdr,"##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">");
-//    bcf_hdr_append(bcf_hdr,"##INFO=<ID=AD,Number=R,Type=Integer,Description=\"Total allelic depths\">");
+    // formatting
+    bcf_hdr_append(bcf_hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
 
-
+    // samples
     bcf_hdr_add_sample(bcf_hdr, "SMPL1");
     bcf_hdr_add_sample(bcf_hdr, NULL);
 
+    // write header
     vcfFile *out = vcf_open("out.vcf", "w");
     bcf_hdr_write(out, bcf_hdr);
 
 
+    // RECORD // (source:test-vcf-api.c)
     bcf1_t *bcf_rec = bcf_init1();
+    int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //how to specify not pass? do we care?
+    int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
+
+    //prep
     bcf_clear1(bcf_rec);
-    bcf_rec->rid  = 0; //this is the index of the contig specified in the header
-    bcf_rec->pos  = 1; //this is the position in the reference
-    bcf_rec->qual = 0; //the quality score something something?
-    bcf_rec->n_sample = 1;
-    int i, j, nals = 1;
     str.l = 0;
-    kstring_t tmp = {0,0,NULL};
 
-    // we put comma-separated values into tmp.  first is REF column, rest are in ALT
-    kputc('A', &tmp);
-    kputc(',', &tmp);
-    kputc('C', &tmp);
-    kputc(',', &tmp);
-    kputc('T', &tmp);
-//    kputc("ACGTN"[bc->ori_ref], &bc->tmp);
-//    for (i=1; i<5; i++)
-//    {
-//        if (bc->a[i] < 0) break;
-//        kputc(',', &bc->tmp);
-//        if ( bc->unseen==i ) kputs("<*>", &bc->tmp);
-//        else kputc("ACGT"[bc->a[i]], &bc->tmp);
-//        nals++;
-//    }
-    bcf_update_alleles_str(bcf_hdr, bcf_rec, tmp.s);
-
-    //todo: this doesn't work but I think it's close
-//    char *tmp_str[] = {"0|1"};
-//    bcf_update_format_string(bcf_hdr, bcf_rec, "GT", (char **)tmp_str, 1);
-
+    // contig (CHROM)
+    bcf_rec->rid = bcf_hdr_name2id(bcf_hdr, "chr1"); //defined in a contig in the top
+    // position (POS) - this is 0-based indexing, printed as 1-based
+    bcf_rec->pos  = 1;
+    // identifier (ID)
+    bcf_update_id(bcf_hdr, bcf_rec, "ex12345");
+    // quality (QUAL)
+    bcf_rec->qual = 0;
+    // reference (REF) - comma separated list, first is REF column
+    kputc('A', &str);
+    // alternate (ALT) - ..rest are in ALT
+    kputc(',C,T', &str);
+    bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+    // filtering (FILTER)
+    bcf_update_filter(bcf_hdr, bcf_rec, &filter_info, 1);
+    // genotype (FORMAT / $SMPL1 [$SMPL2..])
+    gt_info[0] = bcf_gt_phased(0);
+    gt_info[1] = bcf_gt_phased(1);
+    bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+    // save it
     bcf_write1(out, bcf_hdr, bcf_rec);
 
 
 
-
-    //writing variants: call2bcf
-//    bcf_hdr_t *hdr = bc->bcf_hdr;
-//    rec->rid  = bc->tid;
-//    rec->pos  = bc->pos;
-//    rec->qual = 0;
-//
-//
-//    bc->tmp.l = 0;
-//    if (bc->ori_ref < 0)    // indel
-//    {
-//        // REF
-//        kputc(ref[bc->pos], &bc->tmp);
-//        for (j = 0; j < bca->indelreg; ++j) kputc(ref[bc->pos+1+j], &bc->tmp);
-//
-//        // ALT
-//        for (i=1; i<4; i++)
-//        {
-//            if (bc->a[i] < 0) break;
-//            kputc(',', &bc->tmp); kputc(ref[bc->pos], &bc->tmp);
-//
-//            if (bca->indel_types[bc->a[i]] < 0) { // deletion
-//                for (j = -bca->indel_types[bc->a[i]]; j < bca->indelreg; ++j)
-//                    kputc(ref[bc->pos+1+j], &bc->tmp);
-//            } else { // insertion; cannot be a reference unless a bug
-//                char *inscns = &bca->inscns[bc->a[i] * bca->maxins];
-//                for (j = 0; j < bca->indel_types[bc->a[i]]; ++j)
-//                    kputc("ACGTN"[(int)inscns[j]], &bc->tmp);
-//                for (j = 0; j < bca->indelreg; ++j) kputc(ref[bc->pos+1+j], &bc->tmp);
-//            }
-//            nals++;
-//        }
-//    }
-//    else    // SNP
-//    {
-//        kputc("ACGTN"[bc->ori_ref], &bc->tmp);
-//        for (i=1; i<5; i++)
-//        {
-//            if (bc->a[i] < 0) break;
-//            kputc(',', &bc->tmp);
-//            if ( bc->unseen==i ) kputs("<*>", &bc->tmp);
-//            else kputc("ACGT"[bc->a[i]], &bc->tmp);
-//            nals++;
-//        }
-//    }
-//    char *alleles_str = 0;
-//    bcf_update_alleles_str(hdr, bcf_rec, alleles_str);
-
-
+    // prep
+    bcf_clear1(bcf_rec);
+    // CHROM
+    bcf_rec->rid = bcf_hdr_name2id(bcf_hdr, "chr1");
+    // POS
+    bcf_rec->pos  = 2;
+    // REF, ALT
+    bcf_update_alleles_str(bcf_hdr, bcf_rec, "A");
+    // FILTER
+    filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS");
+    bcf_update_filter(bcf_hdr, bcf_rec, &filter_info, 1);
+    // FORMAT - GT
+    gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int));
+    gt_info[0] = bcf_gt_phased(0);
+    gt_info[1] = bcf_gt_unphased(1);
+    bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+    // save it
+    bcf_write1(out, bcf_hdr, bcf_rec);
 
 
     free(str.s);
-    free(tmp.s);
     vcf_close(out);
 }
 
