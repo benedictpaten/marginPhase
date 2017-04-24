@@ -5,5 +5,5 @@
 	path = externalTools/sonLib
 	url = https://github.com/benedictpaten/sonLib.git
 [submodule "externalTools/jsmn"]
- 	path = externalTools/jsmn
- 	url = https://github.com/zserge/jsmn.git
+	path = externalTools/jsmn
+	url = https://github.com/zserge/jsmn.git

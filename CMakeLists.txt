@@ -231,5 +231,5 @@ target_link_libraries(marginPhase son hts jsmn)
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
-target_link_libraries(allTests hts son)
+target_link_libraries(allTests hts son jsmn)
 add_test(stRPHmm allTests)
