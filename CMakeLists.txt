@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3 -DNDEBUG")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -DNDEBUG")
 
-include_directories(inc)
-
 set(HTSLIB_HEADERS
         externalTools/htslib
         externalTools/htslib/htslib
@@ -19,13 +17,11 @@ set(SONLIB_HEADERS
         externalTools/sonLib/externalTools/cutest
         externalTools/sonLib/externalTools/quicktree_1.1/include
         )
+
+include_directories(inc)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(externalTools/jsmn)
-
-#include_directories(/usr/include)
-#include_directories(/usr/local/include)
-
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -194,6 +190,7 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/partitions.c
         impl/profileSeq.c
+        impl/parser.c
         )
 
 
@@ -238,5 +235,5 @@ target_link_libraries(vcfCompare son hts)
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
-target_link_libraries(allTests hts son)
+target_link_libraries(allTests hts son jsmn)
 add_test(stRPHmm allTests)

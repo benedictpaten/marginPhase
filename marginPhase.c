@@ -14,6 +14,7 @@
 #include "stRPHmm.h"
 #include "jsmn.h"
 
+#include "stRPHmm.h"
 
 
 void usage() {
@@ -31,283 +32,6 @@ void usage() {
     fprintf(stderr, "-e --intervalEnd : Ending position of interval to read\n");
 }
 
-char baseToAlphabet(char b, char **alphabet, char *wildcard) {
-    // TODO: use actual alphabet & wildcard that was input
-    for (size_t i = 0; i < ALPHABET_SIZE; i++) {
-        char *bases = alphabet[i];
-        size_t len = strlen(bases);
-        for (size_t j = 0; j < len; j++) {
-            if (b == bases[j]) return FIRST_ALPHABET_CHAR + i;
-        }
-    }
-    for (size_t i = 0; i < strlen(wildcard); i++) {
-        if (b == wildcard[i]) return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+ALPHABET_SIZE-1);
-    }
-    st_logInfo("ERROR: Character in sequence not in alphabet\n");
-    return  FIRST_ALPHABET_CHAR - 1;
-}
-
-char *json_token_tostr(char *js, jsmntok_t *t)
-{
-    js[t->end] = '\0';
-    return js + t->start;
-}
-
-void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *wildcard, char *refSeqName, int32_t intervalStart, int32_t intervalEnd) {
-    /*
-     * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
-     * and create a list of profile sequences using
-     * stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
-            int64_t referenceStart, int64_t length);
-       where for each position you turn the character into a profile probability, as shown in the tests
-
-       In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
-       use the posterior probabilities.
-     */
-
-    st_logDebug("Bam file: %s \n", bamFile);
-    samFile *in = hts_open(bamFile, "r");
-    bam_hdr_t *bamHdr = sam_hdr_read(in);
-//    BGZF *in = bgzf_open(bamFile,"r"); //open bam file
-//    bam_hdr_t *bamHdr = bam_hdr_read(in); //read header
-    bam1_t *aln = bam_init1(); //initialize an alignment
-
-    bool readWholeFile = false;
-    if (!refSeqName) {
-        st_logInfo("No reference sequence name given, reading whole file.\n");
-        readWholeFile = true;
-    }
-    if (intervalStart < 0) {
-        intervalStart = 0;
-        st_logInfo("Reading from start of chromosome.\n");
-    }
-    if (intervalEnd < 0) {
-        st_logInfo("Reading until end of chromosome.\n", intervalEnd);
-    }
-    int32_t readCount = 0;
-
-    // Figure out these parameters....
-//    int min_shift = 14;
-//    int n_lvls = 5;
-//    //hts_idx_t *idx = hts_idx_init(bamHdr->n_targets, HTS_FMT_BAI, 0, min_shift, n_lvls);
-//    hts_idx_t *idx;
-//    char *region;
-//    hts_itr_t *itr = sam_itr_querys(idx, bamHdr, region);
-
-
-//    hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
-//    hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
-//    hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
-
-    while(sam_read1(in,bamHdr,aln) > 0){
-
-        int32_t pos = aln->core.pos +1; //left most position of alignment in zero based coordianate (+1)
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
-        uint32_t len = aln->core.l_qseq; //length of the read.
-        uint8_t *seq = bam_get_seq(aln);  // DNA sequence
-
-        // TODO: is this the right way to deal with the reference sequence / input interval?
-        if(readWholeFile || strcmp(chr, refSeqName) == 0) {
-            // Should reads that cross boundaries be counted?
-            if (pos >= intervalStart && (intervalEnd < 0 || pos + len <= intervalEnd)) {
-                readCount++;
-
-                stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, pos, len);
-
-                for (int64_t i = 0; i < len; i++) {
-                    // For each position turn character into profile probability
-                    // As is, this makes the probability 1 for the base read by the file, and 0 otherwise
-                    // Should this be modified to take into account error rates?
-                    char b = baseToAlphabet(seq_nt16_str[bam_seqi(seq, i)], alphabet, wildcard);
-                    pSeq->profileProbs[i * ALPHABET_SIZE + b - FIRST_ALPHABET_CHAR] = ALPHABET_MAX_PROB;
-                }
-                stList_append(profileSequences, pSeq);
-                if (readCount % 1000 == 0) {
-                    stProfileSeq_print(pSeq, stderr, true);
-                }
-            }
-        }
-    }
-    st_logDebug("Number of reads found with name: %s in interval %d - %d : %d\n", refSeqName, intervalStart, intervalEnd, readCount);
-
-    bam_destroy1(aln);
-//    bgzf_close(in);
-    sam_close(in);
-}
-
-
-
-
-stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wildcard) {
-    /*
-     * TODO: Read model parameters from params file
-     * See params.json.
-     * Suggest writing basic parser / tests and putting in impl/parser.c (or something similar)
-     * Suggest using http://zserge.com/jsmn.html for parsing the json
-     *
-     * Notes:
-     *      "alphabet" is an array specifying the conversion of symbols from the read alignments into the non-negative integer space
-     *      used by the program.  e.g. "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ] specifies an alphabet of cardinality 5,
-     *      with each string in the array specifying which characters map to which integer, starting from 0. In the example,
-     *      "C" or a "c" character is mapped to 1 while "-" is mapped to 4.
-     *
-     *      The wildcard symbols are treated as mapping to each possible integer symbol with equal probability
-     *      Any other symbol encountered by the parsing of reads should be treated as an error
-     *
-     *      If ALPHABET_SIZE does not equal the cardinality of the input alphabet then an error should be thrown.
-     *
-     *      The "haplotypeSubstitutionModel" gives probabilities of substitutions between haplotypes in the model, the "readErrorModel"
-     *      gives the probabilities of errors in the reads.
-     *      Each is a square matrix of size alphabet size * alphabet size
-     *      Each should be
-     *      converted to log space for the model. Each row of each matrix should sum to 1.0 (roughly) and be normalised to 1.0
-     *
-     */
-
-    // Variables for parsing
-    st_logDebug("Parsing json file: %s \n", paramsFile);
-    int numTokens = 256;
-    jsmn_parser parser;
-    jsmn_init(&parser);
-    jsmntok_t tokens[numTokens];
-    char *js = NULL;
-    size_t jslen = 0;
-    char buf[BUFSIZ];
-    int r;
-
-    // Variables for hmm parameters
-    uint16_t  *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    double *hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-    uint16_t  *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    double *readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-    bool maxNotSumTransitions = true;
-    int64_t  maxPartitionsInAColumn = 50;
-    int64_t  maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
-    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
-
-
-    FILE *fp;
-    fp = fopen(paramsFile, "rb");
-    r = fread(buf, 1, sizeof(buf), fp);
-    if (r > 0) {
-        js = realloc(js, jslen + r + 1);
-    }
-    fclose(fp);
-    if (js != NULL) {
-        strncpy(js + jslen, buf, r);
-        jslen = jslen + r;
-        r = jsmn_parse(&parser, js, jslen, tokens, numTokens);
-        st_logDebug("Number of tokens needed to parse: %d\n", r);
-    }
-    if (r < 0) {
-        st_logDebug("Error when parsing json: %d\n", r);
-        return NULL;
-    }
-
-    st_logDebug("Printing tokens... \n");
-    for (int64_t i = 0; i < r; i++) {
-        jsmntok_t key = tokens[i];
-        char *keyString = json_token_tostr(js, &key);
-
-        if (i == 0) {
-            st_logDebug("Root Key: %s\n", keyString);
-        }
-        if (strcmp(keyString, "alphabet") == 0) {
-            jsmntok_t alphabetTok = tokens[i+1];
-            if (alphabetTok.size != ALPHABET_SIZE) {
-                st_errAbort("Alphabet size in JSON does not match constant ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = json_token_tostr(js, &tok);
-                alphabet[j] = tokStr;
-            }
-            st_logDebug("\n");
-            i += ALPHABET_SIZE + 1;
-
-        }
-        if (strcmp(keyString, "wildcard") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            *wildcard = tokStr;
-            i++;
-        }
-        if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
-            jsmntok_t hapSubTok = tokens[i+1];
-            if (hapSubTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("Size of haplotype substitution model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(hetSubModel, hetSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
-            }
-            st_logDebug("\n");
-            i += hapSubTok.size + 1;
-        }
-        if (strcmp(keyString, "readErrorModel") == 0) {
-            jsmntok_t readErrTok = tokens[i+1];
-            if (readErrTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("Size of read error model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(readErrorSubModel, readErrorSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
-
-            }
-            st_logDebug("\n");
-            i += readErrTok.size + 1;
-        }
-        if (strcmp(keyString, "maxNotSumTransitions") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            if (strcmp(tokStr, "false") == 0) maxNotSumTransitions = false;
-            i++;
-        }
-        if (strcmp(keyString, "maximumPartitionsInAColumn") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            maxPartitionsInAColumn = atoi(tokStr);
-            i++;
-        }
-        if (strcmp(keyString, "maxCoverageDepth") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            maxCoverageDepth = atoi(tokStr);
-            i++;
-        }
-        if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites = atoi(tokStr);
-            i++;
-        }
-    }
-    // Construct actual hmm parameters
-
-    st_logDebug("HAPLOTYPE SUBSTITUTION MODEL: \n");
-    for (int64_t i = 0; i < ALPHABET_SIZE * ALPHABET_SIZE; i++) {
-        st_logDebug(" %f \t", hetSubModelSlow[i]);
-        if ((i+1) % ALPHABET_SIZE == 0) {
-            st_logDebug("\n");
-        }
-    }
-    st_logDebug("READ ERROR MODEL: \n");
-    for (int64_t i = 0; i < ALPHABET_SIZE * ALPHABET_SIZE; i++) {
-        st_logDebug(" %f \t", readErrorSubModelSlow[i]);
-        if ((i+1) % ALPHABET_SIZE == 0) {
-            st_logDebug("\n");
-        }
-    }
-
-
-    stRPHmmParameters *params = stRPHmmParameters_construct(hetSubModel, hetSubModelSlow, readErrorSubModel,
-                                                            readErrorSubModelSlow, maxNotSumTransitions,
-                                                            maxPartitionsInAColumn, maxCoverageDepth,
-                                                            minReadCoverageToSupportPhasingBetweenHeterozygousSites);
-    return params;
-}
 
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
     bcf_hdr_t *hdr = bcf_hdr_init("w");
@@ -409,6 +133,7 @@ int main(int argc, char *argv[]) {
     // Parameters / arguments
     char * logLevelString = NULL;
     char *bamFile = NULL;
+    char *bamInFile = NULL;
     char *vcfOutFile = NULL;
     char *paramsFile = "params.json";
     char *referenceName = "hg19.chr3.fa";
@@ -418,7 +143,7 @@ int main(int argc, char *argv[]) {
     int32_t intervalEnd = -1;
 
     // When done testing, set random seed
-    // st_randomSeed(0);
+    // st_randomSeed();
 
     // Parse the options
     while (1) {
@@ -450,7 +175,7 @@ int main(int argc, char *argv[]) {
             usage();
             return 0;
         case 'b':
-            bamFile = stString_copy(optarg);
+            bamInFile = stString_copy(optarg);
             break;
         case 'v':
             vcfOutFile = stString_copy(optarg);
@@ -474,50 +199,19 @@ int main(int argc, char *argv[]) {
     }
 
     // Parse any model parameters
-    /*
-     * TODO: Get model parameters. I suggest we make a simple json or yaml file to hold these parameters.
-     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
-     * haplotypes (excluding gaps)
-     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
-     * Once these are read in we need to construct (as shown in the tests) the different matrices.
-     * We will need:
-     * stRPHmmParameters *stRPHmmParameters_construct
-       And:
-       void setSubstitutionProb
-     */
     st_logInfo("Parsing model parameters\n");
 
     char *alphabet[ALPHABET_SIZE];
     char *wildcard;
     stRPHmmParameters *params = parseParameters(paramsFile, alphabet, &wildcard);
 
-    st_logDebug("Alphabet array: \n");
-    for (int j = 0; j < ALPHABET_SIZE; j++ ) {
-        st_logDebug("%d: %s \t%d\n", j, alphabet[j], strlen(alphabet[j]));
-    }
-    st_logDebug("Wildcard: %s\n", wildcard);
-
-    char c = baseToAlphabet('G', alphabet, wildcard);
-    st_logDebug("G was translated to %c\n", c);
-    char c2 = baseToAlphabet('-', alphabet, wildcard);
-    st_logDebug("- was translated to %c\n", c2);
-    char c3 = baseToAlphabet('n', alphabet, wildcard);
-    st_logDebug("n was translated to %c\n", c3);
-
-    st_logDebug("Random chars... \n");
-    for (int i = 0;i < 10; i++) {
-        st_logDebug("%c \t", baseToAlphabet('N', alphabet, wildcard));
-        st_logDebug("%c \t", baseToAlphabet('n', alphabet, wildcard));
-    }
-
-
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
     stList *profileSequences = stList_construct();
-    parseReads(profileSequences, bamFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
+    parseReads(profileSequences, bamInFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
 
-    
+
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
@@ -546,6 +240,7 @@ int main(int argc, char *argv[]) {
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
     kstring_t str = {0,0,NULL};
 
+    st_logDebug("Created %d hmms \n", stList_length(hmms));
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
@@ -562,6 +257,38 @@ int main(int argc, char *argv[]) {
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
+//        st_logDebug("*** Genome Fragment Information ***\n");
+//        st_logDebug("Reference name: %s\n", gF->referenceName);
+//        st_logDebug("Ref start: %d \n", gF->refStart);
+//        st_logDebug("Length: %d \n", gF->length);
+//
+//        st_logDebug("Genotype string: %u\n", gF->genotypeString);
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%u\t", gF->genotypeString[j]);
+//        }
+//        st_logDebug("Genotype Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->genotypeProbs[j]);
+//        }
+//        st_logDebug("\nHaplotype 1 string: %u\n", gF->haplotypeString1);
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%u\t", gF->haplotypeString1[j]);
+//        }
+//        st_logDebug("\nHaplotype 1 Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->haplotypeProbs1[j]);
+//        }
+//        st_logDebug("\nHaplotype 2 string: %u\n", gF->haplotypeString2);
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%u\t", gF->haplotypeString2[j]);
+//        }
+//        st_logDebug("\nHaplotype 2 Probabilities: \n");
+//        for (int64_t j = 0; j < gF->length; j++) {
+//            st_logDebug("%f \t", gF->haplotypeProbs2[j]);
+//        }
+
+        // Write out VCF
+        st_logInfo("\nWriting out VCF for fragment\n");
 
         // Get reference sequence
         str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
@@ -577,6 +304,7 @@ int main(int argc, char *argv[]) {
         st_logInfo("Writing out VCF for fragment\n");
         writeVcfFragment(vcfOutFP, hdr, gF, seq, alphabet, wildcard);
         free(seq);
+
 
         // Optionally write out two BAMs, one for each read partition
         st_logInfo("Writing out BAM partitions for fragment\n");
