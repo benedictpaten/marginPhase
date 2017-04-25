@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <htslib/sam.h>
+#include <htslib/vcf.h>
+#include <memory.h>
+#include <htslib/faidx.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
 
@@ -306,15 +309,109 @@ stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wil
     return params;
 }
 
+bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
+    bcf_hdr_t *hdr = bcf_hdr_init("w");
+    kstring_t str = {0,0,NULL};
 
+    // generic info
+    str.l = 0;
+    ksprintf(&str, "##marginPhase=htslib-%s\n",hts_version());
+    bcf_hdr_append(hdr, str.s);
+
+    // reference file used
+    str.l = 0;
+    ksprintf(&str, "##reference=file://%s\n", "TODO"); //todo
+    bcf_hdr_append(hdr, str.s);
+
+    // contigs
+    // TODO: assert unique fragments, get full chrom length
+    for(int64_t i=0; i<stList_length(genomeFragments); i++) {
+        stRPHmm *hmm = stList_get(genomeFragments, i);
+        str.l = 0;
+        //ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
+        ksprintf(&str, "##contig=<ID=%s>\n", hmm->referenceName); //hmm->referenceName is the chrom
+        bcf_hdr_append(hdr, str.s);
+    }
+
+    // formatting
+    str.l = 0;
+    ksprintf(&str, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
+    bcf_hdr_append(hdr, str.s);
+
+    // samples
+    bcf_hdr_add_sample(hdr, "SMPL1"); //todo
+    bcf_hdr_add_sample(hdr, NULL);
+
+    // write header
+    bcf_hdr_write(out, hdr);
+
+    // cleanup
+    free(str.s);
+    return hdr;
+}
+
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq,
+                      char *alphabet, char* wildcard) {
+     // intialization
+    bcf1_t *bcf_rec = bcf_init1();
+    int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //currently: everything passes
+    int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
+    kstring_t str = {0,0,NULL};
+
+    // iterate over all positions
+    for (int64_t i = 0; i < gF->length; ++i) {
+        char refChar = referenceSeq[i];
+        char refAlphChar = baseToAlphabet(refChar, alphabet, wildcard) - '0';
+        st_logDebug("%d\t%c/%d:ref\t%8d:gs\t%.8f:gp\t%8d:hs1\t%.8f:hp1\t%8d:hs2\t%.8f:hp2\n",
+                    i, refChar, refAlphChar,
+                    gF->genotypeString[i], gF->genotypeProbs[i],
+                    gF->haplotypeString1[i], gF->haplotypeProbs1[i],
+                    gF->haplotypeString2[i], gF->haplotypeProbs2[i]);
+        int h1AlphChar = gF->haplotypeString1[i];
+        int h2AlphChar = gF->haplotypeString2[i];
+
+        //prep
+        bcf_clear1(bcf_rec);
+        str.l = 0;
+        int64_t pos = gF->refStart + i;
+
+        // contig (CHROM)
+        bcf_rec->rid = bcf_hdr_name2id(bcf_hdr, gF->referenceName); //defined in a contig in the top
+        // POS
+        bcf_rec->pos  = i + gF->refStart; // off by one?
+        // ID - skip
+        // QUAL - skip (TODO for now?)
+        // REF
+        kputc(refChar, &str);
+        // ALT
+        kputc(',', &str);
+        kputc(h1AlphChar + '0', &str);
+        kputc(',', &str);
+        kputc(h2AlphChar + '0', &str);
+        bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+        // FILTER
+        bcf_update_filter(bcf_hdr, bcf_rec, &filter_info, 1);
+        // FORMAT / $SMPL1
+        gt_info[0] = bcf_gt_phased(0);
+        gt_info[1] = bcf_gt_phased(1);
+        bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+
+        // save it
+        bcf_write1(out, bcf_hdr, bcf_rec);
+    }
+
+    // cleanup
+    free(str.s); bcf_destroy(bcf_rec);
+}
 
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char * logLevelString = NULL;
     char *bamFile = NULL;
-    char *vcfFile = NULL;
+    char *vcfOutFile = NULL;
     char *paramsFile = "params.json";
+    char *referenceName = "hg19.chr3.fa";
 
     char *refSeqName = NULL;
     int32_t intervalStart = -1;
@@ -329,7 +426,7 @@ int main(int argc, char *argv[]) {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
                 { "bamFile", required_argument, 0, 'b'},
-                { "vcfFile", required_argument, 0, 'v'},
+                { "vcfOutFile", required_argument, 0, 'v'},
                 { "params", required_argument, 0, 'p'},
                 { "refSeqName", required_argument, 0, 'n'},
                 { "intervalStart", required_argument, 0, 's'},
@@ -356,7 +453,7 @@ int main(int argc, char *argv[]) {
             bamFile = stString_copy(optarg);
             break;
         case 'v':
-            vcfFile = stString_copy(optarg);
+            vcfOutFile = stString_copy(optarg);
             break;
         case 'p':
             paramsFile = stString_copy(optarg);
@@ -435,7 +532,19 @@ int main(int argc, char *argv[]) {
     }
     hmms = l;
 
-    // Create HMM traceback and genome fragments
+    // Get reference (needed for VCF generation)
+    faidx_t *fai = fai_load(referenceName);
+    if ( !fai ) {
+        st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
+                       referenceName, referenceName);
+        return EXIT_FAILURE; //todo close things?
+    }
+
+    // Start VCF generation
+    st_logDebug("Writing out VCF header %s\n", vcfOutFile);
+    vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
+    bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
+    kstring_t str = {0,0,NULL};
 
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
@@ -453,12 +562,21 @@ int main(int argc, char *argv[]) {
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
+
+        // Get reference sequence
+        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
+        int seq_len;
+        char *seq = fai_fetch(fai, str.s, &seq_len);
+        printf(seq);
+        if ( seq_len < 0 ) {
+            st_logCritical("Failed to fetch reference sequence %s in %s\n", str.s, referenceName);
+            return EXIT_FAILURE; //todo close/free?
+        }
+
         // Write out VCF
         st_logInfo("Writing out VCF for fragment\n");
-        /*
-         * TODO: Convert the genome fragment into a portion of a VCF file (we'll need to write the header out earlier)
-         * We can express the genotypes and (using phase sets) the phasing relationships.
-         */
+        writeVcfFragment(vcfOutFP, hdr, gF, seq, alphabet, wildcard);
+        free(seq);
 
         // Optionally write out two BAMs, one for each read partition
         st_logInfo("Writing out BAM partitions for fragment\n");
@@ -469,6 +587,9 @@ int main(int argc, char *argv[]) {
     }
 
     // Cleanup
+    vcf_close(vcfOutFP);
+    free(str.s);
+    bcf_hdr_destroy(hdr);
     stList_destruct(hmms);
 
     //while(1); // Use this for testing for memory leaks

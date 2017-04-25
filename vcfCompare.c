@@ -59,9 +59,11 @@ void create_vcf() {
     // write header
     vcfFile *out = vcf_open("out.vcf", "w");
     bcf_hdr_write(out, bcf_hdr);
+    vcf_close(out);
 
 
     // RECORD // (source:test-vcf-api.c)
+    out = vcf_open("out.vcf", "a");
     bcf1_t *bcf_rec = bcf_init1();
     int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //how to specify not pass? do we care?
     int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
@@ -118,6 +120,23 @@ void create_vcf() {
     vcf_close(out);
 }
 
+void fill_hdr(bcf_hdr_t **hdr) {
+    *hdr = bcf_hdr_init("w");
+    if (hdr == NULL) {
+        printf("Null");
+    } else {
+        printf("not null");
+    }
+}
+
+void validate_hdr(bcf_hdr_t *hdr) {
+    if (hdr == NULL) {
+        printf("Null");
+    } else {
+        printf("not null");
+    }
+}
+
 int main(int argc, char *argv[]) {
     // Parameters / arguments
 
@@ -162,10 +181,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    bcf_hdr_t *hdr = NULL;
+    fill_hdr(&hdr);
+    if (hdr == NULL) {
+        printf("Null");
+    } else {
+        printf("not null");
+    }
+    validate_hdr(hdr);
 
-    create_vcf();
     if (true) return 0;
-
+//    create_vcf();
+//    fai_build()
 
     st_logInfo("VCF Reference: %s \n", vcfReference);
     st_logInfo("VCF Evaluated: %s \n", vcfEvaluated);
