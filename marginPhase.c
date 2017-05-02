@@ -74,8 +74,7 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
     return hdr;
 }
 
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq,
-                      char *alphabet, char* wildcard) {
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, stBaseMapper *baseMapper) {
      // intialization
     bcf1_t *bcf_rec = bcf_init1();
     int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //currently: everything passes
@@ -84,15 +83,18 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
 
     // iterate over all positions
     for (int64_t i = 0; i < gF->length; ++i) {
-        char refChar = referenceSeq[i];
-        char refAlphChar = baseToAlphabet(refChar, alphabet, wildcard) - '0';
-        st_logDebug("%d\t%c/%d:ref\t%8d:gs\t%.8f:gp\t%8d:hs1\t%.8f:hp1\t%8d:hs2\t%.8f:hp2\n",
-                    i, refChar, refAlphChar,
+        char refChar = referenceSeq[i + gF->length];
+        int refAlphVal = stBaseMapper_getValueForBase(baseMapper, refChar);
+        int h1AlphVal = gF->haplotypeString1[i];
+        int h2AlphVal = gF->haplotypeString2[i];
+        char h1AlphChar = stBaseMapper_getBaseForValue(baseMapper, h1AlphVal);
+        char h2AlphChar = stBaseMapper_getBaseForValue(baseMapper, h2AlphVal);
+        if (i % 1024 == 0 || i % 1024 == 1 || i % 1024 == 2)
+            st_logDebug("%d\t%c/%d:ref\t%c/%d:h1\t%c/%d:h2\t%8d:gs\t%.8f:gp\t%8d:hs1\t%.8f:hp1\t%8d:hs2\t%.8f:hp2\n",
+                    i, refChar, refAlphVal, h1AlphChar, h1AlphVal, h2AlphChar, h2AlphVal,
                     gF->genotypeString[i], gF->genotypeProbs[i],
                     gF->haplotypeString1[i], gF->haplotypeProbs1[i],
                     gF->haplotypeString2[i], gF->haplotypeProbs2[i]);
-        int h1AlphChar = gF->haplotypeString1[i];
-        int h2AlphChar = gF->haplotypeString2[i];
 
         //prep
         bcf_clear1(bcf_rec);
@@ -109,9 +111,9 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         kputc(refChar, &str);
         // ALT
         kputc(',', &str);
-        kputc(h1AlphChar + '0', &str);
+        kputc(h1AlphChar, &str);
         kputc(',', &str);
-        kputc(h2AlphChar + '0', &str);
+        kputc(h2AlphChar, &str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
         // FILTER
         bcf_update_filter(bcf_hdr, bcf_rec, &filter_info, 1);
@@ -201,17 +203,16 @@ int main(int argc, char *argv[]) {
     // Parse any model parameters
     st_logInfo("Parsing model parameters\n");
 
-    char *alphabet[ALPHABET_SIZE];
-    char *wildcard;
-    stRPHmmParameters *params = parseParameters(paramsFile, alphabet, &wildcard);
+//    char *alphabet[ALPHABET_SIZE];
+//    char *wildcard;
+    stBaseMapper *baseMapper = stBaseMapper_construct();
+    stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
 
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
 
     stList *profileSequences = stList_construct();
-    parseReads(profileSequences, bamInFile, alphabet, wildcard, refSeqName, intervalStart, intervalEnd);
-
-
+    parseReads(profileSequences, bamInFile, baseMapper, refSeqName, intervalStart, intervalEnd);
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
@@ -291,18 +292,19 @@ int main(int argc, char *argv[]) {
         st_logInfo("\nWriting out VCF for fragment\n");
 
         // Get reference sequence
-        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
+//        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
         int seq_len;
-        char *seq = fai_fetch(fai, str.s, &seq_len);
-        printf(seq);
+//        char *seq = fai_fetch(fai, str.s, &seq_len);
+        char *seq = fai_fetch(fai, gF->referenceName, &seq_len);
         if ( seq_len < 0 ) {
             st_logCritical("Failed to fetch reference sequence %s in %s\n", str.s, referenceName);
             return EXIT_FAILURE; //todo close/free?
         }
 
+
         // Write out VCF
         st_logInfo("Writing out VCF for fragment\n");
-        writeVcfFragment(vcfOutFP, hdr, gF, seq, alphabet, wildcard);
+        writeVcfFragment(vcfOutFP, hdr, gF, seq, baseMapper);
         free(seq);
 
 

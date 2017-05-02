@@ -5,6 +5,56 @@
 #include "stRPHmm.h"
 #include "jsmn.h"
 #include <htslib/sam.h>
+#include <htslib/faidx.h>
+
+
+stBaseMapper* stBaseMapper_construct() {
+    stBaseMapper *bm = (stBaseMapper*)calloc(1, sizeof(stBaseMapper));
+    bm->baseToNum = calloc(256, sizeof(char));
+    bm->numToBase = calloc(256, sizeof(int));
+    bm->wildcard = "";
+    bm->size = 0;
+    for (int i = 0; i < 256; i++) {
+        bm->baseToNum[i] = -1;
+        bm->numToBase[i] = -1;
+    }
+    return bm;
+}
+
+void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
+    for (int i = 0; i < strlen(bases); i++) {
+        char base = bases[i];
+        if (bm->numToBase[bm->size] < 0) bm->numToBase[bm->size] = base;
+        bm->baseToNum[base] = bm->size;
+    }
+    bm->size++;
+    if (bm->size > ALPHABET_SIZE) {
+        st_errAbort("BaseMapper size has exceeded ALPHABET_SIZE parameter (%d)", ALPHABET_SIZE);
+    }
+}
+
+void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
+    bm->wildcard = wildcard;
+}
+
+int stBaseMapper_getValueForBase(stBaseMapper *bm, char base) {
+    int value = bm->baseToNum[base];
+    if (value >= 0) return value;
+    for (int i = 0; i < strlen(bm->wildcard); i++) {
+        if (bm->wildcard[i] == base) {
+            return st_randomInt(0, bm->size-1);
+        }
+    }
+    st_errAbort("Base '%c' (%d) not in alphabet", base, base);
+}
+
+int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value) {
+    char base = bm->numToBase[value];
+    if (base >= 0) return base;
+    st_errAbort("Value '%d' not specified in alphabet", value);
+}
+
+
 
 char *json_token_tostr(char *js, jsmntok_t *t)
 {
@@ -37,7 +87,7 @@ char *json_token_tostr(char *js, jsmntok_t *t)
      *      converted to log space for the model. Each row of each matrix should sum to 1.0 (roughly) and be normalised to 1.0
      *
 */
-stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wildcard) {
+stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
     // Variables for parsing
     st_logDebug("Parsing json file: %s \n", paramsFile);
@@ -96,7 +146,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wil
             for (int j = 0; j < ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
                 char *tokStr = json_token_tostr(js, &tok);
-                alphabet[j] = tokStr;
+                stBaseMapper_addBases(baseMapper, tokStr);
+//                alphabet[j] = tokStr;
             }
             i += ALPHABET_SIZE + 1;
 
@@ -104,7 +155,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wil
         if (strcmp(keyString, "wildcard") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            *wildcard = tokStr;
+            stBaseMapper_setWildcard(baseMapper, tokStr);
             i++;
         }
         if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
@@ -182,21 +233,21 @@ stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wil
     return params;
 }
 
-char baseToAlphabet(char b, char **alphabet, char *wildcard) {
-    for (size_t i = 0; i < ALPHABET_SIZE; i++) {
-        char *bases = alphabet[i];
-        size_t len = strlen(bases);
-        for (size_t j = 0; j < len; j++) {
-            if (b == bases[j]) return FIRST_ALPHABET_CHAR + i;
-        }
-    }
-    // Wildcard becomes random base (equal probability of any)
-    for (size_t i = 0; i < strlen(wildcard); i++) {
-        if (b == wildcard[i]) return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+ALPHABET_SIZE-1);
-    }
-    st_logInfo("ERROR: Character in sequence not in alphabet\n");
-    return  FIRST_ALPHABET_CHAR - 1;
-}
+//char baseToAlphabet(char b, char **alphabet, char *wildcard) {
+//    for (size_t i = 0; i < ALPHABET_SIZE; i++) {
+//        char *bases = alphabet[i];
+//        size_t len = strlen(bases);
+//        for (size_t j = 0; j < len; j++) {
+//            if (b == bases[j]) return FIRST_ALPHABET_CHAR + i;
+//        }
+//    }
+//    // Wildcard becomes random base (equal probability of any)
+//    for (size_t i = 0; i < strlen(wildcard); i++) {
+//        if (b == wildcard[i]) return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+ALPHABET_SIZE-1);
+//    }
+//    st_logInfo("ERROR: Character in sequence not in alphabet\n");
+//    return  FIRST_ALPHABET_CHAR - 1;
+//}
 
 
 /*
@@ -207,7 +258,7 @@ char baseToAlphabet(char b, char **alphabet, char *wildcard) {
        In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
        use the posterior probabilities.
      */
-void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *wildcard, char *refSeqName, int32_t intervalStart, int32_t intervalEnd) {
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, char *refSeqName, int32_t intervalStart, int32_t intervalEnd) {
 
     st_logDebug("Bam file: %s \n", bamFile);
     samFile *in = hts_open(bamFile, "r");
@@ -235,6 +286,20 @@ void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *
 //    hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
 //    hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
 
+    char *referenceName = "hg19.chr3.fa"; //http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/chr3.fa.gz 
+    faidx_t *fai = fai_load(referenceName);
+    if ( !fai ) {
+        st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
+                       referenceName, referenceName);
+    }
+    int seq_len;
+    char *ref = fai_fetch(fai, "chr3", &seq_len);
+    if ( seq_len < 0 ) {
+        st_logCritical("Failed to fetch reference sequence %s in %s\n", "chr3", referenceName);
+    }
+
+
+
     while(sam_read1(in,bamHdr,aln) > 0){
 
         int32_t pos = aln->core.pos +1; //left most position of alignment
@@ -242,8 +307,10 @@ void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *
         uint32_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
 
+        float matched = 0.0;
+        float unmatched = 0.0;
         if(readWholeFile || strcmp(chr, refSeqName) == 0) {
-            // Should reads that cross boundaries be counted?
+            // todo Should reads that cross boundaries be counted?
             if (pos >= intervalStart && (intervalEnd < 0 || pos + len <= intervalEnd)) {
                 readCount++;
 
@@ -254,8 +321,12 @@ void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *
                     // As is, this makes the probability 1 for the base read in, and 0 otherwise
                     // Should this be modified to take into account error rates?
                     // What about coverage from other profile sequences?
-                    char b = baseToAlphabet(seq_nt16_str[bam_seqi(seq, i)], alphabet, wildcard);
-                    pSeq->profileProbs[i * ALPHABET_SIZE + b - FIRST_ALPHABET_CHAR] = ALPHABET_MAX_PROB;
+                    int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, i)]);
+                    int r = stBaseMapper_getValueForBase(baseMapper, ref[pos + i +1]);
+                    if (b == r) matched++;
+                    else unmatched++;
+
+                    pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 }
                 stList_append(profileSequences, pSeq);
 //                if (readCount % 1000 == 0) {
@@ -263,6 +334,7 @@ void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *
 //                }
             }
         }
+        st_logInfo("Read had %2.f%% (out of %5.f) matched chars\n", (100*matched / (matched + unmatched)), (matched + unmatched));
     }
     st_logDebug("Number of profile sequences created: %d\n", readCount);
 

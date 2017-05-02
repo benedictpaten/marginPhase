@@ -341,10 +341,23 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
+//alphabet and mapping bases to numbers
+struct _stBaseMapper {
+    char *baseToNum;
+    int *numToBase;
+    char *wildcard;
+    int size;
+};
+typedef struct _stBaseMapper stBaseMapper;
+stBaseMapper* stBaseMapper_construct();
+void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
+void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
+int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value);
+int stBaseMapper_getValueForBase(stBaseMapper *bm, char base);
+
 /* Parsing stuff
  * */
-
-stRPHmmParameters *parseParameters(char *paramsFile, char **alphabet, char **wildcard);
-void parseReads(stList *profileSequences, char *bamFile, char **alphabet, char *wildcard, char *refSeqName, int32_t intervalStart, int32_t intervalEnd);
+stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, char *refSeqName, int32_t intervalStart, int32_t intervalEnd);
 
 #endif /* ST_RP_HMM_H_ */
