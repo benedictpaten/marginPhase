@@ -1,6 +1,8 @@
-//
-// Created by Marina Haukness on 4/24/17.
-//
+/*
+ * Copyright (C) 2017 by Benedict Paten (benedictpaten@gmail.com) & Arthur Rand (arand@soe.ucsc.edu)
+ *
+ * Released under the MIT license, see LICENSE.txt
+ */
 
 #include "stRPHmm.h"
 #include "jsmn.h"
@@ -46,12 +48,14 @@ int stBaseMapper_getValueForBase(stBaseMapper *bm, char base) {
         }
     }
     st_errAbort("Base '%c' (%d) not in alphabet", base, base);
+    return -1;
 }
 
 int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value) {
     char base = bm->numToBase[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
+    return -1;
 }
 
 
@@ -268,73 +272,123 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
     int32_t readCount = 0;
 
     // TODO: add implementation to read from specific intervals in bam file (?)
-    bool readWholeFile = true;
-//    bool readWholeFile = false;
-//    if (!refSeqName) {
-//        st_logInfo("No reference sequence name given, reading whole file.\n");
-//        readWholeFile = true;
-//    }
-//    if (intervalStart < 0) {
-//        intervalStart = 0;
-//        st_logInfo("Reading from start of chromosome.\n");
-//    }
-//    if (intervalEnd < 0) {
-//        st_logInfo("Reading until end of chromosome.\n", intervalEnd);
-//    }
-//
-//    hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
-//    hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
-//    hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
 
-    char *referenceName = "hg19.chr3.fa"; //http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/chr3.fa.gz 
+    char *referenceName = "hg19.chr3.fa"; //http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/chr3.fa.gz
+    st_logInfo("Reference file name: %s\n", referenceName);
     faidx_t *fai = fai_load(referenceName);
     if ( !fai ) {
         st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
                        referenceName, referenceName);
     }
     int seq_len;
-    char *ref = fai_fetch(fai, "chr3", &seq_len);
+    char *ref = fai_fetch(fai, "chr3", &seq_len); //TODO: make this not generic
     if ( seq_len < 0 ) {
         st_logCritical("Failed to fetch reference sequence %s in %s\n", "chr3", referenceName);
     }
 
-
+    st_logDebug("Length of chr3 is: %d\n", seq_len);
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int32_t pos = aln->core.pos +1; //left most position of alignment
+        int32_t pos = aln->core.pos; //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
         uint32_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
+        uint32_t *cigar = bam_get_cigar(aln);
 
-        float matched = 0.0;
-        float unmatched = 0.0;
-        if(readWholeFile || strcmp(chr, refSeqName) == 0) {
+        if(strcmp(chr, refSeqName) == 0) {
             // todo Should reads that cross boundaries be counted?
             if (pos >= intervalStart && (intervalEnd < 0 || pos + len <= intervalEnd)) {
                 readCount++;
+                uint32_t start_read = 0;
+                uint32_t start_ref = pos;
+                uint32_t cig_idx = 0;
 
-                stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, pos, len);
+                // Find the correct starting locations on the read and reference sequence,
+                // to deal with things like inserts / deletions / soft clipping
+                while(cig_idx < aln->core.n_cigar) {
+                    int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+                    int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 
-                for (int64_t i = 0; i < len; i++) {
+                    if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
+                        break;
+                    }
+                    else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                        start_ref += cigarNum;
+                        cig_idx++;
+                    } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+                        start_read += cigarNum;
+                        cig_idx++;
+                    } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                        cig_idx++;
+                    } else {
+                        st_logCritical("Unidentifiable cigar operation\n");
+                    }
+                }
+                char *constructedReadSeq = st_malloc(len-start_read * sizeof(char));
+                char *constructedRefSeq = st_malloc(len-start_read * sizeof(char));
+
+                stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, pos, len-start_read);
+
+                for (uint32_t i = 0; i < len-start_read; i++) {
                     // For each position turn character into profile probability
                     // As is, this makes the probability 1 for the base read in, and 0 otherwise
                     // Should this be modified to take into account error rates?
                     // What about coverage from other profile sequences?
-                    int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, i)]);
-                    int r = stBaseMapper_getValueForBase(baseMapper, ref[pos + i +1]);
-                    if (b == r) matched++;
-                    else unmatched++;
+                    int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, start_read+i)]);
+                    int r = stBaseMapper_getValueForBase(baseMapper, ref[start_ref + i ]);
+
+                    constructedReadSeq[i] = b;
+                    constructedRefSeq[i] = ref[start_ref + i ];
 
                     pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 }
                 stList_append(profileSequences, pSeq);
-//                if (readCount % 1000 == 0) {
+                if (readCount == 1) {
+                    st_logDebug("pos: %d \n", pos);
+                    st_logDebug("ref: \n");
+                    for (int i = 0; i <1000; i++) {
+                        st_logDebug("%c", constructedRefSeq[i]);
+                    }
+                    st_logDebug("\n");
+                    st_logInfo("\nseq2: ");
+                    for (int i = 0; i <1000; i++) {
+                        st_logDebug("%d ", constructedReadSeq[i]);
+                    }
+                    st_logDebug("\n");
+                }
+//                if (readCount == 1) {
 //                    stProfileSeq_print(pSeq, stderr, true);
 //                }
+
+//                float percentMatched = (100*(float)matched / (matched + (float)unmatched));
+//                if (percentMatched < 50) {
+//                    if (readCount % 1000 == 0) {
+//                        st_logInfo("Read at pos %d-%d had %3.f%% (out of d) matched chars\n", pos, pos+len-1,percentMatched, (matched + unmatched));
+//                        st_logInfo("Matches: %d \t Mismatches: %d\n", matched, unmatched);
+//                        st_logInfo("\n");
+//                        st_logInfo("\tseq: ");
+//                        for (int i = 0; i <len-start_read; i++) {
+//                            st_logDebug("%c", constructedReadSeq[i]);
+//                        }
+//
+//                        st_logInfo("\n\tref: ");
+//                        for (int i = 0; i <len-start_read; i++) {
+//                            st_logDebug("%c", constructedRefSeq[i]);
+//                        }
+////
+//                        st_logInfo("\n");
+//                        }
+//
+//                } else {
+//                    goodReads++;
+//                }
+//
+////
             }
         }
-        st_logInfo("Read had %2.f%% (out of %5.f) matched chars\n", (100*matched / (matched + unmatched)), (matched + unmatched));
+
+
     }
     st_logDebug("Number of profile sequences created: %d\n", readCount);
 
