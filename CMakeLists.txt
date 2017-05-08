@@ -3,7 +3,6 @@ project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3 -DNDEBUG")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -DNDEBUG")
 
 set(HTSLIB_HEADERS
         externalTools/htslib
@@ -191,6 +190,7 @@ set(SOURCE_FILES
         impl/partitions.c
         impl/profileSeq.c
         impl/parser.c
+        impl/vcfWriter.c
         )
 
 
@@ -230,7 +230,7 @@ add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare son hts)
+target_link_libraries(vcfCompare son hts jsmn)
 
 
 enable_testing()

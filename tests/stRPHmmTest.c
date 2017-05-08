@@ -148,7 +148,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         // Create read sequences to given coverage
         int64_t coverage = st_randomInt(minCoverage, maxCoverage+1);
         int64_t totalBasesToSimulate = coverage * referenceLength;
-        fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
+//        fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
         while(totalBasesToSimulate > 0) {
             // Randomly pick a haplotype sequence to template from
             char *hapSeq = haplotypeSeq1;
@@ -907,8 +907,8 @@ void test_bitCountVectors(CuTest *testCase) {
                 }
             }
 
-            fprintf(stderr, "Test: %" PRIi64 " depth: %" PRIi64 " alphabet_size: %i length: %" PRIi64 "\n",
-                    test, depth, ALPHABET_SIZE, length);
+//            fprintf(stderr, "Test: %" PRIi64 " depth: %" PRIi64 " alphabet_size: %i length: %" PRIi64 "\n",
+//                    test, depth, ALPHABET_SIZE, length);
 
             // Calculate the bit vectors
             uint64_t *countBitVectors = calculateCountBitVectors(seqs, depth, length);

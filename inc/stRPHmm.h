@@ -13,6 +13,10 @@
 #include <math.h>
 #include <float.h>
 
+#include <htslib/vcf.h>
+#include <htslib/sam.h>
+#include <htslib/faidx.h>
+
 #include "sonLib.h"
 
 /*
@@ -355,9 +359,21 @@ void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
 int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value);
 int stBaseMapper_getValueForBase(stBaseMapper *bm, char base);
 
+//
+struct _stIndels {
+    int *insertions;
+    int *deletions;
+};
+typedef struct _stIndels stIndels;
+
 /* Parsing stuff
  * */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, char *refSeqName, int32_t intervalStart, int32_t intervalEnd);
+
+// File writing
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, char *referenceName, stBaseMapper *baseMapper);
+bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments);
+void writeVcfNoReference(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, stBaseMapper *baseMapper);
 
 #endif /* ST_RP_HMM_H_ */
