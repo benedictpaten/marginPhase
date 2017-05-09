@@ -4,7 +4,49 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <htslib/vcf.h>
 #include "stRPHmm.h"
+
+bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
+    bcf_hdr_t *hdr = bcf_hdr_init("w");
+    kstring_t str = {0,0,NULL};
+
+    // generic info
+    str.l = 0;
+    ksprintf(&str, "##marginPhase=htslib-%s\n",hts_version());
+    bcf_hdr_append(hdr, str.s);
+
+    // reference file used
+    str.l = 0;
+    ksprintf(&str, "##reference=file://%s\n", "TODO"); //todo
+    bcf_hdr_append(hdr, str.s);
+
+    // contigs
+    // TODO: assert unique fragments, get full chrom length
+    for(int64_t i=0; i<stList_length(genomeFragments); i++) {
+        stRPHmm *hmm = stList_get(genomeFragments, i);
+        str.l = 0;
+        //ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
+        ksprintf(&str, "##contig=<ID=%s>\n", hmm->referenceName); //hmm->referenceName is the chrom
+        bcf_hdr_append(hdr, str.s);
+    }
+
+    // formatting
+    str.l = 0;
+    ksprintf(&str, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
+    bcf_hdr_append(hdr, str.s);
+
+    // samples
+    bcf_hdr_add_sample(hdr, "SMPL1"); //todo
+    bcf_hdr_add_sample(hdr, NULL);
+
+    // write header
+    bcf_hdr_write(out, hdr);
+
+    // cleanup
+    free(str.s);
+    return hdr;
+}
 
 // This function writes a vcf using one of the haplotypes as the reference
 // (not using the actual reference file the reads were originally aligned to)
@@ -62,52 +104,13 @@ void writeVcfNoReference(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
 
     }
     st_logDebug("\nNumber of differences between the records: %d\n", numDifferences);
-    st_logDebug("Which is %f percent\n", numDifferences/(float)totalLocs);
+    st_logDebug("Which is %f percent\n", 100 * (float)numDifferences/(float)gF->length);
 
     // cleanup
     free(str.s); bcf_destroy(bcf_rec);
 }
 
-bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
-    bcf_hdr_t *hdr = bcf_hdr_init("w");
-    kstring_t str = {0,0,NULL};
 
-    // generic info
-    str.l = 0;
-    ksprintf(&str, "##marginPhase=htslib-%s\n",hts_version());
-    bcf_hdr_append(hdr, str.s);
-
-    // reference file used
-    str.l = 0;
-    ksprintf(&str, "##reference=file://%s\n", "TODO"); //todo
-    bcf_hdr_append(hdr, str.s);
-
-    // contigs
-    // TODO: assert unique fragments, get full chrom length
-    for(int64_t i=0; i<stList_length(genomeFragments); i++) {
-        stRPHmm *hmm = stList_get(genomeFragments, i);
-        str.l = 0;
-        //ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
-        ksprintf(&str, "##contig=<ID=%s>\n", hmm->referenceName); //hmm->referenceName is the chrom
-        bcf_hdr_append(hdr, str.s);
-    }
-
-    // formatting
-    str.l = 0;
-    ksprintf(&str, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
-    bcf_hdr_append(hdr, str.s);
-
-    // samples
-    bcf_hdr_add_sample(hdr, "SMPL1"); //todo
-    bcf_hdr_add_sample(hdr, NULL);
-
-    // write header
-    bcf_hdr_write(out, hdr);
-
-    // cleanup
-    free(str.s);
-    return hdr;
-}
 
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, char *referenceName, stBaseMapper *baseMapper) {
     // intialization
@@ -149,18 +152,18 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         bcf_rec->pos  = i + gF->refStart; // off by one?
         // ID - skip
         // QUAL - skip (TODO for now?)
-        
+
         // Check for where there are actual variations relative to the reference
         kputc(refChar, &str); // REF
         kputc(',', &str);
+        kputc(h1AlphChar, &str);
+        kputc(',', &str);
+        kputc(h2AlphChar, &str);
         if (refChar != h1AlphChar) {
-            kputc(h1AlphChar, &str);
-            if (refChar != h2AlphChar) {
-                kputc(',', &str);
-                kputc(h2AlphChar, &str);
-            }
-        } else {
-            kputc(h2AlphChar, &str);
+            bcf_rec->qual = 'x';
+        }
+        if (h1AlphChar != h2AlphChar) {
+            bcf_rec->qual = '*';
         }
         bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
         // FORMAT / $SMPL1

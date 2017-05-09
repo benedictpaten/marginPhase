@@ -235,6 +235,6 @@ target_link_libraries(vcfCompare son hts jsmn)
 
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/stRPHmmTest.c ${SOURCE_FILES})
+add_executable(allTests tests/allTests.c tests/stRPHmmTest.c tests/marginPhaseTest.c ${SOURCE_FILES})
 target_link_libraries(allTests hts son jsmn)
 add_test(stRPHmm allTests)

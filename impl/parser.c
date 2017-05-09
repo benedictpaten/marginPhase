@@ -4,6 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <htslib/sam.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
 
@@ -224,7 +225,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
        In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
        use the posterior probabilities.
      */
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, char *refSeqName, int32_t intervalStart, int32_t intervalEnd) {
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
 
     st_logDebug("Reading bam file: %s \n", bamFile);
     samFile *in = hts_open(bamFile, "r");
@@ -232,6 +233,8 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
     bam1_t *aln = bam_init1();
 
     int32_t readCount = 0;
+    int32_t numInsertions = 0;
+    int32_t numDeletions = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
@@ -241,64 +244,66 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
         uint32_t *cigar = bam_get_cigar(aln);
 
-        // todo Should reads that cross boundaries be counted?
-        if (pos >= intervalStart && (intervalEnd < 0 || pos + len <= intervalEnd)) {
-            readCount++;
-            uint32_t start_read = 0;
-            uint32_t end_read = 0;
-            uint32_t start_ref = pos;
-            uint32_t cig_idx = 0;
 
-            // Find the correct starting locations on the read and reference sequence,
-            // to deal with things like inserts / deletions / soft clipping
-            while(cig_idx < aln->core.n_cigar) {
-                int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-                int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+        readCount++;
+        uint32_t start_read = 0;
+        uint32_t end_read = 0;
+        uint32_t start_ref = pos;
+        uint32_t cig_idx = 0;
 
-                if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
-                    break;
-                }
-                else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                    start_ref += cigarNum;
-                    cig_idx++;
-                } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
-                    start_read += cigarNum;
-                    cig_idx++;
-                } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                    cig_idx++;
-                } else {
-                    st_logCritical("Unidentifiable cigar operation\n");
-                }
+        // Find the correct starting locations on the read and reference sequence,
+        // to deal with things like inserts / deletions / soft clipping
+        while(cig_idx < aln->core.n_cigar) {
+            int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+            int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
+                break;
             }
-            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
-            if (lastCigarOp == BAM_CSOFT_CLIP) {
-                end_read += lastCigarNum;
+            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                start_ref += cigarNum;
+                cig_idx++;
+                numDeletions++;
+            } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+                start_read += cigarNum;
+                cig_idx++;
+                if (cigarOp == BAM_CINS) numInsertions++;
+            } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                cig_idx++;
+            } else {
+                st_logCritical("Unidentifiable cigar operation\n");
             }
+        }
+        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
+        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+        if (lastCigarOp == BAM_CSOFT_CLIP) {
+            end_read += lastCigarNum;
+        }
 
 //            char *constructedReadSeq = st_malloc(len-start_read-end_read * sizeof(char));
 //            char *constructedRefSeq = st_malloc(len-start_read * sizeof(char));
 
-            char *readName = bam_get_qname(aln);
-            stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, len-start_read-end_read);
+        char *readName = bam_get_qname(aln);
+        stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, len-start_read-end_read);
 
-            for (uint32_t i = 0; i < len-start_read-end_read; i++) {
-                // For each position turn character into profile probability
-                // As is, this makes the probability 1 for the base read in, and 0 otherwise
-                // Should this be modified to take into account error rates?
-                // What about coverage from other profile sequences?
-                int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, start_read+i)]);
+        for (uint32_t i = 0; i < len-start_read-end_read; i++) {
+            // For each position turn character into profile probability
+            // As is, this makes the probability 1 for the base read in, and 0 otherwise
+            // Should this be modified to take into account error rates?
+            // What about coverage from other profile sequences?
+            int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, start_read+i)]);
 //                int r = stBaseMapper_getValueForBase(baseMapper, ref[start_ref + i ]);
 //
 //                constructedReadSeq[i] = b;
 //                constructedRefSeq[i] = ref[start_ref + i ];
 
-                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-            }
-            stList_append(profileSequences, pSeq);
-            if (readCount == 1) {
-                st_logDebug("pos: %d \t end: %d \t len: %d\n", pos, pos+len-start_read-end_read, len);
-            }
+            pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+        }
+        stList_append(profileSequences, pSeq);
+
+
+        if (readCount == 1) {
+            st_logDebug("pos: %d \t end: %d \t len: %d\n", pos, pos+len-start_read-end_read, len);
         }
 
 
