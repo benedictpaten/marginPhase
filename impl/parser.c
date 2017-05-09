@@ -279,7 +279,8 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 //            char *constructedReadSeq = st_malloc(len-start_read-end_read * sizeof(char));
 //            char *constructedRefSeq = st_malloc(len-start_read * sizeof(char));
 
-            stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, pos, len-start_read-end_read);
+            char *readName = bam_get_qname(aln);
+            stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, len-start_read-end_read);
 
             for (uint32_t i = 0; i < len-start_read-end_read; i++) {
                 // For each position turn character into profile probability

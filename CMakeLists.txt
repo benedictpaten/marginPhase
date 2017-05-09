@@ -191,6 +191,7 @@ set(SOURCE_FILES
         impl/profileSeq.c
         impl/parser.c
         impl/vcfWriter.c
+        impl/samWriter.c
         )
 
 

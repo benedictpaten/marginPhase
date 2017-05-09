@@ -16,12 +16,13 @@ void usage() {
     fprintf(stderr,
             "Phases the reads in an interval of a BAM file reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n");
-    fprintf(stderr, "-a --logLevel : Set the log level\n");
-    fprintf(stderr, "-h --help : Print this help screen\n");
-    fprintf(stderr, "-b --bamFile : Input BAM file\n");
-    fprintf(stderr, "-v --vcfFile : Output VCF file\n");
-    fprintf(stderr, "-p --params : Input params file\n");
-    fprintf(stderr, "-r --reference : Reference fasta file\n");
+    fprintf(stderr, "-a --logLevel   : Set the log level\n");
+    fprintf(stderr, "-h --help       : Print this help screen\n");
+    fprintf(stderr, "-b --bamFile    : Input BAM file\n");
+    fprintf(stderr, "-o --outSamBase : Output SAM Base (\"example\" -> \"example1.sam\", \"example2.sam\")\n");
+    fprintf(stderr, "-v --vcfFile    : Output VCF file\n");
+    fprintf(stderr, "-p --params     : Input params file\n");
+    fprintf(stderr, "-r --reference  : Reference fasta file\n");
 }
 
 void printGenotypeFragment(stGenomeFragment *gF, bool printProbs) {
@@ -63,8 +64,8 @@ void printGenotypeFragment(stGenomeFragment *gF, bool printProbs) {
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char * logLevelString = NULL;
-    char *bamFile = NULL;
     char *bamInFile = NULL;
+    char *samOutBase = "haplotype";
     char *vcfOutFile = "output.vcf";
     char *paramsFile = "params.json";
     char *referenceName = "hg19.chr3.fa";
@@ -82,6 +83,7 @@ int main(int argc, char *argv[]) {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
                 { "bamFile", required_argument, 0, 'b'},
+                { "outSamBase", required_argument, 0, 'o'},
                 { "vcfOutFile", required_argument, 0, 'v'},
                 { "params", required_argument, 0, 'p'},
                 { "reference", required_argument, 0, 'r'},
@@ -105,6 +107,9 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'b':
             bamInFile = stString_copy(optarg);
+            break;
+        case 'o':
+            samOutBase = stString_copy(optarg);
             break;
         case 'v':
             vcfOutFile = stString_copy(optarg);
@@ -145,7 +150,6 @@ int main(int argc, char *argv[]) {
     hmms = l;
 
     // Get reference (needed for VCF generation)
-
     faidx_t *fai = fai_load(referenceName);
     if ( !fai ) {
         st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
@@ -158,6 +162,10 @@ int main(int argc, char *argv[]) {
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
     kstring_t str = {0,0,NULL};
+
+    // Prep for BAM outputs
+    stSet *haplotype1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
+    stSet *haplotype2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
 
     st_logDebug("Created %d hmms \n", stList_length(hmms));
     // For each read partitioning HMM
@@ -176,7 +184,7 @@ int main(int argc, char *argv[]) {
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
-        printGenotypeFragment(gF, false);
+//        printGenotypeFragment(gF, false);
 
 
         // Write out VCF
@@ -200,13 +208,22 @@ int main(int argc, char *argv[]) {
          writeVcfNoReference(vcfOutFP, hdr, gF, baseMapper);
 
 
-        // Optionally write out two BAMs, one for each read partition
-        // st_logInfo("Writing out BAM partitions for fragment\n");
-        /*
-         * TODO: Optionally, write out a new BAM file expressing the partition (which reads belong in which partition)
-         * Not sure if we need to write out multiple files or if we can add a per read flag to express this information.
-         */
+        // get the reads which mapped to each path
+        stList * haplotype1 = stSet_getList(stRPHmm_partitionSequencesByStatePath(hmm, path, true));
+        for (int64_t j=0; j<stList_length(haplotype1); j++) {
+            stSet_insert(haplotype1Ids, ((stProfileSeq *)stList_get(haplotype1, j))->readId);
+        }
+
+        stList * haplotype2 = stSet_getList(stRPHmm_partitionSequencesByStatePath(hmm, path, false));
+        for (int64_t j=0; j<stList_length(haplotype2); j++) {
+            stSet_insert(haplotype2Ids, ((stProfileSeq *)stList_get(haplotype2, j))->readId);
+        }
+
     }
+
+    // Write out two BAMs, one for each read partition
+    st_logInfo("Writing out SAM partitions for fragment\n");
+    writeSplitSams(bamInFile, samOutBase, haplotype1Ids, haplotype2Ids);
 
     // Cleanup
     vcf_close(vcfOutFP);

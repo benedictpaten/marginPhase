@@ -10,13 +10,14 @@
  * Functions for profile sequence
  */
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, int64_t referenceStart,
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId, int64_t referenceStart,
         int64_t length) {
     /*
      * Creates an empty profile sequence, with all the profile probabilities set to 0.
      */
     stProfileSeq *seq = st_malloc(sizeof(stProfileSeq));
     seq->referenceName = stString_copy(referenceName);
+    seq->readId = stString_copy(readId);
     seq->refStart = referenceStart;
     seq->length = length;
     seq->profileProbs = st_calloc(length*ALPHABET_SIZE, sizeof(uint8_t));
@@ -28,6 +29,7 @@ void stProfileSeq_destruct(stProfileSeq *seq) {
      * Cleans up memory for profile sequence.
      */
     free(seq->profileProbs);
+    free(seq->readId);
     free(seq->referenceName);
     free(seq);
 }

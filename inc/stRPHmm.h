@@ -96,6 +96,7 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 struct _stProfileSeq {
     char *referenceName;
+    char *readId;
     int64_t refStart;
     int64_t length;
     // The probability of alphabet characters, as specified by uint16_t
@@ -105,8 +106,8 @@ struct _stProfileSeq {
     uint8_t *profileProbs;
 };
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName,
-        int64_t referenceStart, int64_t length);
+stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId,
+                                                 int64_t referenceStart, int64_t length);
 
 void stProfileSeq_destruct(stProfileSeq *seq);
 
@@ -375,5 +376,5 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, char *referenceName, stBaseMapper *baseMapper);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments);
 void writeVcfNoReference(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, stBaseMapper *baseMapper);
-
+bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 #endif /* ST_RP_HMM_H_ */
