@@ -66,12 +66,9 @@ int main(int argc, char *argv[]) {
     char *bamFile = NULL;
     char *bamInFile = NULL;
     char *vcfOutFile = "output.vcf";
+    char *vcfOutFile2 = "output2.vcf";
     char *paramsFile = "params.json";
     char *referenceName = "hg19.chr3.fa";
-
-    char *refSeqName = NULL;
-    int32_t intervalStart = -1;
-    int32_t intervalEnd = -1;
 
     // TODO: When done testing, set random seed
     // st_randomSeed();
@@ -129,7 +126,7 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("Parsing input reads\n");
     stList *profileSequences = stList_construct();
-    parseReads(profileSequences, bamInFile, baseMapper, refSeqName, intervalStart, intervalEnd);
+    parseReads(profileSequences, bamInFile, baseMapper);
 
     // Create HMMs
     st_logInfo("Creating read partitioning HMMs\n");
@@ -157,6 +154,9 @@ int main(int argc, char *argv[]) {
     st_logDebug("Writing out VCF header %s\n", vcfOutFile);
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
+
+    vcfFile *vcfOutFP2 = vcf_open(vcfOutFile2, "w");
+    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP2, l);
     kstring_t str = {0,0,NULL};
 
     st_logDebug("Created %d hmms \n", stList_length(hmms));
@@ -182,22 +182,22 @@ int main(int argc, char *argv[]) {
         // Write out VCF
         st_logInfo("\nWriting out VCF for fragment\n");
 
-        // Uncomment this to write vcf relative to the reference fasta file
+        // Write vcf relative to the reference fasta file
         // Get reference sequence
-//        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
-//        int seq_len;
-//        char *seq = fai_fetch(fai, gF->referenceName, &seq_len);
-//        if ( seq_len < 0 ) {
-//            st_logCritical("Failed to fetch reference sequence %s in %s\n", str.s, referenceName);
-//            return EXIT_FAILURE; //todo close/free?
-//        }
-//        writeVcfFragment(vcfOutFP, hdr, gF, seq, referenceName, baseMapper);
-//        free(seq);
+        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
+        int seq_len;
+        char *seq = fai_fetch(fai, gF->referenceName, &seq_len);
+        if ( seq_len < 0 ) {
+            st_logCritical("Failed to fetch reference sequence %s in %s\n", str.s, referenceName);
+            return EXIT_FAILURE; //todo close/free?
+        }
+        writeVcfFragment(vcfOutFP, hdr, gF, seq, referenceName, baseMapper);
+        free(seq);
 
 
         // This one doesn't use the reference file when writing the vcf
         // It only writes the differences between the two haplotypes
-         writeVcfNoReference(vcfOutFP, hdr, gF, baseMapper);
+         writeVcfNoReference(vcfOutFP2, hdr2, gF, baseMapper);
 
 
         // Optionally write out two BAMs, one for each read partition

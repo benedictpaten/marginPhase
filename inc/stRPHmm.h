@@ -369,7 +369,7 @@ typedef struct _stIndels stIndels;
 /* Parsing stuff
  * */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, char *refSeqName, int32_t intervalStart, int32_t intervalEnd);
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
 
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, char *referenceName, stBaseMapper *baseMapper);
