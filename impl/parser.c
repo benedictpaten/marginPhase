@@ -65,7 +65,8 @@ char *json_token_tostr(char *js, jsmntok_t *t)
 }
 
 /*
-     * TODO: Get model parameters from params file.
+     * Get model parameters from params file.
+     *
      * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
      * haplotypes (excluding gaps)
      * We also need to figure out what to do with gap positions (which are just treated as an additional character)
@@ -88,11 +89,11 @@ char *json_token_tostr(char *js, jsmntok_t *t)
      *      Each should be
      *      converted to log space for the model. Each row of each matrix should sum to 1.0 (roughly) and be normalised to 1.0
      *
+     *
 */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
     // Variables for parsing
-    st_logDebug("Parsing json file: %s \n", paramsFile);
     int numTokens = 256;
     jsmn_parser parser;
     jsmn_init(&parser);
@@ -112,11 +113,11 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     int64_t  maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
 
-    // TODO: Error checking
-    // Make sure params file exists
-    // In case where buffer too small / not enough tokens, reallocate
     FILE *fp;
     fp = fopen(paramsFile, "rb");
+    if (fp == NULL) {
+        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+    }
     r = fread(buf, 1, sizeof(buf), fp);
     if (r > 0) {
         js = realloc(js, jslen + r + 1);
@@ -126,11 +127,10 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         strncpy(js + jslen, buf, r);
         jslen = jslen + r;
         r = jsmn_parse(&parser, js, jslen, tokens, numTokens);
-        st_logDebug("Number of tokens needed to parse: %d\n", r);
     }
 
-    if (r < 0) {
-        st_logDebug("Error when parsing json: %d\n", r);
+    if (r == JSMN_ERROR_NOMEM) {
+        st_logDebug("Error when parsing json: not enough tokens allocated. Is the JSON file too big? %d\n", r);
         return NULL;
     }
 
@@ -151,7 +151,6 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
                 stBaseMapper_addBases(baseMapper, tokStr);
             }
             i += ALPHABET_SIZE + 1;
-
         }
         if (strcmp(keyString, "wildcard") == 0) {
             jsmntok_t tok = tokens[i+1];
@@ -162,7 +161,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
             jsmntok_t hapSubTok = tokens[i+1];
             if (hapSubTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("Size of haplotype substitution model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
+                st_errAbort("ERROR: Size of haplotype substitution model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
             }
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
@@ -174,7 +173,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         if (strcmp(keyString, "readErrorModel") == 0) {
             jsmntok_t readErrTok = tokens[i+1];
             if (readErrTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("Size of read error model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
+                st_errAbort("ERROR: Size of read error model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
             }
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
@@ -217,18 +216,19 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     return params;
 }
 
-/*
-     * TODO: Use htslib to parse the reads within an input interval of a reference sequence of a bam file
-     * and create a list of profile sequences
-       where for each position you turn the character into a profile probability, as shown in the tests
 
-       In future we can use the mapq scores for reads to adjust these profiles, or for signal level alignments
-       use the posterior probabilities.
-     */
+/* Parse reads within an input interval of a reference sequence of a bam file
+ * and create a list of profile sequences by turning characters into profile probabilities.
+ *
+ * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
+ * signal level alignments).
+ * */
 void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
 
-    st_logDebug("Reading bam file: %s \n", bamFile);
     samFile *in = hts_open(bamFile, "r");
+    if (in == NULL) {
+        st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+    }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
 
@@ -243,7 +243,6 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         uint32_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
         uint32_t *cigar = bam_get_cigar(aln);
-
 
         readCount++;
         uint32_t start_read = 0;
@@ -280,35 +279,19 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             end_read += lastCigarNum;
         }
 
-//            char *constructedReadSeq = st_malloc(len-start_read-end_read * sizeof(char));
-//            char *constructedRefSeq = st_malloc(len-start_read * sizeof(char));
-
         char *readName = bam_get_qname(aln);
         stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, len-start_read-end_read);
 
         for (uint32_t i = 0; i < len-start_read-end_read; i++) {
             // For each position turn character into profile probability
             // As is, this makes the probability 1 for the base read in, and 0 otherwise
-            // Should this be modified to take into account error rates?
-            // What about coverage from other profile sequences?
             int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, start_read+i)]);
-//                int r = stBaseMapper_getValueForBase(baseMapper, ref[start_ref + i ]);
-//
-//                constructedReadSeq[i] = b;
-//                constructedRefSeq[i] = ref[start_ref + i ];
 
             pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
         }
         stList_append(profileSequences, pSeq);
-
-
-        if (readCount == 1) {
-            st_logDebug("pos: %d \t end: %d \t len: %d\n", pos, pos+len-start_read-end_read, len);
-        }
-
-
     }
-    st_logDebug("Number of profile sequences created: %d\n", readCount);
+    st_logDebug("\tCreated %d profile sequences\n", readCount);
 
     bam_destroy1(aln);
     sam_close(in);

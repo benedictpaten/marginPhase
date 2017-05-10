@@ -343,10 +343,9 @@ struct _stGenomeFragment {
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
-
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
-//alphabet and mapping bases to numbers
+// Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
     char *baseToNum;
     int *numToBase;
@@ -360,21 +359,14 @@ void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
 int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value);
 int stBaseMapper_getValueForBase(stBaseMapper *bm, char base);
 
-//
-struct _stIndels {
-    int *insertions;
-    int *deletions;
-};
-typedef struct _stIndels stIndels;
-
-/* Parsing stuff
- * */
+// Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
 
 // File writing
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceSeq, char *referenceName, stBaseMapper *baseMapper);
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool includeReference);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments);
-void writeVcfNoReference(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, stBaseMapper *baseMapper);
 bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+
+
 #endif /* ST_RP_HMM_H_ */

@@ -10,7 +10,6 @@
 bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase,
                           stSet *haplotype1Ids, stSet *haplotype2Ids) {
     // prep
-
     char haplotype1BamOutFile[strlen(bamOutBase) + 7];
     strcpy(haplotype1BamOutFile, bamOutBase);
     strcat(haplotype1BamOutFile, ".1.sam");
@@ -19,21 +18,22 @@ bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase,
     strcat(haplotype2BamOutFile, ".2.sam");
     //todo bam with unmatched reads?
 
-    // file managment
-    st_logDebug("Reading input bam file: %s \n", bamInFile);
+    // file management
     samFile *in = hts_open(bamInFile, "r");
+    if (in == NULL) {
+        st_errAbort("ERROR: Cannot open bam file %s\n", bamInFile);
+    }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
 
-    st_logInfo("Writing haplotype1 output SAM file: %s \n", haplotype1BamOutFile);
+    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
     samFile *out1 = hts_open(haplotype1BamOutFile, "w");
     sam_hdr_write(out1, bamHdr);
 
-    st_logInfo("Writing haplotype2 output SAM file: %s \n", haplotype2BamOutFile);
     samFile *out2 = hts_open(haplotype2BamOutFile, "w");
     sam_hdr_write(out2, bamHdr);
 
-    // read in inputfile, write out each read to one sam file
+    // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountNeither = 0;
@@ -47,12 +47,11 @@ bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase,
             sam_write1(out2, bamHdr, aln);
             readCountH2++;
         } else {
+            //st_logDebug("Unmatched read: %s\n", readName);
             readCountNeither++;
         }
-
     }
     st_logDebug("Read counts:\n\thap1:%d\thap2:%d\telse:%d\n", readCountH1, readCountH2, readCountNeither);
-    st_logInfo("SAM files written.\n");
 
     bam_destroy1(aln);
     bam_hdr_destroy(bamHdr);

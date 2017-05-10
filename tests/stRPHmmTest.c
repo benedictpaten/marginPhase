@@ -55,7 +55,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
     assert(hapLength-readLength >= 0);
     int64_t start = st_randomInt(0, hapLength-readLength+1);
 
-    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(referenceName, start,
+    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(referenceName, " ", start,
             readLength);
 
     for(int64_t i=0; i<readLength; i++) {

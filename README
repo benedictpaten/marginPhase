@@ -1,16 +1,26 @@
 This is a simple demo program for doing genotyping, methylation calling and haplotyping.
 
 Installation:
+
 - check out the repository: git clone git@github.com:benedictpaten/marginPhase.git
 - check out submodules: cd marginPhase ; git submodule update --init
 - build htsLib (only required once): cd externalTools/htsLib ; autoconf ; autoheader ; ./configure ; make
-- generate Makefile with cmake: cd ../../ ; cmake .
+- make build directory: mkdir build ; cd build
+- generate Makefile with cmake: cmake ..
 - build with make: make
 
-TODOs:
+Running the program:
 
-Features:
-- add interface code
+- to run marginPhase: ./marginPhase -b <PATH/TO/BAM> -p <PATH/TO/JSON> -r <PATH/TO/REFERENCE>
+
+- to run tests: ./allTests
+(This runs every test. You can comment out ones you don't want to run in allTests.c)
+
+Notes:
+- you'll need to have a reference genome available to write out all the files
+
+
+TODOs:
 
 Organization:
 - Documentation / readme

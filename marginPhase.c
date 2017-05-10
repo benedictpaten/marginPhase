@@ -16,7 +16,7 @@ void usage() {
     fprintf(stderr,
             "Phases the reads in an interval of a BAM file reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n");
-    fprintf(stderr, "-a --logLevel   : Set the log level\n");
+    fprintf(stderr, "-a --logLevel   : Set the log level [default = info]\n");
     fprintf(stderr, "-h --help       : Print this help screen\n");
     fprintf(stderr, "-b --bamFile    : Input BAM file\n");
     fprintf(stderr, "-o --outSamBase : Output SAM Base (\"example\" -> \"example1.sam\", \"example2.sam\")\n");
@@ -25,45 +25,9 @@ void usage() {
     fprintf(stderr, "-r --reference  : Reference fasta file\n");
 }
 
-void printGenotypeFragment(stGenomeFragment *gF, bool printProbs) {
-    st_logDebug("*** Genome Fragment Information ***\n");
-    st_logDebug("Reference name: %s\n", gF->referenceName);
-    st_logDebug("Ref start: %d \n", gF->refStart);
-    st_logDebug("Length: %d \n", gF->length);
-
-    st_logDebug("Genotype string: %u\n", gF->genotypeString);
-    for (int64_t j = 0; j < gF->length; j++) {
-        st_logDebug("%u\t", gF->genotypeString[j]);
-    }
-    st_logDebug("\nHaplotype 1 string: %u\n", gF->haplotypeString1);
-    for (int64_t j = 0; j < gF->length; j++) {
-        st_logDebug("%u\t", gF->haplotypeString1[j]);
-    }
-    st_logDebug("\nHaplotype 2 string: %u\n", gF->haplotypeString2);
-    for (int64_t j = 0; j < gF->length; j++) {
-        st_logDebug("%u\t", gF->haplotypeString2[j]);
-    }
-
-    if (printProbs) {
-        st_logDebug("Genotype Probabilities: \n");
-        for (int64_t j = 0; j < gF->length; j++) {
-            st_logDebug("%f \t", gF->genotypeProbs[j]);
-        }
-        st_logDebug("\nHaplotype 1 Probabilities: \n");
-        for (int64_t j = 0; j < gF->length; j++) {
-            st_logDebug("%f \t", gF->haplotypeProbs1[j]);
-        }
-        st_logDebug("\nHaplotype 2 Probabilities: \n");
-        for (int64_t j = 0; j < gF->length; j++) {
-            st_logDebug("%f \t", gF->haplotypeProbs2[j]);
-        }
-    }
-}
-
-
 int main(int argc, char *argv[]) {
     // Parameters / arguments
-    char * logLevelString = NULL;
+    char * logLevelString = "info";
     char *bamInFile = NULL;
     char *samOutBase = "haplotype";
     char *vcfOutFile = "output.vcf";
@@ -71,8 +35,7 @@ int main(int argc, char *argv[]) {
     char *paramsFile = "params.json";
     char *referenceName = "hg19.chr3.fa";
 
-    // TODO: When done testing, set random seed
-    // st_randomSeed();
+    // TODO: When done testing, set random seed using st_randomSeed();
 
     // Parse the options
     while (1) {
@@ -87,7 +50,6 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-
         int key = getopt_long(argc, argv, "a:b:v:p:r:h", long_options, &option_index);
 
         if (key == -1) {
@@ -97,7 +59,6 @@ int main(int argc, char *argv[]) {
         switch (key) {
         case 'a':
             logLevelString = stString_copy(optarg);
-            st_setLogLevelFromString(logLevelString);
             break;
         case 'h':
             usage();
@@ -122,57 +83,48 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
+    st_setLogLevelFromString(logLevelString);
 
     // Parse any model parameters
-    st_logInfo("Parsing model parameters\n");
+    st_logInfo("> Parsing model parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
 
     // Parse reads for interval
-    st_logInfo("Parsing input reads\n");
+    st_logInfo("> Parsing input reads\n");
     stList *profileSequences = stList_construct();
     parseReads(profileSequences, bamInFile, baseMapper);
 
     // Create HMMs
-    st_logInfo("Creating read partitioning HMMs\n");
+    st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, params);
 
     // Break up the hmms where the phasing is uncertain
-    st_logInfo("Breaking apart HMMs where the phasing is uncertain\n");
+    st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
 
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
-
-    // Get reference (needed for VCF generation)
-    faidx_t *fai = fai_load(referenceName);
-    if ( !fai ) {
-        st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
-                       referenceName, referenceName);
-        return EXIT_FAILURE; //todo close things?
-    }
+    st_logDebug("\tCreated %d hmms \n", stList_length(hmms));
 
     // Start VCF generation
-    st_logDebug("Writing out VCF header %s\n", vcfOutFile);
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
 
     vcfFile *vcfOutFP2 = vcf_open(vcfOutFile2, "w");
     bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP2, l);
-    kstring_t str = {0,0,NULL};
 
     // Prep for BAM outputs
     stSet *haplotype1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     stSet *haplotype2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
 
-    st_logDebug("Created %d hmms \n", stList_length(hmms));
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
 
-        st_logInfo("Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
+        st_logInfo("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
                     hmm->referenceName, hmm->refStart, hmm->refLength);
 
         // Run the forward-backward algorithm
@@ -184,31 +136,14 @@ int main(int argc, char *argv[]) {
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
-//        printGenotypeFragment(gF, false);
-
-
         // Write out VCF
-        st_logInfo("\nWriting out VCF for fragment\n");
+        st_logInfo("> Writing out VCF for fragment\n");
 
-        // Write vcf relative to the reference fasta file
-        // Get reference sequence
-        str.l = 0; ksprintf(&str, "%s:%d-%d", gF->referenceName, gF->refStart, gF->refStart + gF->length + 1);
-        int seq_len;
-        char *seq = fai_fetch(fai, gF->referenceName, &seq_len);
-        if ( seq_len < 0 ) {
-            st_logCritical("Failed to fetch reference sequence %s in %s\n", str.s, referenceName);
-            return EXIT_FAILURE; //todo close/free?
-        }
-        writeVcfFragment(vcfOutFP, hdr, gF, seq, referenceName, baseMapper);
-        free(seq);
+        // Write two vcfs, one using the reference fasta file and one not
+        writeVcfFragment(vcfOutFP, hdr, gF, referenceName, baseMapper, true);
+        writeVcfFragment(vcfOutFP2, hdr2, gF, NULL, baseMapper, false);
 
-
-        // This one doesn't use the reference file when writing the vcf
-        // It only writes the differences between the two haplotypes
-         writeVcfNoReference(vcfOutFP2, hdr2, gF, baseMapper);
-
-
-        // get the reads which mapped to each path
+        // Get the reads which mapped to each path
         stList * haplotype1 = stSet_getList(stRPHmm_partitionSequencesByStatePath(hmm, path, true));
         for (int64_t j=0; j<stList_length(haplotype1); j++) {
             stSet_insert(haplotype1Ids, ((stProfileSeq *)stList_get(haplotype1, j))->readId);
@@ -222,12 +157,12 @@ int main(int argc, char *argv[]) {
     }
 
     // Write out two BAMs, one for each read partition
-    st_logInfo("Writing out SAM partitions for fragment\n");
+    st_logInfo("> Writing out SAM files for each partition\n");
     writeSplitSams(bamInFile, samOutBase, haplotype1Ids, haplotype2Ids);
 
     // Cleanup
     vcf_close(vcfOutFP);
-    free(str.s);
+    vcf_close(vcfOutFP2);
     bcf_hdr_destroy(hdr);
     stList_destruct(hmms);
 
