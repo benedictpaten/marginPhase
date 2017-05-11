@@ -9,16 +9,7 @@
 #include "stRPHmm.h"
 
 
-void test_100kbGenotyping(CuTest *testCase) {
-
-    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.bam\n");
-
-    char *paramsFile = "../tests/params.json";
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.bam";
-    char *vcfOutFile = "test_100kb.vcf";
-    char *vcfOutFileDiff = "test_100kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
-
+void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile) {
     fprintf(stderr, "Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
@@ -43,8 +34,6 @@ void test_100kbGenotyping(CuTest *testCase) {
     bcf_hdr_t *bcf_hdr_diff = writeVcfHeader(vcfOutFP_diff, l);
 
 
-    kstring_t str = {0,0,NULL};
-
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
 
@@ -60,12 +49,42 @@ void test_100kbGenotyping(CuTest *testCase) {
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, true);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, NULL, baseMapper, false);
     }
+
+    vcf_close(vcfOutFP);
+    vcf_close(vcfOutFP_diff);
+}
+
+void test_5kbGenotyping(CuTest *testCase) {
+
+    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.5kb.bam\n");
+
+    char *paramsFile = "../tests/params.json";
+    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
+    char *vcfOutFile = "test_5kb.vcf";
+    char *vcfOutFileDiff = "test_5kb_diff.vcf";
+    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
+
+    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+}
+
+void test_100kbGenotyping(CuTest *testCase) {
+
+    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.bam\n");
+
+    char *paramsFile = "../tests/params.json";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.bam";
+    char *vcfOutFile = "test_100kb.vcf";
+    char *vcfOutFileDiff = "test_100kb_diff.vcf";
+    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
+
+    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
 
 CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
     // System level tests
+    SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;
