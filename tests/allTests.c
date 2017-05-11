@@ -49,8 +49,8 @@ int main(int argc, char *argv[]) {
         st_setLogLevelFromString(argv[1]);
     }
 	int i = 0;
-    i += stMarginPhaseTests();
 	i += moreMarginPhaseTests();
+	i += stMarginPhaseTests();
 
 	//st_uglyf("Done\n");
 	//while(1);

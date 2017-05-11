@@ -17,7 +17,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *bamFile = "../tests/NA12878.pb.chr3.100kb.bam";
     char *vcfOutFile = "test_100kb.vcf";
     char *vcfOutFileDiff = "test_100kb_diff.vcf";
-    char *referenceFile = "../hg19.chr3.fa";
+    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
 
     fprintf(stderr, "Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
