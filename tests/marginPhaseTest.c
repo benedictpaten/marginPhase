@@ -22,6 +22,8 @@ void test_100kbGenotyping(CuTest *testCase) {
     fprintf(stderr, "Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    // Print a report of the parsed parameters
+    stRPHmmParameters_printParameters(params, stderr);
 
     fprintf(stderr, "Creating profile sequences\n");
     stList *profileSequences = stList_construct();

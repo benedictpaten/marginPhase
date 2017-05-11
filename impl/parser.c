@@ -216,7 +216,6 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     return params;
 }
 
-
 /* Parse reads within an input interval of a reference sequence of a bam file
  * and create a list of profile sequences by turning characters into profile probabilities.
  *
