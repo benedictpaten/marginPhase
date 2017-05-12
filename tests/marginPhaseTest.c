@@ -66,6 +66,47 @@ double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, 
     return ((double)totalMatches)/length;
 }
 
+void getExpectedMatcheBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
+    /*
+     * Calculates the number of base overlaps and expected base matches between two profile sequences.
+     */
+
+    for(int64_t i=0; i<pSeq1->length; i++) {
+        // Establish if the coordinate is in both sequences
+        int64_t j = i + pSeq1->refStart - pSeq2->refStart;
+        if(j >= 0 && j < pSeq2->length) {
+            (*totalAlignedPositions)++;
+
+            // Calculate expectation of match
+            for(int64_t k=0; k<ALPHABET_SIZE; k++) {
+                double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
+                double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
+                assert(e1 * e2 <= 1.0);
+                *totalExpectedMatches += e1 * e2;
+            }
+        }
+    }
+}
+
+void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences, int64_t maxSeqs) {
+    /*
+     * Prints the average base identity between pairwise base overlaps between the given profile sequences
+     */
+
+    double totalExpectedMatches = 0.0;
+    int64_t totalAlignedPositions = 0;
+
+    for(int64_t i=0; i<stList_length(profileSequences) && i<maxSeqs; i++) {
+        for(int64_t j=i+1; j<stList_length(profileSequences) && j<maxSeqs; j++) {
+            getExpectedMatcheBetweenProfileSeqs(stList_get(profileSequences, i), stList_get(profileSequences, j),
+                    &totalAlignedPositions, &totalExpectedMatches);
+        }
+    }
+
+    fprintf(fH, "Avg. identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+            totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
+}
+
 double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
     /*
      * Get the count of each alphabet character in the haplotype sequence, returned
@@ -121,6 +162,7 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
     parseReads(profileSequences, bamFile, baseMapper);
     // Print some stats about the input sequences
     printSequenceStats(stderr, profileSequences);
+    printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
 
     fprintf(stderr, "Building hmms\n");
     stList *hmms = getRPHmms(profileSequences, params);
