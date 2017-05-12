@@ -171,6 +171,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
+void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
+
 struct _stRPHmm {
     char *referenceName;
     int64_t refStart;
