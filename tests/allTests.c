@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
     }
 	int i = 0;
 	i += moreMarginPhaseTests();
-	i += stMarginPhaseTests();
+//	i += stMarginPhaseTests();
 
 	//st_uglyf("Done\n");
 	//while(1);
