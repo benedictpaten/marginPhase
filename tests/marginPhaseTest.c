@@ -210,20 +210,20 @@ void test_5kbGenotyping(CuTest *testCase) {
     char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
     char *vcfOutFile = "test_5kb.vcf";
     char *vcfOutFileDiff = "test_5kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
 
 void test_100kbGenotyping(CuTest *testCase) {
 
-    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.bam\n");
+    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.0.bam\n");
 
     char *paramsFile = "../tests/params.json";
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
     char *vcfOutFile = "test_100kb.vcf";
     char *vcfOutFileDiff = "test_100kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
