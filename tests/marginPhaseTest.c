@@ -103,7 +103,7 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         }
     }
 
-    fprintf(fH, "Avg. identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+    fprintf(fH, "Avg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
 }
 
