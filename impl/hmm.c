@@ -66,6 +66,37 @@ void stRPHmmParameters_destruct(stRPHmmParameters *params) {
     free(params);
 }
 
+static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        fprintf(fH, "\t\t");
+        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %f (%i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
+        }
+        fprintf(fH, "\n");
+    }
+}
+
+void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
+    /*
+     * Print the parameters in the parameters object in a human readable form.
+     */
+    fprintf(fH, "Read Partitioning HMM Parameters\n");
+    fprintf(fH, "\tAlphabet_size: %i\n"
+            "\tMax_read coverage_depth: %" PRIi64 "\n"
+            "\tMax_not sum transitions?: %i\n"
+            "\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
+            "\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
+            ALPHABET_SIZE, params->maxCoverageDepth,
+            (int)params->maxNotSumTransitions, params->maxPartitionsInAColumn,
+            params->minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+
+    fprintf(fH, "\tHeterozygous substitution rates:\n");
+    printMatrix(fH, params->hetSubModelSlow, params->hetSubModel);
+
+    fprintf(fH, "\tRead error substitution rates:\n");
+    printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
+}
+
 int cmpint64(int64_t i, int64_t j) {
     return i > j ? 1 : i < j ? -1 : 0;
 }
@@ -248,7 +279,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
      */
     //Header line
     fprintf(fileHandle, "HMM REF_NAME: %s REF_START: %" PRIi64 " REF_LENGTH %" PRIi64
-            " COLUMN_NUMBER %" PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n,",
+            " COLUMN_NUMBER %" PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n",
             hmm->referenceName, hmm->refStart, hmm->refLength,
             hmm->columnNumber, hmm->maxDepth,
             (float)hmm->forwardLogProb, (float)hmm->backwardLogProb);

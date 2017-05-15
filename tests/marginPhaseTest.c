@@ -100,6 +100,7 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         for(int64_t j=i+1; j<stList_length(profileSequences) && j<maxSeqs; j++) {
             getExpectedMatcheBetweenProfileSeqs(stList_get(profileSequences, i), stList_get(profileSequences, j),
                                                 &totalAlignedPositions, &totalExpectedMatches);
+
         }
     }
 
@@ -225,20 +226,19 @@ void test_jsmnParsing(CuTest *testCase) {
     stRPHmmParameters_destruct(params);
 }
 
-void test_parseReads(CuTest *testCase) {
-
-
-}
-
 
 void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile) {
     fprintf(stderr, "Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    // Print a report of the parsed parameters
+    stRPHmmParameters_printParameters(params, stderr);
 
     fprintf(stderr, "Creating profile sequences\n");
     stList *profileSequences = stList_construct();
     parseReads(profileSequences, bamFile, baseMapper);
+
+    // Print some stats about the input sequences
     printSequenceStats(stderr, profileSequences);
     printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
 
@@ -249,6 +249,7 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
+    fprintf(stderr, "Got %" PRIi64 " hmms\n", stList_length(hmms));
 
     fprintf(stderr, "Writing vcf files\n");
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
@@ -260,6 +261,10 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
 
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
+
+        // Print stats about the HMM
+        fprintf(stderr, "The %" PRIi64 "th hmm\n", i);
+        stRPHmm_print(hmm, stderr, 0, 0);
 
         // Run the forward-backward algorithm
         stRPHmm_forwardBackward(hmm);
@@ -308,6 +313,7 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
         fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
 
+
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, true);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, NULL, baseMapper, false);
     }
@@ -324,22 +330,20 @@ void test_5kbGenotyping(CuTest *testCase) {
     char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
     char *vcfOutFile = "test_5kb.vcf";
     char *vcfOutFileDiff = "test_5kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
 
 void test_100kbGenotyping(CuTest *testCase) {
 
-    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.bam\n");
+    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.0.bam\n");
 
     char *paramsFile = "../tests/params.json";
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
     char *vcfOutFile = "test_100kb.vcf";
     char *vcfOutFileDiff = "test_100kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.100kb.fa";
-
-    //bamFile = "../examples/KRAS_WTrep1_sorted.bam";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
@@ -347,8 +351,8 @@ void test_100kbGenotyping(CuTest *testCase) {
 CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    //SUITE_ADD_TEST(suite, test_jsmnParsing);
-    //SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    SUITE_ADD_TEST(suite, test_jsmnParsing);
+    SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;
