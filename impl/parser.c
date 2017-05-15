@@ -9,23 +9,26 @@
 #include "jsmn.h"
 
 stBaseMapper* stBaseMapper_construct() {
-    stBaseMapper *bm = (stBaseMapper*)calloc(1, sizeof(stBaseMapper));
-    bm->baseToNum = calloc(256, sizeof(char));
-    bm->numToBase = calloc(256, sizeof(int));
+    stBaseMapper *bm = (stBaseMapper*)st_malloc(sizeof(stBaseMapper));
+    bm->charToNum = st_calloc(256, sizeof(int8_t));
+    bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(char));
     bm->wildcard = "";
     bm->size = 0;
-    for (int i = 0; i < 256; i++) {
-        bm->baseToNum[i] = -1;
-        bm->numToBase[i] = -1;
-    }
+
     return bm;
+}
+
+void stBaseMapper_destruct(stBaseMapper *bm) {
+    free(bm->charToNum);
+    free(bm->numToChar);
+    free(bm);
 }
 
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
     for (int i = 0; i < strlen(bases); i++) {
         char base = bases[i];
-        if (bm->numToBase[bm->size] < 0) bm->numToBase[bm->size] = base;
-        bm->baseToNum[base] = bm->size;
+        if (bm->numToChar[bm->size] == 0) bm->numToChar[bm->size] = base;
+        bm->charToNum[base] = bm->size;
     }
     bm->size++;
     if (bm->size > ALPHABET_SIZE) {
@@ -37,8 +40,8 @@ void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
     bm->wildcard = wildcard;
 }
 
-int stBaseMapper_getValueForBase(stBaseMapper *bm, char base) {
-    int value = bm->baseToNum[base];
+int stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
+    int value = bm->charToNum[base];
     if (value >= 0) return value;
     for (int i = 0; i < strlen(bm->wildcard); i++) {
         if (bm->wildcard[i] == base) {
@@ -49,8 +52,8 @@ int stBaseMapper_getValueForBase(stBaseMapper *bm, char base) {
     return -1;
 }
 
-int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value) {
-    char base = bm->numToBase[value];
+int stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+    char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
     return -1;
@@ -66,30 +69,6 @@ char *json_token_tostr(char *js, jsmntok_t *t)
 
 /*
      * Get model parameters from params file.
-     *
-     * Minimally we need a heterozygozity rate (the fraction of reference positions that are different between the
-     * haplotypes (excluding gaps)
-     * We also need to figure out what to do with gap positions (which are just treated as an additional character)
-     * Once these are read in we need to construct (as shown in the tests) the different matrices.
-
-     * Notes:
-     *      "alphabet" is an array specifying the conversion of symbols from the read alignments into the non-negative integer space
-     *      used by the program.  e.g. "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ] specifies an alphabet of cardinality 5,
-     *      with each string in the array specifying which characters map to which integer, starting from 0. In the example,
-     *      "C" or a "c" character is mapped to 1 while "-" is mapped to 4.
-     *
-     *      The wildcard symbols are treated as mapping to each possible integer symbol with equal probability
-     *      Any other symbol encountered by the parsing of reads should be treated as an error
-     *
-     *      If ALPHABET_SIZE does not equal the cardinality of the input alphabet then an error should be thrown.
-     *
-     *      The "haplotypeSubstitutionModel" gives probabilities of substitutions between haplotypes in the model, the "readErrorModel"
-     *      gives the probabilities of errors in the reads.
-     *      Each is a square matrix of size alphabet size * alphabet size
-     *      Each should be
-     *      converted to log space for the model. Each row of each matrix should sum to 1.0 (roughly) and be normalised to 1.0
-     *
-     *
 */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
@@ -189,7 +168,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             if (strcmp(tokStr, "false") == 0) maxNotSumTransitions = false;
             i++;
         }
-        if (strcmp(keyString, "maximumPartitionsInAColumn") == 0) {
+        if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             maxPartitionsInAColumn = atoi(tokStr);
@@ -213,7 +192,18 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             hetSubModel, hetSubModelSlow, readErrorSubModel, readErrorSubModelSlow,
             maxNotSumTransitions, maxPartitionsInAColumn, maxCoverageDepth,
             minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+    free(js);
     return params;
+}
+
+void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
+    for (uint32_t i = 0; i < ncigar; i++) {
+        int cigarOp = cigar[i] & BAM_CIGAR_MASK;
+        int cigarNum = cigar[i] >> BAM_CIGAR_SHIFT;
+
+        if (cigarOp == BAM_CINS) *numInsertions += cigarNum;
+        if (cigarOp == BAM_CDEL) *numDeletions += cigarNum;
+    }
 }
 
 
@@ -232,23 +222,22 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
 
-    int32_t readCount = 0;
-    int32_t numInsertions = 0;
-    int32_t numDeletions = 0;
+    int64_t readCount = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int32_t pos = aln->core.pos; //left most position of alignment
+        int64_t pos = aln->core.pos+1; //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
-        uint32_t len = aln->core.l_qseq; //length of the read.
+        int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
+        char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
 
         readCount++;
-        uint32_t start_read = 0;
-        uint32_t end_read = 0;
-        uint32_t start_ref = pos;
-        uint32_t cig_idx = 0;
+        int64_t start_read = 0;
+        int64_t end_read = 0;
+        int64_t start_ref = pos;
+        int64_t cig_idx = 0;
 
         // Find the correct starting locations on the read and reference sequence,
         // to deal with things like inserts / deletions / soft clipping
@@ -262,37 +251,78 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 start_ref += cigarNum;
                 cig_idx++;
-                numDeletions++;
             } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
                 start_read += cigarNum;
                 cig_idx++;
-                if (cigarOp == BAM_CINS) numInsertions++;
             } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
                 cig_idx++;
             } else {
                 st_logCritical("Unidentifiable cigar operation\n");
             }
         }
+
+        // Check for soft clipping at the end
         int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
         int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
         if (lastCigarOp == BAM_CSOFT_CLIP) {
             end_read += lastCigarNum;
         }
 
-        char *readName = bam_get_qname(aln);
-        stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, len-start_read-end_read);
+        // Count number of insertions & deletions in sequence
+        int64_t numInsertions = 0;
+        int64_t numDeletions = 0;
+        countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
+        int64_t trueLength = len-start_read-end_read+numDeletions-numInsertions;
 
-        for (uint32_t i = 0; i < len-start_read-end_read; i++) {
-            // For each position turn character into profile probability
-            // As is, this makes the probability 1 for the base read in, and 0 otherwise
-            int b = stBaseMapper_getValueForBase(baseMapper, seq_nt16_str[bam_seqi(seq, start_read+i)]);
+        // Create empty profile sequence
+        stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
 
-            pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+        // Variables to keep track of position in sequence / cigar operations
+        cig_idx = 0;
+        int64_t currPosInOp = 0;
+        int64_t cigarOp = -1;
+        int64_t cigarNum = -1;
+        int64_t idxInSeq = start_read;
+
+        // For each position turn character into profile probability
+        // As is, this makes the probability 1 for the base read in, and 0 otherwise
+        for (uint32_t i = 0; i < trueLength; i++) {
+
+            if (currPosInOp == 0) {
+                cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+                cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+            }
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+                int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                idxInSeq++;
+            }
+            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
+                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+            } else if (cigarOp == BAM_CINS) {
+                // Currently, ignore insertions
+                idxInSeq++;
+                i--;
+            } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                // nothing really to do here. skip to next cigar operation
+                currPosInOp = cigarNum-1;
+                i--;
+            } else {
+                st_logCritical("Unidentifiable cigar operation\n");
+            }
+
+            currPosInOp++;
+            if (currPosInOp == cigarNum) {
+                cig_idx++;
+                currPosInOp = 0;
+            }
         }
         stList_append(profileSequences, pSeq);
     }
     st_logDebug("\tCreated %d profile sequences\n", readCount);
 
+    bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
 }

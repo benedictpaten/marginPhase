@@ -21,7 +21,7 @@
     
   "maxNotSumTransitions" : true,
     
-  "maximumPartitionsInAColumn" : 50,
+  "maxPartitionsInAColumn" : 50,
 
   "maxCoverageDepth" : 64,
 

@@ -27,7 +27,7 @@ void usage() {
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
-    char * logLevelString = "info";
+    char *logLevelString = "info";
     char *bamInFile = NULL;
     char *samOutBase = "haplotype";
     char *vcfOutFile = "output.vcf";
@@ -84,15 +84,17 @@ int main(int argc, char *argv[]) {
         }
     }
     st_setLogLevelFromString(logLevelString);
+    free(logLevelString);
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    free(paramsFile);
 
     // Parse reads for interval
     st_logInfo("> Parsing input reads\n");
-    stList *profileSequences = stList_construct();
+    stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     parseReads(profileSequences, bamInFile, baseMapper);
 
     // Create HMMs
@@ -144,16 +146,23 @@ int main(int argc, char *argv[]) {
         writeVcfFragment(vcfOutFP2, hdr2, gF, NULL, baseMapper, false);
 
         // Get the reads which mapped to each path
-        stList * haplotype1 = stSet_getList(stRPHmm_partitionSequencesByStatePath(hmm, path, true));
+        stSet *haplotypeSet1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
+        stList * haplotype1 = stSet_getList(haplotypeSet1);
         for (int64_t j=0; j<stList_length(haplotype1); j++) {
             stSet_insert(haplotype1Ids, ((stProfileSeq *)stList_get(haplotype1, j))->readId);
         }
 
-        stList * haplotype2 = stSet_getList(stRPHmm_partitionSequencesByStatePath(hmm, path, false));
+        stSet *haplotypeSet2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
+        stList * haplotype2 = stSet_getList(haplotypeSet2);
         for (int64_t j=0; j<stList_length(haplotype2); j++) {
             stSet_insert(haplotype2Ids, ((stProfileSeq *)stList_get(haplotype2, j))->readId);
         }
-
+        stGenomeFragment_destruct(gF);
+        stList_destruct(haplotype1);
+        stList_destruct(haplotype2);
+        stSet_destruct(haplotypeSet1);
+        stSet_destruct(haplotypeSet2);
+        stList_destruct(path);
     }
 
     // Write out two BAMs, one for each read partition
@@ -164,7 +173,21 @@ int main(int argc, char *argv[]) {
     vcf_close(vcfOutFP);
     vcf_close(vcfOutFP2);
     bcf_hdr_destroy(hdr);
+    bcf_hdr_destroy(hdr2);
+
     stList_destruct(hmms);
+    stList_destruct(profileSequences);
+    stSet_destruct(haplotype1Ids);
+    stSet_destruct(haplotype2Ids);
+
+    stBaseMapper_destruct(baseMapper);
+    stRPHmmParameters_destruct(params);
+
+    // TODO: only free these if they need to be
+    free(bamInFile);
+    free(samOutBase);
+    free(vcfOutFile);
+    free(referenceName);
 
     //while(1); // Use this for testing for memory leaks
 

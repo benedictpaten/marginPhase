@@ -347,17 +347,18 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
-    char *baseToNum;
-    int *numToBase;
+    int8_t *charToNum;
+    char *numToChar;
     char *wildcard;
     int size;
 };
 typedef struct _stBaseMapper stBaseMapper;
 stBaseMapper* stBaseMapper_construct();
+void stBaseMapper_destruct(stBaseMapper *bm);
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
-int stBaseMapper_getBaseForValue(stBaseMapper *bm, int value);
-int stBaseMapper_getValueForBase(stBaseMapper *bm, char base);
+int stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+int stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);

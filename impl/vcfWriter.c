@@ -53,17 +53,7 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
 // writes it for one of the haplotypes relative to the other
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool includeReference) {
 
-    // intialization
-    bcf1_t *bcf_rec = bcf_init1();
-    int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //currently: everything passes
-    int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
-    kstring_t str = {0,0,NULL};
     char *referenceSeq;
-
-    int numDifferences = 0;
-    int totalLocs = 0;
-    int numMatchedGaps = 0;
-
     // Get reference (needed for VCF generation)
     if (includeReference) {
         faidx_t *fai = fai_load(referenceName);
@@ -73,20 +63,31 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
             return;
         }
         int seq_len;
-        referenceSeq = fai_fetch(fai, gF->referenceName, &seq_len); //TODO: make this not generic
+        referenceSeq = fai_fetch(fai, gF->referenceName, &seq_len);
         if ( seq_len < 0 ) {
             st_logCritical("Failed to fetch reference sequence %s\n", referenceName);
             return;
         }
+        fai_destroy(fai);
     }
+
+    // intialization
+    bcf1_t *bcf_rec = bcf_init1();
+    int32_t filter_info = bcf_hdr_id2int(bcf_hdr, BCF_DT_ID, "PASS"); //currently: everything passes
+    int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
+    kstring_t str = {0,0,NULL};
+
+    int numDifferences = 0;
+    int totalLocs = 0;
+    int numMatchedGaps = 0;
 
     // iterate over all positions
     for (int64_t i = 0; i < gF->length; i++) {
 
         int h1AlphVal = gF->haplotypeString1[i];
         int h2AlphVal = gF->haplotypeString2[i];
-        char h1AlphChar = stBaseMapper_getBaseForValue(baseMapper, h1AlphVal);
-        char h2AlphChar = stBaseMapper_getBaseForValue(baseMapper, h2AlphVal);
+        char h1AlphChar = stBaseMapper_getCharForValue(baseMapper, h1AlphVal);
+        char h2AlphChar = stBaseMapper_getCharForValue(baseMapper, h2AlphVal);
 
         totalLocs++;
         if (h1AlphChar == '-' && h2AlphChar == '-') {
@@ -105,7 +106,8 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         // QUAL - skip (TODO for now?)
         if (includeReference) {
 
-            char refChar = referenceSeq[i + gF->refStart];
+            //char refChar = referenceSeq[i + gF->refStart];
+            char refChar = '*';
             kputc(refChar, &str); // REF
             kputc(',', &str);
             kputc(h1AlphChar, &str);
@@ -145,5 +147,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
 
     // cleanup
     free(str.s);
+    free(gt_info);
+    if (referenceSeq) free(referenceSeq);
     bcf_destroy(bcf_rec);
 }
