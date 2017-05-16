@@ -494,7 +494,7 @@ void test_100kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    //genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 
     compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
@@ -509,7 +509,7 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
     SUITE_ADD_TEST(suite, test_jsmnParsing);
-    //SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;
