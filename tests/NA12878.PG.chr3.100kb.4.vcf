@@ -1,0 +1,417 @@
+##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
+##fileDate=2016-06-05
+##source=IlluminaPlatinumGenomes, version: 2016-1.0
+##reference=hg19
+##contig=<ID=chr1,length=249250621>
+##contig=<ID=chr2,length=243199373>
+##contig=<ID=chr3,length=198022430>
+##contig=<ID=chr4,length=191154276>
+##contig=<ID=chr5,length=180915260>
+##contig=<ID=chr6,length=171115067>
+##contig=<ID=chr7,length=159138663>
+##contig=<ID=chr8,length=146364022>
+##contig=<ID=chr9,length=141213431>
+##contig=<ID=chr10,length=135534747>
+##contig=<ID=chr11,length=135006516>
+##contig=<ID=chr12,length=133851895>
+##contig=<ID=chr13,length=115169878>
+##contig=<ID=chr14,length=107349540>
+##contig=<ID=chr15,length=102531392>
+##contig=<ID=chr16,length=90354753>
+##contig=<ID=chr17,length=81195210>
+##contig=<ID=chr18,length=78077248>
+##contig=<ID=chr19,length=59128983>
+##contig=<ID=chr20,length=63025520>
+##contig=<ID=chr21,length=48129895>
+##contig=<ID=chr22,length=51304566>
+##contig=<ID=chrX,length=155270560>
+##PEDIGREE=<Child=NA12877,Mother=NA12890,Father=NA12889>
+##PEDIGREE=<Child=NA12878,Mother=NA12892,Father=NA12891>
+##PEDIGREE=<Child=NA12879,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12880,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12881,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12882,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12883,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12884,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12885,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12886,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12887,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12888,Mother=NA12878,Father=NA12877>
+##PEDIGREE=<Child=NA12893,Mother=NA12878,Father=NA12877>
+##INFO=<ID=MTD,Number=.,Type=String,Description="Methods that call this site pedigree consistently.">
+##INFO=<ID=KM,Number=1,Type=String,Description="Minimum normalized k-mer counts">
+##INFO=<ID=KFP,Number=1,Type=Integer,Description="K-mer GT failures in the main pedigree">
+##INFO=<ID=KFF,Number=1,Type=Integer,Description="K-mer failures in the founders">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA12878
+chr3	8100149	.	C	A	.	PASS	.	GT	1|1
+chr3	8100555	.	C	T	.	PASS	.	GT	1|1
+chr3	8100824	.	C	T	.	PASS	.	GT	1|1
+chr3	8100998	.	C	G	.	PASS	.	GT	1|1
+chr3	8101100	.	C	T	.	PASS	.	GT	1|1
+chr3	8101280	.	G	C	.	PASS	.	GT	1|1
+chr3	8101603	.	A	G	.	PASS	.	GT	1|1
+chr3	8101809	.	G	C	.	PASS	.	GT	1|1
+chr3	8102120	.	C	T	.	PASS	.	GT	1|1
+chr3	8102267	.	G	T	.	PASS	.	GT	1|1
+chr3	8102383	.	T	A	.	PASS	.	GT	1|1
+chr3	8102471	.	C	T	.	PASS	.	GT	1|1
+chr3	8102594	.	T	C	.	PASS	.	GT	1|1
+chr3	8102703	.	TTC	T	.	PASS	.	GT	1|1
+chr3	8102761	.	CA	C	.	PASS	.	GT	1|1
+chr3	8102997	.	G	A	.	PASS	.	GT	1|1
+chr3	8103433	.	T	C	.	PASS	.	GT	1|1
+chr3	8103581	.	C	T	.	PASS	.	GT	1|1
+chr3	8103820	.	C	T	.	PASS	.	GT	1|1
+chr3	8103946	.	A	G	.	PASS	.	GT	1|1
+chr3	8104187	.	A	G	.	PASS	.	GT	1|1
+chr3	8104218	.	A	C	.	PASS	.	GT	1|1
+chr3	8105453	.	G	A	.	PASS	.	GT	1|1
+chr3	8105725	.	A	T	.	PASS	.	GT	1|1
+chr3	8105804	.	C	G	.	PASS	.	GT	1|1
+chr3	8105901	.	C	CA	.	PASS	.	GT	1|1
+chr3	8106316	.	T	C	.	PASS	.	GT	1|1
+chr3	8106602	.	T	A	.	PASS	.	GT	1|1
+chr3	8107085	.	G	A	.	PASS	.	GT	1|1
+chr3	8107170	.	T	G	.	PASS	.	GT	1|1
+chr3	8107174	.	T	A	.	PASS	.	GT	1|1
+chr3	8107265	.	C	T	.	PASS	.	GT	1|1
+chr3	8107376	.	G	T	.	PASS	.	GT	1|1
+chr3	8107813	.	C	T	.	PASS	.	GT	1|1
+chr3	8107859	.	T	G	.	PASS	.	GT	1|1
+chr3	8108291	.	G	A	.	PASS	.	GT	1|1
+chr3	8108810	.	T	A	.	PASS	.	GT	1|1
+chr3	8109788	.	C	T	.	PASS	.	GT	1|1
+chr3	8110082	.	A	G	.	PASS	.	GT	1|1
+chr3	8112738	.	T	C	.	PASS	.	GT	1|1
+chr3	8113187	.	T	A	.	PASS	.	GT	1|1
+chr3	8113242	.	T	C	.	PASS	.	GT	1|1
+chr3	8113435	.	GA	G	.	PASS	.	GT	1|1
+chr3	8113760	.	C	T	.	PASS	.	GT	1|1
+chr3	8113945	.	C	T	.	PASS	.	GT	1|1
+chr3	8114026	.	G	T	.	PASS	.	GT	1|1
+chr3	8114463	.	A	C	.	PASS	.	GT	1|1
+chr3	8114766	.	C	T	.	PASS	.	GT	1|1
+chr3	8115411	.	ATATATGTATT	A	.	PASS	.	GT	0|1
+chr3	8115454	.	TAA	T	.	PASS	.	GT	1|1
+chr3	8115462	.	TATATATGTGTAAATATATTTATTTATAAA	T	.	PASS	.	GT	1|1
+chr3	8116165	.	T	C	.	PASS	.	GT	1|1
+chr3	8117950	.	G	C	.	PASS	.	GT	1|1
+chr3	8119690	.	C	T	.	PASS	.	GT	1|1
+chr3	8119773	.	T	C	.	PASS	.	GT	1|1
+chr3	8120958	.	C	T	.	PASS	.	GT	1|1
+chr3	8121845	.	C	T	.	PASS	.	GT	1|1
+chr3	8122644	.	G	A	.	PASS	.	GT	1|1
+chr3	8123440	.	G	A	.	PASS	.	GT	1|1
+chr3	8124826	.	TG	T	.	PASS	.	GT	1|1
+chr3	8125047	.	G	A	.	PASS	.	GT	1|1
+chr3	8125243	.	C	CT	.	PASS	.	GT	1|1
+chr3	8125433	.	A	G	.	PASS	.	GT	1|1
+chr3	8125631	.	GTT	G	.	PASS	.	GT	1|1
+chr3	8127235	.	T	C	.	PASS	.	GT	1|1
+chr3	8127302	.	CTT	C	.	PASS	.	GT	1|1
+chr3	8127439	.	C	G	.	PASS	.	GT	1|1
+chr3	8128269	.	T	C	.	PASS	.	GT	1|0
+chr3	8128865	.	C	T	.	PASS	.	GT	1|1
+chr3	8129194	.	G	A	.	PASS	.	GT	1|1
+chr3	8130879	.	A	G	.	PASS	.	GT	1|1
+chr3	8130923	.	C	T	.	PASS	.	GT	1|1
+chr3	8131414	.	T	C	.	PASS	.	GT	1|1
+chr3	8131706	.	A	G	.	PASS	.	GT	1|0
+chr3	8131758	.	C	T	.	PASS	.	GT	1|0
+chr3	8131880	.	T	C	.	PASS	.	GT	1|1
+chr3	8132023	.	A	T	.	PASS	.	GT	1|1
+chr3	8133832	.	C	T	.	PASS	.	GT	1|1
+chr3	8134250	.	A	G	.	PASS	.	GT	1|1
+chr3	8135125	.	T	C	.	PASS	.	GT	1|1
+chr3	8135200	.	T	G	.	PASS	.	GT	1|1
+chr3	8135258	.	GA	G	.	PASS	.	GT	1|1
+chr3	8135597	.	A	T	.	PASS	.	GT	1|1
+chr3	8135600	.	A	G	.	PASS	.	GT	1|1
+chr3	8135797	.	T	C	.	PASS	.	GT	1|1
+chr3	8136314	.	A	G	.	PASS	.	GT	1|1
+chr3	8137447	.	G	A	.	PASS	.	GT	0|1
+chr3	8138002	.	ATGTG	A	.	PASS	.	GT	0|1
+chr3	8138041	.	G	C	.	PASS	.	GT	0|1
+chr3	8138131	.	A	C	.	PASS	.	GT	0|1
+chr3	8138801	.	A	T	.	PASS	.	GT	0|1
+chr3	8139101	.	G	A	.	PASS	.	GT	0|1
+chr3	8139152	.	G	A	.	PASS	.	GT	0|1
+chr3	8139166	.	T	C	.	PASS	.	GT	0|1
+chr3	8139169	.	G	A	.	PASS	.	GT	0|1
+chr3	8139444	.	T	A	.	PASS	.	GT	0|1
+chr3	8139499	.	T	C	.	PASS	.	GT	0|1
+chr3	8139779	.	G	A	.	PASS	.	GT	1|0
+chr3	8140219	.	AT	A	.	PASS	.	GT	1|0
+chr3	8140289	.	C	T	.	PASS	.	GT	1|1
+chr3	8140378	.	G	A	.	PASS	.	GT	0|1
+chr3	8140405	.	T	C	.	PASS	.	GT	0|1
+chr3	8140900	.	A	G	.	PASS	.	GT	0|1
+chr3	8141305	.	T	C	.	PASS	.	GT	1|0
+chr3	8141518	.	A	G	.	PASS	.	GT	0|1
+chr3	8141722	.	T	C	.	PASS	.	GT	0|1
+chr3	8142788	.	G	T	.	PASS	.	GT	0|1
+chr3	8143051	.	A	G	.	PASS	.	GT	0|1
+chr3	8143304	.	T	C	.	PASS	.	GT	0|1
+chr3	8143590	.	AAAGAC	A	.	PASS	.	GT	0|1
+chr3	8143674	.	G	A	.	PASS	.	GT	0|1
+chr3	8143976	.	AGG	A	.	PASS	.	GT	1|0
+chr3	8144490	.	A	G	.	PASS	.	GT	0|1
+chr3	8144521	.	A	C	.	PASS	.	GT	0|1
+chr3	8144578	.	T	C	.	PASS	.	GT	0|1
+chr3	8144692	.	T	G	.	PASS	.	GT	0|1
+chr3	8145637	.	G	A	.	PASS	.	GT	0|1
+chr3	8145742	.	A	G	.	PASS	.	GT	0|1
+chr3	8146388	.	T	G	.	PASS	.	GT	1|1
+chr3	8146437	.	T	C	.	PASS	.	GT	1|1
+chr3	8146904	.	G	T	.	PASS	.	GT	1|1
+chr3	8146961	.	C	T	.	PASS	.	GT	1|1
+chr3	8147148	.	G	T	.	PASS	.	GT	1|1
+chr3	8147243	.	G	A	.	PASS	.	GT	1|1
+chr3	8147403	.	A	C	.	PASS	.	GT	1|1
+chr3	8147427	.	G	GGA,GAA	.	PASS	.	GT	2|1
+chr3	8147718	.	A	G	.	PASS	.	GT	1|1
+chr3	8148089	.	C	T	.	PASS	.	GT	0|1
+chr3	8148525	.	A	AAG	.	PASS	.	GT	1|1
+chr3	8148696	.	C	A	.	PASS	.	GT	1|1
+chr3	8148853	.	T	C	.	PASS	.	GT	1|1
+chr3	8148940	.	A	ATGTG	.	PASS	.	GT	1|1
+chr3	8149000	.	A	G	.	PASS	.	GT	1|1
+chr3	8149070	.	A	AT	.	PASS	.	GT	1|1
+chr3	8149209	.	A	G	.	PASS	.	GT	1|1
+chr3	8149333	.	T	A	.	PASS	.	GT	1|0
+chr3	8150246	.	T	C	.	PASS	.	GT	1|1
+chr3	8150328	.	G	A	.	PASS	.	GT	1|1
+chr3	8150417	.	G	C	.	PASS	.	GT	0|1
+chr3	8150715	.	A	G	.	PASS	.	GT	1|1
+chr3	8151279	.	G	A	.	PASS	.	GT	1|0
+chr3	8151457	.	T	C	.	PASS	.	GT	0|1
+chr3	8151643	.	A	G	.	PASS	.	GT	1|0
+chr3	8151710	.	C	A	.	PASS	.	GT	0|1
+chr3	8152213	.	G	A	.	PASS	.	GT	1|1
+chr3	8152315	.	C	T	.	PASS	.	GT	0|1
+chr3	8153070	.	A	T	.	PASS	.	GT	0|1
+chr3	8153260	.	T	C	.	PASS	.	GT	1|1
+chr3	8153616	.	G	A	.	PASS	.	GT	1|0
+chr3	8153647	.	T	G	.	PASS	.	GT	1|1
+chr3	8153771	.	C	T	.	PASS	.	GT	1|0
+chr3	8153952	.	C	T	.	PASS	.	GT	1|0
+chr3	8154230	.	T	A	.	PASS	.	GT	0|1
+chr3	8154640	.	C	T	.	PASS	.	GT	1|1
+chr3	8154652	.	C	T	.	PASS	.	GT	1|1
+chr3	8155409	.	T	G	.	PASS	.	GT	1|0
+chr3	8155793	.	A	C	.	PASS	.	GT	1|0
+chr3	8156002	.	T	C	.	PASS	.	GT	1|1
+chr3	8156214	.	A	T	.	PASS	.	GT	1|1
+chr3	8156485	.	TACAC	T	.	PASS	.	GT	1|1
+chr3	8156616	.	T	A	.	PASS	.	GT	0|1
+chr3	8156893	.	G	A	.	PASS	.	GT	1|1
+chr3	8157268	.	A	T	.	PASS	.	GT	1|0
+chr3	8157325	.	G	A	.	PASS	.	GT	1|0
+chr3	8157624	.	C	G	.	PASS	.	GT	1|1
+chr3	8157937	.	C	G	.	PASS	.	GT	0|1
+chr3	8158084	.	C	G	.	PASS	.	GT	1|0
+chr3	8158122	.	G	A	.	PASS	.	GT	1|0
+chr3	8158265	.	T	C	.	PASS	.	GT	0|1
+chr3	8158367	.	C	T	.	PASS	.	GT	1|1
+chr3	8158455	.	T	C	.	PASS	.	GT	1|1
+chr3	8158483	.	G	A	.	PASS	.	GT	1|1
+chr3	8158715	.	A	G	.	PASS	.	GT	1|0
+chr3	8159347	.	C	T	.	PASS	.	GT	0|1
+chr3	8159549	.	G	A	.	PASS	.	GT	0|1
+chr3	8159617	.	C	T	.	PASS	.	GT	0|1
+chr3	8159624	.	A	C	.	PASS	.	GT	0|1
+chr3	8159672	.	T	G	.	PASS	.	GT	0|1
+chr3	8159754	.	G	A	.	PASS	.	GT	0|1
+chr3	8159847	.	T	A	.	PASS	.	GT	0|1
+chr3	8159859	.	A	G	.	PASS	.	GT	0|1
+chr3	8160075	.	A	G	.	PASS	.	GT	0|1
+chr3	8160466	.	C	T	.	PASS	.	GT	0|1
+chr3	8161540	.	C	T	.	PASS	.	GT	1|1
+chr3	8161552	.	T	A	.	PASS	.	GT	1|1
+chr3	8161574	.	T	A	.	PASS	.	GT	1|0
+chr3	8161987	.	T	C	.	PASS	.	GT	1|1
+chr3	8162138	.	C	G	.	PASS	.	GT	0|1
+chr3	8163253	.	C	T	.	PASS	.	GT	0|1
+chr3	8163671	.	A	T	.	PASS	.	GT	1|1
+chr3	8164303	.	A	ACTAGATCT	.	PASS	.	GT	1|1
+chr3	8164364	.	GA	G	.	PASS	.	GT	1|1
+chr3	8164606	.	C	T	.	PASS	.	GT	1|1
+chr3	8164718	.	G	A	.	PASS	.	GT	1|1
+chr3	8165465	.	T	C	.	PASS	.	GT	1|0
+chr3	8166050	.	G	T	.	PASS	.	GT	0|1
+chr3	8166267	.	G	T	.	PASS	.	GT	0|1
+chr3	8166355	.	G	A	.	PASS	.	GT	1|1
+chr3	8166561	.	TA	T	.	PASS	.	GT	1|1
+chr3	8166787	.	C	T	.	PASS	.	GT	1|1
+chr3	8167044	.	C	T	.	PASS	.	GT	0|1
+chr3	8167152	.	T	C	.	PASS	.	GT	1|1
+chr3	8167238	.	T	G	.	PASS	.	GT	1|1
+chr3	8167303	.	T	C	.	PASS	.	GT	1|1
+chr3	8167405	.	C	T	.	PASS	.	GT	1|1
+chr3	8167797	.	C	T	.	PASS	.	GT	1|1
+chr3	8168015	.	G	A	.	PASS	.	GT	1|1
+chr3	8168020	.	C	T	.	PASS	.	GT	1|1
+chr3	8168108	.	G	A	.	PASS	.	GT	1|1
+chr3	8168578	.	A	G	.	PASS	.	GT	1|0
+chr3	8168646	.	G	T	.	PASS	.	GT	1|0
+chr3	8168963	.	G	T	.	PASS	.	GT	0|1
+chr3	8169511	.	A	G	.	PASS	.	GT	1|1
+chr3	8170546	.	A	G	.	PASS	.	GT	1|1
+chr3	8170549	.	AT	A	.	PASS	.	GT	1|1
+chr3	8170584	.	G	T	.	PASS	.	GT	1|1
+chr3	8170752	.	G	C	.	PASS	.	GT	1|1
+chr3	8170850	.	G	A	.	PASS	.	GT	1|1
+chr3	8170861	.	GAATA	G	.	PASS	.	GT	1|1
+chr3	8170866	.	A	G	.	PASS	.	GT	1|1
+chr3	8171056	.	A	C	.	PASS	.	GT	1|1
+chr3	8171247	.	G	A	.	PASS	.	GT	1|1
+chr3	8171317	.	C	A	.	PASS	.	GT	1|1
+chr3	8171506	.	T	C	.	PASS	.	GT	1|1
+chr3	8171574	.	C	G	.	PASS	.	GT	1|1
+chr3	8171755	.	A	T	.	PASS	.	GT	1|1
+chr3	8171784	.	C	A	.	PASS	.	GT	1|1
+chr3	8171847	.	G	C	.	PASS	.	GT	1|1
+chr3	8171962	.	A	G	.	PASS	.	GT	1|1
+chr3	8171990	.	CTAATT	C	.	PASS	.	GT	1|1
+chr3	8172070	.	T	C	.	PASS	.	GT	1|1
+chr3	8172229	.	C	T	.	PASS	.	GT	1|1
+chr3	8172329	.	A	C	.	PASS	.	GT	1|1
+chr3	8172531	.	G	A	.	PASS	.	GT	1|1
+chr3	8172628	.	C	T	.	PASS	.	GT	1|1
+chr3	8172650	.	A	G	.	PASS	.	GT	1|1
+chr3	8172713	.	T	C	.	PASS	.	GT	1|1
+chr3	8172893	.	A	G	.	PASS	.	GT	1|1
+chr3	8173161	.	T	G	.	PASS	.	GT	1|1
+chr3	8173413	.	G	A	.	PASS	.	GT	1|1
+chr3	8173482	.	T	G	.	PASS	.	GT	1|1
+chr3	8173761	.	A	G	.	PASS	.	GT	1|1
+chr3	8174029	.	C	G	.	PASS	.	GT	1|1
+chr3	8174047	.	C	T	.	PASS	.	GT	1|1
+chr3	8174352	.	C	A	.	PASS	.	GT	1|1
+chr3	8174899	.	C	A	.	PASS	.	GT	1|1
+chr3	8174905	.	T	C	.	PASS	.	GT	1|1
+chr3	8174923	.	A	G	.	PASS	.	GT	0|1
+chr3	8175349	.	A	G	.	PASS	.	GT	1|1
+chr3	8176182	.	C	T	.	PASS	.	GT	1|1
+chr3	8176248	.	T	G	.	PASS	.	GT	1|1
+chr3	8176454	.	C	T	.	PASS	.	GT	1|0
+chr3	8176528	.	T	C	.	PASS	.	GT	1|0
+chr3	8177014	.	T	G	.	PASS	.	GT	1|0
+chr3	8177234	.	A	G	.	PASS	.	GT	1|0
+chr3	8177295	.	A	T	.	PASS	.	GT	0|1
+chr3	8177371	.	A	G	.	PASS	.	GT	1|0
+chr3	8177516	.	G	T	.	PASS	.	GT	0|1
+chr3	8177542	.	C	T	.	PASS	.	GT	1|0
+chr3	8177730	.	C	T	.	PASS	.	GT	1|0
+chr3	8177738	.	T	A	.	PASS	.	GT	0|1
+chr3	8177780	.	T	C	.	PASS	.	GT	1|1
+chr3	8177873	.	C	A	.	PASS	.	GT	1|0
+chr3	8177930	.	T	C	.	PASS	.	GT	0|1
+chr3	8178062	.	C	T	.	PASS	.	GT	1|0
+chr3	8178160	.	C	T	.	PASS	.	GT	1|0
+chr3	8178205	.	T	C	.	PASS	.	GT	1|0
+chr3	8178292	.	A	T	.	PASS	.	GT	1|1
+chr3	8178421	.	G	A	.	PASS	.	GT	1|0
+chr3	8178495	.	A	G	.	PASS	.	GT	0|1
+chr3	8178516	.	C	T	.	PASS	.	GT	1|0
+chr3	8178646	.	A	G	.	PASS	.	GT	1|0
+chr3	8178800	.	A	G	.	PASS	.	GT	1|0
+chr3	8178880	.	T	C	.	PASS	.	GT	1|0
+chr3	8178888	.	A	G	.	PASS	.	GT	1|0
+chr3	8178889	.	T	G	.	PASS	.	GT	0|1
+chr3	8178935	.	C	G	.	PASS	.	GT	1|0
+chr3	8179086	.	G	A	.	PASS	.	GT	1|0
+chr3	8179117	.	C	G	.	PASS	.	GT	1|0
+chr3	8179124	.	T	C	.	PASS	.	GT	1|0
+chr3	8179220	.	G	A	.	PASS	.	GT	1|0
+chr3	8179371	.	G	A	.	PASS	.	GT	1|0
+chr3	8179518	.	A	G	.	PASS	.	GT	1|0
+chr3	8179647	.	C	T	.	PASS	.	GT	1|0
+chr3	8179898	.	G	A	.	PASS	.	GT	0|1
+chr3	8179920	.	T	G	.	PASS	.	GT	1|0
+chr3	8180072	.	C	G	.	PASS	.	GT	0|1
+chr3	8180297	.	TAA	T	.	PASS	.	GT	1|0
+chr3	8180311	.	A	AAAAAGG	.	PASS	.	GT	0|1
+chr3	8180459	.	GA	G	.	PASS	.	GT	1|0
+chr3	8180531	.	A	G	.	PASS	.	GT	1|0
+chr3	8180574	.	G	C	.	PASS	.	GT	1|0
+chr3	8180698	.	C	T	.	PASS	.	GT	1|0
+chr3	8180773	.	C	T	.	PASS	.	GT	0|1
+chr3	8180985	.	A	G	.	PASS	.	GT	0|1
+chr3	8181000	.	T	C	.	PASS	.	GT	0|1
+chr3	8181404	.	G	A	.	PASS	.	GT	0|1
+chr3	8181844	.	C	T	.	PASS	.	GT	0|1
+chr3	8182065	.	G	A	.	PASS	.	GT	0|1
+chr3	8182188	.	T	C	.	PASS	.	GT	1|1
+chr3	8182282	.	C	G	.	PASS	.	GT	1|1
+chr3	8182392	.	A	G	.	PASS	.	GT	0|1
+chr3	8182411	.	A	G	.	PASS	.	GT	0|1
+chr3	8182556	.	C	T	.	PASS	.	GT	0|1
+chr3	8182638	.	C	G	.	PASS	.	GT	0|1
+chr3	8182658	.	C	A	.	PASS	.	GT	0|1
+chr3	8182695	.	C	T	.	PASS	.	GT	1|0
+chr3	8182914	.	T	C	.	PASS	.	GT	1|0
+chr3	8182994	.	A	G	.	PASS	.	GT	1|0
+chr3	8183035	.	A	G	.	PASS	.	GT	1|0
+chr3	8183167	.	G	A	.	PASS	.	GT	0|1
+chr3	8183481	.	A	G	.	PASS	.	GT	0|1
+chr3	8183799	.	G	A	.	PASS	.	GT	0|1
+chr3	8183839	.	T	C	.	PASS	.	GT	1|0
+chr3	8183927	.	T	C	.	PASS	.	GT	1|0
+chr3	8183980	.	G	A	.	PASS	.	GT	1|1
+chr3	8184026	.	A	G	.	PASS	.	GT	1|0
+chr3	8184091	.	AGG	A	.	PASS	.	GT	0|1
+chr3	8184103	.	A	G	.	PASS	.	GT	0|1
+chr3	8184180	.	T	C	.	PASS	.	GT	0|1
+chr3	8184324	.	G	A	.	PASS	.	GT	0|1
+chr3	8184449	.	C	T	.	PASS	.	GT	0|1
+chr3	8184528	.	C	T	.	PASS	.	GT	0|1
+chr3	8184758	.	A	G	.	PASS	.	GT	0|1
+chr3	8184793	.	A	G	.	PASS	.	GT	1|1
+chr3	8185145	.	G	C	.	PASS	.	GT	1|0
+chr3	8185240	.	T	C	.	PASS	.	GT	1|0
+chr3	8185282	.	T	G	.	PASS	.	GT	1|1
+chr3	8185478	.	C	T	.	PASS	.	GT	1|0
+chr3	8185570	.	C	T	.	PASS	.	GT	0|1
+chr3	8185784	.	T	A	.	PASS	.	GT	0|1
+chr3	8185858	.	G	GACACACAC	.	PASS	.	GT	0|1
+chr3	8186495	.	A	G	.	PASS	.	GT	0|1
+chr3	8186505	.	A	G	.	PASS	.	GT	0|1
+chr3	8186721	.	T	C	.	PASS	.	GT	1|1
+chr3	8186931	.	G	C	.	PASS	.	GT	1|1
+chr3	8186978	.	A	C	.	PASS	.	GT	0|1
+chr3	8187213	.	A	G	.	PASS	.	GT	0|1
+chr3	8187584	.	G	C	.	PASS	.	GT	0|1
+chr3	8187607	.	G	A	.	PASS	.	GT	0|1
+chr3	8187734	.	G	C	.	PASS	.	GT	0|1
+chr3	8188327	.	A	G	.	PASS	.	GT	0|1
+chr3	8188358	.	A	C	.	PASS	.	GT	0|1
+chr3	8188444	.	A	T	.	PASS	.	GT	0|1
+chr3	8188649	.	G	T	.	PASS	.	GT	1|1
+chr3	8188738	.	A	G	.	PASS	.	GT	1|1
+chr3	8188766	.	G	A	.	PASS	.	GT	0|1
+chr3	8188965	.	C	T	.	PASS	.	GT	1|1
+chr3	8189697	.	T	A	.	PASS	.	GT	1|0
+chr3	8189768	.	A	G	.	PASS	.	GT	1|0
+chr3	8190449	.	C	T	.	PASS	.	GT	0|1
+chr3	8190574	.	C	G	.	PASS	.	GT	1|0
+chr3	8191247	.	T	C	.	PASS	.	GT	1|0
+chr3	8192385	.	C	G	.	PASS	.	GT	0|1
+chr3	8192443	.	T	C	.	PASS	.	GT	1|1
+chr3	8192756	.	G	A	.	PASS	.	GT	1|1
+chr3	8192807	.	C	T	.	PASS	.	GT	0|1
+chr3	8194249	.	G	A	.	PASS	.	GT	0|1
+chr3	8194599	.	G	A	.	PASS	.	GT	0|1
+chr3	8194734	.	T	C	.	PASS	.	GT	1|0
+chr3	8194819	.	A	G	.	PASS	.	GT	1|0
+chr3	8196520	.	G	C	.	PASS	.	GT	1|1
+chr3	8196941	.	C	T	.	PASS	.	GT	0|1
+chr3	8197038	.	C	T	.	PASS	.	GT	0|1
+chr3	8197952	.	C	T	.	PASS	.	GT	1|1
+chr3	8198080	.	T	G	.	PASS	.	GT	1|0
+chr3	8198154	.	T	C	.	PASS	.	GT	1|0
+chr3	8198292	.	C	T	.	PASS	.	GT	1|0
+chr3	8198583	.	G	A	.	PASS	.	GT	1|0
+chr3	8199895	.	G	C	.	PASS	.	GT	1|1
