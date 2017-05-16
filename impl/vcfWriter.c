@@ -89,11 +89,10 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         char h2AlphChar = stBaseMapper_getCharForValue(baseMapper, h2AlphVal);
         float h1Prob = gF->haplotypeProbs1[i];
         float h2Prob = gF->haplotypeProbs2[i];
+        float genotypeProb = gF->genotypeProbs[i];
+        float genotype = (float)gF->genotypeString[i];
 
         totalLocs++;
-        if (h1AlphChar == '-' && h2AlphChar == '-') {
-            numMatchedGaps++;
-        }
 
         //prep
         bcf_clear1(bcf_rec);
@@ -106,7 +105,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         // ID - skip
         // QUAL - skip (TODO for now?)
         if (differencesOnly) bcf_rec->qual = h2Prob;
-        else bcf_rec->qual = h1Prob;
+        else bcf_rec->qual = genotypeProb;
 
         // Get phasing info
         gt_info[0] = bcf_gt_phased(0);
@@ -115,7 +114,6 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         char refChar = toupper(referenceSeq[i + gF->refStart]);
         if (!differencesOnly ||
                 (h1AlphChar != h2AlphChar || h1AlphChar != refChar || h2AlphChar != refChar)) {
-            numDifferences++;
 
             kputc(refChar, &str); // REF
             kputc(',', &str);
@@ -132,10 +130,6 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
             // save it
             bcf_write1(out, bcf_hdr, bcf_rec);
         }
-    }
-    if (differencesOnly) {
-        st_logDebug("\tNumber of differences between the records: %d \t (%f percent)\n", numDifferences, 100 * (float)numDifferences/(float)gF->length);
-        st_logDebug("\tNumber of matched gaps between the haplotypes: %d \t (%f percent)\n", numMatchedGaps, 100 * (float)numMatchedGaps/(float)gF->length);
     }
 
     // cleanup

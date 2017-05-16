@@ -370,7 +370,7 @@ void compareVCFs(char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refE
     int64_t matches = 0;
     int64_t totalRefRecords = 0;
 
-    st_logInfo("Writing out positions that were missed... \n");
+    st_logDebug("Writing out false negatives \n");
 
     while(bcf_read(inRef, hdrRef, refRecord) == 0) {
         // Unpack reference record
@@ -423,12 +423,12 @@ void compareVCFs(char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refE
                 missed = true;
             }
             if (missed) {
-                st_logDebug("\n\tREF pos:%d ref:%s alleles: ", referencePos, refChar);
+                st_logDebug("\npos:%d\tref: %s\talt: ", referencePos, refChar);
                 for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
                     if (i!=1) st_logDebug(",");
                     st_logDebug(unpackedRecordRef->d.allele[i]);
                 }
-                st_logDebug("\n\t    pos:%d ref:%s alleles: ", evalPos, evalRefChar);
+                st_logDebug("\n     output alleles: ");
                 for (int i = 1; i < unpackedRecord->n_allele; i++) {
                     if (i!=1) st_logDebug(",");
                     st_logDebug(unpackedRecord->d.allele[i]);
@@ -494,7 +494,7 @@ void test_100kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+    //genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 
     compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
@@ -509,7 +509,7 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
     SUITE_ADD_TEST(suite, test_jsmnParsing);
-    SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    //SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;
