@@ -184,10 +184,10 @@ int main(int argc, char *argv[]) {
     stRPHmmParameters_destruct(params);
 
     // TODO: only free these if they need to be
-    free(bamInFile);
-    free(samOutBase);
-    free(vcfOutFile);
-    free(referenceName);
+//    free(bamInFile);
+//    free(samOutBase);
+//    free(vcfOutFile);
+//    free(referenceName);
 
     //while(1); // Use this for testing for memory leaks
 

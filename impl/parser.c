@@ -226,7 +226,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int64_t pos = aln->core.pos+1; //left most position of alignment
+        int64_t pos = aln->core.pos; //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
         int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence

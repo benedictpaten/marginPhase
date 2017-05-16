@@ -4,6 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <ctype.h>
 #include <htslib/vcf.h>
 #include "stRPHmm.h"
 
@@ -26,7 +27,6 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
     for(int64_t i=0; i<stList_length(genomeFragments); i++) {
         stRPHmm *hmm = stList_get(genomeFragments, i);
         str.l = 0;
-        //ksprintf(&str, "##contig=<ID=%s,length=%d>\n", "chr1", 249250621);
         ksprintf(&str, "##contig=<ID=%s>\n", hmm->referenceName); //hmm->referenceName is the chrom
         bcf_hdr_append(hdr, str.s);
     }
@@ -51,25 +51,24 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
 // This function writes out a vcf for the two haplotypes
 // It optionally writes it relative to a reference fasta file or
 // writes it for one of the haplotypes relative to the other
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool includeReference) {
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly) {
 
     char *referenceSeq;
     // Get reference (needed for VCF generation)
-    if (includeReference) {
-        faidx_t *fai = fai_load(referenceName);
-        if ( !fai ) {
-            st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
-                           referenceName, referenceName);
-            return;
-        }
-        int seq_len;
-        referenceSeq = fai_fetch(fai, gF->referenceName, &seq_len);
-        if ( seq_len < 0 ) {
-            st_logCritical("Failed to fetch reference sequence %s\n", referenceName);
-            return;
-        }
-        fai_destroy(fai);
+    faidx_t *fai = fai_load(referenceName);
+    if ( !fai ) {
+        st_logCritical("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
+                       referenceName, referenceName);
+        return;
     }
+    int seq_len;
+    referenceSeq = fai_fetch(fai, gF->referenceName, &seq_len);
+    if ( seq_len < 0 ) {
+        st_logCritical("Failed to fetch reference sequence %s\n", referenceName);
+        return;
+    }
+    fai_destroy(fai);
+
 
     // intialization
     bcf1_t *bcf_rec = bcf_init1();
@@ -88,6 +87,8 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         int h2AlphVal = gF->haplotypeString2[i];
         char h1AlphChar = stBaseMapper_getCharForValue(baseMapper, h1AlphVal);
         char h2AlphChar = stBaseMapper_getCharForValue(baseMapper, h2AlphVal);
+        float h1Prob = gF->haplotypeProbs1[i];
+        float h2Prob = gF->haplotypeProbs2[i];
 
         totalLocs++;
         if (h1AlphChar == '-' && h2AlphChar == '-') {
@@ -104,10 +105,18 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         bcf_rec->pos  = i + gF->refStart; // off by one?
         // ID - skip
         // QUAL - skip (TODO for now?)
-        if (includeReference) {
+        if (differencesOnly) bcf_rec->qual = h2Prob;
+        else bcf_rec->qual = h1Prob;
 
-            //char refChar = referenceSeq[i + gF->refStart];
-            char refChar = '*';
+        // Get phasing info
+        gt_info[0] = bcf_gt_phased(0);
+        gt_info[1] = bcf_gt_phased(1);
+
+        char refChar = toupper(referenceSeq[i + gF->refStart]);
+        if (!differencesOnly ||
+                (h1AlphChar != h2AlphChar || h1AlphChar != refChar || h2AlphChar != refChar)) {
+            numDifferences++;
+
             kputc(refChar, &str); // REF
             kputc(',', &str);
             kputc(h1AlphChar, &str);
@@ -116,31 +125,15 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
 
             bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
             // FORMAT / $SMPL1
-            gt_info[0] = bcf_gt_phased(0);
-            gt_info[1] = bcf_gt_phased(1);
-            bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
-
-            // save it
-            bcf_write1(out, bcf_hdr, bcf_rec);
-
-        } else if (h1AlphChar != h2AlphChar) {
-            // Only write variations between haplotypes when not using the reference
-            kputc(h1AlphChar, &str); // REF
-            kputc(',', &str);
-            kputc(h2AlphChar, &str);
-            numDifferences++;
-
-            bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
-            // FORMAT / $SMPL1
-            gt_info[0] = bcf_gt_phased(0);
-            gt_info[1] = bcf_gt_phased(1);
+//            gt_info[0] = bcf_gt_phased(0);
+//            gt_info[1] = bcf_gt_phased(1);
             bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
 
             // save it
             bcf_write1(out, bcf_hdr, bcf_rec);
         }
     }
-    if (!includeReference) {
+    if (differencesOnly) {
         st_logDebug("\tNumber of differences between the records: %d \t (%f percent)\n", numDifferences, 100 * (float)numDifferences/(float)gF->length);
         st_logDebug("\tNumber of matched gaps between the haplotypes: %d \t (%f percent)\n", numMatchedGaps, 100 * (float)numMatchedGaps/(float)gF->length);
     }

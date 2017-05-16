@@ -367,7 +367,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
 
 // File writing
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool includeReference);
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments);
 bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 

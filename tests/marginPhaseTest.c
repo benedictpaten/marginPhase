@@ -4,6 +4,8 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+
+#include <htslib/vcf.h>
 #include "CuTest.h"
 #include "sonLib.h"
 #include "stRPHmm.h"
@@ -64,6 +66,22 @@ double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, 
         }
     }
     return ((double)totalMatches)/length;
+}
+
+double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
+    /*
+     * Returns the fraction of positions in two haplotypes that are identical.
+     */
+    int64_t totalMatches = 0;
+    int64_t numGaps = 0;
+    for(int64_t i=0; i<length; i++) {
+        if(hap1String[i] == hap2String[i]) {
+            totalMatches++;
+        } else if (hap1String[i] == ALPHABET_SIZE-1 || hap2String[i] == ALPHABET_SIZE-1) {
+            numGaps++;
+        }
+    }
+    return ((double)totalMatches)/(length - numGaps);
 }
 
 void getExpectedMatcheBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
@@ -228,13 +246,13 @@ void test_jsmnParsing(CuTest *testCase) {
 
 
 void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile) {
-    fprintf(stderr, "Parsing parameters\n");
+    fprintf(stderr, "> Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
     // Print a report of the parsed parameters
     stRPHmmParameters_printParameters(params, stderr);
 
-    fprintf(stderr, "Creating profile sequences\n");
+    fprintf(stderr, "> Creating profile sequences\n");
     stList *profileSequences = stList_construct();
     parseReads(profileSequences, bamFile, baseMapper);
 
@@ -242,16 +260,16 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
     printSequenceStats(stderr, profileSequences);
     printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
 
-    fprintf(stderr, "Building hmms\n");
+    fprintf(stderr, "> Building hmms\n");
     stList *hmms = getRPHmms(profileSequences, params);
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
-    fprintf(stderr, "Got %" PRIi64 " hmms\n", stList_length(hmms));
+    fprintf(stderr, "\tGot %" PRIi64 " hmms\n", stList_length(hmms));
 
-    fprintf(stderr, "Writing vcf files\n");
+    fprintf(stderr, "> Writing vcf files\n");
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *bcf_hdr = writeVcfHeader(vcfOutFP, l);
 
@@ -278,11 +296,12 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         // Get partitioned sequences
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-        fprintf(stderr, "There are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
+        fprintf(stderr, "\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                 stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
         // Print the similarity between the two imputed haplotypes sequences
         fprintf(stderr, "The haplotypes have an %f identity\n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        fprintf(stderr, "\tIdentity excluding indels: %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
 
         // Print the base composition of the haplotype sequences
         double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
@@ -306,25 +325,127 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         printBaseComposition(stderr, reads2BaseCounts);
         free(reads2BaseCounts);
 
+        fprintf(stderr, "Genome fragment info: refStart = %d, length = %d\n", gF->refStart, gF->length);
+
         // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+//        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
+//        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+//
+//        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
+//        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
 
-        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
 
-
-        writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, true);
-        writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, NULL, baseMapper, false);
+        writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
+        writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, referenceFile, baseMapper, true);
     }
 
     vcf_close(vcfOutFP);
     vcf_close(vcfOutFP_diff);
 }
 
-void test_5kbGenotyping(CuTest *testCase) {
+void compareVCFs(char *vcf_toEval, char *vcf_ref) {
+    st_logInfo("VCF reference: %s \n", vcf_ref);
+    st_logInfo("VCF being evaluated: %s \n", vcf_toEval);
 
-    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.5kb.bam\n");
+    vcfFile *inRef = vcf_open(vcf_ref,"r"); //open vcf file
+    if (inRef == NULL) {
+        fprintf(stderr, "ERROR: cannot open reference vcf, %s\n", vcf_ref);
+        return;
+    }
+    bcf_hdr_t *hdrRef = bcf_hdr_read(inRef); //read header
+    bcf1_t *refRecord = bcf_init1(); //initialize for reading
+
+    vcfFile *inEval = vcf_open(vcf_toEval,"r"); //open vcf file
+    if (inEval == NULL) {
+        fprintf(stderr, "ERROR: cannot open vcf to evaluate, %s\n", vcf_toEval);
+        return;
+    }
+    bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
+    bcf1_t *evalRecord = bcf_init1(); //initialize for reading
+
+    int64_t referencePos = 0;
+    int64_t evalPos = 0;
+    int64_t recordsNotInRef = 0;
+    int64_t matches = 0;
+    int64_t totalRefRecords = 0;
+    int64_t numVariationsNotFound = 0;
+
+    st_logInfo("Writing out positions that were missed... \n");
+
+    while(bcf_read(inRef, hdrRef, refRecord) == 0) {
+        // Unpack reference record
+        totalRefRecords++;
+        bcf1_t *unpackedRecordRef = refRecord;
+        bcf_unpack(unpackedRecordRef, BCF_UN_STR);
+        referencePos = unpackedRecordRef->pos;
+        char *refChar = unpackedRecordRef->d.als;
+        char *altRefChar = unpackedRecordRef->d.allele[1];
+
+        // Unpack record being evaluated
+        bcf1_t *unpackedRecord;
+        while(evalPos < referencePos) {
+            if (bcf_read(inEval, hdrEval, evalRecord) == 0) {
+                unpackedRecord = evalRecord;
+                bcf_unpack(unpackedRecord, BCF_UN_STR);
+                evalPos = unpackedRecord->pos;
+                if (evalPos < referencePos) recordsNotInRef++;
+            }
+        }
+        if (evalPos == referencePos) {
+            char *evalRefChar = unpackedRecord->d.als;
+            char *altEvalChar1 = unpackedRecord->d.allele[1];
+            char *altEvalChar2 = unpackedRecord->d.allele[2];
+            bool missed = false;
+
+//            if (strcmp(refChar, evalRefChar) != 0) {
+//                st_logInfo("\nBAD MISMATCH at pos %d\n", evalPos);
+//            }
+            if (strcmp(altRefChar, altEvalChar1) == 0 && strcmp(altRefChar, altEvalChar2) == 0) {
+                // Both match alternate - no variation was found
+                missed = true;
+            } else if (strcmp(refChar, altEvalChar1) == 0 && strcmp(refChar, altEvalChar2) == 0){
+                // Both match reference - no variation was found
+                missed = true;
+            } else if (strcmp(altRefChar, altEvalChar1) == 0 || strcmp(altRefChar, altEvalChar2) == 0) {
+                // Only one matches - variation found that matches the reference!
+                matches++;
+            }
+            else {
+                // Weirdos
+                missed = true;
+            }
+            if (missed) {
+                numVariationsNotFound++;
+                st_logDebug("\n\tREF pos:%d ref:%s alleles: ", referencePos, refChar);
+                for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
+                    if (i!=1) st_logDebug(",");
+                    st_logDebug(unpackedRecordRef->d.allele[i]);
+                }
+                st_logDebug("\n\t    pos:%d ref:%s alleles: ", evalPos, evalRefChar);
+                for (int i = 1; i < unpackedRecord->n_allele; i++) {
+                    if (i!=1) st_logDebug(",");
+                    st_logDebug(unpackedRecord->d.allele[i]);
+                }
+            }
+        } else {
+            // Write out any leftover missing variations
+            // (These should have all been caught already)
+            st_logDebug("\n\tMISSED REF pos:%d ref:%s alleles: ", referencePos, refChar);
+            for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
+                if (i!=1) st_logDebug(",");
+                st_logDebug(unpackedRecordRef->d.allele[i]);
+            }
+        }
+    }
+    st_logInfo("\nFraction of variations compared to reference: %f \t(%d out of %d)\n", (float)matches/totalRefRecords, matches, totalRefRecords) ;
+    st_logInfo("\t \t(Number of misses: %d)\n", totalRefRecords-matches);
+    st_logInfo("Number of extra records in output vcf compared to reference: %d\n", recordsNotInRef);
+    st_logInfo("Number of SNPs not found: %d\n", numVariationsNotFound);
+    vcf_close(inRef);
+    vcf_close(inEval);
+}
+
+void test_5kbGenotyping(CuTest *testCase) {
 
     char *paramsFile = "../tests/params.json";
     char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
@@ -332,23 +453,35 @@ void test_5kbGenotyping(CuTest *testCase) {
     char *vcfOutFileDiff = "test_5kb_diff.vcf";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 
+    fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
+
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
 }
 
 void test_100kbGenotyping(CuTest *testCase) {
 
-    fprintf(stderr, "Testing haplotype inference on NA12878.pb.chr3.100kb.0.bam\n");
-
     char *paramsFile = "../tests/params.json";
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *vcfOutFile = "test_100kb.vcf";
     char *vcfOutFileDiff = "test_100kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
+
+    fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+
+    compareVCFs(vcfOutFile, vcfReference);
 }
 
+
+
+
 CuSuite *marginPhaseTestSuite(void) {
+
+    st_setLogLevelFromString("debug");
+
     CuSuite* suite = CuSuiteNew();
 
     SUITE_ADD_TEST(suite, test_jsmnParsing);
