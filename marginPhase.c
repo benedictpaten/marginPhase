@@ -113,10 +113,10 @@ int main(int argc, char *argv[]) {
 
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
-    bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l);
+    bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l, referenceName);
 
     vcfFile *vcfOutFP2 = vcf_open(vcfOutFile2, "w");
-    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP2, l);
+    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP2, l, referenceName);
 
     // Prep for BAM outputs
     stSet *haplotype1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceName, baseMapper, true);
-        writeVcfFragment(vcfOutFP2, hdr2, gF, NULL, baseMapper, false);
+        writeVcfFragment(vcfOutFP2, hdr2, gF, referenceName, baseMapper, false);
 
         // Get the reads which mapped to each path
         stSet *haplotypeSet1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);

@@ -156,6 +156,42 @@ double *getExpectedProfileSequenceBaseComposition(stSet *profileSeqs) {
     return baseCounts;
 }
 
+double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos) {
+    /*
+     * Get the expected count of each alphabet character in the profile sequences, returned
+     * as an array.
+     */
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    stSetIterator *it = stSet_getIterator(profileSeqs);
+    stProfileSeq *pSeq;
+    while((pSeq = stSet_getNext(it)) != NULL) {
+        if (pos > pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                baseCounts[j] += getProb(&(pSeq->profileProbs[(pos - pSeq->refStart)*ALPHABET_SIZE]), j);
+            }
+        }
+    }
+    return baseCounts;
+}
+
+double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
+    /*
+     * Get the observed counts for each base seen at a particular position in a column
+     */
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    for (int64_t i=0; i<column->depth; i++) {
+        stProfileSeq *seq = column->seqHeaders[i];
+
+        if (pos >= seq->refStart && pos < seq->length+seq->refStart) {
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                baseCounts[j] += getProb(&(seq->profileProbs[(pos - seq->refStart) * ALPHABET_SIZE]), j);
+            }
+        }
+    }
+    return baseCounts;
+
+}
+
 void printBaseComposition(FILE *fH, double *baseCounts) {
     /*
      * Print the counts/fraction of each alphabet character.
@@ -166,6 +202,59 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
     }
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         fprintf(fH, "Base %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
+    }
+}
+
+void printBaseComposition2(FILE *fH, double *baseCounts) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += baseCounts[i];
+    }
+    fprintf(fH, "\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    fprintf(fH, "    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        fprintf(fH, "\t%0.1f", baseCounts[i]);
+    }
+    fprintf(fH, "\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        fprintf(fH, "\t%0.3f", baseCounts[i]/totalCount);
+    }
+    fprintf(fH, "\n");
+}
+
+
+
+
+void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
+    /*
+     * Print out the columns of the hmm at a specific position
+     */
+
+    //stRPHmm_print(hmm, stderr, 1, 0);
+    stRPColumn *column = hmm->firstColumn;
+    while(1) {
+        if (pos >= column->refStart && pos < column->refStart+column->length) {
+            // Print column
+            //stRPColumn_print(column, stderr, 1);
+
+//                fprintf(stderr, "\n\tCOLUMN: REF_START: %" PRIi64
+//                                " REF_LENGTH: %" PRIi64 " DEPTH: %" PRIi64
+//                                " TOTAL_PROB: %f\n",
+//                        column->refStart, column->length, column->depth,
+//                        (float)column->totalLogProb);
+
+            double *columnBaseCounts = getColumnBaseComposition(column, pos);
+            printBaseComposition2(stderr, columnBaseCounts);
+            free(columnBaseCounts);
+        }
+
+        if (column->nColumn == NULL) {
+            break;
+        }
+        column = column->nColumn->nColumn;
     }
 }
 
@@ -244,6 +333,158 @@ void test_jsmnParsing(CuTest *testCase) {
     stRPHmmParameters_destruct(params);
 }
 
+void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
+                 char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd) {
+    /*
+     * Test to compare a vcf to a truth vcf containing known variants for the region.
+     * This test currently requires knowledge of the specific interval that should be looked at
+     */
+    fprintf(fh, "VCF reference: %s \n", vcf_ref);
+    fprintf(fh, "VCF being evaluated: %s \n", vcf_toEval);
+
+    vcfFile *inRef = vcf_open(vcf_ref,"r"); //open vcf file
+    if (inRef == NULL) {
+        fprintf(fh, "ERROR: cannot open reference vcf, %s\n", vcf_ref);
+        return;
+    }
+    bcf_hdr_t *hdrRef = bcf_hdr_read(inRef); //read header
+    bcf1_t *refRecord = bcf_init1(); //initialize for reading
+
+    vcfFile *inEval = vcf_open(vcf_toEval,"r"); //open vcf file
+    if (inEval == NULL) {
+        fprintf(fh, "ERROR: cannot open vcf to evaluate, %s\n", vcf_toEval);
+        return;
+    }
+    bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
+    bcf1_t *evalRecord = bcf_init1(); //initialize for reading
+
+    int64_t referencePos = 0;
+    int64_t evalPos = 0;
+    int64_t negatives = 0;
+    int64_t negativesNoGap = 0;
+    int64_t matches = 0;
+    int64_t totalRefRecords = 0;
+
+    fprintf(fh, "Writing out false negatives \n");
+
+    while(bcf_read(inRef, hdrRef, refRecord) == 0) {
+        // Unpack reference record
+        bcf1_t *unpackedRecordRef = refRecord;
+        bcf_unpack(unpackedRecordRef, BCF_UN_INFO);
+        referencePos = unpackedRecordRef->pos;
+        totalRefRecords++;
+        char *refChar = unpackedRecordRef->d.als;
+        char *altRefChar = unpackedRecordRef->d.allele[1];
+
+        // Make sure to only look at records in the specified interval
+        if (referencePos < refStart || referencePos > refEnd) {
+            continue;
+        }
+
+        // Iterate through vcf until getting to the position of the known variant
+        // from the reference vcf currently being looked at
+        bcf1_t *unpackedRecord;
+        while (evalPos < referencePos && (bcf_read(inEval, hdrEval, evalRecord) == 0)) {
+            // Unpack record being evaluated
+            unpackedRecord = evalRecord;
+            bcf_unpack(unpackedRecord, BCF_UN_INFO);
+            evalPos = unpackedRecord->pos;
+            if (evalPos < referencePos && evalPos > refStart) {
+                char *evalRefChar = unpackedRecord->d.als;
+                char *altEvalChar1 = unpackedRecord->d.allele[1];
+                char *altEvalChar2 = unpackedRecord->d.allele[2];
+
+                if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
+                else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
+                else
+                    fprintf(fh, "\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1,
+                                altEvalChar2);
+            }
+        }
+        // At locus of known variation
+        if (evalPos == referencePos) {
+            char *evalRefChar = unpackedRecord->d.als;
+            char *altEvalChar1 = unpackedRecord->d.allele[1];
+            char *altEvalChar2 = unpackedRecord->d.allele[2];
+            bool missed = false;
+
+            if (strcmp(altRefChar, altEvalChar1) == 0 && strcmp(altRefChar, altEvalChar2) == 0) {
+                // Both match alternate - no variation was found
+                missed = true;
+            } else if (strcmp(refChar, altEvalChar1) == 0 && strcmp(refChar, altEvalChar2) == 0) {
+                // Both match reference - no variation was found
+                missed = true;
+            } else if (strcmp(altRefChar, altEvalChar1) == 0 || strcmp(altRefChar, altEvalChar2) == 0) {
+                // Only one matches - variation found that matches the reference!
+                matches++;
+            } else {
+                // Weirdos
+                missed = true;
+            }
+            if (missed) {
+                fprintf(fh, "\npos: %d\nref: %s\talt: ", referencePos, refChar);
+                for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
+                    if (i != 1) fprintf(fh, ",");
+                    fprintf(fh, unpackedRecordRef->d.allele[i]);
+                }
+
+                fprintf(fh, "\noutput alleles: ");
+                for (int i = 1; i < unpackedRecord->n_allele; i++) {
+                    if (i != 1) fprintf(fh, ",");
+                    fprintf(fh, unpackedRecord->d.allele[i]);
+                }
+                fprintf(fh, "\n");
+                printColumnAtPosition(hmm, evalPos);
+
+                fprintf(fh, "Partition 1: \n");
+                double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, evalPos);
+                printBaseComposition2(stderr, read1BaseCounts);
+                free(read1BaseCounts);
+
+                fprintf(fh, "Partition 2: \n");
+                double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, evalPos);
+                printBaseComposition2(stderr, read2BaseCounts);
+                free(read2BaseCounts);
+
+                float posteriorProb = unpackedRecord->qual;
+                fprintf(fh, "posterior prob: %f\n", posteriorProb);
+            }
+        }
+    }
+    // Look through remaining positions after last known variation in reference
+    while (evalPos < refEnd) {
+        bcf1_t *unpackedRecord;
+        if (bcf_read(inEval, hdrEval, evalRecord) == 0) {
+            unpackedRecord = evalRecord;
+            bcf_unpack(unpackedRecord, BCF_UN_STR);
+            evalPos = unpackedRecord->pos;
+            char *evalRefChar = unpackedRecord->d.als;
+            char *altEvalChar1 = unpackedRecord->d.allele[1];
+            char *altEvalChar2 = unpackedRecord->d.allele[2];
+
+            if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
+            else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
+            else fprintf(fh, "\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1, altEvalChar2);
+        }
+    }
+    int64_t regionLength = refEnd - refStart;
+    fprintf(fh, "\n\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%d out of %d)\n",
+               (float)matches/totalRefRecords, matches, totalRefRecords) ;
+    fprintf(fh, "\t \t(Number of false negatives: %d)\n", totalRefRecords-matches);
+    fprintf(fh, "Specificity: %f \n(= fraction of true negatives compared to reference, \t%d out of %d)\n",
+               (float)negatives/(regionLength-totalRefRecords), negatives, regionLength-totalRefRecords);
+    fprintf(fh, "\t \t(Ignoring gap character: %f)\n",
+               (float) (negatives + negativesNoGap)/(regionLength-totalRefRecords));
+
+    // cleanup
+    vcf_close(inRef);
+    vcf_close(inEval);
+    bcf_hdr_destroy(hdrRef);
+    bcf_hdr_destroy(hdrEval);
+    bcf_destroy(refRecord);
+    bcf_destroy(evalRecord);
+}
+
 
 void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile) {
     fprintf(stderr, "> Parsing parameters\n");
@@ -269,12 +510,13 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
     hmms = l;
     fprintf(stderr, "\tGot %" PRIi64 " hmms\n", stList_length(hmms));
 
+
     fprintf(stderr, "> Writing vcf files\n");
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
-    bcf_hdr_t *bcf_hdr = writeVcfHeader(vcfOutFP, l);
+    bcf_hdr_t *bcf_hdr = writeVcfHeader(vcfOutFP, l, referenceFile);
 
     vcfFile *vcfOutFP_diff = vcf_open(vcfOutFileDiff, "w");
-    bcf_hdr_t *bcf_hdr_diff = writeVcfHeader(vcfOutFP_diff, l);
+    bcf_hdr_t *bcf_hdr_diff = writeVcfHeader(vcfOutFP_diff, l, referenceFile);
 
 
     for(int64_t i=0; i<stList_length(hmms); i++) {
@@ -283,6 +525,7 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         // Print stats about the HMM
         fprintf(stderr, "The %" PRIi64 "th hmm\n", i);
         stRPHmm_print(hmm, stderr, 0, 0);
+
 
         // Run the forward-backward algorithm
         stRPHmm_forwardBackward(hmm);
@@ -325,161 +568,54 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         printBaseComposition(stderr, reads2BaseCounts);
         free(reads2BaseCounts);
 
-        //fprintf(stderr, "Genome fragment info: refStart = %d, length = %d\n", gF->refStart, gF->length);
+        fprintf(stderr, "Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
 
         // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-//        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-//        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-//
-//        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-//        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
+        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
+        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+
+        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
+        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
 
 
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, referenceFile, baseMapper, true);
+
+        char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
+        compareVCFs(stderr, hmm, reads1, reads2, vcfOutFile, vcfReference, 100000, 200000);
     }
+
+
+    stRPHmmParameters_destruct(params);
+    stBaseMapper_destruct(baseMapper);
+    stList_destruct(hmms);
+    stList_destruct(profileSequences);
 
     vcf_close(vcfOutFP);
     vcf_close(vcfOutFP_diff);
+    bcf_hdr_destroy(bcf_hdr);
+    bcf_hdr_destroy(bcf_hdr_diff);
 }
 
-void compareVCFs(char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd) {
-    st_logInfo("VCF reference: %s \n", vcf_ref);
-    st_logInfo("VCF being evaluated: %s \n", vcf_toEval);
 
-    vcfFile *inRef = vcf_open(vcf_ref,"r"); //open vcf file
-    if (inRef == NULL) {
-        fprintf(stderr, "ERROR: cannot open reference vcf, %s\n", vcf_ref);
-        return;
-    }
-    bcf_hdr_t *hdrRef = bcf_hdr_read(inRef); //read header
-    bcf1_t *refRecord = bcf_init1(); //initialize for reading
-
-    vcfFile *inEval = vcf_open(vcf_toEval,"r"); //open vcf file
-    if (inEval == NULL) {
-        fprintf(stderr, "ERROR: cannot open vcf to evaluate, %s\n", vcf_toEval);
-        return;
-    }
-    bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
-    bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
-    int64_t referencePos = 0;
-    int64_t evalPos = 0;
-    int64_t negatives = 0;
-    int64_t negativesNoGap = 0;
-    int64_t matches = 0;
-    int64_t totalRefRecords = 0;
-
-    st_logDebug("Writing out false negatives \n");
-
-    while(bcf_read(inRef, hdrRef, refRecord) == 0) {
-        // Unpack reference record
-        totalRefRecords++;
-        bcf1_t *unpackedRecordRef = refRecord;
-        bcf_unpack(unpackedRecordRef, BCF_UN_STR);
-        referencePos = unpackedRecordRef->pos;
-        char *refChar = unpackedRecordRef->d.als;
-        char *altRefChar = unpackedRecordRef->d.allele[1];
-
-        // Unpack record being evaluated
-        bcf1_t *unpackedRecord;
-        while(evalPos < referencePos) {
-            if (bcf_read(inEval, hdrEval, evalRecord) == 0) {
-                unpackedRecord = evalRecord;
-                bcf_unpack(unpackedRecord, BCF_UN_STR);
-                evalPos = unpackedRecord->pos;
-                if (evalPos < referencePos && evalPos > refStart) {
-                    char *evalRefChar = unpackedRecord->d.als;
-                    char *altEvalChar1 = unpackedRecord->d.allele[1];
-                    char *altEvalChar2 = unpackedRecord->d.allele[2];
-
-                    if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
-                    else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
-                    else st_logDebug("\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1, altEvalChar2);
-                }
-            }
-        }
-        if (evalPos == referencePos) {
-            char *evalRefChar = unpackedRecord->d.als;
-            char *altEvalChar1 = unpackedRecord->d.allele[1];
-            char *altEvalChar2 = unpackedRecord->d.allele[2];
-            bool missed = false;
-
-//            if (strcmp(refChar, evalRefChar) != 0) {
-//                st_logInfo("\nBAD MISMATCH at pos %d\n", evalPos);
-//            }
-            if (strcmp(altRefChar, altEvalChar1) == 0 && strcmp(altRefChar, altEvalChar2) == 0) {
-                // Both match alternate - no variation was found
-                missed = true;
-            } else if (strcmp(refChar, altEvalChar1) == 0 && strcmp(refChar, altEvalChar2) == 0){
-                // Both match reference - no variation was found
-                missed = true;
-            } else if (strcmp(altRefChar, altEvalChar1) == 0 || strcmp(altRefChar, altEvalChar2) == 0) {
-                // Only one matches - variation found that matches the reference!
-                matches++;
-            }
-            else {
-                // Weirdos
-                missed = true;
-            }
-            if (missed) {
-                st_logDebug("\npos:%d\tref: %s\talt: ", referencePos, refChar);
-                for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
-                    if (i!=1) st_logDebug(",");
-                    st_logDebug(unpackedRecordRef->d.allele[i]);
-                }
-                st_logDebug("\n     output alleles: ");
-                for (int i = 1; i < unpackedRecord->n_allele; i++) {
-                    if (i!=1) st_logDebug(",");
-                    st_logDebug(unpackedRecord->d.allele[i]);
-                }
-            }
-        } else {
-            // Write out any leftover missing variations
-            // (These should have all been caught already)
-            st_logDebug("\n\tMISSED REF pos:%d ref:%s alleles: ", referencePos, refChar);
-            for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
-                if (i!=1) st_logDebug(",");
-                st_logDebug(unpackedRecordRef->d.allele[i]);
-            }
-        }
-    }
-    // Catch any at the end
-    while (evalPos < refEnd) {
-        bcf1_t *unpackedRecord;
-        if (bcf_read(inEval, hdrEval, evalRecord) == 0) {
-            unpackedRecord = evalRecord;
-            bcf_unpack(unpackedRecord, BCF_UN_STR);
-            evalPos = unpackedRecord->pos;
-            char *evalRefChar = unpackedRecord->d.als;
-            char *altEvalChar1 = unpackedRecord->d.allele[1];
-            char *altEvalChar2 = unpackedRecord->d.allele[2];
-
-            if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
-            else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
-            else st_logDebug("\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1, altEvalChar2);
-        }
-    }
-    int64_t regionLength = refEnd - refStart;
-    st_logInfo("\n\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%d out of %d)\n", (float)matches/totalRefRecords, matches, totalRefRecords) ;
-    st_logInfo("\t \t(Number of false negatives: %d)\n", totalRefRecords-matches);
-    st_logInfo("Specificity: %f \n(= fraction of true negatives compared to reference, \t%d out of %d)\n", (float)negatives/(regionLength-totalRefRecords), negatives, regionLength-totalRefRecords);
-    st_logInfo("\t \t(Ignoring gap character: %f)\n", (float) (negatives + negativesNoGap)/(regionLength-totalRefRecords));
-    vcf_close(inRef);
-    vcf_close(inEval);
-}
 
 void test_5kbGenotyping(CuTest *testCase) {
 
     char *paramsFile = "../tests/params.json";
-    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *vcfOutFile = "test_5kb.vcf";
     char *vcfOutFileDiff = "test_5kb_diff.vcf";
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+
+    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
+    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+
+    // TODO: create vcf specifically for this 5 kb region
+    //compareVCFs(vcfOutFile, vcfReference, 150000, 155000);
+
 }
 
 void test_100kbGenotyping(CuTest *testCase) {
@@ -492,11 +628,11 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
 
+    //bamFile = "../examples/KRAS_chr3.bam";
+
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
-
     genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
-
-    compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
+    //compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
 
 
@@ -508,8 +644,8 @@ CuSuite *marginPhaseTestSuite(void) {
 
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_jsmnParsing);
-    SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    //SUITE_ADD_TEST(suite, test_jsmnParsing);
+    //SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;

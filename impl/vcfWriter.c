@@ -8,7 +8,7 @@
 #include <htslib/vcf.h>
 #include "stRPHmm.h"
 
-bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
+bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName) {
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     kstring_t str = {0,0,NULL};
 
@@ -19,7 +19,7 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments) {
 
     // reference file used
     str.l = 0;
-    ksprintf(&str, "##reference=file://%s\n", "TODO"); //todo
+    ksprintf(&str, "##reference=file://%s\n", referenceName);
     bcf_hdr_append(hdr, str.s);
 
     // contigs

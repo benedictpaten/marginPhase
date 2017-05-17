@@ -233,6 +233,12 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
 
+        // If there isn't a cigar string, don't bother including the read, since we don't
+        // know how it aligns
+        if (aln->core.n_cigar == 0) {
+            continue;
+        }
+
         readCount++;
         int64_t start_read = 0;
         int64_t end_read = 0;
