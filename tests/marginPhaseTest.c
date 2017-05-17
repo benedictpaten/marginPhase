@@ -11,6 +11,9 @@
 #include "stRPHmm.h"
 
 void printSequenceStats(FILE *fH, stList *profileSequences) {
+    /*
+     * Print stats about the set of profile sequences.
+     */
     int64_t totalLength=0;
     for(int64_t i=0; i<stList_length(profileSequences); i++) {
         stProfileSeq *profileSeq = stList_get(profileSequences, i);
@@ -487,7 +490,7 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
 }
 
 
-void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile) {
+void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile, char *vcfReference) {
     fprintf(stderr, "> Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
@@ -582,8 +585,12 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, referenceFile, baseMapper, true);
 
-        char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
         compareVCFs(stderr, hmm, reads1, reads2, vcfOutFile, vcfReference, 100000, 200000);
+
+        stSet_destruct(reads1);
+        stSet_destruct(reads2);
+        stGenomeFragment_destruct(gF);
+        stList_destruct(path);
     }
 
 
@@ -612,7 +619,7 @@ void test_5kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference);
 
     // TODO: create vcf specifically for this 5 kb region
     //compareVCFs(vcfOutFile, vcfReference, 150000, 155000);
@@ -632,7 +639,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     //bamFile = "../examples/KRAS_chr3.bam";
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
-    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile);
+    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference);
     //compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
 
