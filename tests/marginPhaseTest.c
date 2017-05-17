@@ -29,12 +29,13 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
     for(int64_t i=0; i<profileSeq->length; i++) {
         // Get base in the haplotype sequence
         int64_t j = i + profileSeq->refStart - start;
-        assert(j >= 0 && j < length);
-        uint64_t hapBase = haplotypeString[j];
-        assert(j < ALPHABET_SIZE);
+        if(j >= 0 && j < length) {
+            uint64_t hapBase = haplotypeString[j];
+            assert(hapBase < ALPHABET_SIZE);
 
-        // Expectation of a match
-        totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
+            // Expectation of a match
+            totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
+        }
     }
     return totalExpectedMatches;
 }
