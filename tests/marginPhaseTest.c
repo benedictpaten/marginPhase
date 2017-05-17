@@ -29,12 +29,13 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
     for(int64_t i=0; i<profileSeq->length; i++) {
         // Get base in the haplotype sequence
         int64_t j = i + profileSeq->refStart - start;
-        assert(j >= 0 && j < length);
-        uint64_t hapBase = haplotypeString[j];
-        assert(j < ALPHABET_SIZE);
+        if(j >= 0 && j < length) {
+            uint64_t hapBase = haplotypeString[j];
+            assert(hapBase < ALPHABET_SIZE);
 
-        // Expectation of a match
-        totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
+            // Expectation of a match
+            totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
+        }
     }
     return totalExpectedMatches;
 }
@@ -325,14 +326,14 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         printBaseComposition(stderr, reads2BaseCounts);
         free(reads2BaseCounts);
 
-        //fprintf(stderr, "Genome fragment info: refStart = %d, length = %d\n", gF->refStart, gF->length);
+        fprintf(stderr, "Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
 
         // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-//        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-//        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-//
-//        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-//        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
+        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
+        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+
+        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
+        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
 
 
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
