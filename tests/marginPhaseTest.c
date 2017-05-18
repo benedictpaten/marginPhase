@@ -337,8 +337,9 @@ void test_jsmnParsing(CuTest *testCase) {
     stRPHmmParameters_destruct(params);
 }
 
+
 void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
-                 char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd) {
+                 char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd, stBaseMapper *baseMapper) {
     /*
      * Test to compare a vcf to a truth vcf containing known variants for the region.
      * This test currently requires knowledge of the specific interval that should be looked at
@@ -368,6 +369,9 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
     int64_t negativesNoGap = 0;
     int64_t matches = 0;
     int64_t totalRefRecords = 0;
+
+    int64_t error_trueVariantWrong = 0;
+    int64_t error_badPartition = 0;
 
     fprintf(fh, "Writing out false negatives \n");
 
@@ -412,18 +416,23 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
             char *altEvalChar2 = unpackedRecord->d.allele[2];
             bool missed = false;
 
+            char *missingChar;
+
             if (strcmp(altRefChar, altEvalChar1) == 0 && strcmp(altRefChar, altEvalChar2) == 0) {
                 // Both match alternate - no variation was found
                 missed = true;
+                missingChar = refChar;
             } else if (strcmp(refChar, altEvalChar1) == 0 && strcmp(refChar, altEvalChar2) == 0) {
                 // Both match reference - no variation was found
                 missed = true;
+                missingChar = altRefChar;
             } else if (strcmp(altRefChar, altEvalChar1) == 0 || strcmp(altRefChar, altEvalChar2) == 0) {
                 // Only one matches - variation found that matches the reference!
                 matches++;
             } else {
                 // Weirdos
                 missed = true;
+                missingChar = altRefChar;
             }
             if (missed) {
                 fprintf(fh, "\npos: %d\nref: %s\talt: ", referencePos, refChar);
@@ -443,15 +452,35 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
                 fprintf(fh, "Partition 1: \n");
                 double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, evalPos);
                 printBaseComposition2(stderr, read1BaseCounts);
-                free(read1BaseCounts);
+
 
                 fprintf(fh, "Partition 2: \n");
                 double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, evalPos);
                 printBaseComposition2(stderr, read2BaseCounts);
-                free(read2BaseCounts);
+
 
                 float posteriorProb = unpackedRecord->qual;
                 fprintf(fh, "posterior prob: %f\n", posteriorProb);
+
+                // Quantify the type of false positive it was
+                double totalCount = 0;
+                for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+                    totalCount += read1BaseCounts[i];
+                    totalCount += read2BaseCounts[i];
+                }
+                int missingBase = stBaseMapper_getValueForChar(baseMapper, *missingChar);
+                float fractionMissingBase = (read1BaseCounts[missingBase] + read2BaseCounts[missingBase])/totalCount;
+                fprintf(fh, "fraction of 'missing' base seen in reads: %f\n", fractionMissingBase);
+                if (fractionMissingBase < 0.10) {
+                    error_trueVariantWrong++;
+                    fprintf(fh, "TRUE VARIANT WRONG\n");
+                } else {
+                    error_badPartition++;
+                    fprintf(fh, "BAD PARTITION\n");
+                }
+
+                free(read1BaseCounts);
+                free(read2BaseCounts);
             }
         }
     }
@@ -479,6 +508,8 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
                (float)negatives/(regionLength-totalRefRecords), negatives, regionLength-totalRefRecords);
     fprintf(fh, "\t \t(Ignoring gap character: %f)\n",
                (float) (negatives + negativesNoGap)/(regionLength-totalRefRecords));
+    fprintf(fh, "False negatives where true variant appears to be wrong: %" PRIi64 " \t(%f)\n", error_trueVariantWrong, (float)error_trueVariantWrong/(error_trueVariantWrong+error_badPartition));
+    fprintf(fh, "False negatives where partition appears to be bad: %" PRIi64 " \t(%f)\n", error_badPartition), (float)error_badPartition/(error_trueVariantWrong+error_badPartition);
 
     // cleanup
     vcf_close(inRef);
@@ -585,7 +616,7 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, referenceFile, baseMapper, true);
 
-        compareVCFs(stderr, hmm, reads1, reads2, vcfOutFile, vcfReference, 100000, 200000);
+        compareVCFs(stderr, hmm, reads1, reads2, vcfOutFile, vcfReference, 100000, 200000, baseMapper);
 
         stSet_destruct(reads1);
         stSet_destruct(reads2);
