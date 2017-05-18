@@ -405,7 +405,7 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
                 if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
                 else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
                 else
-                    fprintf(fh, "\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1,
+                    fprintf(fh, "\n\t* pos: %" PRIi64 "ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1,
                                 altEvalChar2);
             }
         }
@@ -435,16 +435,16 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
                 missingChar = altRefChar;
             }
             if (missed) {
-                fprintf(fh, "\npos: %d\nref: %s\talt: ", referencePos, refChar);
+                fprintf(fh, "\npos: %" PRIi64 "\nref: %s\talt: ", referencePos, refChar);
                 for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
                     if (i != 1) fprintf(fh, ",");
-                    fprintf(fh, unpackedRecordRef->d.allele[i]);
+                    fprintf(fh, "%s", unpackedRecordRef->d.allele[i]);
                 }
 
                 fprintf(fh, "\noutput alleles: ");
                 for (int i = 1; i < unpackedRecord->n_allele; i++) {
                     if (i != 1) fprintf(fh, ",");
-                    fprintf(fh, unpackedRecord->d.allele[i]);
+                    fprintf(fh, "%s",unpackedRecord->d.allele[i]);
                 }
                 fprintf(fh, "\n");
                 printColumnAtPosition(hmm, evalPos);
@@ -497,19 +497,18 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
 
             if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
             else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
-            else fprintf(fh, "\n\t* pos:%d ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1, altEvalChar2);
         }
     }
     int64_t regionLength = refEnd - refStart;
-    fprintf(fh, "\n\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%d out of %d)\n",
+    fprintf(fh, "\n\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%" PRIi64 "out of %"PRIi64 ")\n",
                (float)matches/totalRefRecords, matches, totalRefRecords) ;
-    fprintf(fh, "\t \t(Number of false negatives: %d)\n", totalRefRecords-matches);
-    fprintf(fh, "Specificity: %f \n(= fraction of true negatives compared to reference, \t%d out of %d)\n",
+    fprintf(fh, "\t \t(Number of false negatives: %" PRIi64 ")\n", totalRefRecords-matches);
+    fprintf(fh, "Specificity: %f \n(= fraction of true negatives compared to reference, \t%" PRIi64 "out of % "PRIi64 ")\n",
                (float)negatives/(regionLength-totalRefRecords), negatives, regionLength-totalRefRecords);
     fprintf(fh, "\t \t(Ignoring gap character: %f)\n",
                (float) (negatives + negativesNoGap)/(regionLength-totalRefRecords));
     fprintf(fh, "False negatives where true variant appears to be wrong: %" PRIi64 " \t(%f)\n", error_trueVariantWrong, (float)error_trueVariantWrong/(error_trueVariantWrong+error_badPartition));
-    fprintf(fh, "False negatives where partition appears to be bad: %" PRIi64 " \t(%f)\n", error_badPartition), (float)error_badPartition/(error_trueVariantWrong+error_badPartition);
+    fprintf(fh, "False negatives where partition appears to be bad: %" PRIi64 " \t(%f)\n", error_badPartition, (float)error_badPartition/(error_trueVariantWrong+error_badPartition));
 
     // cleanup
     vcf_close(inRef);

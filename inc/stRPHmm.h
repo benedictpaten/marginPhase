@@ -369,7 +369,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
-bcf_hdr_t* writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 
 
 #endif /* ST_RP_HMM_H_ */

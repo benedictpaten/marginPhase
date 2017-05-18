@@ -76,9 +76,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
     int32_t *gt_info = (int*)malloc(bcf_hdr_nsamples(bcf_hdr)*2*sizeof(int)); //array specifying phasing
     kstring_t str = {0,0,NULL};
 
-    int numDifferences = 0;
     int totalLocs = 0;
-    int numMatchedGaps = 0;
 
     // iterate over all positions
     for (int64_t i = 0; i < gF->length; i++) {
@@ -103,9 +101,8 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         // POS
         bcf_rec->pos  = i + gF->refStart; // off by one?
         // ID - skip
-        // QUAL - skip (TODO for now?)
-        if (differencesOnly) bcf_rec->qual = h2Prob;
-        else bcf_rec->qual = genotypeProb;
+        // QUAL - currently writing out the genotype probability
+        bcf_rec->qual = genotypeProb;
 
         // Get phasing info
         gt_info[0] = bcf_gt_phased(0);
@@ -123,8 +120,6 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
 
             bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
             // FORMAT / $SMPL1
-//            gt_info[0] = bcf_gt_phased(0);
-//            gt_info[1] = bcf_gt_phased(1);
             bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
 
             // save it

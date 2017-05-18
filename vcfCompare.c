@@ -191,91 +191,91 @@ int main(int argc, char *argv[]) {
     validate_hdr(hdr);
 
     if (true) return 0;
-//    create_vcf();
-//    fai_build()
-
-    st_logInfo("VCF Reference: %s \n", vcfReference);
-    st_logInfo("VCF Evaluated: %s \n", vcfEvaluated);
-
-    vcfFile *inRef = vcf_open(vcfReference,"r"); //open vcf file
-    bcf_hdr_t *hdrRef = bcf_hdr_read(inRef); //read header
-    bam1_t *record = bcf_init1(); //initialize for reading
-
-
-    vcfFile *out = vcf_open("out.vcf", "w");
-    vcfFile *outOrig = vcf_open("outOrig.vcf", "w");
-//    bcf_hdr_write(out, hdrRef);
-
-    int lineNr = 0;
-    while(bcf_read(inRef,hdrRef,record) == 0){
-
-        st_logDebug("%d:\n", lineNr);
-        st_logDebug("\ttid:%d pos:%d bin:%d qual:%d l_qname:%d flag:%d unused1:%d l_extranul:%d n_cigar:%d "
-                            "l_qseq:%d mtid:%d mpos:%d isize:%d \n", record->core.tid, record->core.pos,
-                    record->core.bin, record->core.qual, record->core.l_qname, record->core.flag, record->core.unused1,
-                    record->core.l_extranul, record->core.n_cigar, record->core.l_qseq, record->core.mtid,
-                    record->core.mpos, record->core.isize);
-
-        bcf1_t *unpackedRecord = record;
-        bcf_unpack(unpackedRecord, BCF_UN_ALL);
-
-        st_logDebug("\tid:%s ref:%s alleles:", unpackedRecord->d.id, unpackedRecord->d.als);
-        for (int i = 1; i < unpackedRecord->n_allele; i++) {
-            if (i!=1) st_logDebug(",");
-            st_logDebug(unpackedRecord->d.allele[i]);
-        }
-
-        int nsmpl = bcf_hdr_nsamples(hdrRef);
-        int32_t *gt_arr = NULL, ngt_arr = 0; //locations for get_genotype types and count
-
-        int ngt = bcf_get_genotypes(hdrRef, record, &gt_arr, &ngt_arr);
-        if ( ngt > 0 ) { // GT is present
-
-            st_logDebug(" phasing:");
-            int max_ploidy = ngt / nsmpl;
-            for (int i = 0; i < nsmpl; i++) {
-                int32_t *ptr = gt_arr + i * max_ploidy;
-                for (int j = 0; j < max_ploidy; j++) {
-                    if (ptr[j] == bcf_int32_vector_end) break;// if true, the sample has smaller ploidy
-                    if (bcf_gt_is_missing(ptr[j])) continue;// missing allele
-                    int allele_index = bcf_gt_allele(ptr[j]); // the VCF 0-based allele index
-                    int is_phased = bcf_gt_is_phased(ptr[j]);
-
-                    if (j!=0) {
-                        if (is_phased) st_logDebug("|");
-                        else st_logDebug("/");
-                    }
-                    st_logDebug("%d", allele_index);
-                }
-            }
-            free(gt_arr);
-            st_logDebug("\n");
-        }
-
-//        //write original record again
-//        bcf_write(outOrig, hdrRef, record);
+////    create_vcf();
+////    fai_build()
 //
-//        //modify, write, reset
-//        record->id += 1;
-//        record->l_data += 1;
-//        record->m_data += 1;
-//        bcf_write(out, hdrRef, record);
-//        record = bcf_init1();
-
-        lineNr++;
-        if (lineNr > 8) {
-            break;
-        }
-    }
-
-    vcf_close(inRef);
-    vcf_close(out);
-    vcf_close(outOrig);
-
-
-
-    //while(1); // Use this for testing for memory leaks
-
-    return 0;
+//    st_logInfo("VCF Reference: %s \n", vcfReference);
+//    st_logInfo("VCF Evaluated: %s \n", vcfEvaluated);
+//
+//    vcfFile *inRef = vcf_open(vcfReference,"r"); //open vcf file
+//    bcf_hdr_t *hdrRef = bcf_hdr_read(inRef); //read header
+//    bcf_t *record = bcf_init1(); //initialize for reading
+//
+//
+//    vcfFile *out = vcf_open("out.vcf", "w");
+//    vcfFile *outOrig = vcf_open("outOrig.vcf", "w");
+////    bcf_hdr_write(out, hdrRef);
+//
+//    int lineNr = 0;
+//    while(bcf_read(inRef,hdrRef,record) == 0){
+//
+//        st_logDebug("%d:\n", lineNr);
+//        st_logDebug("\ttid:%d pos:%d bin:%d qual:%d l_qname:%d flag:%d unused1:%d l_extranul:%d n_cigar:%d "
+//                            "l_qseq:%d mtid:%d mpos:%d isize:%d \n", record->core.tid, record->core.pos,
+//                    record->core.bin, record->core.qual, record->core.l_qname, record->core.flag, record->core.unused1,
+//                    record->core.l_extranul, record->core.n_cigar, record->core.l_qseq, record->core.mtid,
+//                    record->core.mpos, record->core.isize);
+//
+//        bcf1_t *unpackedRecord = record;
+//        bcf_unpack(unpackedRecord, BCF_UN_ALL);
+//
+//        st_logDebug("\tid:%s ref:%s alleles:", unpackedRecord->d.id, unpackedRecord->d.als);
+//        for (int i = 1; i < unpackedRecord->n_allele; i++) {
+//            if (i!=1) st_logDebug(",");
+//            st_logDebug(unpackedRecord->d.allele[i]);
+//        }
+//
+//        int nsmpl = bcf_hdr_nsamples(hdrRef);
+//        int32_t *gt_arr = NULL, ngt_arr = 0; //locations for get_genotype types and count
+//
+//        int ngt = bcf_get_genotypes(hdrRef, record, &gt_arr, &ngt_arr);
+//        if ( ngt > 0 ) { // GT is present
+//
+//            st_logDebug(" phasing:");
+//            int max_ploidy = ngt / nsmpl;
+//            for (int i = 0; i < nsmpl; i++) {
+//                int32_t *ptr = gt_arr + i * max_ploidy;
+//                for (int j = 0; j < max_ploidy; j++) {
+//                    if (ptr[j] == bcf_int32_vector_end) break;// if true, the sample has smaller ploidy
+//                    if (bcf_gt_is_missing(ptr[j])) continue;// missing allele
+//                    int allele_index = bcf_gt_allele(ptr[j]); // the VCF 0-based allele index
+//                    int is_phased = bcf_gt_is_phased(ptr[j]);
+//
+//                    if (j!=0) {
+//                        if (is_phased) st_logDebug("|");
+//                        else st_logDebug("/");
+//                    }
+//                    st_logDebug("%d", allele_index);
+//                }
+//            }
+//            free(gt_arr);
+//            st_logDebug("\n");
+//        }
+//
+////        //write original record again
+////        bcf_write(outOrig, hdrRef, record);
+////
+////        //modify, write, reset
+////        record->id += 1;
+////        record->l_data += 1;
+////        record->m_data += 1;
+////        bcf_write(out, hdrRef, record);
+////        record = bcf_init1();
+//
+//        lineNr++;
+//        if (lineNr > 8) {
+//            break;
+//        }
+//    }
+//
+//    vcf_close(inRef);
+//    vcf_close(out);
+//    vcf_close(outOrig);
+//
+//
+//
+//    //while(1); // Use this for testing for memory leaks
+//
+//    return 0;
 }
 
