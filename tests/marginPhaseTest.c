@@ -9,6 +9,7 @@
 #include "CuTest.h"
 #include "sonLib.h"
 #include "stRPHmm.h"
+#include "../externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 void printSequenceStats(FILE *fH, stList *profileSequences) {
     /*
@@ -230,8 +231,6 @@ void printBaseComposition2(FILE *fH, double *baseCounts) {
 }
 
 
-
-
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     /*
      * Print out the columns of the hmm at a specific position
@@ -241,15 +240,6 @@ void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     stRPColumn *column = hmm->firstColumn;
     while(1) {
         if (pos >= column->refStart && pos < column->refStart+column->length) {
-            // Print column
-            //stRPColumn_print(column, stderr, 1);
-
-//                fprintf(stderr, "\n\tCOLUMN: REF_START: %" PRIi64
-//                                " REF_LENGTH: %" PRIi64 " DEPTH: %" PRIi64
-//                                " TOTAL_PROB: %f\n",
-//                        column->refStart, column->length, column->depth,
-//                        (float)column->totalLogProb);
-
             double *columnBaseCounts = getColumnBaseComposition(column, pos);
             printBaseComposition2(stderr, columnBaseCounts);
             free(columnBaseCounts);
@@ -337,12 +327,31 @@ void test_jsmnParsing(CuTest *testCase) {
     stRPHmmParameters_destruct(params);
 }
 
+/*
+ * Stores information about relevant test results.
+ */
+struct genotypeResults {
+    int64_t matches;
+    int64_t totalRefRecords;
+    int64_t negatives;
+    int64_t matchedGaps;
+    int64_t error_trueVariantWrong;
+    int64_t error_badPartition;
+    int64_t falsePositives;
+    int64_t falsePositiveGaps;
+};
 
-void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
-                 char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd, stBaseMapper *baseMapper) {
+void compareVCFs(FILE *fh, stList *hmms,
+                 char *vcf_toEval, char *vcf_ref, int64_t refStart, int64_t refEnd,
+                 stBaseMapper *baseMapper, struct genotypeResults *results, bool printVerbose) {
     /*
      * Test to compare a vcf to a truth vcf containing known variants for the region.
      * This test currently requires knowledge of the specific interval that should be looked at
+     *
+     * Test depends on the format of the vcf files written in vcfWriter.c
+     * (Currently they don't follow a quite standard format)
+     *
+     * Information about some of the results saved in the genotypeResults struct
      */
     fprintf(fh, "VCF reference: %s \n", vcf_ref);
     fprintf(fh, "VCF being evaluated: %s \n", vcf_toEval);
@@ -362,51 +371,81 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
     }
     bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
     bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
     int64_t referencePos = 0;
-    int64_t evalPos = 0;
-    int64_t negatives = 0;
-    int64_t negativesNoGap = 0;
-    int64_t matches = 0;
-    int64_t totalRefRecords = 0;
-
-    int64_t error_trueVariantWrong = 0;
-    int64_t error_badPartition = 0;
 
     fprintf(fh, "Writing out false negatives \n");
+
+    // Start by looking at the first hmm
+    int64_t hmmIndex = 0;
+    stRPHmm *hmm = stList_get(hmms, hmmIndex);
+    // Inefficient, but recalculate the info relevant to the hmm to get bipartitions
+    // TODO: how to save this info from earlier?
+    stRPHmm_forwardBackward(hmm);
+    stList *path = stRPHmm_forwardTraceBack(hmm);
+    stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
+    stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
+    stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
+
+    // Iterate through the vcf being checked until getting to the start of the specified interval
+    // Don't bother analyzing these records
+    int64_t evalPos =  0;
+    bcf1_t *unpackedRecord;
+    while (evalPos < refStart - 1 && (bcf_read(inEval, hdrEval, evalRecord) == 0)) {
+        unpackedRecord = evalRecord;
+        bcf_unpack(unpackedRecord, BCF_UN_INFO);
+        evalPos = unpackedRecord->pos;
+    }
 
     while(bcf_read(inRef, hdrRef, refRecord) == 0) {
         // Unpack reference record
         bcf1_t *unpackedRecordRef = refRecord;
         bcf_unpack(unpackedRecordRef, BCF_UN_INFO);
         referencePos = unpackedRecordRef->pos;
-        totalRefRecords++;
+
+        // Make sure to only look at records in the specified interval
+        if (referencePos < refStart || referencePos < hmm->refStart) continue;
+        if (referencePos > refEnd) break;
+
+        // If the position is beyond the end of this hmm, get the next one
+        if ((hmm->refStart + hmm->refLength) < referencePos) {
+            hmmIndex++;
+            if (hmmIndex < stList_length(hmms)) {
+                hmm = stList_get(hmms, hmmIndex);
+                path = stRPHmm_forwardTraceBack(hmm);
+                gF = stGenomeFragment_construct(hmm, path);
+                reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
+                reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
+            } else {
+                break;
+            }
+        }
+
+        results->totalRefRecords++;
         char *refChar = unpackedRecordRef->d.als;
         char *altRefChar = unpackedRecordRef->d.allele[1];
 
-        // Make sure to only look at records in the specified interval
-        if (referencePos < refStart || referencePos > refEnd) {
-            continue;
-        }
-
-        // Iterate through vcf until getting to the position of the known variant
+        // Iterate through vcf until getting to the position of the variant
         // from the reference vcf currently being looked at
-        bcf1_t *unpackedRecord;
         while (evalPos < referencePos && (bcf_read(inEval, hdrEval, evalRecord) == 0)) {
-            // Unpack record being evaluated
-            unpackedRecord = evalRecord;
+            unpackedRecord = evalRecord;                // unpack record
             bcf_unpack(unpackedRecord, BCF_UN_INFO);
             evalPos = unpackedRecord->pos;
-            if (evalPos < referencePos && evalPos > refStart) {
+            if (evalPos < referencePos) {
                 char *evalRefChar = unpackedRecord->d.als;
                 char *altEvalChar1 = unpackedRecord->d.allele[1];
                 char *altEvalChar2 = unpackedRecord->d.allele[2];
 
-                if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
-                else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
-                else
-                    fprintf(fh, "\n\t* pos: %" PRIi64 "ref:%s alt1: %s alt2: %s: ", evalPos, evalRefChar, altEvalChar1,
-                                altEvalChar2);
+                if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) results->negatives++;
+                else if ((strcmp(altEvalChar1, "-") == 0) && (strcmp("-", altEvalChar2) == 0)) results->matchedGaps++;
+                else {
+                    // False positive
+                    results->falsePositives++;
+                    if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) {
+                        results->falsePositiveGaps++;
+                    }
+                    else fprintf(fh, "*FP  pos: %" PRIi64 " ref:%s alt1: %s alt2: %s \n",
+                            evalPos, evalRefChar, altEvalChar1, altEvalChar2);
+                }
             }
         }
         // At locus of known variation
@@ -414,78 +453,83 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
             char *evalRefChar = unpackedRecord->d.als;
             char *altEvalChar1 = unpackedRecord->d.allele[1];
             char *altEvalChar2 = unpackedRecord->d.allele[2];
-            bool missed = false;
-
+            bool missedVariant = false;
             char *missingChar;
 
             if (strcmp(altRefChar, altEvalChar1) == 0 && strcmp(altRefChar, altEvalChar2) == 0) {
                 // Both match alternate - no variation was found
-                missed = true;
+                missedVariant = true;
                 missingChar = refChar;
             } else if (strcmp(refChar, altEvalChar1) == 0 && strcmp(refChar, altEvalChar2) == 0) {
                 // Both match reference - no variation was found
-                missed = true;
+                missedVariant = true;
                 missingChar = altRefChar;
             } else if (strcmp(altRefChar, altEvalChar1) == 0 || strcmp(altRefChar, altEvalChar2) == 0) {
                 // Only one matches - variation found that matches the reference!
-                matches++;
+                results->matches++;
             } else {
-                // Weirdos
-                missed = true;
+                // Leftovers - don't fit into the other categories
+                // TODO: classify these
+                missedVariant = true;
                 missingChar = altRefChar;
             }
-            if (missed) {
-                fprintf(fh, "\npos: %" PRIi64 "\nref: %s\talt: ", referencePos, refChar);
+            if (missedVariant) {
+                // False negative - no variation was found, but truth vcf has one
+                // Print out info about the record
+                fprintf(fh, "pos: %" PRIi64 "\n\tref: %s\talt: ", referencePos, refChar);
                 for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
                     if (i != 1) fprintf(fh, ",");
                     fprintf(fh, "%s", unpackedRecordRef->d.allele[i]);
                 }
-
-                fprintf(fh, "\noutput alleles: ");
+                fprintf(fh, "\n\toutput alleles: ");
                 for (int i = 1; i < unpackedRecord->n_allele; i++) {
                     if (i != 1) fprintf(fh, ",");
-                    fprintf(fh, "%s",unpackedRecord->d.allele[i]);
+                    fprintf(fh, "%s", unpackedRecord->d.allele[i]);
                 }
                 fprintf(fh, "\n");
-                printColumnAtPosition(hmm, evalPos);
 
-                fprintf(fh, "Partition 1: \n");
                 double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, evalPos);
-                printBaseComposition2(stderr, read1BaseCounts);
-
-
-                fprintf(fh, "Partition 2: \n");
                 double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, evalPos);
-                printBaseComposition2(stderr, read2BaseCounts);
 
+                if (printVerbose) {
+                    printColumnAtPosition(hmm, evalPos);
+                    fprintf(fh, "\tPartition 1: \n");
+                    printBaseComposition2(stderr, read1BaseCounts);
+                    fprintf(fh, "\tPartition 2: \n");
+                    printBaseComposition2(stderr, read2BaseCounts);
+                }
 
-                float posteriorProb = unpackedRecord->qual;
-                fprintf(fh, "posterior prob: %f\n", posteriorProb);
+                fprintf(fh, "\tposterior prob: %f\n", unpackedRecord->qual);
 
-                // Quantify the type of false positive it was
+                // Quantify the type of false negative it was
                 double totalCount = 0;
-                for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+                for (int64_t i = 0; i < ALPHABET_SIZE; i++) {
                     totalCount += read1BaseCounts[i];
                     totalCount += read2BaseCounts[i];
                 }
                 int missingBase = stBaseMapper_getValueForChar(baseMapper, *missingChar);
-                float fractionMissingBase = (read1BaseCounts[missingBase] + read2BaseCounts[missingBase])/totalCount;
-                fprintf(fh, "fraction of 'missing' base seen in reads: %f\n", fractionMissingBase);
-                if (fractionMissingBase < 0.10) {
-                    error_trueVariantWrong++;
-                    fprintf(fh, "TRUE VARIANT WRONG\n");
+                float fractionMissingBase =
+                        (read1BaseCounts[missingBase] + read2BaseCounts[missingBase]) / totalCount;
+                fprintf(fh, "\tfraction of 'missing' base seen in reads: %f\n", fractionMissingBase);
+                if (fractionMissingBase < 0.10) {       // TODO: threshold arbitrarily chosen
+                    results->error_trueVariantWrong++;
+                    fprintf(fh, "\tTRUE VARIANT WRONG\n");
                 } else {
-                    error_badPartition++;
-                    fprintf(fh, "BAD PARTITION\n");
+                    results->error_badPartition++;
+                    fprintf(fh, "\tBAD PARTITION\n");
                 }
-
                 free(read1BaseCounts);
                 free(read2BaseCounts);
             }
         }
     }
+
     // Look through remaining positions after last known variation in reference
-    while (evalPos < refEnd) {
+    while (evalPos < refEnd && evalPos > refStart) {
+
+        if (evalPos > (hmm->refStart+hmm->refLength)) {
+            break;      // If the hmm didn't cover this region don't look through the rest
+        }
         bcf1_t *unpackedRecord;
         if (bcf_read(inEval, hdrEval, evalRecord) == 0) {
             unpackedRecord = evalRecord;
@@ -495,20 +539,21 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
             char *altEvalChar1 = unpackedRecord->d.allele[1];
             char *altEvalChar2 = unpackedRecord->d.allele[2];
 
-            if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) negatives++;
-            else if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) negativesNoGap++;
+            if (strcmp(altEvalChar1, altEvalChar2) == 0 && strcmp(evalRefChar, altEvalChar1) == 0) results->negatives++;
+            else if ((strcmp(altEvalChar1, "-") == 0) && (strcmp("-", altEvalChar2) == 0)) results->matchedGaps++;
+            else {
+                // False positive
+                results->falsePositives++;
+                if ((strcmp(altEvalChar1, "-") == 0) || (strcmp("-", altEvalChar2) == 0)) {
+                    results->falsePositiveGaps++;
+                }
+                else fprintf(fh, "*FP  pos: %" PRIi64 " ref:%s alt1: %s alt2: %s \n",
+                        evalPos, evalRefChar, altEvalChar1, altEvalChar2);
+            }
+        } else {
+            break; // Can't read the next line (probably reached end of what vcf has written so far)
         }
     }
-    int64_t regionLength = refEnd - refStart;
-    fprintf(fh, "\n\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%" PRIi64 "out of %"PRIi64 ")\n",
-               (float)matches/totalRefRecords, matches, totalRefRecords) ;
-    fprintf(fh, "\t \t(Number of false negatives: %" PRIi64 ")\n", totalRefRecords-matches);
-    fprintf(fh, "Specificity: %f \n(= fraction of true negatives compared to reference, \t%" PRIi64 "out of % "PRIi64 ")\n",
-               (float)negatives/(regionLength-totalRefRecords), negatives, regionLength-totalRefRecords);
-    fprintf(fh, "\t \t(Ignoring gap character: %f)\n",
-               (float) (negatives + negativesNoGap)/(regionLength-totalRefRecords));
-    fprintf(fh, "False negatives where true variant appears to be wrong: %" PRIi64 " \t(%f)\n", error_trueVariantWrong, (float)error_trueVariantWrong/(error_trueVariantWrong+error_badPartition));
-    fprintf(fh, "False negatives where partition appears to be bad: %" PRIi64 " \t(%f)\n", error_badPartition, (float)error_badPartition/(error_trueVariantWrong+error_badPartition));
 
     // cleanup
     vcf_close(inRef);
@@ -517,10 +562,14 @@ void compareVCFs(FILE *fh, stRPHmm *hmm, stSet *reads1, stSet *reads2,
     bcf_hdr_destroy(hdrEval);
     bcf_destroy(refRecord);
     bcf_destroy(evalRecord);
+    stSet_destruct(reads1);
+    stSet_destruct(reads2);
+    stGenomeFragment_destruct(gF);
+    stList_destruct(path);
 }
 
 
-void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile, char *vcfReference) {
+void genotypingTest(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile, char *vcfOutFileDiff, char *referenceFile, char *vcfReference, int64_t refStart, int64_t refEnd, bool printVerbose) {
     fprintf(stderr, "> Parsing parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
@@ -544,7 +593,6 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
     hmms = l;
     fprintf(stderr, "\tGot %" PRIi64 " hmms\n", stList_length(hmms));
 
-
     fprintf(stderr, "> Writing vcf files\n");
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *bcf_hdr = writeVcfHeader(vcfOutFP, l, referenceFile);
@@ -552,6 +600,8 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
     vcfFile *vcfOutFP_diff = vcf_open(vcfOutFileDiff, "w");
     bcf_hdr_t *bcf_hdr_diff = writeVcfHeader(vcfOutFP_diff, l, referenceFile);
 
+    // TODO: add better constructor
+    struct genotypeResults *results = st_calloc(8, sizeof(int64_t));
 
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
@@ -559,7 +609,6 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         // Print stats about the HMM
         fprintf(stderr, "The %" PRIi64 "th hmm\n", i);
         stRPHmm_print(hmm, stderr, 0, 0);
-
 
         // Run the forward-backward algorithm
         stRPHmm_forwardBackward(hmm);
@@ -573,56 +622,80 @@ void genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile, char *vcf
         // Get partitioned sequences
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-        fprintf(stderr, "\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
-                stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
-        // Print the similarity between the two imputed haplotypes sequences
-        fprintf(stderr, "The haplotypes have an %f identity\n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-        fprintf(stderr, "\tIdentity excluding indels: %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        if (printVerbose) {
+            fprintf(stderr, "\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
+                    stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
-        // Print the base composition of the haplotype sequences
-        double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
-        fprintf(stderr, "The base composition of haplotype 1:\n");
-        printBaseComposition(stderr, hap1BaseCounts);
-        free(hap1BaseCounts);
+            // Print the similarity between the two imputed haplotypes sequences
+            fprintf(stderr, "The haplotypes have an %f identity\n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+            fprintf(stderr, "\tIdentity excluding indels: %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
 
-        double *hap2BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString2, gF->length);
-        fprintf(stderr, "The base composition of haplotype 2:\n");
-        printBaseComposition(stderr, hap2BaseCounts);
-        free(hap2BaseCounts);
+            // Print the base composition of the haplotype sequences
+            double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
+            fprintf(stderr, "The base composition of haplotype 1:\n");
+            printBaseComposition(stderr, hap1BaseCounts);
+            free(hap1BaseCounts);
 
-        // Print the base composition of the reads
-        double *reads1BaseCounts =getExpectedProfileSequenceBaseComposition(reads1);
-        fprintf(stderr, "The base composition of reads1 set:\n");
-        printBaseComposition(stderr, reads1BaseCounts);
-        free(reads1BaseCounts);
+            double *hap2BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString2, gF->length);
+            fprintf(stderr, "The base composition of haplotype 2:\n");
+            printBaseComposition(stderr, hap2BaseCounts);
+            free(hap2BaseCounts);
 
-        double *reads2BaseCounts =getExpectedProfileSequenceBaseComposition(reads2);
-        fprintf(stderr, "The base composition of reads2 set:\n");
-        printBaseComposition(stderr, reads2BaseCounts);
-        free(reads2BaseCounts);
+            // Print the base composition of the reads
+            double *reads1BaseCounts =getExpectedProfileSequenceBaseComposition(reads1);
+            fprintf(stderr, "The base composition of reads1 set:\n");
+            printBaseComposition(stderr, reads1BaseCounts);
+            free(reads1BaseCounts);
 
-        fprintf(stderr, "Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
+            double *reads2BaseCounts =getExpectedProfileSequenceBaseComposition(reads2);
+            fprintf(stderr, "The base composition of reads2 set:\n");
+            printBaseComposition(stderr, reads2BaseCounts);
+            free(reads2BaseCounts);
 
-        // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-        fprintf(stderr, "hap1 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-        fprintf(stderr, "hap1 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+            fprintf(stderr, "Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
 
-        fprintf(stderr, "hap2 vs. reads2 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-        fprintf(stderr, "hap2 vs. reads1 identity: %f\n", getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
+            // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
+            fprintf(stderr, "hap1 vs. reads1 identity: %f\n",
+                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
+            fprintf(stderr, "hap1 vs. reads2 identity: %f\n",
+                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
+
+            fprintf(stderr, "hap2 vs. reads2 identity: %f\n",
+                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
+            fprintf(stderr, "hap2 vs. reads1 identity: %f\n",
+                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
+        }
 
 
         writeVcfFragment(vcfOutFP, bcf_hdr, gF, referenceFile, baseMapper, false);
         writeVcfFragment(vcfOutFP_diff, bcf_hdr_diff, gF, referenceFile, baseMapper, true);
 
-        compareVCFs(stderr, hmm, reads1, reads2, vcfOutFile, vcfReference, 100000, 200000, baseMapper);
-
+        // cleanup for this hmm
         stSet_destruct(reads1);
         stSet_destruct(reads2);
         stGenomeFragment_destruct(gF);
         stList_destruct(path);
     }
+    compareVCFs(stderr, hmms, vcfOutFile, vcfReference,
+                refStart, refEnd, baseMapper, results, 1);
 
+    fprintf(stderr, "\nStats for all %" PRIi64 " hmms:\n", stList_length(hmms));
+
+    int64_t regionLength = refEnd - refStart + 1;
+    fprintf(fh, "\nSensitivity: %f \n(= fraction of true positives compared to reference, \t%" PRIi64 " out of %"PRIi64 ")\n",
+            (float)results->matches/results->totalRefRecords, results->matches, results->totalRefRecords) ;
+    fprintf(fh, "\t \t(Number of false negatives: %" PRIi64 ")\n", results->totalRefRecords-results->matches);
+    fprintf(fh, "Specificity: %f \n(= fraction of true negatives compared to reference, \t%" PRIi64 " out of % "PRIi64 ")\n",
+            (float)results->negatives/(regionLength-results->totalRefRecords), results->negatives, regionLength-results->totalRefRecords);
+    fprintf(fh, "Number of deletions matched in both haplotypes: %"PRIi64 "\n", results->matchedGaps);
+    fprintf(fh, "False positives found: %" PRIi64 " \n", results->falsePositives);
+    fprintf(fh, "False positives that included a gap: %" PRIi64 " \n", results->falsePositiveGaps);
+    fprintf(fh, "False negatives where true variant appears to be wrong: %" PRIi64 " \t(%f)\n", results->error_trueVariantWrong, (float)results->error_trueVariantWrong/(results->error_trueVariantWrong+results->error_badPartition));
+    fprintf(fh, "False negatives where partition appears to be bad: %" PRIi64 " \t\t(%f)\n", results->error_badPartition, (float)results->error_badPartition/(results->error_trueVariantWrong+results->error_badPartition));
+
+    // cleanup
+    free(results);
 
     stRPHmmParameters_destruct(params);
     stBaseMapper_destruct(baseMapper);
@@ -649,7 +722,7 @@ void test_5kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference);
+    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 190000, 195000, 1);
 
     // TODO: create vcf specifically for this 5 kb region
     //compareVCFs(vcfOutFile, vcfReference, 150000, 155000);
@@ -669,7 +742,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     //bamFile = "../examples/KRAS_chr3.bam";
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
-    genotypingTest(paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference);
+    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 100000, 200000, 1);
     //compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
 
