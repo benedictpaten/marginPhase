@@ -70,6 +70,10 @@ void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
         int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob);
 
+uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to);
+
+double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to);
+
 /*
  * Binary partition stuff
  */
@@ -170,6 +174,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
         int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
+
+void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences, int64_t iterations);
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 

@@ -10,14 +10,17 @@
  * Character alphabet and substitutions
  */
 
-static inline uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to) {
+uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to) {
     /*
-     * Gets the (log) substitution probability of getting the derived character given the source (haplotype) character.
+     * Gets the (log) substitution probability of getting the derived (to) character given the source (from/haplotype) character.
      */
     return &matrix[from * ALPHABET_SIZE + to];
 }
 
-static inline double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to) {
+double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to) {
+    /*
+     * As getSubstitutionProb.
+     */
     return &matrix[from * ALPHABET_SIZE + to];
 }
 
@@ -225,7 +228,7 @@ static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t in
     // Combine the probabilities to calculate the overall probability of a given position in a column
     uint64_t logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0];
     for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logColumnProb = minP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i]);
+        logColumnProb = minP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i]); // + (i == ALPHABET_SIZE-1 ? scaleToLogIntegerSubMatrix(0.001) : 0));
     }
 
     return logColumnProb;
