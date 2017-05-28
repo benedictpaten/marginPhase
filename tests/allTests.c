@@ -10,16 +10,16 @@
 #include <string.h>
 #include "sonLib.h"
 
-//CuSuite *stRPHmmTestSuite(void);
-//CuSuite *marginPhaseParserTestSuite(void);
+CuSuite *stRPHmmTestSuite(void);
+CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
 
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
-	//CuSuiteAddSuite(suite, stRPHmmTestSuite());
-	//CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 
 	CuSuiteRun(suite);

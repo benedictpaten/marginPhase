@@ -415,6 +415,22 @@ void genotypingTest(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
     bcf_hdr_destroy(bcf_hdr_diff);
 }
 
+void genotypingTest2(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
+        char *referenceFile, char *vcfReference, int64_t refStart, int64_t refEnd,
+        bool printVerbose, int64_t iterationsOfParameterLearning) {
+
+    // Run margin phase
+    char *logString = printVerbose ? "--logLevel DEBUG" : "";
+    char *command = stString_print("./marginPhase %s %s %s --params %s --vcfFile %s "
+            "--iterationsOfParameterLearning %" PRIi64 "",
+            bamFile, referenceFile, logString,
+            paramsFile, vcfOutFile, iterationsOfParameterLearning);
+    fprintf(fh, "> Running margin phase with command: %s\n", command);
+    st_system(command);
+
+    // TODO : Do VCF comparison using VCF eval
+}
+
 void test_5kbGenotyping(CuTest *testCase) {
 
     char *paramsFile = "../tests/params.json";
@@ -427,7 +443,9 @@ void test_5kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 190000, 195000, 1, 3);
+    genotypingTest2(stderr, paramsFile, bamFile, vcfOutFile, referenceFile, vcfReference, 190000, 195000, 1, 3);
+
+    //genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 190000, 195000, 1, 3);
 
     // TODO: create vcf specifically for this 5 kb region
     //compareVCFs(vcfOutFile, vcfReference, 150000, 155000);
