@@ -109,9 +109,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         gt_info[1] = bcf_gt_phased(1);
 
         char refChar = toupper(referenceSeq[i + gF->refStart]);
-        if (!differencesOnly ||
-                (h1AlphChar != h2AlphChar || h1AlphChar != refChar || h2AlphChar != refChar)) {
-
+        if (!differencesOnly) {
             kputc(refChar, &str); // REF
             kputc(',', &str);
             kputc(h1AlphChar, &str);
@@ -121,9 +119,72 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
             bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
             // FORMAT / $SMPL1
             bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
-
-            // save it
             bcf_write1(out, bcf_hdr, bcf_rec);
+
+        } else {
+            if (i + 1 >= gF->length) break;
+
+            int next_h1AlphVal = gF->haplotypeString1[i+1];
+            int next_h2AlphVal = gF->haplotypeString2[i+1];
+            char next_h1AlphChar = stBaseMapper_getCharForValue(baseMapper, next_h1AlphVal);
+            char next_h2AlphChar = stBaseMapper_getCharForValue(baseMapper, next_h2AlphVal);
+
+//            fprintf(stderr, "pos: %d\n", bcf_rec->pos);
+//            fprintf(stderr, "h1: %c \t h2: %c \n", h1AlphChar, h2AlphChar);
+//            fprintf(stderr, "n h1: %c \t n h2: %c \n", next_h1AlphChar, next_h2AlphChar);
+
+            if (next_h1AlphChar != next_h2AlphChar) {
+                if (h1AlphChar != '-' && h2AlphChar != '-') {
+                    // Check to see if there was an insertion or deletion in the next spot
+                    if (next_h1AlphChar == '-' && next_h2AlphChar != '-') {
+                        kputc(h1AlphChar, &str);
+                        kputc(',', &str);
+                        kputc(h2AlphChar, &str);
+                        kputc(next_h2AlphChar, &str);
+                        int j = 2;
+                        while(i+j < gF->length && stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) == '-' && stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) != '-') {
+                            kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]), &str);
+                            j++;
+                        }
+                        bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+                        bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+                        bcf_write1(out, bcf_hdr, bcf_rec);
+                    } else if (next_h2AlphChar == '-' && next_h1AlphChar != '-') {
+                        kputc(h1AlphChar, &str);
+                        kputc(next_h1AlphChar, &str);
+                        int j = 2;
+                        while(i+j < gF->length && stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) == '-' && stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) != '-') {
+                            kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]), &str);
+                            j++;
+                        }
+                        kputc(',', &str);
+                        kputc(h2AlphChar, &str);
+                        bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+                        bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+                        bcf_write1(out, bcf_hdr, bcf_rec);
+
+                    } else if (h1AlphChar != h2AlphChar){
+                        kputc(h1AlphChar, &str);
+                        kputc(',', &str);
+                        kputc(h2AlphChar, &str);
+                        bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+                        bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+                        bcf_write1(out, bcf_hdr, bcf_rec);
+                    }
+
+                }
+            }
+            else if (h1AlphChar != h2AlphChar && (h1AlphChar != '-' && h2AlphChar != '-')) {
+                // Could also list things that don't match the reference if
+                // h1AlphChar != refChar || h2AlphChar != refChar
+                kputc(h1AlphChar, &str);
+                kputc(',', &str);
+                kputc(h2AlphChar, &str);
+                bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+                bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
+                bcf_write1(out, bcf_hdr, bcf_rec);
+            }
+
         }
     }
 

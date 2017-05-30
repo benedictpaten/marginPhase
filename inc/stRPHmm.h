@@ -364,7 +364,8 @@ int stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);

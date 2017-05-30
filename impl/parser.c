@@ -213,11 +213,12 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
  * signal level alignments).
  * */
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+        return -1;
     }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
@@ -326,10 +327,12 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         }
         stList_append(profileSequences, pSeq);
     }
-    st_logDebug("\tCreated %d profile sequences\n", readCount);
+
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
+
+    return readCount;
 }
 

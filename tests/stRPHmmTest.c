@@ -366,7 +366,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     stProfileSeq *profileSeq = column->seqHeaders[j];
                     // Check is part of hmm
                     CuAssertTrue(testCase, stList_contains(hmm->profileSeqs, profileSeq));
-                    // Check column is contained in reference intervsl of the profile sequence
+                    // Check column is contained in reference interval of the profile sequence
                     CuAssertTrue(testCase, profileSeq->refStart <= column->refStart);
                     CuAssertTrue(testCase, profileSeq->refStart + profileSeq->length >= column->refStart + column->length);
                     // Check the corresponding profile probability array is correct

@@ -90,16 +90,17 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Parsing model parameters\n");
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
-    free(paramsFile);
 
     // Parse reads for interval
     st_logInfo("> Parsing input reads\n");
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    parseReads(profileSequences, bamInFile, baseMapper);
+    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
+    st_logDebug("\tCreated %d profile sequences\n", readCount);
 
     // Create HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, params);
+    stList_setDestructor(hmms, (void (*)(void *))stRPHmm_destruct2);
 
     // Break up the hmms where the phasing is uncertain
     st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
@@ -126,7 +127,7 @@ int main(int argc, char *argv[]) {
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
 
-        st_logInfo("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
+        st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
                     hmm->referenceName, hmm->refStart, hmm->refLength);
 
         // Run the forward-backward algorithm
@@ -139,7 +140,7 @@ int main(int argc, char *argv[]) {
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
         // Write out VCF
-        st_logInfo("> Writing out VCF for fragment\n");
+        st_logDebug("> Writing out VCF for fragment\n");
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceName, baseMapper, true);
@@ -184,6 +185,7 @@ int main(int argc, char *argv[]) {
     stRPHmmParameters_destruct(params);
 
     // TODO: only free these if they need to be
+//    free(paramsFile);
 //    free(bamInFile);
 //    free(samOutBase);
 //    free(vcfOutFile);
