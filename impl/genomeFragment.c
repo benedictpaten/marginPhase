@@ -34,7 +34,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
         assert(cell != NULL);
 
         // Calculate the predicted genotype/haplotypes for the given cell
-        fillInPredictedGenome(gF, cell, column, (stRPHmmParameters *)hmm->parameters);
+        fillInPredictedGenome(gF, cell, column, hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
 
         column = column->nColumn->nColumn;
     }
@@ -42,7 +42,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Get predictions for the last column
     assert(column != NULL);
     assert(column->nColumn == NULL);
-    fillInPredictedGenome(gF, stList_peek(path), column, (stRPHmmParameters *)hmm->parameters);
+    fillInPredictedGenome(gF, stList_peek(path), column, hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
 
     return gF;
 }

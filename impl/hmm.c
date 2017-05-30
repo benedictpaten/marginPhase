@@ -134,12 +134,14 @@ static void normaliseSubstitutionMatrix(double *subMatrix) {
             totalSubCount += *getSubstitutionProbSlow(subMatrix, fromChar, toChar);
         }
         for(int64_t toChar=0; toChar<ALPHABET_SIZE; toChar++) {
-            *getSubstitutionProbSlow(subMatrix, fromChar, toChar) /= totalSubCount;
+            double p = *getSubstitutionProbSlow(subMatrix, fromChar, toChar) / totalSubCount;
+            *getSubstitutionProbSlow(subMatrix, fromChar, toChar) = p <= 0.0001 ? 0.0001 : p;
         }
     }
 }
 
-void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences, int64_t iterations) {
+void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
+        stHash *referenceNamesToReferencePriors, int64_t iterations) {
     /*
      * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
      * of stochastic parameter search to do.
@@ -150,7 +152,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         // Substitution model for haplotypes to reads
         double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
 
-        stList *hmms = getRPHmms(profileSequences, params);
+        stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
         for(int64_t i=0; i<stList_length(hmms); i++) {
             stRPHmm *hmm = stList_get(hmms, i);
@@ -197,11 +199,14 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         free(readErrorSubModel);
 
         // Log the parameters info
-        stRPHmmParameters_printParameters(params, stderr);
+        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i);
+        if(st_getLogLevel() == debug) {
+            stRPHmmParameters_printParameters(params, stderr);
+        }
     }
 }
 
-int cmpint64(int64_t i, int64_t j) {
+static int cmpint64(int64_t i, int64_t j) {
     return i > j ? 1 : i < j ? -1 : 0;
 }
 
@@ -225,7 +230,7 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
     return i;
 }
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) {
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
     /*
      * Create a read partitioning HMM representing the single sequence profile.
      */
@@ -242,6 +247,11 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) 
     stList_append(hmm->profileSeqs, profileSeq);
 
     hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
+
+    hmm->referencePriorProbs = referencePriorProbs;
+    assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
+    assert(hmm->refStart >= referencePriorProbs->refStart);
+    assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
@@ -447,6 +457,11 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
         st_errAbort("HMM parameters differ in fuse function, panic.");
     }
     hmm->parameters = leftHmm->parameters;
+    // Set reference position prior probabilities
+    if(leftHmm->referencePriorProbs != rightHmm->referencePriorProbs) {
+        st_errAbort("Hmm reference prior probs differ in fuse function, panic.");
+    }
+    hmm->referencePriorProbs = leftHmm->referencePriorProbs;
 
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
@@ -662,6 +677,11 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         st_errAbort("Hmm parameters differ in fuse function, panic.");
     }
     hmm->parameters = hmm1->parameters;
+    // Set reference position prior probabilities
+    if(hmm1->referencePriorProbs != hmm2->referencePriorProbs) {
+        st_errAbort("Hmm reference prior probs differ in hmm cross product function, panic.");
+    }
+    hmm->referencePriorProbs = hmm1->referencePriorProbs;
 
     // For each pair of corresponding columns
     stRPColumn *column1 = hmm1->firstColumn;
@@ -829,7 +849,7 @@ static inline void forwardCellCalc1(stRPHmm *hmm, stRPColumn *column, stRPCell *
 
     // Calculate the emission prob
     double emissionProb = emissionLogProbability(column, cell, bitCountVectors,
-            (stRPHmmParameters *)hmm->parameters);
+            hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
 
     // Add emission prob to forward log prob
     cell->forwardLogProb += emissionProb;
@@ -1283,6 +1303,9 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
 
     // Parameters
     suffixHmm->parameters = hmm->parameters;
+
+    // Reference prior probabilities
+    suffixHmm->referencePriorProbs = hmm->referencePriorProbs;
 
     // Divide the profile sequences between the two hmms (some may end in both if they span the interval)
     suffixHmm->profileSeqs = stList_construct();

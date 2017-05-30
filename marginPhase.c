@@ -278,7 +278,6 @@ int main(int argc, char *argv[]) {
     bamInFile = stString_copy(argv[1]);
     referenceFastaFile = stString_copy(argv[2]);
 
-
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     stBaseMapper *baseMapper = stBaseMapper_construct();
@@ -301,9 +300,13 @@ int main(int argc, char *argv[]) {
         printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
     }
 
+    // Getting reference sequence priors
+    st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
+    stHash *referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params);
+
     // Learn the parameters for the input data
     st_logInfo("> Learning parameters for HMM model (%" PRIi64 ")\n", iterationsOfParameterLearning);
-    stRPHmmParameters_learnParameters(params, profileSequences, iterationsOfParameterLearning);
+    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors, iterationsOfParameterLearning);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
@@ -313,7 +316,7 @@ int main(int argc, char *argv[]) {
 
     // Create HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
-    stList *hmms = getRPHmms(profileSequences, params);
+    stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
     st_logDebug("Got %" PRIi64 " hmms before splitting\n", stList_length(hmms));
 
     // Break up the hmms where the phasing is uncertain
@@ -425,6 +428,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Cleanup
+    stHash_destruct(referenceNamesToReferencePriors);
     stList_destruct(hmms);
     stList_destruct(profileSequences);
     stSet_destruct(read1Ids);

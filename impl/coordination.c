@@ -389,20 +389,20 @@ stList *mergeTilingPaths(stList *tilingPaths) {
     return mergeTwoTilingPaths(tilingPath1, tilingPath2);
 }
 
-stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
+stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
      * hmms (stRPHmm) ordered and non-overlapping in reference coordinates.
-     *
-     * PosteriorProbabilityThreshold is the probability threshold used to keep cells during pruning.
-     * MinColumnDepth is the size of a column to need before applying pruning.
-     * MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
-     * than this then some profile seqs are randomly discarded.
+     * referenceNamesToReferencePriors is a map from reference sequence names to corresponding
+     * stReferencePriorProbs objects.
      */
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs, i), params);
+        stProfileSeq *pSeq = stList_get(profileSeqs, i);
+        stReferencePriorProbs *referencePriorProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);
+        assert(referencePriorProbs != NULL);
+        stRPHmm *hmm = stRPHmm_construct(pSeq, referencePriorProbs, params);
         stSortedSet_insert(readHmms, hmm);
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));

@@ -189,6 +189,7 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/partitions.c
         impl/profileSeq.c
+        impl/referencePriorProbs.c
         impl/parser.c
         impl/vcfWriter.c
         impl/samWriter.c

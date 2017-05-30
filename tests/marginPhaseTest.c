@@ -341,8 +341,14 @@ void genotypingTest(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
     stList *profileSequences = stList_construct();
     parseReads(profileSequences, bamFile, baseMapper);
 
+    fprintf(stderr, "> Creating reference prior probabilities\n");
+    stHash *referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFile, profileSequences, baseMapper, params);
+
+    fprintf(stderr, "> Learning parameters for HMM model (%" PRIi64 ")\n", iterationsOfParameterLearning);
+    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors, iterationsOfParameterLearning);
+
     fprintf(stderr, "> Building hmms\n");
-    stList *hmms = getRPHmms(profileSequences, params);
+    stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
@@ -415,7 +421,7 @@ void genotypingTest(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
     bcf_hdr_destroy(bcf_hdr_diff);
 }
 
-void genotypingTest2(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
+int genotypingTest2(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile,
         char *referenceFile, char *vcfReference, int64_t refStart, int64_t refEnd,
         bool printVerbose, int64_t iterationsOfParameterLearning) {
 
@@ -426,7 +432,7 @@ void genotypingTest2(FILE *fh, char *paramsFile, char *bamFile, char *vcfOutFile
             bamFile, referenceFile, logString,
             paramsFile, vcfOutFile, iterationsOfParameterLearning);
     fprintf(fh, "> Running margin phase with command: %s\n", command);
-    st_system(command);
+    return st_system(command);
 
     // TODO : Do VCF comparison using VCF eval
 }
@@ -443,9 +449,10 @@ void test_5kbGenotyping(CuTest *testCase) {
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
 
-    genotypingTest2(stderr, paramsFile, bamFile, vcfOutFile, referenceFile, vcfReference, 190000, 195000, 1, 3);
+    //int i = genotypingTest2(stderr, paramsFile, bamFile, vcfOutFile, referenceFile, vcfReference, 190000, 195000, 1, 3);
 
-    //genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 190000, 195000, 1, 3);
+    //CuAssertTrue(testCase, i == 0);
+    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 190000, 195000, 1, 3);
 
     // TODO: create vcf specifically for this 5 kb region
     //compareVCFs(vcfOutFile, vcfReference, 150000, 155000);
@@ -465,7 +472,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     //bamFile = "../examples/KRAS_chr3.bam";
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
-    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 100000, 200000, 1, 0);
+    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 100000, 200000, 1, 3);
     //compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
 
@@ -475,8 +482,8 @@ CuSuite *marginPhaseTestSuite(void) {
 
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-    //SUITE_ADD_TEST(suite, test_100kbGenotyping);
+    //SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    SUITE_ADD_TEST(suite, test_100kbGenotyping);
 
     return suite;
 }

@@ -31,6 +31,8 @@ typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
 typedef struct _stGenomeFragment stGenomeFragment;
+typedef struct _stReferencePriorProbs stReferencePriorProbs;
+typedef struct _stBaseMapper stBaseMapper;
 
 /*
  * Overall coordination functions
@@ -38,7 +40,7 @@ typedef struct _stGenomeFragment stGenomeFragment;
 
 stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
 
-stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
+stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
 stList *getTilingPaths(stSortedSet *hmms);
 
@@ -103,7 +105,7 @@ struct _stProfileSeq {
     char *readId;
     int64_t refStart;
     int64_t length;
-    // The probability of alphabet characters, as specified by uint16_t
+    // The probability of alphabet characters, as specified by uint8_t
     // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
     // 1.0/255
@@ -123,19 +125,43 @@ void printSeqs(FILE *fileHandle, stSet *profileSeqs);
 
 void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 
+int stRPProfileSeq_cmpFn(const void *a, const void *b);
+
+/*
+ * Prior over reference positions
+ */
+
+struct _stReferencePriorProbs {
+    char *referenceName;
+    int64_t refStart;
+    int64_t length;
+    // The log probability of alphabet characters, as specified by uint16_t
+    // see scaleToLogIntegerSubMatrix()
+    // and invertScaleToLogIntegerSubMatrix() to see how probabilities are stored
+    uint16_t *profileProbs;
+};
+
+stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
+
+void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
+
+stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
+        stBaseMapper *baseMapper, stRPHmmParameters *params);
+
 /*
  * Emission probabilities
  */
 
 double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors,
+                                stReferencePriorProbs *referencePriorProbs,
                                 stRPHmmParameters *params);
 
 double emissionLogProbabilitySlow(stRPColumn *column,
-        stRPCell *cell, uint64_t *bitCountVectors,
+        stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
         stRPHmmParameters *params, bool maxNotSum);
 
 void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
-        stRPColumn *column, stRPHmmParameters *params);
+        stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
 
 // Constituent functions tested and used to do bit twiddling
 
@@ -160,6 +186,8 @@ struct _stRPHmmParameters {
     double *readErrorSubModelSlow;
     bool maxNotSumTransitions;
     int64_t maxPartitionsInAColumn;
+    // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
+    // than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
 };
@@ -175,7 +203,8 @@ stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
-void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences, int64_t iterations);
+void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
+        stHash *referenceNamesToReferencePriors, int64_t iterations);
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 
@@ -192,9 +221,11 @@ struct _stRPHmm {
     //Forward/backward probability calculation things
     double forwardLogProb;
     double backwardLogProb;
+    // Prior over reference bases
+    stReferencePriorProbs *referencePriorProbs;
 };
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
 
 void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns);
 
@@ -360,7 +391,7 @@ struct _stBaseMapper {
     char *wildcard;
     int size;
 };
-typedef struct _stBaseMapper stBaseMapper;
+
 stBaseMapper* stBaseMapper_construct();
 void stBaseMapper_destruct(stBaseMapper *bm);
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
