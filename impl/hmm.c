@@ -70,7 +70,7 @@ static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         fprintf(fH, "\t\t");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %f (%i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
+            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
         }
         fprintf(fH, "\n");
     }

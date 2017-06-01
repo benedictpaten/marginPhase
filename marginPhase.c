@@ -10,6 +10,7 @@
 #include <memory.h>
 
 #include "stRPHmm.h"
+#include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*
  * Functions used to print debug output.
@@ -212,7 +213,7 @@ int main(int argc, char *argv[]) {
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
 
-    char *samOutBase = NULL;
+    char *samOutBase = "output.";
     char *vcfOutFile = "output.vcf";
     char *paramsFile = "params.json";
     int64_t iterationsOfParameterLearning = 0;
@@ -237,7 +238,7 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:v:p:l:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:p:l:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -323,11 +324,22 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
 
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
+    int initialHmmListSize = stList_length(hmms);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
-    st_logDebug("\tCreated %d hmms after splitting at uncertain regions of phasing\n", stList_length(hmms));
+    st_logDebug("\tCreated %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
+                stList_length(hmms), initialHmmListSize);
+    int idx = 0;
+    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
+        stListIterator *itor = stList_getIterator(hmms);
+        stRPHmm *hmm = NULL;
+        while ((hmm = stList_getNext(itor)) != NULL) {
+            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength));
+            idx++;
+        }
+    }
 
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
