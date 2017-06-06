@@ -69,6 +69,7 @@ char *json_token_tostr(char *js, jsmntok_t *t)
 
 /*
      * Get model parameters from params file.
+     * Set hmm parameters.
 */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
@@ -227,7 +228,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int64_t pos = aln->core.pos; //left most position of alignment
+        int64_t pos = aln->core.pos+1; //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
         int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
@@ -305,8 +306,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 idxInSeq++;
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
-                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                // Currently, all profile probabilities are set to 0 here
+                // This worked better than adding in a '-' character or having a flat distribution of probabilities
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
                 idxInSeq++;

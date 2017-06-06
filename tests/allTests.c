@@ -11,28 +11,20 @@
 #include "sonLib.h"
 
 CuSuite *stRPHmmTestSuite(void);
+CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
 
-// Original tests
-int stMarginPhaseTests(void) {
-	CuString *output = CuStringNew();
-	CuSuite* suite = CuSuiteNew();
-	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-	CuSuiteRun(suite);
-	CuSuiteSummary(suite, output);
-	CuSuiteDetails(suite, output);
-	printf("%s\n", output->buffer);
-	int i = suite->failCount > 0;
-	CuSuiteDelete(suite);
-	CuStringDelete(output);
-	return i;
-}
-
 // New tests for marginPhase interface
-int moreMarginPhaseTests(void) {
+int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
+
+	fprintf(stderr, "NOTE: running only new margin phase tests. "
+			"Uncomment the other lines in allTests.c if you want to run them all.\n");
+//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());
+
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
 	CuSuiteDetails(suite, output);
@@ -42,15 +34,12 @@ int moreMarginPhaseTests(void) {
 	CuStringDelete(output);
 	return i;
 }
-
 
 int main(int argc, char *argv[]) {
     if(argc == 2) {
         st_setLogLevelFromString(argv[1]);
     }
-	int i = 0;
-    i += moreMarginPhaseTests();
-	//i += stMarginPhaseTests();
+	int i = marginPhaseTests();
 
 	//st_uglyf("Done\n");
 	//while(1);

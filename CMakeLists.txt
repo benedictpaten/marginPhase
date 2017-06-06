@@ -19,6 +19,7 @@ set(HTSLIB_HEADERS
 set(SONLIB_HEADERS
         externalTools/sonLib/lib
         externalTools/sonLib/C/inc
+        externalTools/sonLib/C/impl
         externalTools/sonLib/C/tests
         externalTools/sonLib/externalTools/cutest
         externalTools/sonLib/externalTools/quicktree_1.1/include
@@ -196,6 +197,7 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/partitions.c
         impl/profileSeq.c
+        impl/referencePriorProbs.c
         impl/parser.c
         impl/vcfWriter.c
         impl/samWriter.c
@@ -242,6 +244,6 @@ target_link_libraries(vcfCompare son hts jsmn)
 
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c ${SOURCE_FILES})
+add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c ${SOURCE_FILES})
 target_link_libraries(allTests hts son jsmn)
 add_test(stRPHmm allTests)

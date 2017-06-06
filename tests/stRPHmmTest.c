@@ -104,7 +104,9 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         int64_t minReferenceLength, int64_t maxReferenceLength,
         int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength,
-        double hetRate, double readErrorRate) {
+        double hetRate, double readErrorRate,
+        stHash *referenceNamesToReferencePriors,
+        stRPHmmParameters *params) {
     /*
      * Simulate reference sequence, haplotypes and derived reads, represented as profile
      * sequences, placing the results in the argument lists.
@@ -122,6 +124,19 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         char *referenceName = stString_print("Reference_%" PRIi64 "", i);
 
         stList_append(referenceSeqs, referenceSeq);
+
+        stReferencePriorProbs *rProbs =
+                stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength);
+        stHash_insert(referenceNamesToReferencePriors, stString_copy(referenceName), rProbs);
+
+		char *noisyReferenceSeq = permuteSequence(referenceSeq, hetRate);
+        for(int64_t i=0; i<referenceLength; i++) {
+            int64_t refChar = noisyReferenceSeq[i] - FIRST_ALPHABET_CHAR;
+            assert(refChar >= 0 && refChar < ALPHABET_SIZE);
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j); //scaleToLogIntegerSubMatrix(log(1.0/ALPHABET_SIZE)); //
+            }
+        }
 
         // Create haplotype sequences for reference
         char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate);
@@ -167,6 +182,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         }
 
         // Cleanup
+        free(noisyReferenceSeq);
         free(referenceName);
     }
 }
@@ -232,6 +248,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList *hapSeqs2 = stList_construct3(0, free);
         stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
         stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+        // Make map from reference sequence names to reference priors
+        stHash *referenceNamesToReferencePriors = stHash_construct3(stHash_stringKey,
+                stHash_stringEqualKey, free, (void (*)(void *))stReferencePriorProbs_destruct);
 
         // Creates reference sequences
         // Generates two haplotypes for each reference sequence
@@ -242,7 +261,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                         minReferenceLength, maxReferenceLength,
                         minCoverage, maxCoverage,
                         minReadLength, maxReadLength,
-                        hetRate, readErrorRate);
+                        hetRate, readErrorRate, referenceNamesToReferencePriors, params);
 
         stList *profileSeqs = stList_construct();
         stList_appendAll(profileSeqs, profileSeqs1);
@@ -256,7 +275,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         fprintf(stderr, "Running get hmms with %" PRIi64 " profile sequences \n", stList_length(profileSeqs));
 
         // Creates read HMMs
-        stList *hmms = getRPHmms(profileSeqs, params);
+        stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params);
 
         // Split hmms where phasing is uncertain
         if(splitHmmsWherePhasingUncertain) {
@@ -755,6 +774,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         stList_destruct(profileSeqs1);
         stList_destruct(profileSeqs2);
         stRPHmmParameters_destruct(params);
+        stHash_destruct(referenceNamesToReferencePriors);
     }
 
     int64_t totalTime = time(NULL) - startTime;
@@ -977,6 +997,9 @@ void test_getOverlappingComponents(CuTest *testCase) {
         stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
         stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 
+        stHash *referenceNamesToReferencePriors = stHash_construct3(stHash_stringKey,
+                        stHash_stringEqualKey, free, (void (*)(void *))stReferencePriorProbs_destruct);
+
         // Creates reference sequences
         // Generates two haplotypes for each reference sequence
         // Generates profile sequences from each haplotype
@@ -986,18 +1009,20 @@ void test_getOverlappingComponents(CuTest *testCase) {
                         minReferenceLength, maxReferenceLength,
                         minCoverage, maxCoverage,
                         minReadLength, maxReadLength,
-                        hetRate, readErrorRate);
+                        hetRate, readErrorRate, referenceNamesToReferencePriors, params);
 
         // Make simple hmms
         stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);
         for(int64_t i=0; i<stList_length(profileSeqs1); i++) {
-            stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs1, i), params);
+            stProfileSeq *pSeq = stList_get(profileSeqs1, i);
+            stRPHmm *hmm = stRPHmm_construct(pSeq, stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
             CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == NULL);
             stSortedSet_insert(readHmms, hmm);
             CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == hmm);
         }
         for(int64_t i=0; i<stList_length(profileSeqs2); i++) {
-            stRPHmm *hmm = stRPHmm_construct(stList_get(profileSeqs2, i), params);
+            stProfileSeq *pSeq = stList_get(profileSeqs2, i);
+            stRPHmm *hmm = stRPHmm_construct(pSeq, stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
             CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == NULL);
             stSortedSet_insert(readHmms, hmm);
             CuAssertTrue(testCase, stSortedSet_search(readHmms, hmm) == hmm);
@@ -1118,6 +1143,7 @@ void test_getOverlappingComponents(CuTest *testCase) {
         stList_destruct(profileSeqs1);
         stList_destruct(profileSeqs2);
         stRPHmmParameters_destruct(params);
+        stHash_destruct(referenceNamesToReferencePriors);
     }
 }
 
@@ -1152,6 +1178,10 @@ void test_emissionLogProbability(CuTest *testCase) {
         stList *profileSeqs1 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
         stList *profileSeqs2 = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 
+        stHash *referenceNamesToReferencePriors = stHash_construct3(stHash_stringKey,
+                                stHash_stringEqualKey, free, (void (*)(void *))stReferencePriorProbs_destruct);
+
+
         // Creates reference sequences
         // Generates two haplotypes for each reference sequence
         // Generates profile sequences from each haplotype
@@ -1161,13 +1191,12 @@ void test_emissionLogProbability(CuTest *testCase) {
                         minReferenceLength, maxReferenceLength,
                         minCoverage, maxCoverage,
                         minReadLength, maxReadLength,
-                        hetRate, readErrorRate);
-
+                        hetRate, readErrorRate, referenceNamesToReferencePriors, params);
 
         // Creates read HMMs
         stList *profileSeqs = stList_copy(profileSeqs1, NULL);
         stList_appendAll(profileSeqs, profileSeqs2);
-        stList *hmms = getRPHmms(profileSeqs, params);
+        stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params);
 
         // For each hmm
         while(stList_length(hmms) > 0) {
@@ -1186,9 +1215,10 @@ void test_emissionLogProbability(CuTest *testCase) {
                     // Check slow and fast way to calculate emission probabilities
                     // are equivalent
                     double e1 = emissionLogProbabilitySlow(column, cell,
-                            bitCountVectors, params, 1);
+                            bitCountVectors, hmm->referencePriorProbs, params, 1);
                     double e2 = emissionLogProbability(column,
-                                                        cell, bitCountVectors, params);
+                                                        cell, bitCountVectors,
+                                                        hmm->referencePriorProbs, params);
                     //st_uglyf("Boo %f %f\n", e1, e2);
                     CuAssertDblEquals(testCase, e1, e2, 0.1);
                 } while((cell = cell->nCell) != NULL);
@@ -1215,6 +1245,7 @@ void test_emissionLogProbability(CuTest *testCase) {
         stList_destruct(profileSeqs1);
         stList_destruct(profileSeqs2);
         stRPHmmParameters_destruct(params);
+        stHash_destruct(referenceNamesToReferencePriors);
     }
 }
 
