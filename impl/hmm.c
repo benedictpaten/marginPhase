@@ -193,7 +193,6 @@ static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refSta
             }
         }
     }
-
     stSet_destructIterator(readIt);
 }
 

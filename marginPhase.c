@@ -10,6 +10,7 @@
 #include <memory.h>
 
 #include "stRPHmm.h"
+#include "sonLib.h"
 #include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*
@@ -288,9 +289,6 @@ int main(int argc, char *argv[]) {
     if (!bamInFile) bamInFile = stString_copy(argv[1]);
     if (!referenceFastaFile) referenceFastaFile = stString_copy(argv[2]);
 
-    // TODO make argument to take in
-    double falseNegativeThreshold = 0.15;
-
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     stBaseMapper *baseMapper = stBaseMapper_construct();
@@ -318,7 +316,7 @@ int main(int argc, char *argv[]) {
     stHash *referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params);
 
     // Learn the parameters for the input data
-    st_logInfo("> Learning parameters for HMM model (%" PRIi64 ")\n", iterationsOfParameterLearning);
+    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", iterationsOfParameterLearning);
     stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors, iterationsOfParameterLearning);
 
     // Print a report of the parsed parameters
@@ -358,12 +356,17 @@ int main(int argc, char *argv[]) {
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l, referenceFastaFile);
 
+    char *vcfOutFile_all = "allLocs.vcf";
+    vcfFile *vcfOutFP_all = vcf_open(vcfOutFile_all, "w");
+    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP_all, l, referenceFastaFile);
+
     // Prep for BAM outputs
     stSet *read1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     stSet *read2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
 
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
     stGenomeFragment *gF;
+    int64_t totalGFlength = 0;
 
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
@@ -377,6 +380,7 @@ int main(int argc, char *argv[]) {
 
         // Compute the genome fragment
         gF = stGenomeFragment_construct(hmm, path);
+        totalGFlength += gF->length;
 
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
@@ -431,11 +435,9 @@ int main(int argc, char *argv[]) {
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
         }
 
-
-
-
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
+        writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, false);
 
         // Cleanup
         stGenomeFragment_destruct(gF);
@@ -448,19 +450,23 @@ int main(int argc, char *argv[]) {
 
     // Cleanup vcf
     vcf_close(vcfOutFP);
+    vcf_close(vcfOutFP_all);
     // Write out VCF
     st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
 
     // Compare the output vcf with the reference vcf
-    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, falseNegativeThreshold, baseMapper, results);
+    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results);
 
     bcf_hdr_destroy(hdr);
+    bcf_hdr_destroy(hdr2);
 
     // Write out two BAMs, one for each read partition
     if(samOutBase != NULL) {
-        st_logInfo("> Writing out SAM files for each partition into files: %s.1.sam and %s.1.sam\n", samOutBase, samOutBase);
+        st_logInfo("\n> Writing out SAM files for each partition into files: %s.1.sam and %s.1.sam\n", samOutBase, samOutBase);
         writeSplitSams(bamInFile, samOutBase, read1Ids, read2Ids);
     }
+
+    st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms), (float)totalGFlength/stList_length(hmms));
 
     printGenotypeResults(results);
     free(results);
