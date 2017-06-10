@@ -472,7 +472,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     //bamFile = "../examples/KRAS_chr3.bam";
 
     fprintf(stderr, "Testing haplotype inference on %s\n", bamFile);
-    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 100000, 200000, 1, 3);
+    genotypingTest(stderr, paramsFile, bamFile, vcfOutFile, vcfOutFileDiff, referenceFile, vcfReference, 100000, 200000, 1, 1);
     //compareVCFs(vcfOutFile, vcfReference, 100000, 200000);
 }
 

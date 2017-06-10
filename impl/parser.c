@@ -263,7 +263,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
                 cig_idx++;
             } else {
-                st_logCritical("Unidentifiable cigar operation\n");
+                st_errAbort("Unidentifiable cigar operation\n");
             }
         }
 
