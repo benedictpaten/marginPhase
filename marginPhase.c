@@ -389,7 +389,7 @@ int main(int argc, char *argv[]) {
         addProfileSeqIdsToSet(reads1, read1Ids);
         addProfileSeqIdsToSet(reads2, read2Ids);
 
-        if(st_getLogLevel() == debug && i < 5) {
+        if(st_getLogLevel() == debug && stList_length(hmms) <= 5) {
             st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
                         hmm->referenceName, hmm->refStart, hmm->refLength);
             st_logDebug("\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
@@ -433,7 +433,8 @@ int main(int argc, char *argv[]) {
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
             st_logDebug("hap2 vs. reads1 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
-        }
+        } else if (st_getLogLevel() == debug)
+            st_logDebug("Too many genotype fragments to output individual debugging info\n");
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
@@ -466,6 +467,7 @@ int main(int argc, char *argv[]) {
         writeSplitSams(bamInFile, samOutBase, read1Ids, read2Ids);
     }
 
+    st_logInfo("\n----- RESULTS -----\n");
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms), (float)totalGFlength/stList_length(hmms));
 
     printGenotypeResults(results);

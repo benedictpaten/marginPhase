@@ -54,20 +54,19 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *paramsFile = "../tests/params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *vcfOutFile = "test_100kb.vcf";
-    char *vcfOutFileDiff = "test_100kb_diff.vcf";
     char *samOutBase = "test_100kb";
     int64_t iterationsOfParameterLearning = 1;
     bool verbose = true;
 
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.1.bam";
 //    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
-//    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
-    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
+//    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.1.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 //    char *bamFile = "../tests/NA12878.pb.chr3.2mb.bam";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.2mb.vcf";
 
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     int i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                         referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -77,19 +76,16 @@ void test_100kbGenotyping(CuTest *testCase) {
 
 void test_multiple100kbGenotyping(CuTest *testCase) {
 
-    st_setLogLevelFromString("info");
-
     char *paramsFile = "../tests/params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *vcfOutFile = "test_100kb.vcf";
-    char *vcfOutFileDiff = "test_100kb_diff.vcf";
     char *samOutBase = "test_100kb_0";
-    int64_t iterationsOfParameterLearning = 1;
-    bool verbose = true;
+    int64_t iterationsOfParameterLearning = 0;
+    bool verbose = false;
 
     char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     int i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                            referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -99,7 +95,7 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
     bamFile = "../tests/NA12878.pb.chr3.100kb.1.bam";
     vcfReference = "../tests/NA12878.PG.chr3.100kb.1.vcf";
     samOutBase = "test_100kb_1";
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                        referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -108,7 +104,7 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
     bamFile = "../tests/NA12878.pb.chr3.100kb.2.bam";
     vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
     samOutBase = "test_100kb_2";
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                        referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -118,7 +114,7 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
     bamFile = "../tests/NA12878.pb.chr3.100kb.3.bam";
     vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
     samOutBase = "test_100kb_3";
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                        referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -127,7 +123,7 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
     bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
     vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
     samOutBase = "test_100kb_4";
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     i = genotypingTest(paramsFile, bamFile, vcfOutFile,
                        referenceFile, vcfReference, iterationsOfParameterLearning, verbose);
@@ -141,9 +137,6 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
 CuSuite *marginPhaseTestSuite(void) {
 
     CuSuite* suite = CuSuiteNew();
-
-//    st_setLogLevelFromString("debug");
-    st_setLogLevelFromString("info");
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);

@@ -273,10 +273,10 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         free(readErrorSubModel);
 
 //        // Log the parameters info
-//        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i);
-//        if(st_getLogLevel() == debug) {
-//            stRPHmmParameters_printParameters(params, stderr);
-//        }
+        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i);
+        if(st_getLogLevel() == debug) {
+            stRPHmmParameters_printParameters(params, stderr);
+        }
     }
 }
 

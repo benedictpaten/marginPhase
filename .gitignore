@@ -12,3 +12,4 @@ Makefile
 vcfCompare
 marginPhase.cbp
 libjsmn.a
+*.bai

@@ -428,15 +428,18 @@ struct _stGenotypeResults {
     int64_t trueNegatives;
     int64_t falseNegatives;
     int64_t falsePositiveGaps;
+    int64_t truePositiveGaps;
 
     // Types of errors
     int64_t error_badPartition;
     int64_t error_missedIndels;
     int64_t error_homozygousInRef;
+    int64_t error_incorrectVariant;
 
     // Phasing
-    int64_t phasingGood;
-    int64_t phasingBad;
+    int64_t switchErrors;
+    float switchErrorDistance;
+    int64_t uncertainPhasing;
 };
 void compareVCFs(FILE *fh, stList *hmms,
                  char *vcf_toEval, char *vcf_ref,

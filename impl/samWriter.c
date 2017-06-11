@@ -16,7 +16,9 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     char haplotype2BamOutFile[strlen(bamOutBase) + 7];
     strcpy(haplotype2BamOutFile, bamOutBase);
     strcat(haplotype2BamOutFile, ".2.sam");
-    //todo bam with unmatched reads?
+    char unmatchedBamOutFile[strlen(bamOutBase) + 15];
+    strcpy(unmatchedBamOutFile, bamOutBase);
+    strcat(unmatchedBamOutFile, ".unmatched.sam");
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -34,6 +36,9 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     samFile *out2 = hts_open(haplotype2BamOutFile, "w");
     r = sam_hdr_write(out2, bamHdr);
 
+    samFile *out3 = hts_open(unmatchedBamOutFile, "w");
+    r = sam_hdr_write(out3, bamHdr);
+
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
@@ -48,16 +53,16 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
             r = sam_write1(out2, bamHdr, aln);
             readCountH2++;
         } else {
-            //st_logDebug("Unmatched read: %s\n", readName);
+            r = sam_write1(out3, bamHdr, aln);
             readCountNeither++;
         }
     }
-    st_logDebug("Read counts:\n\thap1:%d\thap2:%d\telse:%d\n", readCountH1, readCountH2, readCountNeither);
+    st_logDebug("Read counts:\n\thap1:%d\thap2:%d\tneither:%d\n", readCountH1, readCountH2, readCountNeither);
 
     bam_destroy1(aln);
     bam_hdr_destroy(bamHdr);
     sam_close(in);
     sam_close(out1);
     sam_close(out2);
-
+    sam_close(out3);
 }
