@@ -198,7 +198,6 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-o --outSamBase : Output SAM Base (\"example\" -> \"example1.sam\", \"example2.sam\")\n");
     fprintf(stderr, "-v --vcfFile    : Output VCF file\n");
     fprintf(stderr, "-p --params     : Input params file\n");
-    fprintf(stderr, "-l --iterationsOfParameterLearning : Iterations of parameter learning\n");
     fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
     fprintf(stderr, "-f --referenceFasta   : Fasta file with reference sequence\n");
 }
@@ -231,13 +230,12 @@ int main(int argc, char *argv[]) {
                 { "outSamBase", required_argument, 0, 'o'},
                 { "vcfFile", required_argument, 0, 'v'},
                 { "params", required_argument, 0, 'p'},
-                { "iterationsOfParameterLearning", required_argument, 0, 'l'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "referenceFasta", required_argument, 0, 'f'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc, argv, "a:b:o:v:p:l:r:f:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:b:o:v:p:r:f:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -264,11 +262,6 @@ int main(int argc, char *argv[]) {
             break;
         case 'p':
             paramsFile = stString_copy(optarg);
-            break;
-        case 'l':
-            i = sscanf(optarg, "%" PRIi64 "", &iterationsOfParameterLearning);
-            assert(i == 1);
-            assert(iterationsOfParameterLearning >= 0);
             break;
         case 'f':
             referenceFastaFile = stString_copy(optarg);
@@ -316,8 +309,8 @@ int main(int argc, char *argv[]) {
     stHash *referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params);
 
     // Learn the parameters for the input data
-    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", iterationsOfParameterLearning);
-    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors, iterationsOfParameterLearning);
+    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
+    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {

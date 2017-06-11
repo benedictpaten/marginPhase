@@ -191,21 +191,19 @@ struct _stRPHmmParameters {
     // than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
-};
+    // Training
 
-stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
-        double *hetSubModelSlow,
-        uint16_t *readErrorSubModel,
-        double *readErrorSubModelSlow,
-        bool maxNotSumTransitions,
-        int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth,
-        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+    // Pseudo counts used to make training of substitution matrices a bit more robust
+    double offDiagonalReadErrorPseudoCount;
+    double onDiagonalReadErrorPseudoCount;
+    // Number of iterations of training
+    int64_t trainingIterations;
+};
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors, int64_t iterations);
+        stHash *referenceNamesToReferencePriors);
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 

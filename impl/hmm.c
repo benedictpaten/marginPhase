@@ -23,41 +23,6 @@ inline double logAddP(double a, double b, bool maxNotSum) {
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
-stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
-        double *hetSubModelSlow,
-        uint16_t *readErrorSubModel,
-        double *readErrorSubModelSlow,
-        bool maxNotSumTransitions,
-        int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth,
-        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
-    /*
-     * Create an parameters object for an HMM.
-     */
-    stRPHmmParameters *params = st_malloc(sizeof(stRPHmmParameters));
-
-    params->hetSubModel = hetSubModel;
-    params->hetSubModelSlow = hetSubModelSlow;
-    params->readErrorSubModel = readErrorSubModel;
-    params->readErrorSubModelSlow = readErrorSubModelSlow;
-    params->maxNotSumTransitions = maxNotSumTransitions;
-    params->maxPartitionsInAColumn = maxPartitionsInAColumn;
-    params->maxCoverageDepth = maxCoverageDepth;
-    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites =
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites;
-
-    // Checks
-    if(params->maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
-            st_errAbort("The maximum coverage depth %" PRIi64 " is greater than the maximum allowed by the model: %"
-                    PRIi64 "\n", params->maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
-    }
-    if(maxPartitionsInAColumn <= 0) {
-        st_errAbort("Minimum number of partitions in a column is not a positive integer");
-    }
-
-    return params;
-}
-
 void stRPHmmParameters_destruct(stRPHmmParameters *params) {
     free(params->hetSubModel);
     free(params->hetSubModelSlow);
@@ -196,7 +161,7 @@ static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refSta
     stSet_destructIterator(readIt);
 }
 
-static void normaliseSubstitutionMatrix(double *subMatrix, double pseudocounts) {
+static void normaliseSubstitutionMatrix(double *subMatrix) {
     /*
      * Normalise matrix so that counts are converted to conditional probabilities of observing
      * derived character given source character.
@@ -206,7 +171,6 @@ static void normaliseSubstitutionMatrix(double *subMatrix, double pseudocounts) 
         for(int64_t toChar=0; toChar<ALPHABET_SIZE; toChar++) {
             totalSubCount += *getSubstitutionProbSlow(subMatrix, fromChar, toChar);
         }
-        totalSubCount += pseudocounts;
         for(int64_t toChar=0; toChar<ALPHABET_SIZE; toChar++) {
             double p = *getSubstitutionProbSlow(subMatrix, fromChar, toChar) / totalSubCount;
             *getSubstitutionProbSlow(subMatrix, fromChar, toChar) = p <= 0.0001 ? 0.0001 : p;
@@ -215,16 +179,25 @@ static void normaliseSubstitutionMatrix(double *subMatrix, double pseudocounts) 
 }
 
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors, int64_t iterations) {
+        stHash *referenceNamesToReferencePriors) {
     /*
      * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
      * of stochastic parameter search to do.
      */
 
+    double offDiagonalPseudoCount = 1;
+    double onDiagonalPsuedoCount = 1000;
+
     // For each iteration construct a set of HMMs and estimate the parameters from it.
-    for(int64_t i=0; i<iterations; i++) {
+    for(int64_t i=0; i<params->trainingIterations; i++) {
         // Substitution model for haplotypes to reads
         double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
+        for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
+            readErrorSubModel[j] = params->offDiagonalReadErrorPseudoCount;
+        }
+        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+            readErrorSubModel[j*ALPHABET_SIZE + j] = params->onDiagonalReadErrorPseudoCount;
+        }
 
         stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
@@ -259,7 +232,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         stList_destruct(hmms);
 
         // Normalise the probabilities
-        normaliseSubstitutionMatrix(readErrorSubModel, 1.0);
+        normaliseSubstitutionMatrix(readErrorSubModel);
 
         // Update the read error substitution parameters of the parameters object
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
@@ -272,8 +245,8 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         // Cleanup
         free(readErrorSubModel);
 
-//        // Log the parameters info
-        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i);
+        //Log the parameters info
+        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i+1);
         if(st_getLogLevel() == debug) {
             stRPHmmParameters_printParameters(params, stderr);
         }
