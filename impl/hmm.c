@@ -23,41 +23,6 @@ inline double logAddP(double a, double b, bool maxNotSum) {
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
-stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
-        double *hetSubModelSlow,
-        uint16_t *readErrorSubModel,
-        double *readErrorSubModelSlow,
-        bool maxNotSumTransitions,
-        int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth,
-        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
-    /*
-     * Create an parameters object for an HMM.
-     */
-    stRPHmmParameters *params = st_malloc(sizeof(stRPHmmParameters));
-
-    params->hetSubModel = hetSubModel;
-    params->hetSubModelSlow = hetSubModelSlow;
-    params->readErrorSubModel = readErrorSubModel;
-    params->readErrorSubModelSlow = readErrorSubModelSlow;
-    params->maxNotSumTransitions = maxNotSumTransitions;
-    params->maxPartitionsInAColumn = maxPartitionsInAColumn;
-    params->maxCoverageDepth = maxCoverageDepth;
-    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites =
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites;
-
-    // Checks
-    if(params->maxCoverageDepth > MAX_READ_PARTITIONING_DEPTH) {
-            st_errAbort("The maximum coverage depth %" PRIi64 " is greater than the maximum allowed by the model: %"
-                    PRIi64 "\n", params->maxCoverageDepth, MAX_READ_PARTITIONING_DEPTH);
-    }
-    if(maxPartitionsInAColumn <= 0) {
-        st_errAbort("Minimum number of partitions in a column is not a positive integer");
-    }
-
-    return params;
-}
-
 void stRPHmmParameters_destruct(stRPHmmParameters *params) {
     free(params->hetSubModel);
     free(params->hetSubModelSlow);
@@ -70,10 +35,83 @@ static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         fprintf(fH, "\t\t");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %f (%i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
+            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
         }
         fprintf(fH, "\n");
     }
+}
+
+double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
+    /*
+     * Get the observed counts for each base seen at a particular position in a column
+     */
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    for (int64_t i=0; i<column->depth; i++) {
+        stProfileSeq *seq = column->seqHeaders[i];
+
+        if (pos >= seq->refStart && pos < seq->length+seq->refStart) {
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                baseCounts[j] += getProb(&(seq->profileProbs[(pos - seq->refStart) * ALPHABET_SIZE]), j);
+            }
+        }
+    }
+    return baseCounts;
+}
+
+void printBaseComposition2(double *baseCounts) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += baseCounts[i];
+    }
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", baseCounts[i]);
+    }
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", baseCounts[i]/totalCount);
+    }
+    st_logDebug( "\n");
+}
+
+void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
+    /*
+     * Print out the columns of the hmm at a specific position
+     */
+    stRPColumn *column = hmm->firstColumn;
+    while(1) {
+        if (pos >= column->refStart && pos < column->refStart+column->length) {
+            double *columnBaseCounts = getColumnBaseComposition(column, pos);
+            printBaseComposition2(columnBaseCounts);
+            free(columnBaseCounts);
+        }
+        if (column->nColumn == NULL) {
+            break;
+        }
+        column = column->nColumn->nColumn;
+    }
+}
+
+double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos) {
+    /*
+     * Get the expected count of each alphabet character in the profile sequences, returned
+     * as an array.
+     */
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    stSetIterator *it = stSet_getIterator(profileSeqs);
+    stProfileSeq *pSeq;
+    while((pSeq = stSet_getNext(it)) != NULL) {
+        if (pos > pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                baseCounts[j] += getProb(&(pSeq->profileProbs[(pos - pSeq->refStart)*ALPHABET_SIZE]), j);
+            }
+        }
+    }
+    return baseCounts;
 }
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
@@ -141,16 +179,25 @@ static void normaliseSubstitutionMatrix(double *subMatrix) {
 }
 
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors, int64_t iterations) {
+        stHash *referenceNamesToReferencePriors) {
     /*
      * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
      * of stochastic parameter search to do.
      */
 
+    double offDiagonalPseudoCount = 1;
+    double onDiagonalPsuedoCount = 1000;
+
     // For each iteration construct a set of HMMs and estimate the parameters from it.
-    for(int64_t i=0; i<iterations; i++) {
+    for(int64_t i=0; i<params->trainingIterations; i++) {
         // Substitution model for haplotypes to reads
         double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
+        for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
+            readErrorSubModel[j] = params->offDiagonalReadErrorPseudoCount;
+        }
+        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+            readErrorSubModel[j*ALPHABET_SIZE + j] = params->onDiagonalReadErrorPseudoCount;
+        }
 
         stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
@@ -198,8 +245,8 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         // Cleanup
         free(readErrorSubModel);
 
-        // Log the parameters info
-        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i);
+        //Log the parameters info
+        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i+1);
         if(st_getLogLevel() == debug) {
             stRPHmmParameters_printParameters(params, stderr);
         }

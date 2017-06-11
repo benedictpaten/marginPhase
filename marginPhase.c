@@ -10,6 +10,8 @@
 #include <memory.h>
 
 #include "stRPHmm.h"
+#include "sonLib.h"
+#include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*
  * Functions used to print debug output.
@@ -178,14 +180,6 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
     }
 }
 
-void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds) {
-    stSetIterator *it = stSet_getIterator(pSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        stSet_insert(readIds, pSeq->readId);
-    }
-    stSet_destructIterator(it);
-}
 
 /*
  * Main functions
@@ -200,10 +194,12 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
             "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n");
     fprintf(stderr, "-a --logLevel   : Set the log level [default = info]\n");
     fprintf(stderr, "-h --help       : Print this help screen\n");
+    fprintf(stderr, "-b --bamFile    : Bam file with input reads\n");
     fprintf(stderr, "-o --outSamBase : Output SAM Base (\"example\" -> \"example1.sam\", \"example2.sam\")\n");
     fprintf(stderr, "-v --vcfFile    : Output VCF file\n");
     fprintf(stderr, "-p --params     : Input params file\n");
-    fprintf(stderr, "-l --iterationsOfParameterLearning : Iterations of parameter learning\n");
+    fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
+    fprintf(stderr, "-f --referenceFasta   : Fasta file with reference sequence\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -211,8 +207,9 @@ int main(int argc, char *argv[]) {
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
+    char *referenceVCF = NULL;
 
-    char *samOutBase = NULL;
+    char *samOutBase = "output";
     char *vcfOutFile = "output.vcf";
     char *paramsFile = "params.json";
     int64_t iterationsOfParameterLearning = 0;
@@ -229,15 +226,16 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+                { "bamFile", required_argument, 0, 'b'},
                 { "outSamBase", required_argument, 0, 'o'},
                 { "vcfFile", required_argument, 0, 'v'},
                 { "params", required_argument, 0, 'p'},
-                { "iterationsOfParameterLearning", required_argument, 0, 'l'},
-                { "reference", required_argument, 0, 'r'},
+                { "referenceVcf", required_argument, 0, 'r'},
+                { "referenceFasta", required_argument, 0, 'f'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:v:p:l:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:b:o:v:p:r:f:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -253,6 +251,9 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage();
             return 0;
+        case 'b':
+            bamInFile = stString_copy(optarg);
+            break;
         case 'o':
             samOutBase = stString_copy(optarg);
             break;
@@ -262,27 +263,29 @@ int main(int argc, char *argv[]) {
         case 'p':
             paramsFile = stString_copy(optarg);
             break;
-        case 'l':
-            i = sscanf(optarg, "%" PRIi64 "", &iterationsOfParameterLearning);
-            assert(i == 1);
-            assert(iterationsOfParameterLearning >= 0);
+        case 'f':
+            referenceFastaFile = stString_copy(optarg);
+            break;
+        case 'r':
+            referenceVCF = stString_copy(optarg);
             break;
         default:
             usage();
             return 0;
         }
     }
+
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
 
-    bamInFile = stString_copy(argv[1]);
-    referenceFastaFile = stString_copy(argv[2]);
+    // TODO make these so they don't need flags
+    if (!bamInFile) bamInFile = stString_copy(argv[1]);
+    if (!referenceFastaFile) referenceFastaFile = stString_copy(argv[2]);
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
-    free(paramsFile);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -292,7 +295,8 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    parseReads(profileSequences, bamInFile, baseMapper);
+    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
+    st_logDebug("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences
     if(st_getLogLevel() == debug) {
@@ -305,8 +309,8 @@ int main(int argc, char *argv[]) {
     stHash *referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params);
 
     // Learn the parameters for the input data
-    st_logInfo("> Learning parameters for HMM model (%" PRIi64 ")\n", iterationsOfParameterLearning);
-    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors, iterationsOfParameterLearning);
+    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
+    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
@@ -317,32 +321,49 @@ int main(int argc, char *argv[]) {
     // Create HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
+    stList_setDestructor(hmms, (void (*)(void *))stRPHmm_destruct2);
     st_logDebug("Got %" PRIi64 " hmms before splitting\n", stList_length(hmms));
 
     // Break up the hmms where the phasing is uncertain
     st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
 
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
+    int64_t initialHmmListSize = stList_length(hmms);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
-    st_logDebug("\tCreated %d hmms after splitting at uncertain regions of phasing\n", stList_length(hmms));
+    st_logDebug("\tCreated %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
+                stList_length(hmms), initialHmmListSize);
+    int64_t idx = 0;
+    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
+        stListIterator *itor = stList_getIterator(hmms);
+        stRPHmm *hmm = NULL;
+        while ((hmm = stList_getNext(itor)) != NULL) {
+            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength));
+            idx++;
+        }
+    }
 
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, l, referenceFastaFile);
 
+    char *vcfOutFile_all = "allLocs.vcf";
+    vcfFile *vcfOutFP_all = vcf_open(vcfOutFile_all, "w");
+    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP_all, l, referenceFastaFile);
+
     // Prep for BAM outputs
     stSet *read1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     stSet *read2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
 
+    stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+    stGenomeFragment *gF;
+    int64_t totalGFlength = 0;
+
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
         stRPHmm *hmm = stList_get(hmms, i);
-
-        st_logInfo("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
-                    hmm->referenceName, hmm->refStart, hmm->refLength);
 
         // Run the forward-backward algorithm
         stRPHmm_forwardBackward(hmm);
@@ -351,7 +372,8 @@ int main(int argc, char *argv[]) {
         stList *path = stRPHmm_forwardTraceBack(hmm);
 
         // Compute the genome fragment
-        stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
+        gF = stGenomeFragment_construct(hmm, path);
+        totalGFlength += gF->length;
 
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
@@ -360,7 +382,9 @@ int main(int argc, char *argv[]) {
         addProfileSeqIdsToSet(reads1, read1Ids);
         addProfileSeqIdsToSet(reads2, read2Ids);
 
-        if(st_getLogLevel() == debug) {
+        if(st_getLogLevel() == debug && i < 5) {
+            st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
+                        hmm->referenceName, hmm->refStart, hmm->refLength);
             st_logDebug("\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                     stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
@@ -404,28 +428,41 @@ int main(int argc, char *argv[]) {
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
         }
 
-        // Write out VCF
-        st_logInfo("> Writing out VCF for fragment into file: %s\n", vcfOutFile);
-
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
+        writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, false);
 
         // Cleanup
         stGenomeFragment_destruct(gF);
         stSet_destruct(reads1);
         stSet_destruct(reads2);
+
+        // Write vcf
         stList_destruct(path);
     }
 
     // Cleanup vcf
     vcf_close(vcfOutFP);
+    vcf_close(vcfOutFP_all);
+    // Write out VCF
+    st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
+
+    // Compare the output vcf with the reference vcf
+    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results);
+
     bcf_hdr_destroy(hdr);
+    bcf_hdr_destroy(hdr2);
 
     // Write out two BAMs, one for each read partition
     if(samOutBase != NULL) {
-        st_logInfo("> Writing out SAM files for each partition into files: %s.1.sam and %s.1.sam\n", samOutBase, samOutBase);
+        st_logInfo("\n> Writing out SAM files for each partition into files: %s.1.sam and %s.1.sam\n", samOutBase, samOutBase);
         writeSplitSams(bamInFile, samOutBase, read1Ids, read2Ids);
     }
+
+    st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms), (float)totalGFlength/stList_length(hmms));
+
+    printGenotypeResults(results);
+    free(results);
 
     // Cleanup
     stHash_destruct(referenceNamesToReferencePriors);
@@ -438,6 +475,7 @@ int main(int argc, char *argv[]) {
     stRPHmmParameters_destruct(params);
 
     // TODO: only free these if they need to be
+//    free(paramsFile);
 //    free(bamInFile);
 //    free(samOutBase);
 //    free(vcfOutFile);

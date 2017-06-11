@@ -18,6 +18,9 @@ CuSuite *marginPhaseTestSuite(void);
 int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
+
+	fprintf(stderr, "NOTE: running only new margin phase tests. "
+			"Uncomment the other lines in allTests.c if you want to run them all.\n");
 	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());

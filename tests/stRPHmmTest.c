@@ -73,6 +73,8 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
         double hetRate, double readErrorRate,
         bool maxNotSumTransitions, int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
+    stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
+
     // Substitution models
     uint16_t *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     uint16_t *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
@@ -92,10 +94,20 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
         }
     }
 
-    return stRPHmmParameters_construct(hetSubModel, hetSubModelSlow,
-            readErrorSubModel, readErrorSubModelSlow,
-            maxNotSumTransitions, maxPartitionsInAColumn, MAX_READ_PARTITIONING_DEPTH,
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+    params->hetSubModel = hetSubModel;
+    params->hetSubModelSlow = hetSubModelSlow;
+    params->readErrorSubModel = readErrorSubModel;
+    params->readErrorSubModelSlow = readErrorSubModelSlow;
+    params->maxNotSumTransitions = maxNotSumTransitions;
+    params->maxPartitionsInAColumn = maxPartitionsInAColumn;
+    params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
+    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites =
+            minReadCoverageToSupportPhasingBetweenHeterozygousSites;
+    params->offDiagonalReadErrorPseudoCount = 1;
+    params->onDiagonalReadErrorPseudoCount = 1;
+    params->trainingIterations = 0;
+
+    return params;
 }
 
 static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSeqs2,
@@ -385,7 +397,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     stProfileSeq *profileSeq = column->seqHeaders[j];
                     // Check is part of hmm
                     CuAssertTrue(testCase, stList_contains(hmm->profileSeqs, profileSeq));
-                    // Check column is contained in reference intervsl of the profile sequence
+                    // Check column is contained in reference interval of the profile sequence
                     CuAssertTrue(testCase, profileSeq->refStart <= column->refStart);
                     CuAssertTrue(testCase, profileSeq->refStart + profileSeq->length >= column->refStart + column->length);
                     // Check the corresponding profile probability array is correct

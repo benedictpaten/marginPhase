@@ -122,3 +122,12 @@ inline int stRPProfileSeq_cmpFn(const void *a, const void *b) {
     }
     return i;
 }
+
+void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds) {
+    stSetIterator *it = stSet_getIterator(pSeqs);
+    stProfileSeq *pSeq;
+    while((pSeq = stSet_getNext(it)) != NULL) {
+        stSet_insert(readIds, pSeq->readId);
+    }
+    stSet_destructIterator(it);
+}

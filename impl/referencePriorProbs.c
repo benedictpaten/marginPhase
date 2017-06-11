@@ -92,7 +92,7 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
         // Build probability profile
         assert(seqLen >= rProbs->length + rProbs->refStart);
         for(int64_t i=0; i<rProbs->length; i++) {
-            int64_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart]);
+            int64_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart-1]);
             assert(refChar >= 0 && refChar < ALPHABET_SIZE);
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j);

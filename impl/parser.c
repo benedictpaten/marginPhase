@@ -69,6 +69,7 @@ char *json_token_tostr(char *js, jsmntok_t *t)
 
 /*
      * Get model parameters from params file.
+     * Set hmm parameters.
 */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
@@ -82,15 +83,21 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     char buf[BUFSIZ];
     int r;
 
+    // Params object
+    stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
+
     // Variables for hmm parameters (initialize & set default values)
-    uint16_t  *hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    double *hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-    uint16_t  *readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    double *readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-    bool maxNotSumTransitions = true;
-    int64_t  maxPartitionsInAColumn = 50;
-    int64_t  maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
-    int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
+    params->hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
+    params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+    params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
+    params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+    params->maxNotSumTransitions = true;
+    params->maxPartitionsInAColumn = 50;
+    params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
+    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
+    params->offDiagonalReadErrorPseudoCount = 1;
+    params->onDiagonalReadErrorPseudoCount = 1;
+    params->trainingIterations = 0;
 
     FILE *fp;
     fp = fopen(paramsFile, "rb");
@@ -145,7 +152,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
                 char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(hetSubModel, hetSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
+                setSubstitutionProb(params->hetSubModel, params->hetSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
             }
             i += hapSubTok.size + 1;
         }
@@ -157,7 +164,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
                 char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(readErrorSubModel, readErrorSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
+                setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
 
             }
             i += readErrTok.size + 1;
@@ -165,33 +172,47 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         if (strcmp(keyString, "maxNotSumTransitions") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            if (strcmp(tokStr, "false") == 0) maxNotSumTransitions = false;
+            if (strcmp(tokStr, "false") == 0) params->maxNotSumTransitions = false;
             i++;
         }
         if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            maxPartitionsInAColumn = atoi(tokStr);
+            params->maxPartitionsInAColumn = atoi(tokStr);
             i++;
         }
         if (strcmp(keyString, "maxCoverageDepth") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            maxCoverageDepth = atoi(tokStr);
+            params->maxCoverageDepth = atoi(tokStr);
             i++;
         }
         if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites = atoi(tokStr);
+            params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = atoi(tokStr);
+            i++;
+        }
+        if (strcmp(keyString, "onDiagonalReadErrorPseudoCount") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->onDiagonalReadErrorPseudoCount = atof(tokStr);
+            i++;
+        }
+        if (strcmp(keyString, "offDiagonalReadErrorPseudoCount") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->offDiagonalReadErrorPseudoCount = atof(tokStr);
+            i++;
+        }
+        if (strcmp(keyString, "trainingIterations") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->trainingIterations = atoi(tokStr);
             i++;
         }
     }
 
-    stRPHmmParameters *params = stRPHmmParameters_construct(
-            hetSubModel, hetSubModelSlow, readErrorSubModel, readErrorSubModelSlow,
-            maxNotSumTransitions, maxPartitionsInAColumn, maxCoverageDepth,
-            minReadCoverageToSupportPhasingBetweenHeterozygousSites);
     free(js);
     return params;
 }
@@ -213,11 +234,12 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
  * signal level alignments).
  * */
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+        return -1;
     }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
@@ -226,7 +248,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int64_t pos = aln->core.pos; //left most position of alignment
+        int64_t pos = aln->core.pos+1; //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
         int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
@@ -304,8 +326,8 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 idxInSeq++;
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
-                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                // Currently, all profile probabilities are set to 0 here
+                // This worked better than adding in a '-' character or having a flat distribution of probabilities
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
                 idxInSeq++;
@@ -326,10 +348,12 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         }
         stList_append(profileSequences, pSeq);
     }
-    st_logDebug("\tCreated %d profile sequences\n", readCount);
+
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
+
+    return readCount;
 }
 

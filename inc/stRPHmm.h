@@ -33,6 +33,7 @@ typedef struct _stRPMergeCell stRPMergeCell;
 typedef struct _stGenomeFragment stGenomeFragment;
 typedef struct _stReferencePriorProbs stReferencePriorProbs;
 typedef struct _stBaseMapper stBaseMapper;
+typedef struct _stGenotypeResults stGenotypeResults;
 
 /*
  * Overall coordination functions
@@ -190,21 +191,19 @@ struct _stRPHmmParameters {
     // than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
-};
+    // Training
 
-stRPHmmParameters *stRPHmmParameters_construct(uint16_t *hetSubModel,
-        double *hetSubModelSlow,
-        uint16_t *readErrorSubModel,
-        double *readErrorSubModelSlow,
-        bool maxNotSumTransitions,
-        int64_t maxPartitionsInAColumn,
-        int64_t maxCoverageDepth,
-        int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+    // Pseudo counts used to make training of substitution matrices a bit more robust
+    double offDiagonalReadErrorPseudoCount;
+    double onDiagonalReadErrorPseudoCount;
+    // Number of iterations of training
+    int64_t trainingIterations;
+};
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors, int64_t iterations);
+        stHash *referenceNamesToReferencePriors);
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 
@@ -256,6 +255,11 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint);
 void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm);
 
 stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm);
+
+void printBaseComposition2(double *baseCounts);
+double *getColumnBaseComposition(stRPColumn *column, int64_t pos);
+void printColumnAtPosition(stRPHmm *hmm, int64_t pos);
+double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos);
 
 /*
  * Column of read partitioning hmm
@@ -401,12 +405,45 @@ int stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
-void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
+
+/*
+ * Stores information about relevant test results.
+ */
+struct _stGenotypeResults {
+    // Variants in reference
+    int64_t negatives;
+    int64_t positives;
+
+    // Variants in evaluated vcf
+    int64_t truePositives;
+    int64_t falsePositives;
+    int64_t trueNegatives;
+    int64_t falseNegatives;
+    int64_t falsePositiveGaps;
+
+    // Types of errors
+    int64_t error_badPartition;
+    int64_t error_missedIndels;
+    int64_t error_homozygousInRef;
+
+    // Phasing
+    int64_t phasingGood;
+    int64_t phasingBad;
+};
+void compareVCFs(FILE *fh, stList *hmms,
+                 char *vcf_toEval, char *vcf_ref,
+                 stBaseMapper *baseMapper, stGenotypeResults *results);
+void printGenotypeResults(stGenotypeResults *results);
+
+
 void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 
 #endif /* ST_RP_HMM_H_ */
