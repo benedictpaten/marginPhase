@@ -8,6 +8,69 @@
 #include <htslib/vcf.h>
 #include "stRPHmm.h"
 
+
+
+void writeSplitSams(char *bamInFile, char *bamOutBase,
+                    stSet *haplotype1Ids, stSet *haplotype2Ids) {
+    // prep
+    char haplotype1BamOutFile[strlen(bamOutBase) + 7];
+    strcpy(haplotype1BamOutFile, bamOutBase);
+    strcat(haplotype1BamOutFile, ".1.sam");
+    char haplotype2BamOutFile[strlen(bamOutBase) + 7];
+    strcpy(haplotype2BamOutFile, bamOutBase);
+    strcat(haplotype2BamOutFile, ".2.sam");
+    char unmatchedBamOutFile[strlen(bamOutBase) + 15];
+    strcpy(unmatchedBamOutFile, bamOutBase);
+    strcat(unmatchedBamOutFile, ".unmatched.sam");
+
+    // file management
+    samFile *in = hts_open(bamInFile, "r");
+    if (in == NULL) {
+        st_errAbort("ERROR: Cannot open bam file %s\n", bamInFile);
+    }
+    bam_hdr_t *bamHdr = sam_hdr_read(in);
+    bam1_t *aln = bam_init1();
+
+    int r;
+    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
+    samFile *out1 = hts_open(haplotype1BamOutFile, "w");
+    r = sam_hdr_write(out1, bamHdr);
+
+    samFile *out2 = hts_open(haplotype2BamOutFile, "w");
+    r = sam_hdr_write(out2, bamHdr);
+
+    samFile *out3 = hts_open(unmatchedBamOutFile, "w");
+    r = sam_hdr_write(out3, bamHdr);
+
+    // read in input file, write out each read to one sam file
+    int32_t readCountH1 = 0;
+    int32_t readCountH2 = 0;
+    int32_t readCountNeither = 0;
+    while(sam_read1(in,bamHdr,aln) > 0) {
+
+        char *readName = bam_get_qname(aln);
+        if (stSet_search(haplotype1Ids, readName) != NULL) {
+            r = sam_write1(out1, bamHdr, aln);
+            readCountH1++;
+        } else if (stSet_search(haplotype2Ids, readName) != NULL) {
+            r = sam_write1(out2, bamHdr, aln);
+            readCountH2++;
+        } else {
+            r = sam_write1(out3, bamHdr, aln);
+            readCountNeither++;
+        }
+    }
+    st_logDebug("Read counts:\n\thap1:%d\thap2:%d\tneither:%d\n", readCountH1, readCountH2, readCountNeither);
+
+    bam_destroy1(aln);
+    bam_hdr_destroy(bamHdr);
+    sam_close(in);
+    sam_close(out1);
+    sam_close(out2);
+    sam_close(out3);
+}
+
+
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName) {
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     kstring_t str = {0,0,NULL};
@@ -603,4 +666,62 @@ void printGenotypeResults(stGenotypeResults *results) {
     st_logInfo("\tSwitch error rate: %f \t (%" PRIi64 " out of %"PRIi64 ", ", (float)results->switchErrors/(results->truePositives-results->uncertainPhasing), results->switchErrors, results->truePositives-results->uncertainPhasing);
     st_logInfo("fraction correct: %f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
     st_logInfo("\tAverage distance between switch errors: %f\n\n", results->switchErrorDistance);
+}
+
+
+void writeParamFile(char *outputFilename, stRPHmmParameters *params) {
+    // get file
+    FILE *fd = fopen(outputFilename, "w");
+    if (fd == NULL) {
+        st_logCritical("Failed to open output param file '%s'. No file will be written\n", outputFilename);
+        return;
+    }
+    //for whether to print the last comma
+    int64_t noCommaIdx = (ALPHABET_SIZE) * (ALPHABET_SIZE) - 1;
+
+    fprintf(fd, "{\n");
+    fprintf(fd, "  \"alphabet\" : [ \"Aa\", \"Cc\", \"Gg\", \"Tt\", \"-\" ],\n");
+    fprintf(fd, "    \n");
+    fprintf(fd, "  \"wildcard\" : \"Nn\",\n");
+    fprintf(fd, "    \n");
+    fprintf(fd, "  \"haplotypeSubstitutionModel\" : [ \n");
+    for (int64_t i = 0; i < ALPHABET_SIZE; i++) {
+        fprintf(fd, "    ");
+        for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
+            int64_t idx = i * ALPHABET_SIZE + j;
+            fprintf(fd, "%8f", exp(params->hetSubModelSlow[idx]));
+            if (idx != noCommaIdx) fprintf(fd, ", ");
+        }
+        fprintf(fd, "\n");
+    }
+    fprintf(fd, "   ],\n");
+    fprintf(fd, "    \n");
+    fprintf(fd, "  \"readErrorModel\" : [ \n");
+    for (int64_t i = 0; i < ALPHABET_SIZE; i++) {
+        fprintf(fd, "    ");
+        for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
+            int64_t idx = i * ALPHABET_SIZE + j;
+            fprintf(fd, "%8f", exp(params->readErrorSubModelSlow[idx]));
+            if (idx != noCommaIdx) fprintf(fd, ", ");
+        }
+        fprintf(fd, "\n");
+    }
+    fprintf(fd, "   ],\n");
+    fprintf(fd, "    \n");
+    fprintf(fd, "  \"maxNotSumTransitions\" : %s,\n", params->maxNotSumTransitions ? "true" : "false");
+    fprintf(fd, "    \n");
+    fprintf(fd, "  \"maxPartitionsInAColumn\" : %" PRIi64 ",\n", params->maxPartitionsInAColumn);
+    fprintf(fd, "\n");
+    fprintf(fd, "  \"maxCoverageDepth\" : %" PRIi64 ",\n", params->maxCoverageDepth);
+    fprintf(fd, "\n");
+    fprintf(fd, "  \"minReadCoverageToSupportPhasingBetweenHeterozygousSites\" : %" PRIi64 ",\n", params->minReadCoverageToSupportPhasingBetweenHeterozygousSites);
+    fprintf(fd, "  \n");
+    fprintf(fd, "  \"onDiagonalReadErrorPseudoCount\" : %f,\n", params->onDiagonalReadErrorPseudoCount);
+    fprintf(fd, "  \n");
+    fprintf(fd, "  \"offDiagonalReadErrorPseudoCount\" : %f,\n", params->offDiagonalReadErrorPseudoCount);
+    fprintf(fd, "  \n");
+    fprintf(fd, "  \"trainingIterations\" : %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fd, "}");
+
+    if (fclose(fd) != 0) st_logCritical("Failed to close output param file: %s\n", outputFilename);
 }

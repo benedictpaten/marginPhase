@@ -411,6 +411,7 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
+void writeParamFile(char *outputFilename, stRPHmmParameters *params);
 
 /*
  * Stores information about relevant test results.
