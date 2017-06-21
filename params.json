@@ -1,34 +1,38 @@
 {
   "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ],
-    
+
   "wildcard" : "Nn",
-    
-  "haplotypeSubstitutionModel" : [ 
+
+  "haplotypeSubstitutionModel" : [
     0.99, 0.003, 0.003, 0.003, 0.001,
     0.003, 0.99, 0.003, 0.003, 0.001,
     0.003, 0.003, 0.99, 0.003, 0.001,
     0.003, 0.003, 0.003, 0.99, 0.001,
     0.001, 0.001, 0.001, 0.001, 0.996
-   ],
-    
-  "readErrorModel" : [ 
-    0.96, 0.01, 0.01, 0.01, 0.01,
-    0.01, 0.96, 0.01, 0.01, 0.01,
-    0.01, 0.01, 0.96, 0.01, 0.01,
-    0.01, 0.01, 0.01, 0.96, 0.01,
+  ],
+
+  "readErrorModel" : [
+    0.975, 0.005, 0.005, 0.005, 0.01,
+    0.005, 0.975, 0.005, 0.005, 0.01,
+    0.005, 0.005, 0.975, 0.005, 0.01,
+    0.005, 0.005, 0.005, 0.975, 0.01,
     0.01, 0.01, 0.01, 0.01, 0.96 ],
-    
+
   "maxNotSumTransitions" : true,
-    
+
   "maxPartitionsInAColumn" : 50,
 
   "maxCoverageDepth" : 64,
 
-  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 4,
-  
+  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 5,
+
   "onDiagonalReadErrorPseudoCount" : 1000,
-  
+
   "offDiagonalReadErrorPseudoCount" : 10,
-  
-  "trainingIterations" : 1
+
+  "trainingIterations" : 1,
+
+  "filterBadReads" : true,
+
+  "filterMatchThreshold" : 0.92
 }

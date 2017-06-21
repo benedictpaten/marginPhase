@@ -4,6 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <htslib/hts.h>
 #include "stRPHmm.h"
 
 
@@ -12,13 +13,13 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     // prep
     char haplotype1BamOutFile[strlen(bamOutBase) + 7];
     strcpy(haplotype1BamOutFile, bamOutBase);
-    strcat(haplotype1BamOutFile, ".1.sam");
+    strcat(haplotype1BamOutFile, ".1.bam");
     char haplotype2BamOutFile[strlen(bamOutBase) + 7];
     strcpy(haplotype2BamOutFile, bamOutBase);
-    strcat(haplotype2BamOutFile, ".2.sam");
+    strcat(haplotype2BamOutFile, ".2.bam");
     char unmatchedBamOutFile[strlen(bamOutBase) + 15];
     strcpy(unmatchedBamOutFile, bamOutBase);
-    strcat(unmatchedBamOutFile, ".unmatched.sam");
+    strcat(unmatchedBamOutFile, ".unmatched.bam");
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -30,39 +31,43 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
 
     int r;
     st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
-    samFile *out1 = hts_open(haplotype1BamOutFile, "w");
+    samFile *out1 = hts_open_format(haplotype1BamOutFile, "w", &(in->format));
     r = sam_hdr_write(out1, bamHdr);
+    if (r != 0) st_logDebug("Couldn't write header to %s\n", haplotype1BamOutFile);
 
-    samFile *out2 = hts_open(haplotype2BamOutFile, "w");
+    samFile *out2 = hts_open_format(haplotype2BamOutFile, "w", &(in->format));
     r = sam_hdr_write(out2, bamHdr);
+    if (r != 0) st_logDebug("Couldn't write header to %s\n", haplotype2BamOutFile);
 
-    samFile *out3 = hts_open(unmatchedBamOutFile, "w");
+    samFile *out3 = hts_open_format(unmatchedBamOutFile, "w", &(in->format));
     r = sam_hdr_write(out3, bamHdr);
+    if (r != 0) st_logDebug("Couldn't write header to %s\n", unmatchedBamOutFile);
 
     // read in input file, write out each read to one sam file
-    int32_t readCountH1 = 0;
-    int32_t readCountH2 = 0;
-    int32_t readCountNeither = 0;
-    while(sam_read1(in,bamHdr,aln) > 0) {
+    int64_t readCountH1 = 0;
+    int64_t readCountH2 = 0;
+    int64_t readCountNeither = 0;
+    while(bam_read1(in->fp.bgzf,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
         if (stSet_search(haplotype1Ids, readName) != NULL) {
-            r = sam_write1(out1, bamHdr, aln);
+            r = bam_write1(out1->fp.bgzf, aln);
             readCountH1++;
         } else if (stSet_search(haplotype2Ids, readName) != NULL) {
-            r = sam_write1(out2, bamHdr, aln);
+            r = bam_write1(out2->fp.bgzf, aln);
             readCountH2++;
         } else {
-            r = sam_write1(out3, bamHdr, aln);
+            r = bam_write1(out3->fp.bgzf, aln);
             readCountNeither++;
         }
     }
-    st_logDebug("Read counts:\n\thap1:%d\thap2:%d\tneither:%d\n", readCountH1, readCountH2, readCountNeither);
+    st_logDebug("Read counts:\n\thap1:%" PRIi64 "\thap2:%" PRIi64 "\tneither:%" PRIi64 "\n", readCountH1, readCountH2, readCountNeither);
 
-    bam_destroy1(aln);
-    bam_hdr_destroy(bamHdr);
     sam_close(in);
     sam_close(out1);
     sam_close(out2);
     sam_close(out3);
+    bam_destroy1(aln);
+    bam_hdr_destroy(bamHdr);
 }
+

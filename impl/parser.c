@@ -98,6 +98,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->offDiagonalReadErrorPseudoCount = 1;
     params->onDiagonalReadErrorPseudoCount = 1;
     params->trainingIterations = 0;
+    params->filterBadReads = false;
+    params->filterMatchThreshold = 0.90;
 
     FILE *fp;
     fp = fopen(paramsFile, "rb");
@@ -209,6 +211,18 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->trainingIterations = atoi(tokStr);
+            i++;
+        }
+        if (strcmp(keyString, "filterBadReads") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            if (strcmp(tokStr, "true") == 0) params->filterBadReads = true;
+            i++;
+        }
+        if (strcmp(keyString, "filterMatchThreshold") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->filterMatchThreshold = atof(tokStr);
             i++;
         }
     }

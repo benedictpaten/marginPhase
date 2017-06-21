@@ -21,7 +21,9 @@ int genotypingTest(char *paramsFile, char *bamFile, char *vcfOutFile,
             " --referenceVcf %s",
             bamFile, referenceFile, logString,
             paramsFile, vcfOutFile, vcfReference);
+    st_logInfo("Running command: %s\n", command);
     st_logInfo("> Running margin phase on %s\n", bamFile);
+
     return st_system(command);
 
     // TODO : Do VCF comparison using VCF eval
@@ -56,10 +58,10 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *samOutBase = "test_100kb";
     bool verbose = true;
 
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.1.bam";
-//    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
-//    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
-    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.1.vcf";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.2.bam";
+//    char *bamFile = "../tests/NA12878.np.chr3.100kb.3.bam";
+//    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 //    char *bamFile = "../tests/NA12878.pb.chr3.2mb.bam";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.2mb.vcf";
@@ -72,9 +74,7 @@ void test_100kbGenotyping(CuTest *testCase) {
 
 }
 
-void test_multiple100kbGenotyping(CuTest *testCase) {
-
-    st_setLogLevelFromString("info");
+void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     char *paramsFile = "../params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
@@ -128,13 +128,123 @@ void test_multiple100kbGenotyping(CuTest *testCase) {
     CuAssertTrue(testCase, i == 0);
 }
 
+void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
+
+    char *paramsFile = "../params.json";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *vcfOutFile = "test_100kb.vcf";
+    char *samOutBase = "test_100kb_0";
+    bool verbose = false;
+
+    char *bamFile = "../tests/NA12878.np.chr3.100kb.0.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    int i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                           referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.np.chr3.100kb.1.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.1.vcf";
+    samOutBase = "test_100kb_1";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.np.chr3.100kb.2.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
+    samOutBase = "test_100kb_2";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+
+    bamFile = "../tests/NA12878.np.chr3.100kb.3.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
+    samOutBase = "test_100kb_3";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
+    samOutBase = "test_100kb_4";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+}
+
+void test_multiple100kbGenotyping_illuminaHiSeq(CuTest *testCase) {
+
+    char *paramsFile = "../params.json";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *vcfOutFile = "test_100kb.vcf";
+    char *samOutBase = "test_100kb_0";
+    bool verbose = false;
+
+    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.0.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    int i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                           referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.ihs.chr3.100kb.1.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.1.vcf";
+    samOutBase = "test_100kb_1";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.ihs.chr3.100kb.2.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
+    samOutBase = "test_100kb_2";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+
+    bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
+    samOutBase = "test_100kb_3";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+    bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
+    vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
+    samOutBase = "test_100kb_4";
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    i = genotypingTest(paramsFile, bamFile, vcfOutFile,
+                       referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+}
+
 CuSuite *marginPhaseTestSuite(void) {
 
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
     SUITE_ADD_TEST(suite, test_100kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping);
+//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
+//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 
     return suite;
 }

@@ -198,6 +198,10 @@ struct _stRPHmmParameters {
     double onDiagonalReadErrorPseudoCount;
     // Number of iterations of training
     int64_t trainingIterations;
+    // Whether or not to filter out poorly matching reads after one round and try again
+    bool filterBadReads;
+    double filterMatchThreshold;
+
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
