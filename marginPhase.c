@@ -362,8 +362,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-a --logLevel   : Set the log level [default = info]\n");
     fprintf(stderr, "-h --help       : Print this help screen\n");
     fprintf(stderr, "-b --bamFile    : Bam file with input reads\n");
-    fprintf(stderr, "-o --outSamBase : Output SAM Base (\"example\" -> \"example1.sam\", \"example2.sam\")\n");
-    fprintf(stderr, "-v --vcfFile    : Output VCF file\n");
+    fprintf(stderr, "-o --outputBase : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
     fprintf(stderr, "-p --params     : Input params file\n");
     fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
     fprintf(stderr, "-f --referenceFasta   : Fasta file with reference sequence\n");
@@ -376,8 +375,7 @@ int main(int argc, char *argv[]) {
     char *referenceFastaFile = NULL;
     char *referenceVCF = NULL;
 
-    char *samOutBase = "output";
-    char *vcfOutFile = "output.vcf";
+    char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t iterationsOfParameterLearning = 0;
 
@@ -394,8 +392,7 @@ int main(int argc, char *argv[]) {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
                 { "bamFile", required_argument, 0, 'b'},
-                { "outSamBase", required_argument, 0, 'o'},
-                { "vcfFile", required_argument, 0, 'v'},
+                { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "referenceFasta", required_argument, 0, 'f'},
@@ -422,10 +419,7 @@ int main(int argc, char *argv[]) {
             bamInFile = stString_copy(optarg);
             break;
         case 'o':
-            samOutBase = stString_copy(optarg);
-            break;
-        case 'v':
-            vcfOutFile = stString_copy(optarg);
+            outputBase = stString_copy(optarg);
             break;
         case 'p':
             paramsFile = stString_copy(optarg);
@@ -442,8 +436,21 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Initialization from arguments
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
+
+    char vcfOutFile[strlen(outputBase) + 5];
+    strcpy(vcfOutFile, outputBase);
+    strcat(vcfOutFile, ".vcf");
+
+    char paramsOutFile[strlen(outputBase) + 13];
+    strcpy(paramsOutFile, outputBase);
+    strcat(paramsOutFile, ".params.json");
+
+    char vcfOutFile_all[strlen(outputBase) + 13];
+    strcpy(vcfOutFile_all, outputBase);
+    strcat(vcfOutFile_all, ".allLocs.vcf");
 
     // TODO make these so they don't need flags
     if (!bamInFile) bamInFile = stString_copy(argv[1]);
@@ -464,6 +471,7 @@ int main(int argc, char *argv[]) {
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
     st_logDebug("\tCreated %d profile sequences\n", readCount);
+
 
     int64_t numRepetitions = params->filterBadReads ? 2 : 1;
     stSet *read1Ids;
@@ -491,6 +499,8 @@ int main(int argc, char *argv[]) {
         if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
             st_logDebug("> Learned parameters\n");
             stRPHmmParameters_printParameters(params, stderr);
+            st_logInfo("\tWriting learned parameters to file: %s", paramsOutFile);
+            writeParamFile(paramsOutFile, params);
         }
         // Get the final list of hmms
         hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);
@@ -513,12 +523,13 @@ int main(int argc, char *argv[]) {
             compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results);
 
             // Write out two BAMs, one for each read partition
-            if(samOutBase != NULL) {
-                st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", samOutBase, samOutBase);
-                writeSplitSams(bamInFile, samOutBase, read1Ids, read2Ids);
-            }
+            st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,
+                       outputBase);
+            writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+
             st_logInfo("\n----- RESULTS -----\n");
-            st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms), (float)totalGFlength/stList_length(hmms));
+            st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
+                       (float) totalGFlength / stList_length(hmms));
 
             printGenotypeResults(results);
             free(results);
@@ -527,9 +538,7 @@ int main(int argc, char *argv[]) {
         }
         stSet_destruct(read1Ids);
         stSet_destruct(read2Ids);
-
         stList_destruct(hmms);
-
     }
 
 

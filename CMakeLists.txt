@@ -199,8 +199,7 @@ set(SOURCE_FILES
         impl/profileSeq.c
         impl/referencePriorProbs.c
         impl/parser.c
-        impl/vcfWriter.c
-        impl/samWriter.c
+        impl/outputWriter.c
         )
 
 
