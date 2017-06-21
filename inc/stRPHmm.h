@@ -198,6 +198,10 @@ struct _stRPHmmParameters {
     double onDiagonalReadErrorPseudoCount;
     // Number of iterations of training
     int64_t trainingIterations;
+    // Whether or not to filter out poorly matching reads after one round and try again
+    bool filterBadReads;
+    double filterMatchThreshold;
+
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -446,7 +450,7 @@ void compareVCFs(FILE *fh, stList *hmms,
 void printGenotypeResults(stGenotypeResults *results);
 
 
-void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 

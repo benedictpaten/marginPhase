@@ -133,6 +133,10 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
 
     fprintf(fH, "\tRead error substitution rates:\n");
     printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
+
+    fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
+    fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {
@@ -184,9 +188,6 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
      * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
      * of stochastic parameter search to do.
      */
-
-    double offDiagonalPseudoCount = 1;
-    double onDiagonalPsuedoCount = 1000;
 
     // For each iteration construct a set of HMMs and estimate the parameters from it.
     for(int64_t i=0; i<params->trainingIterations; i++) {

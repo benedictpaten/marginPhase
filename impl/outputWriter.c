@@ -10,7 +10,7 @@
 
 
 
-void writeSplitSams(char *bamInFile, char *bamOutBase,
+void writeSplitBams(char *bamInFile, char *bamOutBase,
                     stSet *haplotype1Ids, stSet *haplotype2Ids) {
     // prep
     char haplotype1BamOutFile[strlen(bamOutBase) + 7];
@@ -252,7 +252,8 @@ void recordFalsePositive(stGenotypeResults *results, bcf1_t *unpackedRecord, int
     results->falsePositives++;
     char *evalRefChar = unpackedRecord->d.als;
     char *evalAltChar = unpackedRecord->d.allele[1];
-    st_logDebug("\nFALSE POSITIVE \npos: %" PRIi64 " \nref:%s alt: %s \n",
+
+    st_logDebug("  pos: %" PRIi64 " \n  ref:%s alt: %s \n",
                 evalPos, evalRefChar, evalAltChar);
     printColumnAtPosition(hmm, evalPos);
     if (strlen(evalRefChar) > 1 || strlen(evalAltChar) > 1) {
@@ -268,13 +269,24 @@ void recordFalsePositive(stGenotypeResults *results, bcf1_t *unpackedRecord, int
 }
 
 void printAlleleInfo(bcf1_t *unpackedRecordRef, stRPHmm *hmm, int64_t referencePos, char *refChar, int h1AlphChar, int h2AlphChar) {
-    st_logDebug("pos: %" PRIi64 "\nref: %s\talt: ", referencePos, refChar);
+    st_logDebug("  pos: %" PRIi64 "\n  ref: %s   alt: ", referencePos, refChar);
     for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
         if (i != 1) st_logDebug(",");
         st_logDebug("%s", unpackedRecordRef->d.allele[i]);
-        st_logDebug("\n\toutput alleles: %c, %c\n", h1AlphChar, h2AlphChar);
+        st_logDebug("\n  output: %c, %c\n", h1AlphChar, h2AlphChar);
         printColumnAtPosition(hmm, referencePos);
     }
+}
+
+void printPartitionInfo(int64_t referencePos, int64_t evalPos, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
+    // print additional partition info
+    double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, referencePos);
+    double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, referencePos);
+    st_logDebug("\tPartition 1: \n");
+    printBaseComposition2(read1BaseCounts);
+    st_logDebug("\tPartition 2: \n");
+    printBaseComposition2(read2BaseCounts);
+    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[evalPos-gF->refStart]);
 }
 
 /*
@@ -334,7 +346,7 @@ void compareVCFs(FILE *fh, stList *hmms,
     bool phasingHap2 = false;
     float switchErrorDistance = 0;
 
-    st_logDebug("Genotype fragment:  %d  -  %d  (len: %d)\n", gF->refStart, gF->refStart+gF->length, gF->length);
+//    st_logDebug("Genotype fragment:  %d  -  %d  (len: %d)\n", gF->refStart, gF->refStart+gF->length, gF->length);
 
     while(bcf_read(inRef, hdrRef, refRecord) == 0) {
 
@@ -368,7 +380,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                 gF = stGenomeFragment_construct(hmm, path);
                 reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
                 reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-                st_logDebug("Genotype fragment:  %d  -  %d  (len: %d)\n", gF->refStart, gF->refStart+gF->length, gF->length);
+//                st_logDebug("Genotype fragment:  %d  -  %d  (len: %d)\n", gF->refStart, gF->refStart+gF->length, gF->length);
                 phasingHap1 = false;
                 phasingHap2 = false;
 
@@ -391,15 +403,9 @@ void compareVCFs(FILE *fh, stList *hmms,
         results->positives++;
 
         if (maybeFalsePositive && evalPos < referencePos) {
+            st_logDebug("\nFALSE POSITIVE \n");
             recordFalsePositive(results, unpackedRecord, evalPos, hmm);
-            // print additional partition info
-            double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, referencePos);
-            double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, referencePos);
-            st_logDebug("\tPartition 1: \n");
-            printBaseComposition2(read1BaseCounts);
-            st_logDebug("\tPartition 2: \n");
-            printBaseComposition2(read2BaseCounts);
-            st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[evalPos-gF->refStart]);
+            printPartitionInfo(referencePos, evalPos, reads1, reads2, gF);
         }
 
         // Iterate through vcf until getting to the position of the variant
@@ -415,14 +421,9 @@ void compareVCFs(FILE *fh, stList *hmms,
 
             // Check for false positives - variations found not in reference
             if (evalPos < referencePos) {
+                st_logDebug("\nFALSE POSITIVE \n");
                 recordFalsePositive(results, unpackedRecord, evalPos, hmm);
-                double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, referencePos);
-                double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, referencePos);
-                st_logDebug("\tPartition 1: \n");
-                printBaseComposition2(read1BaseCounts);
-                st_logDebug("\tPartition 2: \n");
-                printBaseComposition2(read2BaseCounts);
-                st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[evalPos-gF->refStart]);
+                printPartitionInfo(referencePos, evalPos, reads1, reads2, gF);
             } else {
                 break;
             }
@@ -432,19 +433,17 @@ void compareVCFs(FILE *fh, stList *hmms,
         if (evalPos == referencePos) {
             char *evalRefChar = unpackedRecord->d.als;
             char *evalAltChar = unpackedRecord->d.allele[1];
-            double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, referencePos);
-            double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, referencePos);
 
             if (allele1 == allele2) {
                 if ((strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) || (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0)) {
+                    st_logDebug("HOMOZYGOUS VARIANT IN REF\n");
                     recordFalsePositive(results, unpackedRecord, evalPos, hmm);
-                    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[evalPos-gF->refStart]);
-                    st_logDebug("VARIANT HOMOZYGOUS IN REF\n");
                     results->error_homozygousInRef++;
                     results->positives--;
                     results->negatives++;
                 } else {
-//                    st_logInfo("\nSOMETHING REAL BAD???? %d \n", referencePos);
+                    st_logDebug("\nUNKNOWN ERROR \n");
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                 }
             } else if (!phasingHap1 && !phasingHap2) {
                 // Beginning of genotype fragment, figure out which haplotype matches with ref
@@ -463,7 +462,6 @@ void compareVCFs(FILE *fh, stList *hmms,
                     else phasingHap2 = true;
                 } else {
                     // Homozygous at start of fragment
-//                    st_logInfo("\n!!!!!!!!!!!!!!!! %d\n", referencePos);
                 }
             } else if (phasingHap1) {
                 if (allele1 == 0 && allele2 == 1) {
@@ -486,6 +484,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 } else {
                     if (strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) {
@@ -507,6 +506,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 }
                 printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
@@ -530,6 +530,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 } else {
                     if (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0) {
@@ -550,16 +551,13 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 }
                 printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
             }
             // print additional partition info
-            st_logDebug("\tPartition 1: \n");
-            printBaseComposition2(read1BaseCounts);
-            st_logDebug("\tPartition 2: \n");
-            printBaseComposition2(read2BaseCounts);
-            st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[referencePos-gF->refStart]);
+            printPartitionInfo(referencePos, evalPos, reads1, reads2, gF);
 
         } else if (evalPos > referencePos){
             // Missed the variant
@@ -641,7 +639,7 @@ void printGenotypeResults(stGenotypeResults *results) {
                (float) (results->truePositives-results->truePositiveGaps)/(results->positives-results->truePositiveGaps-results->error_missedIndels),
                results->truePositives, results->positives,
                results->truePositives-results->truePositiveGaps, results->positives-results->truePositiveGaps-results->error_missedIndels) ;
-    st_logInfo("\tVariants in reference not supported by sample: %" PRIi64 "\n",
+    st_logInfo("\tHomozygous variants in sample: %" PRIi64 "\n",
                results->error_homozygousInRef);
     st_logInfo("\tFalse negatives: %" PRIi64 "\n", results->falseNegatives);
 

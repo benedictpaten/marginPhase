@@ -19,8 +19,8 @@ int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
+//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 
 	CuSuiteRun(suite);
