@@ -26,7 +26,7 @@ void printSequenceStats(FILE *fH, stList *profileSequences) {
         stProfileSeq *profileSeq = stList_get(profileSequences, i);
         totalLength += profileSeq->length;
     }
-    fprintf(fH, "Got %" PRIi64 " profile sequences, with total length: %" PRIi64 ", average length: %f\n",
+    fprintf(fH, "\tGot %" PRIi64 " profile sequences, with total length: %" PRIi64 ", average length: %f\n",
             stList_length(profileSequences), totalLength, ((float)totalLength)/stList_length(profileSequences));
 }
 
@@ -133,10 +133,9 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         }
     }
 
-    fprintf(fH, "Avg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+    fprintf(fH, "\tAvg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
 }
-
 double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
     /*
      * Get the count of each alphabet character in the haplotype sequence, returned
@@ -176,7 +175,7 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
         totalCount += baseCounts[i];
     }
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "Base %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
+        fprintf(fH, "\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
     }
 }
 
@@ -200,6 +199,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
     fprintf(stderr, "-f --referenceFasta   : Fasta file with reference sequence\n");
 }
+
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
@@ -427,17 +427,18 @@ int main(int argc, char *argv[]) {
             st_logDebug("Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
 
             // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-            st_logDebug("hap1 vs. reads1 identity: %f\n",
+            st_logDebug("\thap1 vs. reads1 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-            st_logDebug("hap1 vs. reads2 identity: %f\n",
+            st_logDebug("\thap1 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
 
-            st_logDebug("hap2 vs. reads2 identity: %f\n",
+            st_logDebug("\thap2 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-            st_logDebug("hap2 vs. reads1 identity: %f\n",
+            st_logDebug("\thap2 vs. reads1 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
-        } else if (st_getLogLevel() == debug)
+        } else if (st_getLogLevel() == debug) {
             st_logDebug("Too many genotype fragments to output individual debugging info\n");
+        }
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
