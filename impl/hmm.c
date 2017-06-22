@@ -137,6 +137,8 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
     fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\tVerbose Attributes:\n");
+    if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {
@@ -241,6 +243,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
 
         // Cleanup
         st_logDebug("\t\tcleaning\n");
+        //TODO I think we need to destruct each hmm in here too
         stList_destruct(hmms);
 
         // Normalise the probabilities

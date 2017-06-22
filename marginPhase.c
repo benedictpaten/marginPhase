@@ -359,13 +359,15 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
             "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n"
             "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n");
-    fprintf(stderr, "-a --logLevel   : Set the log level [default = info]\n");
-    fprintf(stderr, "-h --help       : Print this help screen\n");
-    fprintf(stderr, "-b --bamFile    : Bam file with input reads\n");
-    fprintf(stderr, "-o --outputBase : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
-    fprintf(stderr, "-p --params     : Input params file\n");
-    fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
-    fprintf(stderr, "-f --referenceFasta   : Fasta file with reference sequence\n");
+    fprintf(stderr, "-h --help            : Print this help screen\n");
+    fprintf(stderr, "-a --logLevel        : Set the log level [default = info]\n");
+    fprintf(stderr, "-b --bamFile         : Bam file with input reads\n");
+    fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
+    fprintf(stderr, "-p --params          : Input params file\n");
+    fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
+    fprintf(stderr, "-f --referenceFasta  : Fasta file with reference sequence\n");
+    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
+    fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
 }
 
 
@@ -379,6 +381,7 @@ int main(int argc, char *argv[]) {
     char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t iterationsOfParameterLearning = 0;
+    int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -397,10 +400,11 @@ int main(int argc, char *argv[]) {
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "referenceFasta", required_argument, 0, 'f'},
+                { "verbose", optional_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc, argv, "a:b:o:v:p:r:f:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:b:o:v::p:r:f:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -430,6 +434,10 @@ int main(int argc, char *argv[]) {
             break;
         case 'r':
             referenceVCF = stString_copy(optarg);
+            break;
+        case 'v':
+            if (optarg == NULL) verboseBitstring = (1 << 16) - 1;
+            else verboseBitstring = atoi(optarg);
             break;
         default:
             usage();
@@ -461,6 +469,7 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    if (verboseBitstring >= 0) setVerbosity(params, verboseBitstring); //run this AFTER parameters, so CL args overwrite
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -497,10 +506,12 @@ int main(int argc, char *argv[]) {
         stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
 
         // Print a report of the parsed parameters
-        if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
-            st_logDebug("> Learned parameters\n");
-            stRPHmmParameters_printParameters(params, stderr);
-            st_logInfo("\tWriting learned parameters to file: %s", paramsOutFile);
+        if (params->trainingIterations > 0) {
+            if (st_getLogLevel() == debug) {
+                st_logDebug("> Learned parameters\n");
+                stRPHmmParameters_printParameters(params, stderr);
+            }
+            st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
             writeParamFile(paramsOutFile, params);
         }
         // Get the final list of hmms
@@ -523,7 +534,7 @@ int main(int argc, char *argv[]) {
         } else {
             // Compare the output vcf with the reference vcf
             stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
-            compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results);
+            compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
 
             // Write out two BAMs, one for each read partition
             st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n",

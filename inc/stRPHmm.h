@@ -202,6 +202,9 @@ struct _stRPHmmParameters {
     bool filterBadReads;
     double filterMatchThreshold;
 
+    // Verbosity options for printing
+    bool verboseTruePositives;
+
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -411,6 +414,10 @@ int stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
+// Verbosity for what's printed.  To add more verbose options, you need to update:
+//  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
+#define LOG_TRUE_POSITIVES 1
+void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
 
 // File writing
 void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool differencesOnly);
@@ -444,9 +451,8 @@ struct _stGenotypeResults {
     float switchErrorDistance;
     int64_t uncertainPhasing;
 };
-void compareVCFs(FILE *fh, stList *hmms,
-                 char *vcf_toEval, char *vcf_ref,
-                 stBaseMapper *baseMapper, stGenotypeResults *results);
+void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
+                 stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void printGenotypeResults(stGenotypeResults *results);
 
 
