@@ -11,7 +11,7 @@
 
 
 void writeSplitSams(char *bamInFile, char *bamOutBase,
-                    stSet *haplotype1Ids, stSet *haplotype2Ids) {
+                    stSet *haplotype1Ids, stSet *haplotype2Ids, stSet *badReadIds) {
     // prep
     char haplotype1BamOutFile[strlen(bamOutBase) + 7];
     strcpy(haplotype1BamOutFile, bamOutBase);
@@ -22,6 +22,9 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     char unmatchedBamOutFile[strlen(bamOutBase) + 15];
     strcpy(unmatchedBamOutFile, bamOutBase);
     strcat(unmatchedBamOutFile, ".unmatched.sam");
+    char badReadsBamOutFile[strlen(bamOutBase) + 9];
+    strcpy(badReadsBamOutFile, bamOutBase);
+    strcat(badReadsBamOutFile, ".bad.sam");
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -42,10 +45,14 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     samFile *out3 = hts_open(unmatchedBamOutFile, "w");
     r = sam_hdr_write(out3, bamHdr);
 
+    samFile *out4 = hts_open(badReadsBamOutFile, "w");
+    r = sam_hdr_write(out4, bamHdr);
+
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountNeither = 0;
+    int32_t readCountFiltered = 0;
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
@@ -55,12 +62,15 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
         } else if (stSet_search(haplotype2Ids, readName) != NULL) {
             r = sam_write1(out2, bamHdr, aln);
             readCountH2++;
+        } else if (stSet_search(badReadIds, readName) != NULL) {
+            r = sam_write1(out4, bamHdr, aln);
+            readCountFiltered++;
         } else {
             r = sam_write1(out3, bamHdr, aln);
             readCountNeither++;
         }
     }
-    st_logDebug("Read counts:\n\thap1:%d\thap2:%d\tneither:%d\n", readCountH1, readCountH2, readCountNeither);
+    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d\tneither: %d\n", readCountH1, readCountH2, readCountFiltered, readCountNeither);
 
     bam_destroy1(aln);
     bam_hdr_destroy(bamHdr);
@@ -68,6 +78,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     sam_close(out1);
     sam_close(out2);
     sam_close(out3);
+    sam_close(out4);
 }
 
 
@@ -506,7 +517,6 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 }
                 printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
@@ -530,7 +540,6 @@ void compareVCFs(FILE *fh, stList *hmms,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 } else {
                     if (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0) {

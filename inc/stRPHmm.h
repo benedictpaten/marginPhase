@@ -450,7 +450,7 @@ void compareVCFs(FILE *fh, stList *hmms,
 void printGenotypeResults(stGenotypeResults *results);
 
 
-void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids, stSet *badReadIds);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 

@@ -34,5 +34,5 @@
 
   "filterBadReads" : true,
 
-  "filterMatchThreshold" : 0.92
+  "filterMatchThreshold" : 0.90
 }

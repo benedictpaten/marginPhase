@@ -50,6 +50,31 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
     return totalExpectedMatches;
 }
 
+double getIdentityHetMatches(uint64_t *haplotypeString1, uint64_t *haplotypeString2, int64_t start, int64_t length, stProfileSeq *profileSeq) {
+    /*
+     * Returns the expected number of positions in the profile sequence that are identical to the given haplotype string.
+     */
+    double totalExpectedMatches = 0.0;
+    double hetPositions = 0.0;
+
+    for(int64_t i=0; i<profileSeq->length; i++) {
+        // Get base in the haplotype sequence
+        int64_t j = i + profileSeq->refStart - start;
+        if(j >= 0 && j < length) {
+            uint64_t hapBase1 = haplotypeString1[j];
+            uint64_t hapBase2 = haplotypeString2[j];
+            assert(hapBase1 < ALPHABET_SIZE);
+            assert(hapBase2 < ALPHABET_SIZE);
+            if (hapBase1 != hapBase2) {
+                // Expectation of a match
+                totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase1);
+                hetPositions += 1;
+            }
+        }
+    }
+    return totalExpectedMatches / hetPositions;
+}
+
 double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
     /*
      * Returns the expected fraction of positions in the profile sequences that match their corresponding position in the
@@ -66,7 +91,7 @@ double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t len
     return totalExpectedNumberOfMatches/totalLength;
 }
 
-int64_t filterProfileSequences(stList *filteredProfileSequences, uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs, stRPHmmParameters *params) {
+int64_t filterProfileSequences(stList *filteredProfileSequences, stSet *badReadIds, uint64_t *haplotypeString1, uint64_t  *haplotypeString2, int64_t start, int64_t length, stSet *profileSeqs, stRPHmmParameters *params) {
     /*
      * Returns the expected fraction of positions in the profile sequences that match their corresponding position in the
      * given haplotype string.
@@ -75,20 +100,19 @@ int64_t filterProfileSequences(stList *filteredProfileSequences, uint64_t *haplo
     stSetIterator *it = stSet_getIterator(profileSeqs);
     stProfileSeq *pSeq;
     while((pSeq = stSet_getNext(it)) != NULL) {
-        double currentMatches = getExpectedNumberOfMatches(haplotypeString, start, length, pSeq);
+        double currentMatches = getExpectedNumberOfMatches(haplotypeString1, start, length, pSeq);
         int64_t currentLength = pSeq->length;
         double percentMatched = currentMatches/currentLength;
+        stProfileSeq *pSeqCopy = stProfileSeq_constructEmptyProfile(pSeq->referenceName, pSeq->readId, pSeq->refStart, pSeq->length);
+        for (int64_t i = 0; i < pSeq->length; i++) {
+            for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
+                pSeqCopy->profileProbs[i * ALPHABET_SIZE + j] = pSeq->profileProbs[i * ALPHABET_SIZE + j];
+            }
+        }
         if (percentMatched < params->filterMatchThreshold) {
             misses++;
-//            st_logDebug("Profile sequence matched %f: %s \n", percentMatched, pSeq->readId);
-//            stProfileSeq_print(pSeq, stderr, 0);
+            stSet_insert(badReadIds, pSeq->readId);
         } else {
-            stProfileSeq *pSeqCopy = stProfileSeq_constructEmptyProfile(pSeq->referenceName, pSeq->readId, pSeq->refStart, pSeq->length);
-            for (int64_t i = 0; i < pSeq->length; i++) {
-                for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
-                    pSeqCopy->profileProbs[i * ALPHABET_SIZE + j] = pSeq->profileProbs[i * ALPHABET_SIZE + j];
-                }
-            }
             stList_append(filteredProfileSequences, pSeqCopy);
         }
     }
@@ -223,6 +247,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
     int64_t initialHmmListSize = stList_length(hmms);
 
+    // Reverse to make sure hmm list stays in correct order
     stList_reverse(hmms);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
@@ -243,7 +268,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     return hmms;
 }
 
-void computeAllFragments(stList *hmms, stSet *read1Ids, stSet *read2Ids, int64_t *totalGFlength, stList *filteredProfileSequences, char *vcfOutFile, char *referenceFastaFile, stBaseMapper *baseMapper, stRPHmmParameters *params, bool filterReads) {
+void computeAllFragments(stList *hmms, stSet *read1Ids, stSet *read2Ids, stSet *badReadIds, int64_t *totalGFlength, stList *filteredProfileSequences, char *vcfOutFile, char *referenceFastaFile, stBaseMapper *baseMapper, stRPHmmParameters *params, bool filterReads) {
     stGenomeFragment *gF;
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
@@ -321,9 +346,9 @@ void computeAllFragments(stList *hmms, stSet *read1Ids, stSet *read2Ids, int64_t
         }
         if (filterReads) {
             // Check for reads that don't match well with their predicted haplotype
-            int64_t hap1misses = filterProfileSequences(filteredProfileSequences, gF->haplotypeString1, gF->refStart, gF->length, reads1, params);
-            int64_t hap2misses = filterProfileSequences(filteredProfileSequences, gF->haplotypeString2, gF->refStart, gF->length, reads2, params);
-            st_logInfo("Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
+            int64_t hap1misses = filterProfileSequences(filteredProfileSequences, badReadIds, gF->haplotypeString1, gF->haplotypeString2, gF->refStart, gF->length, reads1, params);
+            int64_t hap2misses = filterProfileSequences(filteredProfileSequences, badReadIds, gF->haplotypeString2, gF->haplotypeString1, gF->refStart, gF->length, reads2, params);
+            st_logInfo("Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 ", number of reads: %" PRIi64 "\n", gF->refStart, gF->length, stSet_size(reads1) + stSet_size(reads2));
             st_logInfo("hap1 reads filtered out: %f\t(%" PRIi64 " out of %" PRIi64 ")\n", (float)hap1misses/stSet_size(reads1), hap1misses, stSet_size(reads1));
             st_logInfo("hap2 reads filtered out: %f\t(%" PRIi64 " out of %" PRIi64 ")\n\n", (float)hap2misses/stSet_size(reads2), hap2misses, stSet_size(reads2));
         }
@@ -338,6 +363,7 @@ void computeAllFragments(stList *hmms, stSet *read1Ids, stSet *read2Ids, int64_t
         stSet_destruct(reads2);
         stList_destruct(path);
     }
+
     // Cleanup vcf
     vcf_close(vcfOutFP);
     vcf_close(vcfOutFP_all);
@@ -478,6 +504,7 @@ int main(int argc, char *argv[]) {
     stSet *read2Ids;
     stHash *referenceNamesToReferencePriors;
     stList *hmms;
+    stSet *badReadIds = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
 
     for (int i = 0; i < numRepetitions; i++) {
         // Print some stats about the input sequences
@@ -511,11 +538,16 @@ int main(int argc, char *argv[]) {
         int64_t totalGFlength = 0;
         stList *filteredProfileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 
-        // Compute the genotype fragment by running the forward-backward algorithm on each hmm
-        computeAllFragments(hmms, read1Ids, read2Ids, &totalGFlength, filteredProfileSequences, vcfOutFile, referenceFastaFile, baseMapper, params, (params->filterBadReads && i == 0) ? true : false);
 
-        if (params->filterBadReads && i == 0) {
-            stList_destruct(profileSequences);
+        // Compute the genotype fragment by running the forward-backward algorithm on each hmm
+        computeAllFragments(hmms, read1Ids, read2Ids, badReadIds, &totalGFlength, filteredProfileSequences, vcfOutFile, referenceFastaFile, baseMapper, params, (params->filterBadReads && i == 0) ? true : false);
+
+        if (params->filterBadReads && i < numRepetitions-1) {
+            if ((float)stList_length(filteredProfileSequences) / stList_length(profileSequences) < 0.10) {
+                st_logInfo("\nWARNING: might have filtered out too many profile sequences. Fraction of original remaining: %f. Consider running again with lower filterMatchThreshold parameter.\n\n", (float)stList_length(filteredProfileSequences) / stList_length(profileSequences) );
+
+            }
+//            stList_destruct(profileSequences);
             profileSequences = filteredProfileSequences;
         } else {
             // Compare the output vcf with the reference vcf
@@ -525,7 +557,7 @@ int main(int argc, char *argv[]) {
             // Write out two BAMs, one for each read partition
             st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,
                        outputBase);
-            writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+            writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids, badReadIds);
 
             st_logInfo("\n----- RESULTS -----\n");
             st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
@@ -541,6 +573,7 @@ int main(int argc, char *argv[]) {
         stList_destruct(hmms);
     }
 
+    stSet_destruct(badReadIds);
 
     stBaseMapper_destruct(baseMapper);
     stRPHmmParameters_destruct(params);
