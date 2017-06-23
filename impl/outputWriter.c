@@ -10,7 +10,7 @@
 
 
 
-void writeSplitSams(char *bamInFile, char *bamOutBase,
+void writeSplitBams(char *bamInFile, char *bamOutBase,
                     stSet *haplotype1Ids, stSet *haplotype2Ids, stSet *badReadIds) {
     // prep
     char haplotype1BamOutFile[strlen(bamOutBase) + 7];
@@ -309,9 +309,8 @@ void printPartitionInfo(int64_t referencePos, int64_t evalPos, stSet *reads1, st
      * Information about some of the results saved in the genotypeResults struct
      *
      */
-void compareVCFs(FILE *fh, stList *hmms,
-                 char *vcf_toEval, char *vcf_ref,
-                 stBaseMapper *baseMapper, stGenotypeResults *results) {
+void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
+                 stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params) {
 
     st_logInfo("VCF reference: %s \n", vcf_ref);
     st_logInfo("VCF being evaluated: %s \n", vcf_toEval);
@@ -444,10 +443,11 @@ void compareVCFs(FILE *fh, stList *hmms,
         if (evalPos == referencePos) {
             char *evalRefChar = unpackedRecord->d.als;
             char *evalAltChar = unpackedRecord->d.allele[1];
+            bool truePositive = false;
 
             if (allele1 == allele2) {
                 if ((strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) || (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0)) {
-                    st_logDebug("HOMOZYGOUS VARIANT IN REF\n");
+                    st_logDebug("\nHOMOZYGOUS VARIANT IN REF\n");
                     recordFalsePositive(results, unpackedRecord, evalPos, hmm);
                     results->error_homozygousInRef++;
                     results->positives--;
@@ -478,7 +478,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                 if (allele1 == 0 && allele2 == 1) {
                     if (strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) {
                         switchErrorDistance++;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else if (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0) {
@@ -487,10 +487,10 @@ void compareVCFs(FILE *fh, stList *hmms,
                         switchErrorDistance = 0;
                         phasingHap2 = true;
                         phasingHap1 = false;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
-                        st_logDebug("Switch error\n");
+                        st_logDebug("\nSwitch error\n");
                     } else {
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
@@ -504,13 +504,13 @@ void compareVCFs(FILE *fh, stList *hmms,
                         switchErrorDistance = 0;
                         phasingHap2 = true;
                         phasingHap1 = false;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
-                        st_logDebug("Switch error\n");
+                        st_logDebug("\nSwitch error\n");
                     } else if (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0) {
                         switchErrorDistance++;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else {
@@ -524,7 +524,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                 if (allele1 == 0 && allele2 == 1) {
                     if (strcmp(refChar, evalAltChar) == 0 && strcmp(evalRefChar, refAltChar) == 0) {
                         switchErrorDistance++;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else if (strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) {
@@ -533,7 +533,7 @@ void compareVCFs(FILE *fh, stList *hmms,
                         switchErrorDistance = 0;
                         phasingHap1 = true;
                         phasingHap2 = false;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else {
@@ -548,12 +548,12 @@ void compareVCFs(FILE *fh, stList *hmms,
                         switchErrorDistance = 0;
                         phasingHap1 = true;
                         phasingHap2 = false;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else if (strcmp(refChar, evalRefChar) == 0 && strcmp(evalAltChar, refAltChar) == 0) {
                         switchErrorDistance++;
-                        st_logDebug("\nTRUE POSITIVE \n");
+                        truePositive = true;
                         results->truePositives++;
                         if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
                     } else {
@@ -563,10 +563,19 @@ void compareVCFs(FILE *fh, stList *hmms,
                         printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
                     }
                 }
-                printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                if (truePositive && params->verboseTruePositives) {
+                    st_logDebug("\nTRUE POSITIVE\n");
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                } else if (!truePositive) {
+                    //todo do we still want this to print if truePositive was not flagged?
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                }
             }
             // print additional partition info
-            printPartitionInfo(referencePos, evalPos, reads1, reads2, gF);
+            if (!truePositive || params->verboseTruePositives) { // (tp && verbose) || !tp
+                //todo do we always want to print this, regardless of whether tp was flagged or verbose printing?
+                printPartitionInfo(referencePos, evalPos, reads1, reads2, gF);
+            }
 
         } else if (evalPos > referencePos){
             // Missed the variant
@@ -727,7 +736,11 @@ void writeParamFile(char *outputFilename, stRPHmmParameters *params) {
     fprintf(fd, "  \n");
     fprintf(fd, "  \"offDiagonalReadErrorPseudoCount\" : %f,\n", params->offDiagonalReadErrorPseudoCount);
     fprintf(fd, "  \n");
-    fprintf(fd, "  \"trainingIterations\" : %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fd, "  \"trainingIterations\" : %" PRIi64 ",\n", params->trainingIterations);
+    fprintf(fd, "  \n");
+    int64_t verbosityBitstring = 0
+        | (params->verboseTruePositives ? LOG_TRUE_POSITIVES : 0);
+    fprintf(fd, "  \"verbose\" : %" PRIi64 ",\n", verbosityBitstring);
     fprintf(fd, "}");
 
     if (fclose(fd) != 0) st_logCritical("Failed to close output param file: %s\n", outputFilename);

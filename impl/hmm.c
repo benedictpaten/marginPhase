@@ -137,6 +137,8 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
     fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\tVerbose Attributes:\n");
+    if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {
@@ -191,6 +193,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
 
     // For each iteration construct a set of HMMs and estimate the parameters from it.
     for(int64_t i=0; i<params->trainingIterations; i++) {
+        st_logDebug("\tStarting training iteration %" PRIi64 "\n", i);
         // Substitution model for haplotypes to reads
         double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
         for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
@@ -202,40 +205,53 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
 
         stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
-        for(int64_t i=0; i<stList_length(hmms); i++) {
-            stRPHmm *hmm = stList_get(hmms, i);
+        st_logDebug("\t\thandling %d HMMs\n", stList_length(hmms));
+        for(int64_t j=0; j<stList_length(hmms); j++) {
+            st_logDebug("\t\t\titer %" PRIi64 "\n", j);
+            stRPHmm *hmm = stList_get(hmms, j);
 
             // Run the forward-backward algorithm
+            st_logDebug("\t\t\tforward backward\n", j);
             stRPHmm_forwardBackward(hmm);
 
             // Now compute a high probability path through the hmm
+            st_logDebug("\t\t\tpath\n", j);
             stList *path = stRPHmm_forwardTraceBack(hmm);
 
             // Compute the genome fragment
+            st_logDebug("\t\t\tget fragment\n", j);
             stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
             // Get partitioned sequences
+            st_logDebug("\t\t\tpartition\n", j);
             stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
             stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
 
             // Estimate the read error substitution parameters
+            st_logDebug("\t\t\tread error sub model\n", j);
             calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString1, reads1);
             calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString2, reads2);
 
             // Cleanup
+            st_logDebug("\t\t\tcleanup\n", j);
             stSet_destruct(reads1);
             stSet_destruct(reads2);
             stGenomeFragment_destruct(gF);
             stList_destruct(path);
         }
 
+
         // Cleanup
+        st_logDebug("\t\tcleaning\n");
+        //TODO I think we need to destruct each hmm in here too
         stList_destruct(hmms);
 
         // Normalise the probabilities
+        st_logDebug("\t\tnormalizing\n");
         normaliseSubstitutionMatrix(readErrorSubModel);
 
         // Update the read error substitution parameters of the parameters object
+        st_logDebug("\t\tupdating sub prob\n");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
             for(int64_t k=0; k<ALPHABET_SIZE; k++) {
                 setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j, k,
@@ -244,11 +260,12 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         }
 
         // Cleanup
+        st_logDebug("\t\tcleaning\n");
         free(readErrorSubModel);
 
         //Log the parameters info
-        st_logDebug("Parameters learned after iteration %" PRIi64 " of training\n", i+1);
         if(st_getLogLevel() == debug) {
+            st_logDebug("\tParameters learned after iteration %" PRIi64 " of training:\n", i);
             stRPHmmParameters_printParameters(params, stderr);
         }
     }
