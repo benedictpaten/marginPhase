@@ -106,6 +106,7 @@ static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
     params->offDiagonalReadErrorPseudoCount = 1;
     params->onDiagonalReadErrorPseudoCount = 1;
     params->trainingIterations = 0;
+    params->useReferencePrior = 1;
 
     return params;
 }

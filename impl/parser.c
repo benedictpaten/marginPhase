@@ -100,6 +100,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->trainingIterations = 0;
     params->filterBadReads = false;
     params->filterMatchThreshold = 0.90;
+    params->useReferencePrior = false;
 
     FILE *fp;
     fp = fopen(paramsFile, "rb");
@@ -174,7 +175,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         if (strcmp(keyString, "maxNotSumTransitions") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            if (strcmp(tokStr, "false") == 0) params->maxNotSumTransitions = false;
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->maxNotSumTransitions = strcmp(tokStr, "true") == 0;
             i++;
         }
         if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
@@ -223,6 +225,13 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->filterMatchThreshold = atof(tokStr);
+            i++;
+        }
+        if (strcmp(keyString, "useReferencePrior") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->useReferencePrior = strcmp(tokStr, "true") == 0;
             i++;
         }
     }

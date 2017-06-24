@@ -15,7 +15,7 @@ int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
-    char *command = stString_print("./marginPhase --bamFile %s --referenceFasta %s %s --params %s --outputBase %s "
+    char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s "
             " --referenceVcf %s",
             bamFile, referenceFile, logString,
             paramsFile, outputBase, vcfReference);
@@ -214,7 +214,6 @@ void test_multiple100kbGenotyping_illuminaHiSeq(CuTest *testCase) {
                        referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
-
     bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
     vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
     outputBase = "test_100kb_ihs_3";
@@ -239,8 +238,8 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-    SUITE_ADD_TEST(suite, test_100kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 

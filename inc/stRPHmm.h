@@ -146,6 +146,8 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
 
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
+
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
         stBaseMapper *baseMapper, stRPHmmParameters *params);
 
@@ -202,6 +204,8 @@ struct _stRPHmmParameters {
     bool filterBadReads;
     double filterMatchThreshold;
 
+    // Use a prior for the reference sequence
+    bool useReferencePrior;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);

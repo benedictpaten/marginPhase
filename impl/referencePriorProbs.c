@@ -55,10 +55,10 @@ static stReferencePriorProbs *getNext(stList *profileSequences) {
     return stReferencePriorProbs_constructEmptyProfile(refName, refStart, refEnd-refStart);
 }
 
-stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
-        stBaseMapper *baseMapper, stRPHmmParameters *params) {
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences) {
     /*
      * Create a set of stReferencePriorProbs that cover the reference intervals included in the profile sequences.
+     * Each has a flat probability over reference positions.
      * The return value is encoded as a map from the reference sequence name (as a string)
      * to the stReferencePriorProbs.
      */
@@ -71,6 +71,39 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
     profileSequences = stList_copy(profileSequences, NULL);
     stList_sort(profileSequences, stRPProfileSeq_cmpFn);
 
+    uint16_t flatValue = scaleToLogIntegerSubMatrix(log(1.0/ALPHABET_SIZE));
+    while(stList_length(profileSequences) > 0) {
+        // Get next reference prior prob interval
+        stReferencePriorProbs *rProbs = getNext(profileSequences);
+
+        // Fill in probability profile
+        for(int64_t i=0; i<rProbs->length; i++) {
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                rProbs->profileProbs[i*ALPHABET_SIZE + j] = flatValue;
+            }
+        }
+
+        assert(stHash_search(referenceNamesToReferencePriors, rProbs->referenceName) == NULL);
+        stHash_insert(referenceNamesToReferencePriors, rProbs->referenceName, rProbs);
+    }
+
+    // Cleanup
+    stList_destruct(profileSequences);
+
+    return referenceNamesToReferencePriors;
+}
+
+stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
+        stBaseMapper *baseMapper, stRPHmmParameters *params) {
+    /*
+     * Create a set of stReferencePriorProbs that cover the reference intervals included in the profile sequences.
+     * The return value is encoded as a map from the reference sequence name (as a string)
+     * to the stReferencePriorProbs.
+     */
+
+    // Make map from reference sequence names to reference priors
+    stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences);
+
     // Load reference fasta index
     faidx_t *fai = fai_load(referenceFastaFile);
     if ( !fai ) {
@@ -78,9 +111,10 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
                        referenceFastaFile, referenceFastaFile);
     }
 
-    while(stList_length(profileSequences) > 0) {
-        // Get next reference prior prob interval
-        stReferencePriorProbs *rProbs = getNext(profileSequences);
+    stHashIterator *hashIt = stHash_getIterator(referenceNamesToReferencePriors);
+    char *referenceName;
+    while((referenceName = stHash_getNext(hashIt)) != NULL) {
+        stReferencePriorProbs *rProbs = stHash_search(referenceNamesToReferencePriors, referenceName);
 
         // Now get the corresponding reference sequence
         int seqLen;
@@ -99,13 +133,12 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
             }
         }
 
-		assert(stHash_search(referenceNamesToReferencePriors, rProbs->referenceName) == NULL);
-        stHash_insert(referenceNamesToReferencePriors, rProbs->referenceName, rProbs);
     }
+
 
     // Cleanup
     fai_destroy(fai);
-    stList_destruct(profileSequences);
+    stHash_destructIterator(hashIt);
 
     return referenceNamesToReferencePriors;
 }
