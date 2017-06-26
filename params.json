@@ -33,8 +33,10 @@
   "trainingIterations" : 1,
 
   "filterBadReads" : true,
-
-  "filterMatchThreshold" : 0.92,
   
-  "useReferencePrior" : true
+  "filterMatchThreshold" : 0.92,
+
+  "useReferencePrior" : true,
+
+  "verbose" : 0
 }

@@ -101,6 +101,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterBadReads = false;
     params->filterMatchThreshold = 0.90;
     params->useReferencePrior = false;
+    setVerbosity(params, 0);
 
     FILE *fp;
     fp = fopen(paramsFile, "rb");
@@ -232,12 +233,22 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->useReferencePrior = strcmp(tokStr, "true") == 0;
+        }
+        if (strcmp(keyString, "verbose") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            int64_t bitstring = atoi(tokStr);
+            setVerbosity(params, bitstring);
             i++;
         }
     }
 
     free(js);
     return params;
+}
+
+void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
+    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
 }
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {

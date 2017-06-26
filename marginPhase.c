@@ -26,7 +26,7 @@ void printSequenceStats(FILE *fH, stList *profileSequences) {
         stProfileSeq *profileSeq = stList_get(profileSequences, i);
         totalLength += profileSeq->length;
     }
-    fprintf(fH, "Got %" PRIi64 " profile sequences, with total length: %" PRIi64 ", average length: %f\n",
+    fprintf(fH, "\tGot %" PRIi64 " profile sequences, with total length: %" PRIi64 ", average length: %f\n",
             stList_length(profileSequences), totalLength, ((float)totalLength)/stList_length(profileSequences));
 }
 
@@ -48,6 +48,32 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
         }
     }
     return totalExpectedMatches;
+}
+
+double getIdentityHetMatches(uint64_t *haplotypeString1, uint64_t *haplotypeString2, int64_t start, int64_t length, stProfileSeq *profileSeq) {
+    /*
+     * Returns the expected number of positions in the profile sequence that are identical 
+     * to the given haplotype string (haplotypeString1) at heterozygous positions.
+     */
+    double totalExpectedMatches = 0.0;
+    double hetPositions = 0.0;
+
+    for(int64_t i=0; i<profileSeq->length; i++) {
+        // Get base in the haplotype sequence
+        int64_t j = i + profileSeq->refStart - start;
+        if(j >= 0 && j < length) {
+            uint64_t hapBase1 = haplotypeString1[j];
+            uint64_t hapBase2 = haplotypeString2[j];
+            assert(hapBase1 < ALPHABET_SIZE);
+            assert(hapBase2 < ALPHABET_SIZE);
+            if (hapBase1 != hapBase2) {
+                // Expectation of a match
+                totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase1);
+                hetPositions += 1;
+            }
+        }
+    }
+    return totalExpectedMatches / hetPositions;
 }
 
 double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
@@ -91,7 +117,6 @@ int64_t filterProfileSequences(stList *filteredProfileSequences, uint64_t *haplo
     }
     return misses;
 }
-
 
 double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
     /*
@@ -160,10 +185,9 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         }
     }
 
-    fprintf(fH, "Avg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+    fprintf(fH, "\tAvg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
 }
-
 double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
     /*
      * Get the count of each alphabet character in the haplotype sequence, returned
@@ -203,7 +227,7 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
         totalCount += baseCounts[i];
     }
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "Base %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
+        fprintf(fH, "\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
     }
 }
 
@@ -219,6 +243,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     stList *l = stList_construct3(0, (void (*)(void *))stRPHmm_destruct2);
     int64_t initialHmmListSize = stList_length(hmms);
 
+    // Reverse to make sure hmm list stays in correct order
     stList_reverse(hmms);
     while(stList_length(hmms) > 0) {
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
@@ -356,12 +381,15 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
             "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n"
             "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n");
-    fprintf(stderr, "-a --logLevel   : Set the log level [default = info]\n");
-    fprintf(stderr, "-h --help       : Print this help screen\n");
-    fprintf(stderr, "-o --outputBase : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
-    fprintf(stderr, "-p --params     : Input params file\n");
-    fprintf(stderr, "-r --referenceVCF  : Reference vcf file, to compare output to\n");
+    fprintf(stderr, "-h --help            : Print this help screen\n");
+    fprintf(stderr, "-a --logLevel        : Set the log level [default = info]\n");
+    fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
+    fprintf(stderr, "-p --params          : Input params file\n");
+    fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
+    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
+    fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
 }
+
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
@@ -373,6 +401,7 @@ int main(int argc, char *argv[]) {
     char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t iterationsOfParameterLearning = 0;
+    int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -390,14 +419,14 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
-                { "bamFile", required_argument, 0, 'b'},
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
+                { "verbose", optional_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:p:r:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v::p:r:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -422,6 +451,10 @@ int main(int argc, char *argv[]) {
         case 'r':
             referenceVCF = stString_copy(optarg);
             break;
+        case 'v':
+            if (optarg == NULL) verboseBitstring = (1 << 16) - 1;
+            else verboseBitstring = atoi(optarg);
+            break;
         default:
             usage();
             return 0;
@@ -441,6 +474,7 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     stBaseMapper *baseMapper = stBaseMapper_construct();
     stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    if (verboseBitstring >= 0) setVerbosity(params, verboseBitstring); //run this AFTER parameters, so CL args overwrite
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -468,6 +502,12 @@ int main(int argc, char *argv[]) {
         st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
         referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
                 baseMapper, params);
+	}
+
+    // Filter reads that are considered too divergent and junky
+    if(params->filterBadReads) {
+        st_logInfo("> Filtering reads to remove reads with less than %f identity to their inferred haplotype\n", params->filterMatchThreshold);
+        profileSequences = filterReads(profileSequences, referenceNamesToReferencePriors, params);
     }
 
     // Learn the parameters for the input data
@@ -480,12 +520,6 @@ int main(int argc, char *argv[]) {
         stRPHmmParameters_printParameters(params, stderr);
         st_logInfo("\tWriting learned parameters to file: %s", paramsOutFile);
         writeParamFile(paramsOutFile, params);
-    }
-
-    // Filter reads that are considered too divergent and junky
-    if(params->filterBadReads) {
-        st_logInfo("> Filtering reads to remove reads with less than %f identity to their inferred haplotype\n", params->filterMatchThreshold);
-        profileSequences = filterReads(profileSequences, referenceNamesToReferencePriors, params);
     }
 
     // Get the final list of hmms
@@ -546,12 +580,14 @@ int main(int argc, char *argv[]) {
 
     // Compare the output vcf with the reference vcf
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
-    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results);
+
+    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
 
     // Write out two BAMs, one for each read partition
     st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,
                outputBase);
-    writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+
+    writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
 
     st_logInfo("\n----- RESULTS -----\n");
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
