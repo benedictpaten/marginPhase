@@ -140,6 +140,10 @@ struct _stReferencePriorProbs {
     // see scaleToLogIntegerSubMatrix()
     // and invertScaleToLogIntegerSubMatrix() to see how probabilities are stored
     uint16_t *profileProbs;
+    // The profile sequence
+    uint8_t *profileSequence;
+    // Read counts for the bases seen in reads
+    double *baseCounts;
 };
 
 stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
@@ -209,6 +213,7 @@ struct _stRPHmmParameters {
 
     // Verbosity options for printing
     bool verboseTruePositives;
+    bool verboseFalsePositives;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -401,18 +406,18 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
-    int8_t *charToNum;
+    uint8_t *charToNum;
     char *numToChar;
     char *wildcard;
-    int size;
+    uint8_t size;
 };
 
 stBaseMapper* stBaseMapper_construct();
 void stBaseMapper_destruct(stBaseMapper *bm);
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
-int stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
-int stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
+char stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
@@ -421,6 +426,7 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
 #define LOG_TRUE_POSITIVES 1
+#define LOG_FALSE_POSITIVES 2
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
 
 // File writing

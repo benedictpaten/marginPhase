@@ -21,12 +21,15 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
     referencePriorProbs->refStart = referenceStart;
     referencePriorProbs->length = length;
     referencePriorProbs->profileProbs = st_calloc(length*ALPHABET_SIZE, sizeof(uint16_t));
+    referencePriorProbs->profileSequence = st_calloc(length, sizeof(uint8_t));
+    referencePriorProbs->baseCounts = st_calloc(length*ALPHABET_SIZE, sizeof(double));
     return referencePriorProbs;
 }
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *referencePriorProbs) {
     free(referencePriorProbs->profileProbs);
     free(referencePriorProbs->referenceName);
+    free(referencePriorProbs->profileSequence);
     free(referencePriorProbs);
 }
 
@@ -53,6 +56,23 @@ static stReferencePriorProbs *getNext(stList *profileSequences) {
     }
 
     return stReferencePriorProbs_constructEmptyProfile(refName, refStart, refEnd-refStart);
+}
+
+void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences) {
+    /*
+     * Set the base counts observed in the set of profile sequences at each position.
+     */
+    for(int64_t i=0; i<stList_length(profileSequences); i++) {
+        stProfileSeq *pSeq = stList_get(profileSequences, i);
+        for (int64_t j = 0; j < pSeq->length; j++) {
+            int64_t k = j + pSeq->refStart - rProbs->refStart;
+            if(k >= 0 && k < rProbs->length) {
+                for (int64_t l = 0; l < ALPHABET_SIZE; l++) {
+                    rProbs->baseCounts[k*ALPHABET_SIZE + l] += getProb(&(pSeq->profileProbs[j*ALPHABET_SIZE]), l);
+                }
+            }
+        }
+    }
 }
 
 stHash *createEmptyReferencePriorProbabilities(stList *profileSequences) {
@@ -126,14 +146,16 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
         // Build probability profile
         assert(seqLen >= rProbs->length + rProbs->refStart);
         for(int64_t i=0; i<rProbs->length; i++) {
-            int64_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart-1]);
+            uint8_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart-1]);
             assert(refChar >= 0 && refChar < ALPHABET_SIZE);
+            rProbs->profileSequence[i] = refChar;
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j);
             }
         }
-
+        setReadBaseCounts(rProbs, profileSequences);
     }
+
 
 
     // Cleanup
@@ -142,3 +164,5 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
 
     return referenceNamesToReferencePriors;
 }
+
+

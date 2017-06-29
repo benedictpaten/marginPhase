@@ -50,32 +50,6 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
     return totalExpectedMatches;
 }
 
-double getIdentityHetMatches(uint64_t *haplotypeString1, uint64_t *haplotypeString2, int64_t start, int64_t length, stProfileSeq *profileSeq) {
-    /*
-     * Returns the expected number of positions in the profile sequence that are identical 
-     * to the given haplotype string (haplotypeString1) at heterozygous positions.
-     */
-    double totalExpectedMatches = 0.0;
-    double hetPositions = 0.0;
-
-    for(int64_t i=0; i<profileSeq->length; i++) {
-        // Get base in the haplotype sequence
-        int64_t j = i + profileSeq->refStart - start;
-        if(j >= 0 && j < length) {
-            uint64_t hapBase1 = haplotypeString1[j];
-            uint64_t hapBase2 = haplotypeString2[j];
-            assert(hapBase1 < ALPHABET_SIZE);
-            assert(hapBase2 < ALPHABET_SIZE);
-            if (hapBase1 != hapBase2) {
-                // Expectation of a match
-                totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase1);
-                hetPositions += 1;
-            }
-        }
-    }
-    return totalExpectedMatches / hetPositions;
-}
-
 double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
     /*
      * Returns the expected fraction of positions in the profile sequences that match their corresponding position in the
@@ -90,32 +64,6 @@ double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t len
         totalLength += pSeq->length;
     }
     return totalExpectedNumberOfMatches/totalLength;
-}
-
-int64_t filterProfileSequences(stList *filteredProfileSequences, uint64_t *haplotypeString, int64_t start, int64_t length, stList *profileSeqs, stRPHmmParameters *params) {
-    /*
-     * Iterates through the set of profileSeqs and puts sequences that have fewer than params->filterMatchThreshold differences to the given haplotype string into
-     * the filteredProfileSequences list.
-     *
-     * Returns the expected fraction of positions in the profile sequences that match their corresponding position in the
-     * given haplotype string.
-     */
-    int64_t misses = 0;
-    for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stProfileSeq *pSeq = stList_get(profileSeqs, i);
-        double currentMatches = getExpectedNumberOfMatches(haplotypeString, start, length, pSeq);
-        int64_t currentLength = pSeq->length;
-        double percentMatched = currentMatches/currentLength;
-        if (percentMatched < params->filterMatchThreshold) {
-            misses++;
-//            st_logDebug("Profile sequence matched %f: %s \n", percentMatched, pSeq->readId);
-//            stProfileSeq_print(pSeq, stderr, 0);
-            stProfileSeq_destruct(pSeq);
-        } else {
-            stList_append(filteredProfileSequences, pSeq);
-        }
-    }
-    return misses;
 }
 
 double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
@@ -231,8 +179,88 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
     }
 }
 
+double matchesTopTwoBases(int64_t pos, stProfileSeq *profileSeq, stReferencePriorProbs *rProbs) {
+    /*
+     * Returns the probability that the profile sequence matched the most common base at
+     * position pos, or that it matched either of the top two if the locus looks possibly heterozygous
+     */
+    uint8_t base1, base2;
+    double max1 = 0.0;
+    double max2 = 0.0;
+    for (uint8_t i = 0; i < ALPHABET_SIZE; i++) {
+        double p = rProbs->baseCounts[pos * ALPHABET_SIZE + i];
+        if (p > max2) {
+            if (p > max1) {
+                max2 = max1;
+                max1 = p;
+                base2 = base1;
+                base1 = i;
+            } else {
+                max2 = p;
+                base2 = i;
+            }
+        }
+    }
+    int64_t pPos = pos - profileSeq->refStart + rProbs->refStart;
+    double p = getProb(&(profileSeq->profileProbs[pPos * ALPHABET_SIZE]), base1);
+    // TODO check these parameters
+    if (max2 > (max1 / ALPHABET_SIZE) && max2 > 3) {
+        p += getProb(&(profileSeq->profileProbs[pPos * ALPHABET_SIZE]), base2);
+//        st_logInfo("\thet spot, pos = %d, p = %f\n", pos+rProbs->refStart, getProb(&(profileSeq->profileProbs[pPos * ALPHABET_SIZE]), base2));
+    }
+    return p;
+}
+
+double getExpectedNumberOfConsensusMatches(stProfileSeq *profileSeq, stReferencePriorProbs *rProbs) {
+    /*
+     * Returns the expected number of positions in the profile sequence that are identical
+     * to the given haplotype string.
+     */
+    double totalExpectedMatches = 0.0;
+
+    for(int64_t i=0; i<profileSeq->length; i++) {
+        // Get base in the haplotype sequence
+        int64_t j = i + profileSeq->refStart - rProbs->refStart;
+        if(j >= 0 && j < rProbs->length) {
+            // Add a match if either of the top two bases are matched
+            totalExpectedMatches +=matchesTopTwoBases(j, profileSeq, rProbs);
+        }
+    }
+    return totalExpectedMatches;
+}
+
+stList *prefilterReads(stList *profileSequences, int64_t *misses, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+    /*
+     * Filter out profile sequences that don't have identity with the consensus reference sequence
+     * above a specified threshold.
+     */
+    stList *filteredProfileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+
+    for(int64_t i=0; i<stList_length(profileSequences); i++) {
+        stProfileSeq *pSeq = stList_get(profileSequences, i);
+        stReferencePriorProbs *rProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);
+        double identity = getExpectedNumberOfConsensusMatches(pSeq, rProbs) / pSeq->length;
+        if (identity < params->filterMatchThreshold) {
+            (*misses)++;
+//            st_logInfo("Filtered sequence, identity %f. readId: %s, start: %d, end: %d\n", identity, pSeq->readId, pSeq->refStart, pSeq->refStart+pSeq->length);
+            stProfileSeq_destruct(pSeq);
+        } else {
+            stList_append(filteredProfileSequences, pSeq);
+//            st_logInfo("Did not filter sequence, identity %f. readId: %s, start: %d, end: %d\n", identity, pSeq->readId, pSeq->refStart, pSeq->refStart+pSeq->length);
+        }
+    }
+    stList_setDestructor(profileSequences, NULL);
+    stList_destruct(profileSequences);
+    return filteredProfileSequences;
+}
+
+
+
 stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
-    // Create HMMs
+    /*
+     * Create the set of hmms that the forward-backward algorithm will eventually be run on.
+     */
+    // Create the initial list of HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
     st_logInfo("Got %" PRIi64 " hmms before splitting\n", stList_length(hmms));
@@ -313,63 +341,6 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
     }
 }
 
-stList *filterReads(stList *profileSequences, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
-    /*
-     * Filters reads to remove reads that are more divergent than a threshold from their assigned, inferred haplotype.
-     * Cleans up filtered reads and the input profileSequences list.
-     */
-    // The list of filtered profile sequences
-    stList *filteredProfileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-
-    // Get the list of hmms, do not split hmms so each read is contained in exactly one hmm
-    stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
-
-    // For each read partitioning HMM
-    for(int64_t i=0; i<stList_length(hmms); i++) {
-        stRPHmm *hmm = stList_get(hmms, i);
-
-        // Run the forward-backward algorithm
-        stRPHmm_forwardBackward(hmm);
-
-        // Now compute a high probability path through the hmm
-        stList *path = stRPHmm_forwardTraceBack(hmm);
-
-        // Compute the genome fragment
-        stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-
-        // Get the reads which mapped to each path
-        stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
-        stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
-
-        // Log information about the hmm
-        logHmm(hmm, reads1, reads2, gF);
-
-        // Switch from sets to lists for reads
-        stList *reads1List = stSet_getList(reads1);
-        stList *reads2List = stSet_getList(reads2);
-        stSet_destruct(reads1);
-        stSet_destruct(reads2);
-
-        // Check for reads that don't match well with their predicted haplotype
-        int64_t hap1misses = filterProfileSequences(filteredProfileSequences, gF->haplotypeString1, gF->refStart, gF->length, reads1List, params);
-        int64_t hap2misses = filterProfileSequences(filteredProfileSequences, gF->haplotypeString2, gF->refStart, gF->length, reads2List, params);
-        st_logDebug("Genome fragment info: refStart = %" PRIi64 ", length = %" PRIi64 "\n", gF->refStart, gF->length);
-        st_logDebug("hap1 reads filtered out: %f\t(%" PRIi64 " out of %" PRIi64 ")\n", (float)hap1misses/stList_length(reads1List), hap1misses, stList_length(reads1List));
-        st_logDebug("hap2 reads filtered out: %f\t(%" PRIi64 " out of %" PRIi64 ")\n\n", (float)hap2misses/stList_length(reads2List), hap2misses, stList_length(reads2List));
-
-        // Cleanup
-        stGenomeFragment_destruct(gF);
-        stList_destruct(reads1List);
-        stList_destruct(reads2List);
-        stList_destruct(path);
-    }
-    stList_destruct(hmms);
-
-    stList_setDestructor(profileSequences, NULL);
-    stList_destruct(profileSequences);
-
-    return filteredProfileSequences;
-}
 
 /*
  * Main functions
@@ -494,7 +465,7 @@ int main(int argc, char *argv[]) {
     }
     // Getting reference sequence priors
     stHash *referenceNamesToReferencePriors;
-    if(params->useReferencePrior) {
+    if(!params->useReferencePrior) {
         st_logInfo("> Using a flat prior over reference positions\n");
         referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences);
     }
@@ -504,10 +475,22 @@ int main(int argc, char *argv[]) {
                 baseMapper, params);
 	}
 
-    // Filter reads that are considered too divergent and junky
-    if(params->filterBadReads) {
-        st_logInfo("> Filtering reads to remove reads with less than %f identity to their inferred haplotype\n", params->filterMatchThreshold);
-        profileSequences = filterReads(profileSequences, referenceNamesToReferencePriors, params);
+    // Filter reads that are too divergent from the consensus sequence
+    // (taking into account spots that are potentially heterozygous)
+    if (params->filterBadReads) {
+        int64_t initialSize = stList_length(profileSequences);
+        int64_t misses = 0;
+        st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
+        if (!params->useReferencePrior) {
+            stHash *refNames2 = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
+                                                                  baseMapper, params);
+            profileSequences = prefilterReads(profileSequences, &misses, refNames2, params);
+
+        } else {
+            profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
+
+        }
+        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses/initialSize);
     }
 
     // Learn the parameters for the input data
@@ -518,9 +501,9 @@ int main(int argc, char *argv[]) {
     if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
         st_logDebug("> Learned parameters\n");
         stRPHmmParameters_printParameters(params, stderr);
-        st_logInfo("\tWriting learned parameters to file: %s", paramsOutFile);
-        writeParamFile(paramsOutFile, params);
     }
+    st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
+    writeParamFile(paramsOutFile, params);
 
     // Get the final list of hmms
     stList *hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);

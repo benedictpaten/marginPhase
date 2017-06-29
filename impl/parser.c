@@ -10,8 +10,8 @@
 
 stBaseMapper* stBaseMapper_construct() {
     stBaseMapper *bm = (stBaseMapper*)st_malloc(sizeof(stBaseMapper));
-    bm->charToNum = st_calloc(256, sizeof(int8_t));
-    bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(char));
+    bm->charToNum = st_calloc(256, sizeof(uint8_t));
+    bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(uint8_t));
     bm->wildcard = "";
     bm->size = 0;
 
@@ -25,7 +25,7 @@ void stBaseMapper_destruct(stBaseMapper *bm) {
 }
 
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
-    for (int i = 0; i < strlen(bases); i++) {
+    for (uint8_t i = 0; i < strlen(bases); i++) {
         char base = bases[i];
         if (bm->numToChar[bm->size] == 0) bm->numToChar[bm->size] = base;
         bm->charToNum[base] = bm->size;
@@ -40,26 +40,25 @@ void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
     bm->wildcard = wildcard;
 }
 
-int stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
-    int value = bm->charToNum[base];
+uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
+    uint8_t value = bm->charToNum[base];
     if (value >= 0) return value;
     for (int i = 0; i < strlen(bm->wildcard); i++) {
         if (bm->wildcard[i] == base) {
+            assert(bm->size-1 < UINT8_MAX);
             return st_randomInt(0, bm->size-1);
         }
     }
     st_errAbort("Base '%c' (%d) not in alphabet", base, base);
-    return -1;
+    return UINT8_MAX;
 }
 
-int stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
     return -1;
 }
-
-
 
 char *json_token_tostr(char *js, jsmntok_t *t)
 {
@@ -249,6 +248,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
     params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
+    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) > 0;
 }
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {

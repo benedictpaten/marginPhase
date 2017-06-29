@@ -139,6 +139,7 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
     fprintf(fH, "\tVerbose Attributes:\n");
     if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
+    if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {

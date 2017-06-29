@@ -38,5 +38,5 @@
 
   "useReferencePrior" : true,
 
-  "verbose" : 0
+  "verbose" : "00"
 }
