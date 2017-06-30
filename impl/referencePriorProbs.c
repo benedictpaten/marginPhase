@@ -89,6 +89,7 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences) {
 
     // Copy and sort profile sequences in order
     profileSequences = stList_copy(profileSequences, NULL);
+    stList *profileSequences2 = stList_copy(profileSequences, NULL);
     stList_sort(profileSequences, stRPProfileSeq_cmpFn);
 
     uint16_t flatValue = scaleToLogIntegerSubMatrix(log(1.0/ALPHABET_SIZE));
@@ -102,6 +103,7 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences) {
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = flatValue;
             }
         }
+        setReadBaseCounts(rProbs, profileSequences2);
 
         assert(stHash_search(referenceNamesToReferencePriors, rProbs->referenceName) == NULL);
         stHash_insert(referenceNamesToReferencePriors, rProbs->referenceName, rProbs);
@@ -153,7 +155,6 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j);
             }
         }
-        setReadBaseCounts(rProbs, profileSequences);
     }
 
 

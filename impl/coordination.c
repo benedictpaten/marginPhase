@@ -410,7 +410,8 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
 
-    st_logDebug("> Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);
+    if (stList_length(tilingPaths) > params->maxCoverageDepth)
+        st_logDebug("> Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);
 
     // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {

@@ -206,7 +206,6 @@ double matchesTopTwoBases(int64_t pos, stProfileSeq *profileSeq, stReferencePrio
     // TODO check these parameters
     if (max2 > (max1 / ALPHABET_SIZE) && max2 > 3) {
         p += getProb(&(profileSeq->profileProbs[pPos * ALPHABET_SIZE]), base2);
-//        st_logInfo("\thet spot, pos = %d, p = %f\n", pos+rProbs->refStart, getProb(&(profileSeq->profileProbs[pPos * ALPHABET_SIZE]), base2));
     }
     return p;
 }
@@ -242,11 +241,9 @@ stList *prefilterReads(stList *profileSequences, int64_t *misses, stHash *refere
         double identity = getExpectedNumberOfConsensusMatches(pSeq, rProbs) / pSeq->length;
         if (identity < params->filterMatchThreshold) {
             (*misses)++;
-//            st_logInfo("Filtered sequence, identity %f. readId: %s, start: %d, end: %d\n", identity, pSeq->readId, pSeq->refStart, pSeq->refStart+pSeq->length);
             stProfileSeq_destruct(pSeq);
         } else {
             stList_append(filteredProfileSequences, pSeq);
-//            st_logInfo("Did not filter sequence, identity %f. readId: %s, start: %d, end: %d\n", identity, pSeq->readId, pSeq->refStart, pSeq->refStart+pSeq->length);
         }
     }
     stList_setDestructor(profileSequences, NULL);
@@ -456,7 +453,7 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
-    st_logDebug("\tCreated %d profile sequences\n", readCount);
+    st_logInfo("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences
     if(st_getLogLevel() == debug) {
@@ -481,16 +478,8 @@ int main(int argc, char *argv[]) {
         int64_t initialSize = stList_length(profileSequences);
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
-        if (!params->useReferencePrior) {
-            stHash *refNames2 = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
-                                                                  baseMapper, params);
-            profileSequences = prefilterReads(profileSequences, &misses, refNames2, params);
-
-        } else {
-            profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
-
-        }
-        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses/initialSize);
+        profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
+        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
     }
 
     // Learn the parameters for the input data
@@ -541,7 +530,7 @@ int main(int argc, char *argv[]) {
         addProfileSeqIdsToSet(reads2, read2Ids);
 
         // Log information about the hmm
-        logHmm(hmm, reads1, reads2, gF);
+//        logHmm(hmm, reads1, reads2, gF);
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
