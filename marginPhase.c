@@ -460,6 +460,7 @@ int main(int argc, char *argv[]) {
         printSequenceStats(stderr, profileSequences);
         printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
     }
+
     // Getting reference sequence priors
     stHash *referenceNamesToReferencePriors;
     if(!params->useReferencePrior) {
@@ -478,9 +479,29 @@ int main(int argc, char *argv[]) {
         int64_t initialSize = stList_length(profileSequences);
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
-        profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
+        if(params->useReferencePrior) {
+            profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
+        }
+        else {
+            // As the reference prior is flat
+            stHash *h = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
+                            baseMapper, params);
+            profileSequences = prefilterReads(profileSequences, &misses, h, params);
+            stHash_destruct(h);
+        }
         st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
     }
+
+    // Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
+    stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+    stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs);
+    st_logInfo("> Filtered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
+            stList_length(discardedProfileSeqs), stList_length(profileSequences), params->maxCoverageDepth);
+    stList_destruct(discardedProfileSeqs);
+    stList_setDestructor(profileSequences, NULL);
+    stList_destruct(profileSequences);
+    profileSequences = filteredProfileSeqs;
 
     // Learn the parameters for the input data
     st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);

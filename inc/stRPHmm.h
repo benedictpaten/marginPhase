@@ -39,7 +39,8 @@ typedef struct _stGenotypeResults stGenotypeResults;
  * Overall coordination functions
  */
 
-stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
+
+stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs, stList *discardedProfileSeqs);
 
 stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
@@ -265,6 +266,8 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
 stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1);
 
 int stRPHmm_cmpFn(const void *a, const void *b);
+
+int stRPHmm_cmpFn2(const void *a, const void *b);
 
 stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint);
 

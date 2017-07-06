@@ -296,6 +296,22 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
     return i;
 }
 
+inline int stRPHmm_cmpFn2(const void *a, const void *b) {
+    /*
+     * Compares two read partitioning HMMs by coordinate on the reference.
+     * Sorts first by refName, then refStart and then -length.
+     */
+    stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
+    int i = strcmp(hmm1->referenceName, hmm2->referenceName);
+    if(i == 0) {
+        i = cmpint64(hmm1->refStart,  hmm2->refStart);
+        if(i == 0) {
+            i = cmpint64(hmm2->refLength,  hmm1->refLength);
+        }
+    }
+    return i;
+}
+
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
     /*
      * Create a read partitioning HMM representing the single sequence profile.

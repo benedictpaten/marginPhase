@@ -221,6 +221,27 @@ stList *getTilingPaths(stSortedSet *hmms) {
     return tilingPaths;
 }
 
+stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+    /*
+     * Takes a set of profile sequences (stProfileSeq) and returns
+     * a list of tiling paths. Each tiling path consisting of maximal sequences of hmms
+     * that do not overlap.
+     */
+    // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
+    stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn2, (void (*)(void *))stRPHmm_destruct2);
+    for(int64_t i=0; i<stList_length(profileSeqs); i++) {
+        stProfileSeq *pSeq = stList_get(profileSeqs, i);
+        stReferencePriorProbs *referencePriorProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);
+        assert(referencePriorProbs != NULL);
+        stRPHmm *hmm = stRPHmm_construct(pSeq, referencePriorProbs, params);
+        stSortedSet_insert(readHmms, hmm);
+    }
+    assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
+
+    // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
+    return getTilingPaths(readHmms);
+}
+
 stRPHmm *fuseTilingPath(stList *tilingPath) {
     /*
      * Fuse together the hmms in the tiling path into one hmm.
@@ -389,6 +410,44 @@ stList *mergeTilingPaths(stList *tilingPaths) {
     return mergeTwoTilingPaths(tilingPath1, tilingPath2);
 }
 
+static void getProfileSeqs(stList *tilingPath, stList *pSeqs) {
+    while(stList_length(tilingPath) > 0) {
+        stRPHmm *hmm = stList_pop(tilingPath);
+        assert(stList_length(hmm->profileSeqs) == 1);
+        stProfileSeq *pSeq = stList_peek(hmm->profileSeqs);
+        stRPHmm_destruct(hmm, 1);
+        stList_append(pSeqs, pSeq);
+    }
+    stList_destruct(tilingPath);
+}
+
+stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs, stList *discardedProfileSeqs) {
+    /*
+     * Takes a set of profile sequences and returns a subset such that maximum coverage depth of the subset is less than or
+     * equal to params->maxCoverageDepth. The discarded sequences are placed in the list "discardedProfileSeqs", the retained
+     * sequences are placed in filteredProfileSeqs.
+     */
+
+    // Create a set of tiling paths
+    stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSeqs);
+    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
+
+    // Eliminate reads until the maximum coverage depth to less than the give threshold
+    while(stList_length(tilingPaths) > params->maxCoverageDepth) {
+        getProfileSeqs(stList_pop(tilingPaths), discardedProfileSeqs);
+    }
+
+    while(stList_length(tilingPaths) > 0) {
+        getProfileSeqs(stList_pop(tilingPaths), filteredProfileSeqs);
+    }
+
+    // Cleanup
+    stHash_destruct(referenceNamesToReferencePriors);
+    stList_destruct(tilingPaths);
+
+    return filteredProfileSeqs;
+}
+
 stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
@@ -397,29 +456,11 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
      * stReferencePriorProbs objects.
      */
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
-    stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
-    for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-        stProfileSeq *pSeq = stList_get(profileSeqs, i);
-        stReferencePriorProbs *referencePriorProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);
-        assert(referencePriorProbs != NULL);
-        stRPHmm *hmm = stRPHmm_construct(pSeq, referencePriorProbs, params);
-        stSortedSet_insert(readHmms, hmm);
-    }
-    assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
+    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
 
-    // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
-    stList *tilingPaths = getTilingPaths(readHmms);
-
-    if (stList_length(tilingPaths) > params->maxCoverageDepth)
-        st_logDebug("> Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);
-
-    // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
-    while(stList_length(tilingPaths) > params->maxCoverageDepth) {
-        stList *tilingPath = stList_pop(tilingPaths);
-        for(int64_t i=0; i<stList_length(tilingPath); i++) {
-            stRPHmm_destruct(stList_get(tilingPath, i), 1);
-        }
-        stList_destruct(tilingPath);
+    if(stList_length(tilingPaths) > MAX_READ_PARTITIONING_DEPTH || stList_length(tilingPaths) > params->maxCoverageDepth) {
+        st_errAbort("Coverage depth: %" PRIi64 " exceeds maximum: %" PRIi64 " %" PRIi64 "\n",
+                stList_length(tilingPaths), MAX_READ_PARTITIONING_DEPTH, params->maxCoverageDepth);
     }
 
     // Merge together the tiling paths into one merged tiling path, merging the individual hmms when

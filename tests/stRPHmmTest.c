@@ -288,7 +288,10 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         fprintf(stderr, "Running get hmms with %" PRIi64 " profile sequences \n", stList_length(profileSeqs));
 
         // Creates read HMMs
-        stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params);
+        stList *filteredProfileSeqs = stList_construct();
+        stList *discardedProfileSeqs = stList_construct();
+        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs);
+        stList *hmms = getRPHmms(filteredProfileSeqs, referenceNamesToReferencePriors, params);
 
         // Split hmms where phasing is uncertain
         if(splitHmmsWherePhasingUncertain) {
@@ -336,8 +339,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         // Check that HMMs represent the overlapping sequences as expected
 
         // For each sequence, check it is contained in an hmm
-        for(int64_t i=0; i<stList_length(profileSeqs); i++) {
-            stProfileSeq *profileSeq = stList_get(profileSeqs, i);
+        for(int64_t i=0; i<stList_length(filteredProfileSeqs); i++) {
+            stProfileSeq *profileSeq = stList_get(filteredProfileSeqs, i);
             bool containedInHmm = 0;
             for(int64_t j=0; j<stList_length(hmms); j++) {
                 stRPHmm *hmm = stList_get(hmms, j);
@@ -778,6 +781,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
         // Cleanup
         stList_destruct(hmms);
+        stList_destruct(discardedProfileSeqs);
+        stList_destruct(filteredProfileSeqs);
         stList_destruct(profileSeqs);
         stList_destruct(referenceSeqs);
         stList_destruct(hapSeqs1);
@@ -1209,7 +1214,11 @@ void test_emissionLogProbability(CuTest *testCase) {
         // Creates read HMMs
         stList *profileSeqs = stList_copy(profileSeqs1, NULL);
         stList_appendAll(profileSeqs, profileSeqs2);
-        stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params);
+
+        stList *filteredProfileSeqs = stList_construct();
+        stList *discardedProfileSeqs = stList_construct();
+        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs);
+        stList *hmms = getRPHmms(filteredProfileSeqs, referenceNamesToReferencePriors, params);
 
         // For each hmm
         while(stList_length(hmms) > 0) {
@@ -1250,6 +1259,8 @@ void test_emissionLogProbability(CuTest *testCase) {
         }
 
         // Clean up
+        stList_destruct(filteredProfileSeqs);
+        stList_destruct(discardedProfileSeqs);
         stList_destruct(profileSeqs);
         stList_destruct(hmms);
         stList_destruct(referenceSeqs);
