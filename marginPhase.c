@@ -509,7 +509,7 @@ int main(int argc, char *argv[]) {
         stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
 
         // Print a report of the parsed parameters
-        if(st_getLogLevel() == debug) {
+        if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
             st_logDebug("> Learned parameters\n");
             stRPHmmParameters_printParameters(params, stderr);
         }
