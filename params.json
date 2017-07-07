@@ -12,7 +12,7 @@
   ],
 
   "readErrorModel" : [
-    0.975, 0.005, 0.005, 0.005, 0.01,
+   0.975, 0.005, 0.005, 0.005, 0.01,
     0.005, 0.975, 0.005, 0.005, 0.01,
     0.005, 0.005, 0.975, 0.005, 0.01,
     0.005, 0.005, 0.005, 0.975, 0.01,
@@ -34,9 +34,11 @@
 
   "filterBadReads" : true,
   
-  "filterMatchThreshold" : 0.92,
+  "filterMatchThreshold" : 0.88,
 
   "useReferencePrior" : true,
+  
+  "includeInvertedPartitions" : true,
 
   "verbose" : "00"
 }

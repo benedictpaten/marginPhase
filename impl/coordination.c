@@ -228,7 +228,7 @@ stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePr
      * that do not overlap.
      */
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
-    stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn2, (void (*)(void *))stRPHmm_destruct2);
+    stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
         stProfileSeq *pSeq = stList_get(profileSeqs, i);
         stReferencePriorProbs *referencePriorProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);

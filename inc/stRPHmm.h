@@ -87,7 +87,7 @@ double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to);
 
 char * intToBinaryString(uint64_t i);
 
-uint64_t makeAcceptMask(int64_t depth);
+uint64_t makeAcceptMask(uint64_t depth);
 
 uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
         uint64_t depthOfPartition1, uint64_t depthOfPartition2);
@@ -95,6 +95,8 @@ uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
 uint64_t maskPartition(uint64_t partition, uint64_t mask);
 
 bool seqInHap1(uint64_t partition, int64_t seqIndex);
+
+uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
 /*
  * Profile sequence
@@ -215,6 +217,9 @@ struct _stRPHmmParameters {
     // Verbosity options for printing
     bool verboseTruePositives;
     bool verboseFalsePositives;
+
+    // Ensure symmetry in the HMM such that the inverted partition of each partition is included in the HMM
+    bool includeInvertedPartitions;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -266,8 +271,6 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm);
 stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool partition1);
 
 int stRPHmm_cmpFn(const void *a, const void *b);
-
-int stRPHmm_cmpFn2(const void *a, const void *b);
 
 stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint);
 

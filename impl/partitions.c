@@ -10,12 +10,12 @@
  * Functions for manipulating read partitions described in binary
  */
 
-inline uint64_t makeAcceptMask(int64_t depth) {
+inline uint64_t makeAcceptMask(uint64_t depth) {
     /*
      * Returns a mask to the given sequence depth that includes all the sequences
      */
     assert(depth <= MAX_READ_PARTITIONING_DEPTH);
-    return ~(0xFFFFFFFFFFFFFFFF << depth);
+    return depth < 64 ? ~(0xFFFFFFFFFFFFFFFF << depth) : 0xFFFFFFFFFFFFFFFF;
 }
 
 inline uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
@@ -32,6 +32,13 @@ inline uint64_t maskPartition(uint64_t partition, uint64_t mask) {
      * Mask a read partition
      */
     return partition & mask;
+}
+
+inline uint64_t invertPartition(uint64_t partition, uint64_t depth) {
+    /*
+     * Invert a partition
+     */
+    return makeAcceptMask(depth) & ~partition;
 }
 
 inline bool seqInHap1(uint64_t partition, int64_t seqIndex) {

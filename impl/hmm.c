@@ -281,32 +281,18 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
      * Compares two read partitioning HMMs by coordinate on the reference.
      * Will return equal only if they are the same HMM, with the same memory
      * address, otherwise compares pointers for equal HMMs.
+     *
      */
     stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
     int i = strcmp(hmm1->referenceName, hmm2->referenceName);
     if(i == 0) {
         i = cmpint64(hmm1->refStart,  hmm2->refStart);
         if(i == 0) {
-            i = cmpint64(hmm1->refLength,  hmm2->refLength);
+            // Sort by descending order of length
+            i = cmpint64(hmm2->refLength,  hmm1->refLength);
             if(i == 0) {
                 i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
             }
-        }
-    }
-    return i;
-}
-
-inline int stRPHmm_cmpFn2(const void *a, const void *b) {
-    /*
-     * Compares two read partitioning HMMs by coordinate on the reference.
-     * Sorts first by refName, then refStart and then -length.
-     */
-    stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
-    int i = strcmp(hmm1->referenceName, hmm2->referenceName);
-    if(i == 0) {
-        i = cmpint64(hmm1->refStart,  hmm2->refStart);
-        if(i == 0) {
-            i = cmpint64(hmm2->refLength,  hmm1->refLength);
         }
     }
     return i;
@@ -504,7 +490,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
 stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     /*
      * Fuses together two hmms, such that leftHmm and rightHMM are on the same reference sequence and non-overlapping and
-     * left hmm preceds right hmm on the reference sequence.
+     * left hmm precedes right hmm on the reference sequence.
      * Returns fused hmm, destroys input hmms in the process.
      */
 
@@ -719,6 +705,30 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     assert(hmm1->columnNumber == hmm2->columnNumber);
 }
 
+static uint64_t intHashFn(const void *a) {
+    return *(uint64_t *)a;
+}
+
+static int intEqualsFn(const void *key1, const void *key2) {
+    return *(uint64_t *)key1 == *(uint64_t *)key2;
+}
+
+stRPCell **makeCell(uint64_t partition, stRPCell **pCell, stHash *seen) {
+    /*
+     * Make a cell for a column.
+     */
+    // Make the cell
+    stRPCell *cell = stRPCell_construct(partition);
+
+    // Add the partition to those already seen
+    assert(stHash_search(seen, &cell->partition) == NULL);
+    stHash_insert(seen, &cell->partition, cell);
+
+    // Link cells
+    *pCell = cell;
+    return &cell->nCell;
+}
+
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
     /*
      *  For two aligned hmms (see stRPHmm_alignColumns) returns a new hmm that represents the
@@ -811,16 +821,51 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         // Create cross product of columns
         stRPCell **pCell = &column->head;
         stRPCell *cell1 = column1->head;
-        do {
-            stRPCell *cell2 = column2->head;
+
+        // includeInvertedPartitions forces that the partition and its inverse are included in the resulting combined
+        // hmm.
+        if(hmm->parameters->includeInvertedPartitions) {
+            stHash *seen = stHash_construct3(intHashFn, intEqualsFn, NULL, NULL);
             do {
-                stRPCell *cell = stRPCell_construct(mergePartitionsOrMasks(cell1->partition, cell2->partition,
-                        column1->depth, column2->depth));
-                // Link cells
-                *pCell = cell;
-                pCell = &cell->nCell;
-            } while((cell2 = cell2->nCell) != NULL);
-        } while((cell1 = cell1->nCell) != NULL);
+                stRPCell *cell2 = column2->head;
+                do {
+                    uint64_t partition = mergePartitionsOrMasks(cell1->partition, cell2->partition,
+                            column1->depth, column2->depth);
+
+                    // We have not seen the combined partition before
+                    if(stHash_search(seen, &partition) == NULL) {
+                        // Add the partition to the column
+                        pCell = makeCell(partition, pCell, seen);
+
+                        // Check if the column has non-zero depth and only add the inverse partition if it does
+                        // because if zero length the inverse partition is the same as for the forward, and therefore
+                        // a duplicate
+                        if(newColumnDepth > 0) {
+                            uint64_t invertedPartition = invertPartition(partition, newColumnDepth);
+                            assert(stHash_search(seen, &invertedPartition) == NULL);
+
+                            pCell = makeCell(invertedPartition, pCell, seen);
+                        }
+                    }
+                } while((cell2 = cell2->nCell) != NULL);
+            } while((cell1 = cell1->nCell) != NULL);
+
+            // Cleanup
+            stHash_destruct(seen);
+        }
+        // If not forcing symmetry
+        else {
+            do {
+                stRPCell *cell2 = column2->head;
+                do {
+                    stRPCell *cell = stRPCell_construct(mergePartitionsOrMasks(cell1->partition, cell2->partition,
+                            column1->depth, column2->depth));
+                    // Link cells
+                    *pCell = cell;
+                    pCell = &cell->nCell;
+                } while((cell2 = cell2->nCell) != NULL);
+            } while((cell1 = cell1->nCell) != NULL);
+        }
 
         // Get the next merged column
         stRPMergeColumn *mColumn1 = column1->nColumn;
@@ -843,6 +888,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                 mColumn1->pColumn->depth, mColumn2->pColumn->depth);
         uint64_t toMask = mergePartitionsOrMasks(mColumn1->maskTo, mColumn2->maskTo,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
+        assert(popcount64(fromMask) == popcount64(toMask));
         mColumn = stRPMergeColumn_construct(fromMask, toMask);
 
         // Connect links
@@ -864,7 +910,26 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                         mCell2->toPartition,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
 
-                stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+                assert(popcount64(fromPartition) == popcount64(toPartition));
+
+                // includeInvertedPartitions forces that the partition and its inverse are included in the resulting combined
+                // hmm.
+                if(hmm->parameters->includeInvertedPartitions) {
+                    if(stHash_search(mColumn->mergeCellsFrom, &fromPartition) == NULL) {
+                        stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+
+                        // If the mask includes no sequences then the the inverted will be identical, so we check
+                        // to avoid adding the same partition twice
+                        if(popcount64(fromMask) > 0) {
+                            uint64_t invertedFromPartition = mColumn->maskFrom & invertPartition(fromPartition, mColumn1->pColumn->depth + mColumn2->pColumn->depth);
+                            uint64_t invertedToPartition = mColumn->maskTo & invertPartition(toPartition, mColumn1->nColumn->depth + mColumn2->nColumn->depth);
+
+                            stRPMergeCell_construct(invertedFromPartition, invertedToPartition, mColumn);
+                        }
+                    }
+                } else {
+                    stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+                }
             }
             stHash_destructIterator(cellIt2);
         }

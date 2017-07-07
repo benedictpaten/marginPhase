@@ -504,16 +504,19 @@ int main(int argc, char *argv[]) {
     profileSequences = filteredProfileSeqs;
 
     // Learn the parameters for the input data
-    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
-    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
+    if(params->trainingIterations > 0) {
+        st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
+        stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
 
-    // Print a report of the parsed parameters
-    if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
-        st_logDebug("> Learned parameters\n");
-        stRPHmmParameters_printParameters(params, stderr);
+        // Print a report of the parsed parameters
+        if(st_getLogLevel() == debug) {
+            st_logDebug("> Learned parameters\n");
+            stRPHmmParameters_printParameters(params, stderr);
+        }
+
+        st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
+        writeParamFile(paramsOutFile, params);
     }
-    st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
-    writeParamFile(paramsOutFile, params);
 
     // Get the final list of hmms
     stList *hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);
