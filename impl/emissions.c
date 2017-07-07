@@ -241,14 +241,14 @@ double emissionLogProbability(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
-    uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
-                                                          cell->partition, bitCountVectors, rProbs, params);
-
-    for(int64_t i=1; i<column->length; i++) {
-        rProbs = &rProbs[ALPHABET_SIZE]; // Move to the next column of the reference prior
-        logPartitionProb = logPartitionProb + columnIndexLogProbability(column, i,
-                                                                        cell->partition, bitCountVectors, rProbs, params);
+    uint64_t logPartitionProb = 0;
+    for(int64_t i=0; i<column->length; i++) {
+        int64_t j = column->refStart + i - referencePriorProbs->refStart;
+        if(referencePriorProbs->referencePositionsIncluded[j]) {
+            uint16_t *rProbs = &referencePriorProbs->profileProbs[j * ALPHABET_SIZE];
+            logPartitionProb = logPartitionProb + columnIndexLogProbability(column, i,
+                                                                            cell->partition, bitCountVectors, rProbs, params);
+        }
     }
 
     return invertScaleToLogIntegerSubMatrix(logPartitionProb)/ALPHABET_MAX_PROB;

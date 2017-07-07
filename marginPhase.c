@@ -368,7 +368,6 @@ int main(int argc, char *argv[]) {
 
     char *outputBase = "output";
     char *paramsFile = "params.json";
-    int64_t iterationsOfParameterLearning = 0;
     int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
@@ -490,6 +489,15 @@ int main(int argc, char *argv[]) {
             stHash_destruct(h);
         }
         st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
+    }
+
+    // Setup a filter to ignore likely homozygous reference positions
+    if(params->filterLikelyHomozygousRefSites) {
+        int64_t totalPositions;
+        int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
+        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous reference positions, leaving only %" PRIi64 " (%f) positions of %" PRIi64 " total positions\n",
+                filteredPositions, (double)filteredPositions/totalPositions, totalPositions - filteredPositions,
+                (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
 
     // Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth

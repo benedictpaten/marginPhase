@@ -231,9 +231,8 @@ stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePr
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
         stProfileSeq *pSeq = stList_get(profileSeqs, i);
-        stReferencePriorProbs *referencePriorProbs = stHash_search(referenceNamesToReferencePriors, pSeq->referenceName);
-        assert(referencePriorProbs != NULL);
-        stRPHmm *hmm = stRPHmm_construct(pSeq, referencePriorProbs, params);
+        stRPHmm *hmm = stRPHmm_construct(pSeq, referenceNamesToReferencePriors == NULL ? NULL :
+                stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
         stSortedSet_insert(readHmms, hmm);
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
@@ -429,8 +428,7 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
      */
 
     // Create a set of tiling paths
-    stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSeqs);
-    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
+    stList *tilingPaths = getTilingPaths2(profileSeqs, NULL, params);
 
     // Eliminate reads until the maximum coverage depth to less than the give threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
@@ -442,7 +440,6 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
     }
 
     // Cleanup
-    stHash_destruct(referenceNamesToReferencePriors);
     stList_destruct(tilingPaths);
 
     return filteredProfileSeqs;

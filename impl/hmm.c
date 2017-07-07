@@ -317,9 +317,11 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
 
     hmm->referencePriorProbs = referencePriorProbs;
-    assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
-    assert(hmm->refStart >= referencePriorProbs->refStart);
-    assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
+    if(referencePriorProbs != NULL) {
+        assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
+        assert(hmm->refStart >= referencePriorProbs->refStart);
+        assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
+    }
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1

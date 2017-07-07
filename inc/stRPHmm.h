@@ -34,6 +34,7 @@ typedef struct _stGenomeFragment stGenomeFragment;
 typedef struct _stReferencePriorProbs stReferencePriorProbs;
 typedef struct _stBaseMapper stBaseMapper;
 typedef struct _stGenotypeResults stGenotypeResults;
+typedef struct _stReferencePositionFilter stReferencePositionFilter;
 
 /*
  * Overall coordination functions
@@ -147,6 +148,9 @@ struct _stReferencePriorProbs {
     uint8_t *profileSequence;
     // Read counts for the bases seen in reads
     double *baseCounts;
+    // Filter array of positions in the reference, used
+    // to ignore some columns in the alignment
+    bool *referencePositionsIncluded;
 };
 
 stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
@@ -157,6 +161,8 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
 
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
         stBaseMapper *baseMapper, stRPHmmParameters *params);
+
+int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
 
 /*
  * Emission probabilities
@@ -220,6 +226,10 @@ struct _stRPHmmParameters {
 
     // Ensure symmetry in the HMM such that the inverted partition of each partition is included in the HMM
     bool includeInvertedPartitions;
+
+    // Options to filter which positions in the reference sequence are included in the computation
+    bool filterLikelyHomozygousRefSites;
+    double posteriorProbOfHomozygousRefToFilterOn;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -244,6 +254,8 @@ struct _stRPHmm {
     double backwardLogProb;
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
+    // Filter used to mask column positions from consideration
+    stReferencePositionFilter *referencePositionFilter;
 };
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);

@@ -249,6 +249,19 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             setVerbosity(params, bitstring);
             i++;
         }
+        else if(strcmp(keyString, "filterLikelyHomozygousRefSites") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->filterLikelyHomozygousRefSites = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "posteriorProbOfHomozygousRefToFilterOn") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->posteriorProbOfHomozygousRefToFilterOn = atof(tokStr);
+            i++;
+        }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
         }
