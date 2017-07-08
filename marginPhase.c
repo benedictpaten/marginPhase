@@ -495,8 +495,10 @@ int main(int argc, char *argv[]) {
     if(params->filterLikelyHomozygousRefSites) {
         int64_t totalPositions;
         int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
-        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous reference positions, leaving only %" PRIi64 " (%f) positions of %" PRIi64 " total positions\n",
-                filteredPositions, (double)filteredPositions/totalPositions, totalPositions - filteredPositions,
+        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous reference positions, each with fewer than %" PRIi64
+                " aligned occurrences of any non-reference char, leaving only %" PRIi64 " (%f) positions of %" PRIi64
+                " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
+                (int64_t)params->minNonReferenceBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
 

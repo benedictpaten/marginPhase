@@ -101,6 +101,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterMatchThreshold = 0.92;
     params->useReferencePrior = false;
     params->includeInvertedPartitions = true;
+    params->filterLikelyHomozygousRefSites = false;
+    params->minNonReferenceBaseFilter = 2;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -256,10 +258,10 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->filterLikelyHomozygousRefSites = strcmp(tokStr, "true") == 0;
             i++;
         }
-        else if (strcmp(keyString, "posteriorProbOfHomozygousRefToFilterOn") == 0) {
+        else if (strcmp(keyString, "minNonReferenceBaseFilter") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            params->posteriorProbOfHomozygousRefToFilterOn = atof(tokStr);
+            params->minNonReferenceBaseFilter = atof(tokStr);
             i++;
         }
         else {

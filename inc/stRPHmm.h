@@ -229,7 +229,7 @@ struct _stRPHmmParameters {
 
     // Options to filter which positions in the reference sequence are included in the computation
     bool filterLikelyHomozygousRefSites;
-    double posteriorProbOfHomozygousRefToFilterOn;
+    double minNonReferenceBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);

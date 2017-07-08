@@ -34,7 +34,7 @@
 
   "filterBadReads" : true,
   
-  "filterMatchThreshold" : 0.92,
+  "filterMatchThreshold" : 0.9,
 
   "useReferencePrior" : true,
   
@@ -42,7 +42,7 @@
   
   "filterLikelyHomozygousRefSites" : true,
   
-  "posteriorProbOfHomozygousRefToFilterOn" : 0.9999,
+  "minNonReferenceBaseFilter" : 3,
 
   "verbose" : "00"
 }
