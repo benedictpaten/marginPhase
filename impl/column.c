@@ -11,7 +11,7 @@
  */
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, uint8_t **seqs) {
+        stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs) {
     stRPColumn *column = st_calloc(1, sizeof(stRPColumn));
 
     // Reference coordinates
@@ -25,6 +25,27 @@ stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth
 
     // Initially contains not states
     column->head = NULL;
+
+    // Work out which positions in the column are non-filtered
+
+    // First the active positions
+    column->totalActivePositions = 0;
+    for(int64_t i=0; i<column->length; i++) {
+        if(rProbs->referencePositionsIncluded[column->refStart + i - rProbs->refStart]) {
+            column->totalActivePositions++;
+        }
+    }
+
+    // Now create the array of active positions
+    column->activePositions = st_calloc(column->totalActivePositions, sizeof(int64_t));
+    int64_t k=0;
+    for(int64_t i=0; i<column->length; i++) {
+        int64_t j = column->refStart + i - rProbs->refStart;
+        if(rProbs->referencePositionsIncluded[j]) {
+            column->activePositions[k++] = i; // Positions are relative to the start of the reference
+        }
+    }
+    assert(k == column->totalActivePositions);
 
     return column;
 }
@@ -40,6 +61,8 @@ void stRPColumn_destruct(stRPColumn *column) {
 
     free(column->seqHeaders);
     free(column->seqs);
+    free(column->activePositions);
+
     free(column);
 }
 
@@ -81,7 +104,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     assert(firstHalfLength > 0); // Non-zero length for first half
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
     stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
-            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+            column->length-firstHalfLength, column->depth, seqHeaders, seqs, hmm->referencePriorProbs);
 
     // Create merge column
     uint64_t acceptMask = makeAcceptMask(column->depth);

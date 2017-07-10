@@ -478,34 +478,25 @@ int main(int argc, char *argv[]) {
         int64_t initialSize = stList_length(profileSequences);
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
-        if(params->useReferencePrior) {
-            profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
-        }
-        else {
-            // As the reference prior is flat
-            stHash *h = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
-                            baseMapper, params);
-            profileSequences = prefilterReads(profileSequences, &misses, h, params);
-            stHash_destruct(h);
-        }
+        profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
         st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
     }
 
     // Setup a filter to ignore likely homozygous reference positions
-    if(params->filterLikelyHomozygousRefSites) {
+    if(params->filterLikelyHomozygousSites) {
         int64_t totalPositions;
         int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
-        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous reference positions, each with fewer than %" PRIi64
-                " aligned occurrences of any non-reference char, leaving only %" PRIi64 " (%f) positions of %" PRIi64
+        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous positions, each with fewer than %" PRIi64
+                " aligned occurrences of any second most frequenct base, leaving only %" PRIi64 " (%f) positions of %" PRIi64
                 " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
-                (int64_t)params->minNonReferenceBaseFilter, totalPositions - filteredPositions,
+                (int64_t)params->minSecondMostFrequenctBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
 
     // Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
     stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs);
+    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
     st_logInfo("> Filtered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
             stList_length(discardedProfileSeqs), stList_length(profileSequences), params->maxCoverageDepth);
     stList_destruct(discardedProfileSeqs);
@@ -564,7 +555,7 @@ int main(int argc, char *argv[]) {
         addProfileSeqIdsToSet(reads2, read2Ids);
 
         // Log information about the hmm
-//        logHmm(hmm, reads1, reads2, gF);
+        logHmm(hmm, reads1, reads2, gF);
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);

@@ -317,11 +317,9 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
 
     hmm->referencePriorProbs = referencePriorProbs;
-    if(referencePriorProbs != NULL) {
-        assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
-        assert(hmm->refStart >= referencePriorProbs->refStart);
-        assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
-    }
+    assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
+    assert(hmm->refStart >= referencePriorProbs->refStart);
+    assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
@@ -331,7 +329,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     seqHeaders[0] = profileSeq;
     uint8_t **seqs = st_malloc(sizeof(uint8_t *));
     seqs[0] = profileSeq->profileProbs;
-    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs);
+    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs, referencePriorProbs);
     hmm->firstColumn = column;
     hmm->lastColumn = column;
 
@@ -548,7 +546,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     if(gapLength > 0) {
         // Make column in the gap
         stRPColumn *column = stRPColumn_construct(leftHmm->refStart + leftHmm->refLength,
-                gapLength, 0, NULL, NULL);
+                gapLength, 0, NULL, NULL, hmm->referencePriorProbs);
 
         // Links
         mColumn->nColumn = column;
@@ -608,7 +606,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm1->refStart,
                 hmm2->refStart - hmm1->refStart,
-                0, NULL, NULL);
+                0, NULL, NULL, hmm1->referencePriorProbs);
         // Add cell
         column->head = stRPCell_construct(0);
         // Create merge column
@@ -641,7 +639,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     if(hmm1->refLength > hmm2->refLength) {
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm2->lastColumn->refStart + hmm2->lastColumn->length,
-                hmm1->refLength - hmm2->refLength, 0, NULL, NULL);
+                hmm1->refLength - hmm2->refLength, 0, NULL, NULL, hmm1->referencePriorProbs);
         // Add cell
         column->head = stRPCell_construct(0);
         // Create merge column
@@ -808,7 +806,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
 
         stRPColumn *column = stRPColumn_construct(column1->refStart, column1->length,
-                newColumnDepth, seqHeaders, seqs);
+                newColumnDepth, seqHeaders, seqs, hmm->referencePriorProbs);
 
         // If the there is a previous column
         if(mColumn != NULL) {
@@ -1031,7 +1029,7 @@ static void stRPHmm_forward(stRPHmm *hmm) {
     while(1) {
         // Get the bit count vectors for the column
         uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->length);
+                column->activePositions, column->totalActivePositions);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1117,8 +1115,6 @@ static void stRPHmm_backward(stRPHmm *hmm) {
     while(1) {
         // Iterate through states in column
         stRPCell *cell = column->head;
-
-        // Otherwise do it without the need for the cell buffer
         do {
             backwardCellCalc(hmm, column, cell);
         }

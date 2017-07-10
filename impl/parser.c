@@ -101,8 +101,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterMatchThreshold = 0.92;
     params->useReferencePrior = false;
     params->includeInvertedPartitions = true;
-    params->filterLikelyHomozygousRefSites = false;
-    params->minNonReferenceBaseFilter = 2;
+    params->filterLikelyHomozygousSites = false;
+    params->minSecondMostFrequenctBaseFilter = 2;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -251,17 +251,17 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             setVerbosity(params, bitstring);
             i++;
         }
-        else if(strcmp(keyString, "filterLikelyHomozygousRefSites") == 0) {
+        else if(strcmp(keyString, "filterLikelyHomozygousSites") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->filterLikelyHomozygousRefSites = strcmp(tokStr, "true") == 0;
+            params->filterLikelyHomozygousSites = strcmp(tokStr, "true") == 0;
             i++;
         }
-        else if (strcmp(keyString, "minNonReferenceBaseFilter") == 0) {
+        else if (strcmp(keyString, "minSecondMostFrequenctBaseFilter") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            params->minNonReferenceBaseFilter = atof(tokStr);
+            params->minSecondMostFrequenctBaseFilter = atof(tokStr);
             i++;
         }
         else {

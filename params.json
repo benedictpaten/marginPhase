@@ -40,9 +40,9 @@
   
   "includeInvertedPartitions" : true,
   
-  "filterLikelyHomozygousRefSites" : true,
+  "filterLikelyHomozygousSites" : true,
   
-  "minNonReferenceBaseFilter" : 3,
+  "minSecondMostFrequenctBaseFilter" : 3,
 
   "verbose" : "00"
 }

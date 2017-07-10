@@ -231,8 +231,7 @@ stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePr
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
         stProfileSeq *pSeq = stList_get(profileSeqs, i);
-        stRPHmm *hmm = stRPHmm_construct(pSeq, referenceNamesToReferencePriors == NULL ? NULL :
-                stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
+        stRPHmm *hmm = stRPHmm_construct(pSeq, stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
         stSortedSet_insert(readHmms, hmm);
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
@@ -420,7 +419,8 @@ static void getProfileSeqs(stList *tilingPath, stList *pSeqs) {
     stList_destruct(tilingPath);
 }
 
-stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs, stList *discardedProfileSeqs) {
+stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params,
+        stList *filteredProfileSeqs, stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors) {
     /*
      * Takes a set of profile sequences and returns a subset such that maximum coverage depth of the subset is less than or
      * equal to params->maxCoverageDepth. The discarded sequences are placed in the list "discardedProfileSeqs", the retained
@@ -428,7 +428,7 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
      */
 
     // Create a set of tiling paths
-    stList *tilingPaths = getTilingPaths2(profileSeqs, NULL, params);
+    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
 
     // Eliminate reads until the maximum coverage depth to less than the give threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {

@@ -41,7 +41,8 @@ typedef struct _stReferencePositionFilter stReferencePositionFilter;
  */
 
 
-stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs, stList *discardedProfileSeqs);
+stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
+        stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors);
 
 stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
@@ -186,7 +187,7 @@ int popcount64(uint64_t x);
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
         int64_t position, int64_t characterIndex);
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length);
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions);
 
 /*
  * Read partitioning hmm
@@ -228,8 +229,8 @@ struct _stRPHmmParameters {
     bool includeInvertedPartitions;
 
     // Options to filter which positions in the reference sequence are included in the computation
-    bool filterLikelyHomozygousRefSites;
-    double minNonReferenceBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
+    bool filterLikelyHomozygousSites;
+    double minSecondMostFrequenctBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -308,10 +309,13 @@ struct _stRPColumn {
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
+    // Record of which positions in the column are not filtered out
+    int64_t *activePositions; // List of positions that are not filtered out, relative to the start of the column in reference coordinates
+    int64_t totalActivePositions; // The length of activePositions
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, uint8_t **seqs);
+        stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs);
 
 void stRPColumn_destruct(stRPColumn *column);
 
@@ -479,6 +483,7 @@ struct _stGenotypeResults {
     float switchErrorDistance;
     int64_t uncertainPhasing;
 };
+
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void printGenotypeResults(stGenotypeResults *results);

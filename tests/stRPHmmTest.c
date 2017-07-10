@@ -291,7 +291,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         // Creates read HMMs
         stList *filteredProfileSeqs = stList_construct();
         stList *discardedProfileSeqs = stList_construct();
-        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs);
+        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
         stList *hmms = getRPHmms(filteredProfileSeqs, referenceNamesToReferencePriors, params);
 
         // Split hmms where phasing is uncertain
@@ -950,7 +950,11 @@ void test_bitCountVectors(CuTest *testCase) {
 //                    test, depth, ALPHABET_SIZE, length);
 
             // Calculate the bit vectors
-            uint64_t *countBitVectors = calculateCountBitVectors(seqs, depth, length);
+            int64_t activePositions[length];
+            for(int64_t i=0; i<length; i++) {
+                activePositions[i] = i;
+            }
+            uint64_t *countBitVectors = calculateCountBitVectors(seqs, depth, activePositions, length);
 
             // Partition
             uint64_t partition = getRandomPartition(depth);
@@ -1218,7 +1222,7 @@ void test_emissionLogProbability(CuTest *testCase) {
 
         stList *filteredProfileSeqs = stList_construct();
         stList *discardedProfileSeqs = stList_construct();
-        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs);
+        filterReadsByCoverageDepth(profileSeqs, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
         stList *hmms = getRPHmms(filteredProfileSeqs, referenceNamesToReferencePriors, params);
 
         // For each hmm
@@ -1230,7 +1234,7 @@ void test_emissionLogProbability(CuTest *testCase) {
             while(1) {
                 // Get bit count vectors
                 uint64_t *bitCountVectors = calculateCountBitVectors(
-                        column->seqs, column->depth, column->length);
+                        column->seqs, column->depth, column->activePositions, column->totalActivePositions);
 
                 // For each cell
                 stRPCell *cell = column->head;
