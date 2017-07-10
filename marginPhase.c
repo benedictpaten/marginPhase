@@ -487,7 +487,7 @@ int main(int argc, char *argv[]) {
         int64_t totalPositions;
         int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
         st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous positions, each with fewer than %" PRIi64
-                " aligned occurrences of any second most frequenct base, leaving only %" PRIi64 " (%f) positions of %" PRIi64
+                " aligned occurrences of any second most frequent base, leaving only %" PRIi64 " (%f) positions of %" PRIi64
                 " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
                 (int64_t)params->minSecondMostFrequenctBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
