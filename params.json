@@ -30,13 +30,15 @@
 
   "offDiagonalReadErrorPseudoCount" : 10,
 
-  "trainingIterations" : 1,
+  "trainingIterations" : 0,
 
-  "filterBadReads" : true,
+  "filterBadReads" : false,
   
-  "filterMatchThreshold" : 0.92,
+  "filterMatchThreshold" : 0.9,
 
-  "useReferencePrior" : true,
+  "useReferencePrior" : false,
 
-  "verbose" : "00"
+  "addInsertionColumns" : false,
+
+  "verbose" : 0
 }

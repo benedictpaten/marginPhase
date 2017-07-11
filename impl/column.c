@@ -37,7 +37,6 @@ void stRPColumn_destruct(stRPColumn *column) {
         cell = cell->nCell;
         stRPCell_destruct(pCell);
     }
-
     free(column->seqHeaders);
     free(column->seqs);
     free(column);

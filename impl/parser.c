@@ -53,7 +53,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
     return UINT8_MAX;
 }
 
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+char stBaseMapper_getCharForValue(stBaseMapper *bm, int64_t value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
@@ -100,6 +100,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterBadReads = false;
     params->filterMatchThreshold = 0.90;
     params->useReferencePrior = false;
+    params->addInsertionColumns = false;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -233,6 +234,12 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->useReferencePrior = strcmp(tokStr, "true") == 0;
         }
+        if (strcmp(keyString, "addInsertionColumns") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->addInsertionColumns = strcmp(tokStr, "true") == 0;
+        }
         if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
@@ -268,12 +275,11 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
  * signal level alignments).
  * */
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
-        return -1;
     }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
@@ -335,6 +341,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         int64_t numDeletions = 0;
         countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
         int64_t trueLength = len-start_read-end_read+numDeletions-numInsertions;
+//        int64_t trueLength = len - start_read - end_read + numDeletions;
 
         // Create empty profile sequence
         stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
@@ -342,32 +349,144 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         // Variables to keep track of position in sequence / cigar operations
         cig_idx = 0;
         int64_t currPosInOp = 0;
-        int64_t cigarOp = -1;
-        int64_t cigarNum = -1;
+//        int64_t cigarOp = -1;
+//        int64_t cigarNum = -1;
+        int64_t cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+        int64_t cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
         int64_t idxInSeq = start_read;
+
+        // First spot in sequence
+//        //TODO: this assumes first spot is a match. what if indel?
+        while (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+            cig_idx++;
+            cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+            cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+        }
+        int64_t firstBase = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+
+        if (cigarOp == BAM_CINS) {
+            pSeq->insertions[0] = cigarNum;
+            pSeq->insertionSeqs[0] = st_calloc(cigarNum, sizeof(int64_t));
+            if (params->addInsertionColumns) pSeq->profileProbs[0 * ALPHABET_SIZE + firstBase] = ALPHABET_MAX_PROB;
+        } else {
+            pSeq->profileProbs[firstBase] = ALPHABET_MAX_PROB;
+        }
+        int64_t firstPos = 0;
+        pSeq->refCoords[firstPos] = pSeq->refStart;
+//        pSeq->insertionsBeforePosition[firstPos] = 0;
+
+        idxInSeq++;
+        currPosInOp++;
+        if (currPosInOp == cigarNum) {
+            cig_idx++;
+            currPosInOp = 0;
+        }
+        int64_t *indexes = st_calloc(trueLength, sizeof(int64_t));
+        indexes[0] = 0;
+        stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[firstPos], &indexes[0]);
 
         // For each position turn character into profile probability
         // As is, this makes the probability 1 for the base read in, and 0 otherwise
-        for (uint32_t i = 0; i < trueLength; i++) {
-
+        for (uint32_t i = 1; i < trueLength; i++) {
             if (currPosInOp == 0) {
                 cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
                 cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
             }
+//            pSeq->insertionsBeforePosition[i] = 0;
+//            st_logInfo("Pos: %d\tCigarNum: %d\tCigarOp: %d \n", i, cigarNum, cigarOp);
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                pSeq->refCoords[i] = pSeq->refCoords[i-1] + 1;
+
+                // TODO What about collisions?
+                indexes[i] =  i;
+                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
+                    int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
+                    st_logInfo("!! Collision 1 !! %d (at %d)\n", *p, pSeq->refCoords[i]);
+                }
+//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
                 idxInSeq++;
+                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
+//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
+                int64_t j;
+                if (jPtr != NULL) {
+                    j = *jPtr;
+//                    if (j != 0 && pSeq->refStart == 8195072 && i <= 270) {
+//                        st_logInfo("HELP 1 the start isn't at position 0 :(  pSeq1->refstart: %d  i: %d  j: %d  length: %d  pSeq->refCoords[i] = %d\n", pSeq->refStart, i, j, pSeq->length, pSeq->refCoords[i]);
+//                        int64_t weirdPos = 8195328;
+//                        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
+//                        if (weird != NULL) st_logInfo("  Weird position: Index for %d is %d\n", weirdPos, *weird);
+//                    } else if (pSeq->refStart == 8195072 && i <= 270) {
+//                        st_logInfo("1 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
+//                        int64_t weirdPos = 8195328;
+//                        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
+//                        if (weird != NULL) st_logInfo("  Weird position: Index for %d is %d\n", weirdPos, *weird);
+//                    }
+                }
+
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                // Currently, all profile probabilities are set to 0 here
-                // This worked better than adding in a '-' character or having a flat distribution of probabilities
+                // Set deletions to be a gap character
+                int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
+                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                pSeq->refCoords[i] = pSeq->refStart + i;
+                pSeq->refCoords[i] = pSeq->refCoords[i-1]+1;
+                indexes[i] = i;
+                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
+                    int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
+                    st_logInfo("!! Collision 2 !! %d (at %d)\n", *p,pSeq->refCoords[i]);
+                }
+//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
+                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
+//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
+                int64_t j;
+                if (jPtr != NULL) {
+                    j = *jPtr;
+//                    if (j != 0 && pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
+//                        st_logInfo("HELP 2 the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
+//                    } else if (pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
+//                        st_logInfo("2 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
+//                    }
+                }
+
             } else if (cigarOp == BAM_CINS) {
-                // Currently, ignore insertions
+                if (params->addInsertionColumns) {
+//                    st_logInfo("  insertionSeqs[%d][%d]  \n", i, currPosInOp);
+                    int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+                    if (currPosInOp == 0) {
+                        // Store the number of inserted bases and allocate memory for the bases themselves
+                        // Put this in the previous index (there won't have been an insertion there)
+                        pSeq->insertions[i-1] = cigarNum;
+                        pSeq->insertionSeqs[i-1] = st_calloc(cigarNum, sizeof(int64_t));
+//                        pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                    }
+                    pSeq->insertionSeqs[i-1][currPosInOp] = b;
+                    pSeq->numInsertions++;
+                }
+//                pSeq->refCoords[i] = pSeq->refCoords[i-1]+1;
+//                indexes[i] = i;
+//                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072 ) {
+//                    st_logInfo("!! Collision 3 !!\n");
+//                }
+//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
                 idxInSeq++;
                 i--;
+                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
+//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
+                int64_t j;
+                if (jPtr != NULL) {
+                    j = *jPtr;
+//                    if (j != 0 && pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
+//                        st_logInfo("HELP 3 the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
+//                    } else if (pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
+//                        st_logInfo("3 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
+//                    }
+                }
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                // nothing really to do here. skip to next cigar operation
+                // Nothing really to do here. Skip to next cigar operation
                 currPosInOp = cigarNum-1;
                 i--;
             } else {
@@ -379,15 +498,66 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 cig_idx++;
                 currPosInOp = 0;
             }
+//            if (pSeq->refStart == 8098568 && (i + pSeq->refStart == 8098754)) {
+//                st_logInfo("\n***** \nPARSING ORIGINAL pseq->refstart = %d, current coord = %d \n", pSeq->refStart, pSeq->refStart+i);
+//                for (int64_t z = 0; z < ALPHABET_SIZE; z++) {
+//                    st_logInfo("%d: (%d)\t", z, pSeq->profileProbs[i * ALPHABET_SIZE + z]);
+//                }
+//                st_logInfo("\n***** \n");
+//            }
+//            int64_t weirdPos = 8195328;
+//            int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
+//            if (weird != NULL && pSeq->refStart == 8086844) {
+//                if (weirdPos < pSeq->refStart || weirdPos > pSeq->refCoords[pSeq->length-1]) {
+//                    st_logInfo("  NOT IN RANGE ");
+//                }
+//                st_logInfo("  Weird position: Index for %d is %d (range: %d - %d)\t i = %d\n",
+//                           weirdPos, *weird, pSeq->refStart, pSeq->refStart+pSeq->length, i);
+//            } else if (pSeq->refStart == 8086844){
+//                st_logInfo("  NOT IN HASH YET\t i = %d\n", i);
+//            }
+
         }
+//        int64_t weirdPos = 8195328;
+//        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
+//        if (weird != NULL) {
+//            if (weirdPos < pSeq->refStart || weirdPos > pSeq->refCoords[pSeq->length-1]) {
+//                st_logInfo("  NOT IN RANGE ");
+//            }
+//            st_logInfo("  Weird position: Index for %d is %d (range: %d - %d)\n", weirdPos, *weird, pSeq->refStart, pSeq->refStart+pSeq->length);
+//        } else {
+//            st_logInfo("  NOT IN HASH YET\n");
+//        }
+
+
+
         stList_append(profileSequences, pSeq);
+//        if (readCount == 1) {
+////            stProfileSeq_print(pSeq, stderr, 1);
+//            st_logInfo("pSeq length: %d \n", pSeq->length);
+//            st_logInfo("len: %d  start_read: %d  end_read: %d  \n", len, start_read, end_read);
+//            st_logInfo("numDeletions: %d \t numInsertions: %d \n", numDeletions, numInsertions);
+//
+//        }
+
+
+        int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refStart);
+        int64_t j;
+        if (jPtr != NULL) {
+            j = *jPtr;
+            if (j != 0) {
+                st_logInfo("HELP the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
+            }
+        }
     }
+
+    int64_t a1 = 635;
+    int64_t a2 = 635;
+    st_logInfo("Values equal: %d   Pointers equal: %d \n", a1==a2, (&a1)==(&a2));
 
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
-
-    return readCount;
 }
 

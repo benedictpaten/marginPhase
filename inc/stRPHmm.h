@@ -111,6 +111,12 @@ struct _stProfileSeq {
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
     // 1.0/255
     uint8_t *profileProbs;
+    int64_t *refCoords;
+    int64_t *insertions;
+    int64_t **insertionSeqs; // so we don't have to re-parse the bam file
+    stHash *refCoordMap;
+    int64_t numInsertions;
+//    int64_t *insertionsBeforePosition;
 };
 
 stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId,
@@ -128,10 +134,16 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 
 int stRPProfileSeq_cmpFn(const void *a, const void *b);
 
+stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNamesToReferencePriors, int64_t threshold);
+
+int64_t findRefCoordIndexInProfileSeq(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t seq1Index);
+
 /*
  * Prior over reference positions
  */
 
+// TODO: rename
+// stReferenceInformation
 struct _stReferencePriorProbs {
     char *referenceName;
     int64_t refStart;
@@ -144,16 +156,24 @@ struct _stReferencePriorProbs {
     uint8_t *profileSequence;
     // Read counts for the bases seen in reads
     double *baseCounts;
+    // Locations of insertions relative to the reference
+    int64_t *insertionCounts;
+    int64_t *gapSizes;
+    // Reference coordinates for each index
+    int64_t *refCoords;
+    stHash *refCoordMap;
 };
 
 stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
 
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, bool includeInsertions);
 
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
-        stBaseMapper *baseMapper, stRPHmmParameters *params);
+        stBaseMapper *baseMapper, stRPHmmParameters *params, bool includeInsertions);
+
+int64_t findIndexForRefCoord(int64_t *coords, int64_t *refCoords, int64_t index, int64_t coordsLength);
 
 /*
  * Emission probabilities
@@ -210,6 +230,9 @@ struct _stRPHmmParameters {
 
     // Use a prior for the reference sequence
     bool useReferencePrior;
+
+    // Add columns where insertions are seen in the reads
+    bool addInsertionColumns;
 
     // Verbosity options for printing
     bool verboseTruePositives;
@@ -399,10 +422,13 @@ struct _stGenomeFragment {
     char *referenceName;
     int64_t refStart;
     int64_t length;
+    int64_t *refCoords;
+    int64_t *insertionsBeforePosition;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
+void stGenomeFragment_setInsertionCounts(stGenomeFragment *gF);
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
@@ -416,12 +442,12 @@ stBaseMapper* stBaseMapper_construct();
 void stBaseMapper_destruct(stBaseMapper *bm);
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+char stBaseMapper_getCharForValue(stBaseMapper *bm, int64_t value);
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile

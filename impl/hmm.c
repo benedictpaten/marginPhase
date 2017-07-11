@@ -48,10 +48,11 @@ double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
     double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
     for (int64_t i=0; i<column->depth; i++) {
         stProfileSeq *seq = column->seqHeaders[i];
-
-        if (pos >= seq->refStart && pos < seq->length+seq->refStart) {
+        int64_t p = pos - seq->refStart;
+        if (seq->refCoords[p] >= seq->refStart &&
+                seq->refCoords[p] < seq->length+seq->refStart) {
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(seq->profileProbs[(pos - seq->refStart) * ALPHABET_SIZE]), j);
+                baseCounts[j] += getProb(&(seq->profileProbs[(p) * ALPHABET_SIZE]), j);
             }
         }
     }
@@ -105,7 +106,7 @@ double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t 
     stSetIterator *it = stSet_getIterator(profileSeqs);
     stProfileSeq *pSeq;
     while((pSeq = stSet_getNext(it)) != NULL) {
-        if (pos > pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
+        if (pos > pSeq->refStart && pos < pSeq->refStart + pSeq->length) {
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 baseCounts[j] += getProb(&(pSeq->profileProbs[(pos - pSeq->refStart)*ALPHABET_SIZE]), j);
             }
@@ -156,11 +157,14 @@ static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refSta
         // For each pair of read and haplotype characters
         for(;i<j;i++) {
             // Check coordinates in bounds
+            // FIXME
+            int64_t p = i - pSeq->refStart;
             assert(i - refStart >= 0 && i-refStart < length);
-            assert(i - pSeq->refStart >= 0 && i - pSeq->refStart < pSeq->length);
+            assert(p >= 0 && p < pSeq->length);
+//            assert(p + pSeq->refCoordinateOffset[p] >= 0 && p + pSeq->refCoordinateOffset[p] < pSeq->length);
             int64_t hapChar = haplotypeSeq[i - refStart];
             for(int64_t readChar=0; readChar<ALPHABET_SIZE; readChar++) {
-                double probOfReadChar = getProb(&(pSeq->profileProbs[(i-pSeq->refStart) * ALPHABET_SIZE]), readChar);
+                double probOfReadChar = getProb(&(pSeq->profileProbs[(p) * ALPHABET_SIZE]), readChar);
                 *getSubstitutionProbSlow(readErrorSubModel, hapChar, readChar) += probOfReadChar;
             }
         }
@@ -344,6 +348,7 @@ void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
      * Free memory owned by the hmm, including columns.
      */
     free(hmm->referenceName);
+
     stList_destruct(hmm->profileSeqs);
 
     if(destructColumns) {
@@ -488,7 +493,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
 stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     /*
      * Fuses together two hmms, such that leftHmm and rightHMM are on the same reference sequence and non-overlapping and
-     * left hmm preceds right hmm on the reference sequence.
+     * left hmm precedes right hmm on the reference sequence.
      * Returns fused hmm, destroys input hmms in the process.
      */
 

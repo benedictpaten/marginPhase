@@ -411,7 +411,7 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     stList *tilingPaths = getTilingPaths(readHmms);
 
     if (stList_length(tilingPaths) > params->maxCoverageDepth)
-        st_logDebug("> Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);
+        st_logInfo("  > Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);
 
     // Eliminate HMMs that cause the maximum coverage depth to exceed a threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {

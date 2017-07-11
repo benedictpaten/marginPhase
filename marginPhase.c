@@ -95,23 +95,115 @@ double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_
     return ((double)totalMatches)/(length - numGaps);
 }
 
+
+
 void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
+    /*
+     * Calculates the number of base overlaps and expected base matches between two profile sequences.
+     */
+    for (int64_t i = 0; i < pSeq1->length; i++) {
+        // Establish if the coordinate is in both sequences
+        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
+        if (j >= 0 && j < pSeq2->length) {
+            (*totalAlignedPositions)++;
+
+            // Calculate expectation of match
+            for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
+                double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
+                double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
+                assert(e1 * e2 <= 1.0);
+                *totalExpectedMatches += e1 * e2;
+            }
+        }
+    }
+}
+
+double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t index) {
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    for (int64_t i = 0; i < stList_length(profileSequences); i++) {
+        stProfileSeq *seq = stList_get(profileSequences, i);
+        if (index >= seq->refCoords[0] && index <= seq->refCoords[seq->length - 1]) {
+            for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
+                // TODO change for insertions
+//                int64_t seqIndex = index + seq->insertionsBeforePosition[index - seq->refCoords[0]] - seq->refCoords[0];
+                int64_t *seqIndex = stHash_search(seq->refCoordMap, &index);
+                baseCounts[j] += getProb(&seq->profileProbs[(*seqIndex) * ALPHABET_SIZE], j);
+            }
+        }
+    }
+    return baseCounts;
+}
+
+void getExpectedMatchesBetweenProfileSeqs2(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
     /*
      * Calculates the number of base overlaps and expected base matches between two profile sequences.
      */
 
     for(int64_t i=0; i<pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
+        int64_t refCoord1 = pSeq1->refCoords[i];
         int64_t j = i + pSeq1->refStart - pSeq2->refStart;
-        if(j >= 0 && j < pSeq2->length) {
-            (*totalAlignedPositions)++;
+        int64_t *jPtr = stHash_search(pSeq2->refCoordMap, &refCoord1);
+        if (jPtr != NULL) {
+            int64_t j = *jPtr;
+            int64_t refCoord2 = pSeq2->refCoords[j];
+            if (j >= 0 && j < pSeq2->length) {
+                (*totalAlignedPositions)++;
 
-            // Calculate expectation of match
-            for(int64_t k=0; k<ALPHABET_SIZE; k++) {
-                double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
-                double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
-                assert(e1 * e2 <= 1.0);
-                *totalExpectedMatches += e1 * e2;
+                // Calculate expectation of match
+                for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
+                    double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
+                    double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
+                    assert(e1 * e2 <= 1.0);
+                    *totalExpectedMatches += e1 * e2;
+                }
+            }
+        }
+    }
+}
+
+void getExpectedMatchesBetweenProfileSeqs3(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
+    /*
+     * Calculates the number of base overlaps and expected base matches between two profile sequences.
+     */
+    st_logInfo("seq1 id: %s \t seq2 id: %s \n", pSeq1->readId, pSeq2->readId);
+//    stList *keys = stHash_getKeys(pSeq2->refCoordMap);
+//    st_logInfo("Keys for pSeq2: \n");
+//    for (int64_t i = 0; i < stList_length(keys); i++) {
+//        int64_t *key = stList_get(keys, i);
+//        st_logInfo("%d \t", *key);
+//    }
+//    stList *values = stHash_getValues(pSeq2->refCoordMap);
+//    st_logInfo("\nValues for pSeq2: \n");
+//    for (int64_t i = 0; i < stList_length(values); i++) {
+//        int64_t *value = stList_get(values, i);
+//        st_logInfo("%d \t", *value);
+//    }
+
+    for(int64_t i=0; i<pSeq1->length; i++) {
+        // Establish if the coordinate is in both sequences
+//        int64_t j = i + pSeq1->refStart - pSeq2->refStart;
+        int64_t refCoord1 = pSeq1->refCoords[i];
+//        st_logInfo("refCoord1: %d\n", refCoord1);
+        int64_t *jPtr = stHash_search(pSeq2->refCoordMap, &refCoord1);
+        if (jPtr != NULL) {
+            int64_t j = *jPtr;
+            int64_t refCoord2 = pSeq2->refCoords[j];
+//            st_logInfo("\trefCoord1: %d refCoord2: %d \n", refCoord1, j);
+            if (j >= 0 && j < pSeq2->length) {
+                (*totalAlignedPositions)++;
+                if (i > 10970)
+                    st_logInfo("\ni = %d (%d), j = %d (%d)\n", i, refCoord1,
+                               j, refCoord2);
+
+                // Calculate expectation of match
+                for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
+                    double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
+                    double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
+                    if (i > 10970) st_logInfo("\tbase: %d  e1: %f  e2: %f \n", k, e1, e2);
+                    assert(e1 * e2 <= 1.0);
+                    *totalExpectedMatches += e1 * e2;
+                }
             }
         }
     }
@@ -129,11 +221,10 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         for(int64_t j=i+1; j<stList_length(profileSequences) && j<maxSeqs; j++) {
             getExpectedMatchesBetweenProfileSeqs(stList_get(profileSequences, i), stList_get(profileSequences, j),
                                                 &totalAlignedPositions, &totalExpectedMatches);
-
         }
     }
-
-    fprintf(fH, "\tAvg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+    fprintf(fH, "\tAvg. pairwise identity between profile sequences:"
+                    " %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
 }
 double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
@@ -452,24 +543,23 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
-    st_logInfo("\tCreated %d profile sequences\n", readCount);
+    parseReads(profileSequences, bamInFile, baseMapper, params);
 
     // Print some stats about the input sequences
-    if(st_getLogLevel() == debug) {
-        printSequenceStats(stderr, profileSequences);
-        printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
-    }
+    printSequenceStats(stderr, profileSequences);
+    printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
+
     // Getting reference sequence priors
     stHash *referenceNamesToReferencePriors;
     if(!params->useReferencePrior) {
         st_logInfo("> Using a flat prior over reference positions\n");
-        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences);
+        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0);
     }
     else {
         st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
-        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
-                baseMapper, params);
+        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile,
+                                                                            profileSequences,
+                                                                            baseMapper, params, 0);
 	}
 
     // Filter reads that are too divergent from the consensus sequence
@@ -479,7 +569,26 @@ int main(int argc, char *argv[]) {
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
         profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
-        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
+        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*100/initialSize);
+    }
+
+    int64_t positionOfInterest = 8098619;
+
+    // Add columns for insertions into profile sequences
+    if (params->addInsertionColumns) {
+        st_logInfo("> Adding insertion columns to profile sequences\n");
+        int64_t insertionThreshold = 8;
+        profileSequences = addInsertionColumnsToSeqs(profileSequences, referenceNamesToReferencePriors, insertionThreshold);
+        printSequenceStats(stderr, profileSequences);
+        printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
+        // Create new reference priors, using updated coordinates
+        st_logInfo("> Updating reference information\n");
+        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, 1);
+        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest);
+        printBaseComposition2(baseCounts);
+    } else {
+        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest);
+        printBaseComposition2(baseCounts);
     }
 
     // Learn the parameters for the input data
@@ -520,7 +629,13 @@ int main(int argc, char *argv[]) {
 
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
+        stGenomeFragment_setInsertionCounts(gF);
         totalGFlength += gF->length;
+
+
+        if (positionOfInterest >= hmm->refStart && positionOfInterest < hmm->refStart + hmm->refLength) {
+            printColumnAtPosition(hmm, positionOfInterest);
+        }
 
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
@@ -552,6 +667,8 @@ int main(int argc, char *argv[]) {
 
     // Compare the output vcf with the reference vcf
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+
+    st_logInfo("> Comparing vcf files \n");
 
     compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
 

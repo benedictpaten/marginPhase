@@ -137,6 +137,8 @@ void validate_hdr(bcf_hdr_t *hdr) {
     }
 }
 
+
+
 int main(int argc, char *argv[]) {
     // Parameters / arguments
 
