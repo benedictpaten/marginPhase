@@ -103,7 +103,10 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
      */
     for (int64_t i = 0; i < pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
-        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
+//        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
+//        st_logInfo("\ni = %d  (%d) ", i, pSeq1->refCoords[i]);
+        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refCoords, pSeq1->refCoordMap, pSeq2->refCoords, pSeq2->refCoordMap);
+//        st_logInfo(" j = %d  (%d)", j, pSeq2->refCoords[j]);
         if (j >= 0 && j < pSeq2->length) {
             (*totalAlignedPositions)++;
 
@@ -154,53 +157,6 @@ void getExpectedMatchesBetweenProfileSeqs2(stProfileSeq *pSeq1, stProfileSeq *pS
                 for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
                     double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
                     double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
-                    assert(e1 * e2 <= 1.0);
-                    *totalExpectedMatches += e1 * e2;
-                }
-            }
-        }
-    }
-}
-
-void getExpectedMatchesBetweenProfileSeqs3(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
-    /*
-     * Calculates the number of base overlaps and expected base matches between two profile sequences.
-     */
-    st_logInfo("seq1 id: %s \t seq2 id: %s \n", pSeq1->readId, pSeq2->readId);
-//    stList *keys = stHash_getKeys(pSeq2->refCoordMap);
-//    st_logInfo("Keys for pSeq2: \n");
-//    for (int64_t i = 0; i < stList_length(keys); i++) {
-//        int64_t *key = stList_get(keys, i);
-//        st_logInfo("%d \t", *key);
-//    }
-//    stList *values = stHash_getValues(pSeq2->refCoordMap);
-//    st_logInfo("\nValues for pSeq2: \n");
-//    for (int64_t i = 0; i < stList_length(values); i++) {
-//        int64_t *value = stList_get(values, i);
-//        st_logInfo("%d \t", *value);
-//    }
-
-    for(int64_t i=0; i<pSeq1->length; i++) {
-        // Establish if the coordinate is in both sequences
-//        int64_t j = i + pSeq1->refStart - pSeq2->refStart;
-        int64_t refCoord1 = pSeq1->refCoords[i];
-//        st_logInfo("refCoord1: %d\n", refCoord1);
-        int64_t *jPtr = stHash_search(pSeq2->refCoordMap, &refCoord1);
-        if (jPtr != NULL) {
-            int64_t j = *jPtr;
-            int64_t refCoord2 = pSeq2->refCoords[j];
-//            st_logInfo("\trefCoord1: %d refCoord2: %d \n", refCoord1, j);
-            if (j >= 0 && j < pSeq2->length) {
-                (*totalAlignedPositions)++;
-                if (i > 10970)
-                    st_logInfo("\ni = %d (%d), j = %d (%d)\n", i, refCoord1,
-                               j, refCoord2);
-
-                // Calculate expectation of match
-                for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
-                    double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
-                    double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
-                    if (i > 10970) st_logInfo("\tbase: %d  e1: %f  e2: %f \n", k, e1, e2);
                     assert(e1 * e2 <= 1.0);
                     *totalExpectedMatches += e1 * e2;
                 }

@@ -36,9 +36,9 @@
   
   "filterMatchThreshold" : 0.9,
 
-  "useReferencePrior" : false,
+  "useReferencePrior" : true,
 
-  "addInsertionColumns" : false,
+  "addInsertionColumns" : true,
 
   "verbose" : 0
 }

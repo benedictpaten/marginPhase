@@ -286,10 +286,10 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 
     int64_t readCount = 0;
 
-    while(sam_read1(in,bamHdr,aln) > 0){
+    while(sam_read1(in,bamHdr,aln) > 0) {
 
-        int64_t pos = aln->core.pos+1; //left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
+        int64_t pos = aln->core.pos + 1; //left most position of alignment
+        char *chr = bamHdr->target_name[aln->core.tid]; //contig name (chromosome)
         int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
         char *readName = bam_get_qname(aln);
@@ -309,14 +309,13 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 
         // Find the correct starting locations on the read and reference sequence,
         // to deal with things like inserts / deletions / soft clipping
-        while(cig_idx < aln->core.n_cigar) {
+        while (cig_idx < aln->core.n_cigar) {
             int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
             int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 break;
-            }
-            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 start_ref += cigarNum;
                 cig_idx++;
             } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
@@ -330,8 +329,8 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         }
 
         // Check for soft clipping at the end
-        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+        int lastCigarOp = cigar[aln->core.n_cigar - 1] & BAM_CIGAR_MASK;
+        int lastCigarNum = cigar[aln->core.n_cigar - 1] >> BAM_CIGAR_SHIFT;
         if (lastCigarOp == BAM_CSOFT_CLIP) {
             end_read += lastCigarNum;
         }
@@ -340,7 +339,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         int64_t numInsertions = 0;
         int64_t numDeletions = 0;
         countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-        int64_t trueLength = len-start_read-end_read+numDeletions-numInsertions;
+        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
 //        int64_t trueLength = len - start_read - end_read + numDeletions;
 
         // Create empty profile sequence
@@ -365,6 +364,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         int64_t firstBase = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
 
         if (cigarOp == BAM_CINS) {
+            st_logInfo("* INSERTION AT FIRST INDEX IN PROFILE SEQUENCE!\n");
             pSeq->insertions[0] = cigarNum;
             pSeq->insertionSeqs[0] = st_calloc(cigarNum, sizeof(int64_t));
             if (params->addInsertionColumns) pSeq->profileProbs[0 * ALPHABET_SIZE + firstBase] = ALPHABET_MAX_PROB;
@@ -385,6 +385,13 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         indexes[0] = 0;
         stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[firstPos], &indexes[0]);
 
+        if (pSeq->refStart == 8199217 || pSeq->refStart == 8199576) {
+            st_logInfo("*** SeqId: %s  span: %d - %d (len: %d)\n", pSeq->readId, pSeq->refStart,
+                       pSeq->refStart + pSeq->length, pSeq->length);
+            st_logInfo("NumInsertions: %d   NumDeletions: %d \n", numInsertions, numDeletions);
+            st_logInfo("starting len: %d   start_read: %d   end_read: %d   \n", len, start_read, end_read);
+        }
+
         // For each position turn character into profile probability
         // As is, this makes the probability 1 for the base read in, and 0 otherwise
         for (uint32_t i = 1; i < trueLength; i++) {
@@ -392,65 +399,37 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
                 cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
             }
+
 //            pSeq->insertionsBeforePosition[i] = 0;
 //            st_logInfo("Pos: %d\tCigarNum: %d\tCigarOp: %d \n", i, cigarNum, cigarOp);
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-                pSeq->refCoords[i] = pSeq->refCoords[i-1] + 1;
+                pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
 
                 // TODO What about collisions?
-                indexes[i] =  i;
+                indexes[i] = i;
                 if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
                     int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
                     st_logInfo("!! Collision 1 !! %d (at %d)\n", *p, pSeq->refCoords[i]);
                 }
-//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
-                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
+//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
                 idxInSeq++;
-                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
-//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                int64_t j;
-                if (jPtr != NULL) {
-                    j = *jPtr;
-//                    if (j != 0 && pSeq->refStart == 8195072 && i <= 270) {
-//                        st_logInfo("HELP 1 the start isn't at position 0 :(  pSeq1->refstart: %d  i: %d  j: %d  length: %d  pSeq->refCoords[i] = %d\n", pSeq->refStart, i, j, pSeq->length, pSeq->refCoords[i]);
-//                        int64_t weirdPos = 8195328;
-//                        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
-//                        if (weird != NULL) st_logInfo("  Weird position: Index for %d is %d\n", weirdPos, *weird);
-//                    } else if (pSeq->refStart == 8195072 && i <= 270) {
-//                        st_logInfo("1 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
-//                        int64_t weirdPos = 8195328;
-//                        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
-//                        if (weird != NULL) st_logInfo("  Weird position: Index for %d is %d\n", weirdPos, *weird);
-//                    }
-                }
-
-            }
-            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 // Set deletions to be a gap character
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 pSeq->refCoords[i] = pSeq->refStart + i;
-                pSeq->refCoords[i] = pSeq->refCoords[i-1]+1;
+                pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
                 indexes[i] = i;
                 if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
                     int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                    st_logInfo("!! Collision 2 !! %d (at %d)\n", *p,pSeq->refCoords[i]);
+                    st_logInfo("!! Collision 2 !! %d (at %d)\n", *p, pSeq->refCoords[i]);
                 }
-//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
-                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
-                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
-//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                int64_t j;
-                if (jPtr != NULL) {
-                    j = *jPtr;
-//                    if (j != 0 && pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
-//                        st_logInfo("HELP 2 the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
-//                    } else if (pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
-//                        st_logInfo("2 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
-//                    }
-                }
+                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
+//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
+//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
 
             } else if (cigarOp == BAM_CINS) {
                 if (params->addInsertionColumns) {
@@ -459,35 +438,18 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                     if (currPosInOp == 0) {
                         // Store the number of inserted bases and allocate memory for the bases themselves
                         // Put this in the previous index (there won't have been an insertion there)
-                        pSeq->insertions[i-1] = cigarNum;
-                        pSeq->insertionSeqs[i-1] = st_calloc(cigarNum, sizeof(int64_t));
+                        pSeq->insertions[i - 1] = cigarNum;
+                        pSeq->insertionSeqs[i - 1] = st_calloc(cigarNum, sizeof(int64_t));
 //                        pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                     }
-                    pSeq->insertionSeqs[i-1][currPosInOp] = b;
+                    pSeq->insertionSeqs[i - 1][currPosInOp] = b;
                     pSeq->numInsertions++;
                 }
-//                pSeq->refCoords[i] = pSeq->refCoords[i-1]+1;
-//                indexes[i] = i;
-//                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072 ) {
-//                    st_logInfo("!! Collision 3 !!\n");
-//                }
-//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
                 idxInSeq++;
                 i--;
-                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
-//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                int64_t j;
-                if (jPtr != NULL) {
-                    j = *jPtr;
-//                    if (j != 0 && pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
-//                        st_logInfo("HELP 3 the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
-//                    } else if (pSeq->refStart == 8195072 && i >= 240 && i <= 270) {
-//                        st_logInfo("3 The start is at position 0. i = %d (%d) \n", i, i + pSeq->refStart);
-//                    }
-                }
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
                 // Nothing really to do here. Skip to next cigar operation
-                currPosInOp = cigarNum-1;
+                currPosInOp = cigarNum - 1;
                 i--;
             } else {
                 st_logCritical("Unidentifiable cigar operation\n");
@@ -498,37 +460,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 cig_idx++;
                 currPosInOp = 0;
             }
-//            if (pSeq->refStart == 8098568 && (i + pSeq->refStart == 8098754)) {
-//                st_logInfo("\n***** \nPARSING ORIGINAL pseq->refstart = %d, current coord = %d \n", pSeq->refStart, pSeq->refStart+i);
-//                for (int64_t z = 0; z < ALPHABET_SIZE; z++) {
-//                    st_logInfo("%d: (%d)\t", z, pSeq->profileProbs[i * ALPHABET_SIZE + z]);
-//                }
-//                st_logInfo("\n***** \n");
-//            }
-//            int64_t weirdPos = 8195328;
-//            int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
-//            if (weird != NULL && pSeq->refStart == 8086844) {
-//                if (weirdPos < pSeq->refStart || weirdPos > pSeq->refCoords[pSeq->length-1]) {
-//                    st_logInfo("  NOT IN RANGE ");
-//                }
-//                st_logInfo("  Weird position: Index for %d is %d (range: %d - %d)\t i = %d\n",
-//                           weirdPos, *weird, pSeq->refStart, pSeq->refStart+pSeq->length, i);
-//            } else if (pSeq->refStart == 8086844){
-//                st_logInfo("  NOT IN HASH YET\t i = %d\n", i);
-//            }
-
         }
-//        int64_t weirdPos = 8195328;
-//        int64_t *weird = stHash_search(pSeq->refCoordMap, &weirdPos);
-//        if (weird != NULL) {
-//            if (weirdPos < pSeq->refStart || weirdPos > pSeq->refCoords[pSeq->length-1]) {
-//                st_logInfo("  NOT IN RANGE ");
-//            }
-//            st_logInfo("  Weird position: Index for %d is %d (range: %d - %d)\n", weirdPos, *weird, pSeq->refStart, pSeq->refStart+pSeq->length);
-//        } else {
-//            st_logInfo("  NOT IN HASH YET\n");
-//        }
-
 
 
         stList_append(profileSequences, pSeq);
@@ -539,22 +471,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 //            st_logInfo("numDeletions: %d \t numInsertions: %d \n", numDeletions, numInsertions);
 //
 //        }
-
-
-        int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refStart);
-        int64_t j;
-        if (jPtr != NULL) {
-            j = *jPtr;
-            if (j != 0) {
-                st_logInfo("HELP the start isn't at position 0 :(  pSeq1->refstart: %d   j: %d  length: %d\n", pSeq->refStart, j, pSeq->length);
-            }
-        }
     }
-
-    int64_t a1 = 635;
-    int64_t a2 = 635;
-    st_logInfo("Values equal: %d   Pointers equal: %d \n", a1==a2, (&a1)==(&a2));
-
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);

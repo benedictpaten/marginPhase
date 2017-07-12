@@ -55,7 +55,8 @@ static stReferencePriorProbs *getNext(stList *profileSequences) {
     stProfileSeq *pSeq = stList_pop(profileSequences);
     char *refName = pSeq->referenceName;
     int64_t refStart = pSeq->refStart;
-    int64_t refEnd = pSeq->refStart + pSeq->length;
+    int64_t refEnd = pSeq->refCoords[pSeq->length - 1];
+
     while(stList_length(profileSequences) > 0) {
         stProfileSeq *pSeq = stList_peek(profileSequences);
 
@@ -66,9 +67,10 @@ static stReferencePriorProbs *getNext(stList *profileSequences) {
 
         assert(pSeq->refStart <= refStart);
         refStart = pSeq->refStart;
-        refEnd = pSeq->refStart + pSeq->length > refEnd ? pSeq->refStart + pSeq->length : refEnd;
+        refEnd = pSeq->refCoords[pSeq->length - 1] > refEnd ? pSeq->refCoords[pSeq->length - 1] : refEnd;
     }
 
+    st_logInfo("\tRef start: %d  ref end: %d  ref length: %d \n", refStart, refEnd, refEnd - refStart);
     return stReferencePriorProbs_constructEmptyProfile(refName, refStart, refEnd-refStart);
 }
 
@@ -77,19 +79,50 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences, 
      * Sets the reference coordinates in the set of profile sequences at each position.
      */
     // Walk through rProbs, setting coordinates as you go
-    int64_t rProbsIndex = 0;
-    for(int64_t i=0; i<stList_length(profileSequences); i++) {
-        stProfileSeq *pSeq = stList_get(profileSequences, i);
-        for (int64_t j = 0; j < pSeq->length; j++) {
-            if (rProbsIndex == j + pSeq->refStart - rProbs->refStart) {
+    // TODO: figure out how to do this without calloc...
+    int64_t *indexes = st_calloc(rProbs->length, sizeof(int64_t));
+
+    // First position
+    rProbs->refCoords[0] = rProbs->refStart;
+    indexes[0] = 0;
+    stHash_insert(rProbs->refCoordMap, &rProbs->refStart, &indexes[0]);
+    int64_t rProbsIndex = 1;
+    int64_t nextSeqStartingIndex = 1;
+    stProfileSeq *pSeq = stList_get(profileSequences, 0);
+    for(int64_t i=1; i<stList_length(profileSequences); i++) {
+        if (nextSeqStartingIndex <= 0 || nextSeqStartingIndex >= pSeq->length) {
+            stProfileSeq *pSeq2 = stList_get(profileSequences, i);
+            nextSeqStartingIndex = findCorrespondingRefCoordIndex(pSeq->length-1, pSeq->refCoords, pSeq->refCoordMap, pSeq2->refCoords, pSeq2->refCoordMap) + 1;
+//            st_logInfo("\t\t\t\tpSeq->length - 1 = %d\n", pSeq->length-1);
+            if (nextSeqStartingIndex > 0 && nextSeqStartingIndex < pSeq2->length) {
+                pSeq = pSeq2;
+            } else {
+//                st_logInfo("\t\t\tSkipped seq from %d - %d\n", pSeq2->refStart, pSeq2->refStart + pSeq2->length);
+            }
+        } else {
+//            st_logInfo("Starting at:\t%d  (%d) i = %d\n", pSeq->refCoords[nextSeqStartingIndex], nextSeqStartingIndex, i);
+//            st_logInfo("  Adding %d more indexes  (rProbsIndex: %d - %d) (pSeqIndex: %d-%d)\n", pSeq->length - nextSeqStartingIndex, rProbsIndex, rProbsIndex + pSeq->length - nextSeqStartingIndex, pSeq->refStart, pSeq->refCoords[pSeq->length-1]);
+//        st_logInfo("  nextSeqStartingIndex: %d  i = %d  rProbsIndex: %d (out of %d)\n", nextSeqStartingIndex,i, rProbsIndex, rProbs->length);
+            // Only look at a profile sequence until you reach the start of the next
+            for (int64_t j = nextSeqStartingIndex; j < pSeq->length; j++) {
+
                 rProbs->refCoords[rProbsIndex] = pSeq->refCoords[j];
+                indexes[rProbsIndex] = rProbsIndex;
+                stHash_insert(rProbs->refCoordMap, &pSeq->refCoords[j], &indexes[rProbsIndex]);
                 rProbsIndex++;
             }
-//            int64_t k = includeInsertions?
-//                        findIndexForRefCoord(rProbs->refCoords, pSeq->refCoords, j, rProbs->length)
-//                                : j + pSeq->refStart - rProbs->refStart;
-//            // TODO: Will update the same index many times...
-//            rProbs->refCoords[k] = pSeq->refCoords[j];
+//            st_logInfo("  Ending at: %d \n", rProbs->refCoords[rProbsIndex-1]);
+
+//            st_logInfo("\t\t\t\tpSeq->length - 1 = %d\n", pSeq->length-1);
+            stProfileSeq *pSeq2 = stList_get(profileSequences, i);
+            nextSeqStartingIndex = findCorrespondingRefCoordIndex(pSeq->length-1, pSeq->refCoords, pSeq->refCoordMap, pSeq2->refCoords, pSeq2->refCoordMap) + 1;
+
+            if (nextSeqStartingIndex > 0 && nextSeqStartingIndex < pSeq2->length) {
+
+                pSeq = pSeq2;
+            } else {
+//                st_logInfo("\t\t\tSkipped seq from %d - %d. nextSeqStartingIndex: %d\n", pSeq2->refStart, pSeq2->refCoords[pSeq2->length-1], nextSeqStartingIndex);
+            }
         }
     }
     for (int64_t i = 0; i < rProbs->length; i++) {
@@ -97,6 +130,7 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences, 
             st_logInfo("rProbs->refCoords[ %d ] = 0 \n", rProbs->refStart + i);
         }
     }
+    st_logInfo("Indexes filled in in rProbs: %d  (rProbs length: %d)\n", rProbsIndex, rProbs->length);
 }
 
 void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences, bool includeInsertions) {
@@ -107,7 +141,8 @@ void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences, 
         stProfileSeq *pSeq = stList_get(profileSequences, i);
         for (int64_t j = 0; j < pSeq->length; j++) {
             int64_t k = includeInsertions ?
-                        findIndexForRefCoord(pSeq->refCoords, rProbs->refCoords, j, pSeq->length)
+                        findCorrespondingRefCoordIndex(j, pSeq->refCoords, pSeq->refCoordMap, rProbs->refCoords, rProbs->refCoordMap)
+//                        findIndexForRefCoord(pSeq->refCoords, rProbs->refCoords, j, pSeq->length)
                                           : j + pSeq->refStart - rProbs->refStart;
             if(k >= 0 && k < rProbs->length) {
                 for (int64_t l = 0; l < ALPHABET_SIZE; l++) {
@@ -179,6 +214,7 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, bool in
     while(stList_length(profileSequences) > 0) {
         // Get next reference prior prob interval
         stReferencePriorProbs *rProbs = getNext(profileSequences);
+        // TODO: make rProbslength += number of insertions added 
 
         // Fill in probability profile
         for(int64_t i=0; i<rProbs->length; i++) {
@@ -187,27 +223,17 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, bool in
             }
         }
         setRefCoordinates(rProbs, profileSequencesCopy, includeInsertions);
-        for (int64_t i = 0; i < rProbs->length; i++) {
-            if (rProbs->refCoords[i] == 0 && i < 14400) {
-                st_logInfo("1 refCoords[ %d ] = 0\n", i+rProbs->refStart);
-            }
-        }
         setReadBaseCounts(rProbs, profileSequencesCopy, includeInsertions);
-        for (int64_t i = 0; i < rProbs->length; i++) {
-            if (rProbs->refCoords[i] == 0 && i < 14400) {
-                st_logInfo(" 2 refCoords[ %d ] = 0\n", i+rProbs->refStart);
-            }
-        }
         setInsertions(rProbs, profileSequencesCopy);
 
         assert(stHash_search(referenceNamesToReferencePriors, rProbs->referenceName) == NULL);
         stHash_insert(referenceNamesToReferencePriors, rProbs->referenceName, rProbs);
 
-        for (int64_t i = 0; i < rProbs->length; i++) {
-            if (rProbs->refCoords[i] == 0 && i < 14400) {
-                st_logInfo("  3 refCoords[ %d ] = 0\n", i+rProbs->refStart);
-            }
-        }
+//        for (int64_t i = 0; i < rProbs->length; i++) {
+//            if (rProbs->refCoords[i] == 0 && i < 14400) {
+//                st_logInfo("  3 refCoords[ %d ] = 0\n", i+rProbs->refStart);
+//            }
+//        }
     }
 
 
@@ -269,51 +295,52 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
     return referenceNamesToReferencePriors;
 }
 
-int64_t findIndexForRefCoord(int64_t *coords, int64_t *refCoords, int64_t index, int64_t coordsLength) {
-    /*
-     * Given the index in a profile sequence refSeq, find the index that corresponds
-     * to the same location in another progile sequence, seq.
-     */
-    int64_t refCoord = refCoords[index];
-
-    // If in an insertion, find which index in the gap it is
-    int64_t tempIndex = index;
-    int64_t offsetL = 0;
-    while (refCoords[tempIndex] == refCoords[tempIndex - 1]) {
-        offsetL++;
-        tempIndex--;
-    }
-    tempIndex = index;
-    int64_t offsetR = 0;
-    while (refCoords[tempIndex] == refCoords[tempIndex + 1]) {
-        offsetR++;
-        tempIndex++;
-    }
-
-    int64_t coordIndex = refCoords[index] - coords[0];
-    if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
-
-    int64_t currentCoord =  coords[coordIndex];
-
-    while (currentCoord < refCoord) {
-        coordIndex++;
-        if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
-        currentCoord = coords[coordIndex];
-        if (currentCoord == refCoord) coordIndex += offsetL;
-    }
-
-    while (currentCoord > refCoord) {
-        coordIndex--;
-        if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
-        currentCoord = coords[coordIndex];
-        if (currentCoord == refCoord) coordIndex -= offsetR;
-    }
-
-
-//    if (refCoord != coords[coordIndex]) {
-// TODO delete
-//            st_logInfo("Coords don't match! Ref[%d] = %d, Seq[%d] = %d\n", index+refSeq->refStart, refCoord, coordIndex+seq->refStart, seq->refCoords[coordIndex]);
+//int64_t findIndexForRefCoord(int64_t *coords, int64_t *refCoords, int64_t index, int64_t coordsLength) {
+//    /*
+//     * Given the index in a profile sequence refSeq, find the index that corresponds
+//     * to the same location in another progile sequence, seq.
+//     */
+//    int64_t refCoord = refCoords[index];
+//
+//    // If in an insertion, find which index in the gap it is
+//    int64_t tempIndex = index;
+//    int64_t offsetL = 0;
+//    while (refCoords[tempIndex] == refCoords[tempIndex - 1]) {
+//        offsetL++;
+//        tempIndex--;
 //    }
-
-    return coordIndex;
-}
+//    tempIndex = index;
+//    int64_t offsetR = 0;
+//    while (refCoords[tempIndex] == refCoords[tempIndex + 1]) {
+//        offsetR++;
+//        tempIndex++;
+//    }
+//
+//    int64_t coordIndex = refCoords[index] - coords[0];
+//    if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
+//
+//    int64_t currentCoord =  coords[coordIndex];
+//
+//    while (currentCoord < refCoord) {
+//        coordIndex++;
+//        if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
+//        currentCoord = coords[coordIndex];
+//        if (currentCoord == refCoord) coordIndex += offsetL;
+//    }
+//
+//    while (currentCoord > refCoord) {
+//        coordIndex--;
+//        if (coordIndex < 0 || coordIndex >= coordsLength) return coordIndex;
+//        currentCoord = coords[coordIndex];
+//        if (currentCoord == refCoord) coordIndex -= offsetR;
+//    }
+//
+//
+////    if (refCoord != coords[coordIndex]) {
+//// TODO delete
+////            st_logInfo("Coords don't match! Ref[%d] = %d, Seq[%d] = %d\n", index+refSeq->refStart, refCoord, coordIndex+seq->refStart, seq->refCoords[coordIndex]);
+////    }
+//
+//    return coordIndex;
+//}
+//

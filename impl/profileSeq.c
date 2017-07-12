@@ -222,7 +222,9 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
 
     for (int64_t i = 0; i < pSeq->length; i++) {
 
-        int64_t rProbsIndex = i + pSeq->refStart - rProbs->refStart;
+        int64_t rProbsIndex = findCorrespondingRefCoordIndex(i, pSeq->refCoords, pSeq->refCoordMap, rProbs->refCoords, rProbs->refCoordMap);
+//        int64_t rProbsIndex = i + pSeq->refStart - rProbs->refStart;
+//        rProbsIndex += gapSizeAtIndex(pSeq->refCoords, i);
         if(rProbsIndex >= 0 && rProbsIndex < rProbs->length) {
             // Add existing character in column
             for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
@@ -269,7 +271,6 @@ stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNam
      * insertion relative to the reference.
      */
     stList *insertionPSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-
     stHashIterator *hashIt = stHash_getIterator(referenceNamesToReferencePriors);
     char *referenceName;
     while ((referenceName = stHash_getNext(hashIt)) != NULL) {
@@ -286,27 +287,47 @@ stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNam
     return insertionPSeqs;
 }
 
-int64_t findRefCoordIndexInProfileSeq(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t seq1Index) {
+int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index) {
     /*
-     *
+     * Returns the offset from the index in the profile sequence to the first spot with the
+     * same reference coordinate (the size of the current gap up until the index)
      */
-    int64_t *idxPtr = stHash_search(pSeq2->refCoordMap, &pSeq1->refCoords[seq1Index]);
-    int64_t seq2Index;
+    int64_t gapSize = 0;
+    while(index > 0 && refCoords[index] == refCoords[index - 1]) {
+        gapSize++;
+        index--;
+    }
+    return gapSize;
+}
+
+
+int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap1, int64_t *refCoords2, stHash *refCoordMap2) {
+    /*
+     * Given an index for an object that has reference coordinates,
+     * return the index of the corresponding location found in another object with reference coordinates.
+     */
+    int64_t *idxPtr = stHash_search(refCoordMap2, &refCoords1[index1]);
+    int64_t index2;
     if (idxPtr != NULL) {
-        seq2Index = *idxPtr;
-        int64_t gapSize = 0;
-        int64_t tempIndex = seq1Index;
-        while(tempIndex > 0 && pSeq1->refCoords[tempIndex] == pSeq1->refCoords[tempIndex-1]) {
-            gapSize++;
-            tempIndex--;
-        }
-        seq2Index += gapSize;
-        if (pSeq2->refCoords[seq2Index] != pSeq1->refCoords[seq1Index]) {
-            st_logInfo("Ref coords not equal! pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n",
-                       seq1Index, pSeq1->refCoords[seq1Index], seq2Index, pSeq2->refCoords[seq2Index], gapSize);
-        }
-        return seq2Index;
+        index2 = *idxPtr;
+        int64_t gapSize = gapSizeAtIndex(refCoords1, index1);
+        index2 += gapSize;
+//        if (refCoords2[index2] != refCoords1[index1]) {
+//            st_logInfo("Ref coords not equal! pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n", index1, refCoords1[index1], index2, refCoords2[index2], gapSize);
+//            st_logInfo("\tindex before: pSeq1->refCoords = %d,  pSeq2->refCoords = %d\n", refCoords1[index1-1], refCoords2[index2-1]);
+//            st_logInfo("\tindex before: pSeq1->refCoords = %d,  pSeq2->refCoords = %d\n", refCoords1[index1-2], refCoords2[index2-2]);
+//        }
+//        if (refCoords2[index2-1] != refCoords1[index1-1]) {
+//
+//            st_logInfo("\nRef coords + 1: pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n", index1+1, refCoords1[index1+1], index2+1, refCoords2[index2+1], gapSize);
+//            st_logInfo("Ref coords: pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n", index1, refCoords1[index1], index2, refCoords2[index2], gapSize);
+//            st_logInfo("Ref coords -1 not equal! pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n",
+//                       index1-1, refCoords1[index1-1], index2-1, refCoords2[index2-1], gapSize);
+//            st_logInfo("Ref coords -2: pSeq1->refCoords[%d] = %d,  pSeq2->refCoords[%d] = %d  (gapSize = %d)\n", index1-2, refCoords1[index1-2], index2-2, refCoords2[index2-2], gapSize);
+//        }
+        return index2;
     } else {
         return -1;
     }
 }
+

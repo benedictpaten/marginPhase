@@ -104,6 +104,7 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 struct _stProfileSeq {
     char *referenceName;
     char *readId;
+    // TODO: either add refEnd, or get rid of refStart?
     int64_t refStart;
     int64_t length;
     // The probability of alphabet characters, as specified by uint8_t
@@ -136,7 +137,11 @@ int stRPProfileSeq_cmpFn(const void *a, const void *b);
 
 stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNamesToReferencePriors, int64_t threshold);
 
-int64_t findRefCoordIndexInProfileSeq(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t seq1Index);
+int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index);
+
+int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap1, int64_t *refCoords2, stHash *refCoordMap2);
+
+int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold);
 
 /*
  * Prior over reference positions
