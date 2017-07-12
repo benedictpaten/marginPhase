@@ -48,5 +48,7 @@
   
   "minSecondMostFrequentBaseFilter" : 3,
 
+  "gapCharactersForDeletions" : true,
+
   "verbose" : "00"
 }

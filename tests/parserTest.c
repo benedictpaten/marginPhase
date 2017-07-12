@@ -28,7 +28,7 @@ void test_bamReadParsing(CuTest *testCase) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads\n");
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamFile, baseMapper);
+    int64_t readCount = parseReads(profileSequences, bamFile, baseMapper, params);
 
     // Test to see number of reads is correct - should be 149
     CuAssertIntEquals(testCase, readCount, 149);

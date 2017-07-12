@@ -448,7 +448,7 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper);
+    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences
@@ -482,19 +482,21 @@ int main(int argc, char *argv[]) {
     // Setup a filter to ignore likely homozygous reference positions
     if(params->filterLikelyHomozygousSites) {
         int64_t totalPositions;
+        st_logInfo("> Filtering likely homozygous positions\n");
         int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
-        st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous positions, each with fewer than %" PRIi64
-                " aligned occurrences of any second most frequent base, leaving only %" PRIi64 " (%f) positions of %" PRIi64
+        st_logInfo("\tFiltered %" PRIi64 " (%f) likely homozygous positions, \n\teach with fewer than %" PRIi64
+                " aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64 " (%f) positions of %" PRIi64
                 " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
                 (int64_t)params->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
 
     // Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
+    st_logInfo("> Filtering reads by coverage depth\n");
     stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
-    st_logInfo("> Filtered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
+    st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
             stList_length(discardedProfileSeqs), stList_length(profileSequences), params->maxCoverageDepth);
     stList_destruct(discardedProfileSeqs);
     stList_setDestructor(profileSequences, NULL);

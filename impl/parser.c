@@ -107,6 +107,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->includeInvertedPartitions = true;
     params->filterLikelyHomozygousSites = false;
     params->minSecondMostFrequentBaseFilter = 2;
+    params->gapCharactersForDeletions = true;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -280,9 +281,17 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->minSecondMostFrequentBaseFilter = atof(tokStr);
             i++;
         }
+        else if (strcmp(keyString, "gapCharactersForDeletions") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->gapCharactersForDeletions = strcmp(tokStr, "true") == 0;
+            i++;
+        }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
         }
+
     }
 
     free(js);
@@ -311,7 +320,7 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
  * signal level alignments).
  * */
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper) {
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
@@ -403,8 +412,10 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 idxInSeq++;
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                // Currently, all profile probabilities are set to 0 here
-                // This worked better than adding in a '-' character or having a flat distribution of probabilities
+                if (params->gapCharactersForDeletions) {
+                    // This assumes gap character is the last character in the alphabet given
+                    pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
+                }
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
                 idxInSeq++;

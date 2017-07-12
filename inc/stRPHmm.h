@@ -237,6 +237,9 @@ struct _stRPHmmParameters {
     // Options to filter which positions in the reference sequence are included in the computation
     bool filterLikelyHomozygousSites;
     double minSecondMostFrequentBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
+
+    // Whether or not to make deletions gap characters (otherwise, profile probs will be flat)
+    bool gapCharactersForDeletions;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -449,7 +452,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper);
+int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile

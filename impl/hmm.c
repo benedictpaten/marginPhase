@@ -137,6 +137,7 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
     fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\tDeletions as gap?: %i\n", (int) params->gapCharactersForDeletions);
     fprintf(fH, "\tVerbose Attributes:\n");
     if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
     if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");

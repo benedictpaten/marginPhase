@@ -11,14 +11,14 @@
 
 
 int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
-        char *referenceFile, char *vcfReference, bool verbose) {
+                    char *referenceFile, char *vcfReference, bool verbose) {
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
     char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s "
-            " --referenceVcf %s",
-            bamFile, referenceFile, logString,
-            paramsFile, outputBase, vcfReference);
+                                           " --referenceVcf %s",
+                                   bamFile, referenceFile, logString,
+                                   paramsFile, outputBase, vcfReference);
     st_logInfo("Running command: %s\n", command);
     st_logInfo("> Running margin phase on %s\n", bamFile);
 
@@ -26,6 +26,7 @@ int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
 
     // TODO : Do VCF comparison using VCF eval
 }
+
 
 void test_5kbGenotyping(CuTest *testCase) {
 
@@ -51,12 +52,12 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *paramsFile = "../params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_100kb";
-    bool verbose = true;
+    bool verbose = false;
 
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.3.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
 //    char *bamFile = "../tests/NA12878.np.chr3.100kb.2.bam";
 //    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
-    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 //    char *bamFile = "../tests/NA12878.pb.chr3.2mb.bam";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.2mb.vcf";
@@ -238,8 +239,8 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
-    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 
