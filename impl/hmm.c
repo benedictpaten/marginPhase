@@ -16,7 +16,7 @@ inline double logAddP(double a, double b, bool maxNotSum) {
     /*
      * Local function for doing addition of logs or (if doing Viterbi style calculation), to take the max.
      */
-    return maxNotSum ? (a > b ? a : b) : stMath_logAdd(a, b);
+    return maxNotSum ? (a > b ? a : b) : stMath_logAddExact(a, b);
 }
 
 /*
@@ -1262,7 +1262,9 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         stList *cells = getLinkedCells(column, stRPMergeColumn_getPreviousMergeCell, mColumn);
 
         // Get rid of the excess cells
-        while(stList_length(cells) > hmm->parameters->maxPartitionsInAColumn) {
+        while(stList_length(cells) > hmm->parameters->minPartitionsInAColumn &&
+              (stList_length(cells) > hmm->parameters->maxPartitionsInAColumn ||
+               stRPCell_posteriorProb(stList_peek(cells), column) < hmm->parameters->minPosteriorProbabilityForPartition)) {
             stRPCell_destruct(stList_pop(cells));
         }
 
@@ -1285,7 +1287,9 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         // Shrink the the number of chosen cells to less than equal to the desired number
         stList *chosenMergeCellsList = stSet_getList(chosenMergeCellsSet);
         stList_sort2(chosenMergeCellsList, mergeCellCmpFn, mColumn);
-        while(stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn) {
+        while(stList_length(chosenMergeCellsList) > hmm->parameters->minPartitionsInAColumn &&
+              (stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn ||
+               stRPMergeCell_posteriorProb(stList_peek(chosenMergeCellsList), mColumn) < hmm->parameters->minPosteriorProbabilityForPartition)) {
             stSet_remove(chosenMergeCellsSet, stList_pop(chosenMergeCellsList));
         }
         assert(stList_length(chosenMergeCellsList) == stSet_size(chosenMergeCellsSet));

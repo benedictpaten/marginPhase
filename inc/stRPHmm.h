@@ -202,7 +202,13 @@ struct _stRPHmmParameters {
     double *hetSubModelSlow;
     double *readErrorSubModelSlow;
     bool maxNotSumTransitions;
+
+    // Filters on the number of states in a column
+    // Used to prune the hmm
+    int64_t minPartitionsInAColumn;
     int64_t maxPartitionsInAColumn;
+    double minPosteriorProbabilityForPartition;
+
     // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
     // than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
@@ -230,7 +236,7 @@ struct _stRPHmmParameters {
 
     // Options to filter which positions in the reference sequence are included in the computation
     bool filterLikelyHomozygousSites;
-    double minSecondMostFrequenctBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
+    double minSecondMostFrequentBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);

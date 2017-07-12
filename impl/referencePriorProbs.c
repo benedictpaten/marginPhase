@@ -211,7 +211,7 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
             }
         }
 
-        if(secondMostFrequentBaseCount < params->minSecondMostFrequenctBaseFilter) {
+        if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter) {
             filteredPositions++;
             // Mask the position
             assert(rProbs->referencePositionsIncluded[i] == true);

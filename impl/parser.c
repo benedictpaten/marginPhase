@@ -90,8 +90,12 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
     params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+
     params->maxNotSumTransitions = true;
-    params->maxPartitionsInAColumn = 50;
+    params->minPartitionsInAColumn = 50;
+    params->maxPartitionsInAColumn = 200;
+    params->minPosteriorProbabilityForPartition = 0.001;
+
     params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
     params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
     params->offDiagonalReadErrorPseudoCount = 1;
@@ -102,7 +106,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->useReferencePrior = false;
     params->includeInvertedPartitions = true;
     params->filterLikelyHomozygousSites = false;
-    params->minSecondMostFrequenctBaseFilter = 2;
+    params->minSecondMostFrequentBaseFilter = 2;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -182,10 +186,22 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->maxNotSumTransitions = strcmp(tokStr, "true") == 0;
             i++;
         }
+        else if (strcmp(keyString, "minPartitionsInAColumn") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minPartitionsInAColumn = atoi(tokStr);
+            i++;
+        }
         else if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->maxPartitionsInAColumn = atoi(tokStr);
+            i++;
+        }
+        else if (strcmp(keyString, "minPosteriorProbabilityForPartition") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minPosteriorProbabilityForPartition = atof(tokStr);
             i++;
         }
         else if (strcmp(keyString, "maxCoverageDepth") == 0) {
@@ -258,10 +274,10 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->filterLikelyHomozygousSites = strcmp(tokStr, "true") == 0;
             i++;
         }
-        else if (strcmp(keyString, "minSecondMostFrequenctBaseFilter") == 0) {
+        else if (strcmp(keyString, "minSecondMostFrequentBaseFilter") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            params->minSecondMostFrequenctBaseFilter = atof(tokStr);
+            params->minSecondMostFrequentBaseFilter = atof(tokStr);
             i++;
         }
         else {

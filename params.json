@@ -19,12 +19,16 @@
     0.01, 0.01, 0.01, 0.01, 0.96 ],
 
   "maxNotSumTransitions" : true,
+  
+  "minPartitionsInAColumn" : 100,
 
   "maxPartitionsInAColumn" : 100,
+  
+  "minPosteriorProbabilityForPartition" : 0.0,
 
   "maxCoverageDepth" : 64,
 
-  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 5,
+  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 2,
 
   "onDiagonalReadErrorPseudoCount" : 1000,
 
@@ -42,7 +46,7 @@
   
   "filterLikelyHomozygousSites" : true,
   
-  "minSecondMostFrequenctBaseFilter" : 3,
+  "minSecondMostFrequentBaseFilter" : 3,
 
   "verbose" : "00"
 }

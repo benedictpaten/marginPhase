@@ -251,8 +251,6 @@ stList *prefilterReads(stList *profileSequences, int64_t *misses, stHash *refere
     return filteredProfileSequences;
 }
 
-
-
 stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*
      * Create the set of hmms that the forward-backward algorithm will eventually be run on.
@@ -357,7 +355,6 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
 }
-
 
 int main(int argc, char *argv[]) {
     // Parameters / arguments
@@ -489,7 +486,7 @@ int main(int argc, char *argv[]) {
         st_logInfo("> Filtered %" PRIi64 " (%f) likely homozygous positions, each with fewer than %" PRIi64
                 " aligned occurrences of any second most frequent base, leaving only %" PRIi64 " (%f) positions of %" PRIi64
                 " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
-                (int64_t)params->minSecondMostFrequenctBaseFilter, totalPositions - filteredPositions,
+                (int64_t)params->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
 
