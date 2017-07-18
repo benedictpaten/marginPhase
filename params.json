@@ -38,7 +38,9 @@
 
   "useReferencePrior" : true,
 
-  "addInsertionColumns" : true,
+  "addInsertionColumns" : false,
+
+  "insertionCountThreshold" : 8,
 
   "verbose" : 0
 }

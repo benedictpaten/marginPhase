@@ -105,7 +105,7 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
         // Establish if the coordinate is in both sequences
 //        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
 //        st_logInfo("\ni = %d  (%d) ", i, pSeq1->refCoords[i]);
-        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refCoords, pSeq1->refCoordMap, pSeq2->refCoords, pSeq2->refCoordMap);
+        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refCoords, pSeq2->refCoordMap);
 //        st_logInfo(" j = %d  (%d)", j, pSeq2->refCoords[j]);
         if (j >= 0 && j < pSeq2->length) {
             (*totalAlignedPositions)++;
@@ -121,7 +121,7 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
     }
 }
 
-double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t index) {
+double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t index, int64_t indexInGap) {
     double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
     for (int64_t i = 0; i < stList_length(profileSequences); i++) {
         stProfileSeq *seq = stList_get(profileSequences, i);
@@ -130,6 +130,7 @@ double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t i
                 // TODO change for insertions
 //                int64_t seqIndex = index + seq->insertionsBeforePosition[index - seq->refCoords[0]] - seq->refCoords[0];
                 int64_t *seqIndex = stHash_search(seq->refCoordMap, &index);
+                (*seqIndex) += indexInGap;
                 baseCounts[j] += getProb(&seq->profileProbs[(*seqIndex) * ALPHABET_SIZE], j);
             }
         }
@@ -324,15 +325,15 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     st_logInfo("Created %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
                 stList_length(hmms), initialHmmListSize);
 
-    int64_t idx = 0;
-    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
-        stListIterator *itor = stList_getIterator(hmms);
-        stRPHmm *hmm = NULL;
-        while ((hmm = stList_getNext(itor)) != NULL) {
-            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength));
-            idx++;
-        }
-    }
+//    int64_t idx = 0;
+//    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
+//        stListIterator *itor = stList_getIterator(hmms);
+//        stRPHmm *hmm = NULL;
+//        while ((hmm = stList_getNext(itor)) != NULL) {
+//            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength), hmm->columnNumber);
+//            idx++;
+//        }
+//    }
     return hmms;
 }
 
@@ -509,7 +510,7 @@ int main(int argc, char *argv[]) {
     stHash *referenceNamesToReferencePriors;
     if(!params->useReferencePrior) {
         st_logInfo("> Using a flat prior over reference positions\n");
-        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0);
+        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0, params);
     }
     else {
         st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
@@ -533,17 +534,25 @@ int main(int argc, char *argv[]) {
     // Add columns for insertions into profile sequences
     if (params->addInsertionColumns) {
         st_logInfo("> Adding insertion columns to profile sequences\n");
-        int64_t insertionThreshold = 8;
-        profileSequences = addInsertionColumnsToSeqs(profileSequences, referenceNamesToReferencePriors, insertionThreshold);
+        int64_t numInsertions = 0;
+        // TODO: make it so insertions are counted per rProbs (not over all)
+        profileSequences = addInsertionColumnsToSeqs(profileSequences, referenceNamesToReferencePriors, params->insertionCountThreshold, &numInsertions);
+        st_logInfo("\tInserted a total of %d columns\n", numInsertions);
         printSequenceStats(stderr, profileSequences);
         printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
+
+        // TODO destroy old referencePriors
         // Create new reference priors, using updated coordinates
         st_logInfo("> Updating reference information\n");
-        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, 1);
-        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest);
+        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, numInsertions);
+        st_logInfo("Pos: %d  gapIndex: 0 \n", positionOfInterest);
+        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 0);
         printBaseComposition2(baseCounts);
+        st_logInfo("Pos: %d  gapIndex: 1 \n", positionOfInterest);
+        double *baseCounts2 = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 1);
+        printBaseComposition2(baseCounts2);
     } else {
-        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest);
+        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 0);
         printBaseComposition2(baseCounts);
     }
 
@@ -585,7 +594,7 @@ int main(int argc, char *argv[]) {
 
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-        stGenomeFragment_setInsertionCounts(gF);
+//        stGenomeFragment_setInsertionCounts(gF);
         totalGFlength += gF->length;
 
 

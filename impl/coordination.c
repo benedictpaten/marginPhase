@@ -43,7 +43,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
         }
 
         // If hmm2 does not overlap hmm1 it must be the closest non-overlapping hmm to hmm1
-        if(hmm1->refStart + hmm1->refLength <= hmm2->refStart) {
+        if(hmm1->refCoords[hmm1->refLength-1] < hmm2->refStart) {
             break;
         }
     }

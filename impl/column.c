@@ -26,6 +26,10 @@ stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth
     // Initially contains not states
     column->head = NULL;
 
+    // TODO: can refCoords be shared by hmm or do they need to be calloc'ed separately?
+    column->refCoords = st_calloc(length, sizeof(int64_t));
+    column->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
+
     return column;
 }
 
@@ -37,6 +41,8 @@ void stRPColumn_destruct(stRPColumn *column) {
         cell = cell->nCell;
         stRPCell_destruct(pCell);
     }
+//    free(column->refCoords);
+    //    stHash_destruct(column->refCoordMap);
     free(column->seqHeaders);
     free(column->seqs);
     free(column);
@@ -78,9 +84,23 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
         seqs[i] = &(column->seqs[i][firstHalfLength * ALPHABET_SIZE]);
     }
     assert(firstHalfLength > 0); // Non-zero length for first half
+    if (column->length-firstHalfLength <= 0) {
+        st_logInfo("column->length: %d   firstHalfLength: %d \n", column->length, firstHalfLength);
+    }
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
-    stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
+    stRPColumn *rColumn = stRPColumn_construct(column->refCoords[firstHalfLength],
             column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+    //    stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
+//            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+    int64_t *indexes = st_calloc(rColumn->length, sizeof(int64_t));
+    for (int64_t i = 0; i < rColumn->length; i++) {
+        rColumn->refCoords[i] = column->refCoords[i + firstHalfLength];
+        indexes[i] = i;
+        if (stHash_search(rColumn->refCoordMap, &rColumn->refCoords[i]) == NULL) {
+            stHash_insert(rColumn->refCoordMap, &rColumn->refCoords[i], &indexes[i]);
+        }
+    }
+    assert(rColumn->refCoords[rColumn->length - 1] == column->refCoords[column->length - 1]);
 
     // Create merge column
     uint64_t acceptMask = makeAcceptMask(column->depth);

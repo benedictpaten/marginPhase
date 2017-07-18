@@ -139,7 +139,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         stList_append(referenceSeqs, referenceSeq);
 
         stReferencePriorProbs *rProbs =
-                stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength);
+                stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength, 0);
         stHash_insert(referenceNamesToReferencePriors, stString_copy(referenceName), rProbs);
 
 		char *noisyReferenceSeq = permuteSequence(referenceSeq, hetRate);

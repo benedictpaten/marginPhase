@@ -17,7 +17,14 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     gF->refStart = hmm->refStart;
     gF->length = hmm->refLength;
     gF->refCoords = st_calloc(hmm->refLength, sizeof(int64_t));
-    gF->insertionsBeforePosition = st_calloc(hmm->refLength, sizeof(int64_t));
+    gF->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
+    // TODO: this indexes array is awful. make separate struct
+    int64_t *indexes = st_calloc(hmm->refLength, sizeof(int64_t));
+    for (int64_t i = 0; i < gF->length; i++) {
+        gF->refCoords[i] = hmm->refCoords[i];
+        indexes[i] = i;
+        stHash_insert(gF->refCoordMap, &gF->refCoords[i], &indexes[i]);
+    }
 
     // Allocate genotype arrays
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
@@ -52,8 +59,8 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Coordinates
     free(genomeFragment->referenceName);
-    free(genomeFragment->refCoords);
-    free(genomeFragment->insertionsBeforePosition);
+//    free(genomeFragment->refCoords);
+//    stHash_destruct(genomeFragment->refCoordMap);
 
     // Genotypes
     free(genomeFragment->genotypeString);
@@ -66,31 +73,4 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     free(genomeFragment->haplotypeProbs2);
 
     free(genomeFragment);
-}
-
-void stGenomeFragment_setInsertionCounts(stGenomeFragment *gF) {
-    // Add in insertion counts
-    gF->insertionsBeforePosition[0] = 0;
-    for (int64_t i = 1; i < gF->length; i++) {
-        if (gF->refCoords[i] == gF->refCoords[i-1]) {
-            gF->insertionsBeforePosition[i] = gF->insertionsBeforePosition[i-1]+1;
-        } else {
-            gF->insertionsBeforePosition[i] = gF->insertionsBeforePosition[i-1];
-        }
-    }
-    if (gF->insertionsBeforePosition[gF->length - 1] != 0) {
-        st_logInfo("* Total insertions in genome fragment: %d \n",
-                   gF->insertionsBeforePosition[gF->length -1]);
-    }
-//    int64_t positionOfInterest = 8098619;
-//    if (positionOfInterest >= gF->refCoords[0] && positionOfInterest <= gF->refCoords[gF->length -1]) {
-//        st_logInfo("Insertions before position %d: %d\n", positionOfInterest,
-//                   gF->insertionsBeforePosition[positionOfInterest - gF->refCoords[0]]);
-//        for (int64_t i = 1; i < gF->length; i++) {
-//            if (gF->insertionsBeforePosition[i] != gF->insertionsBeforePosition[i-1] && (gF->insertionsBeforePosition[i] < 50 || gF->insertionsBeforePosition[i] > 8480)) {
-//                st_logInfo("Insertions at position %d: %d\n", i+gF->refCoords[0],
-//                           gF->insertionsBeforePosition[i]);
-//            }
-//        }
-//    }
 }

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3 -DNDEBUG")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -O3 -mpopcnt ")
 
 include(FindOpenMP)
 if(OPENMP_FOUND)
@@ -238,8 +238,8 @@ target_link_libraries(hts pthread crypto bz2 lzma z curl)
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase son hts jsmn)
 
-add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare son hts jsmn)
+#add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
+#target_link_libraries(vcfCompare son hts jsmn)
 
 
 enable_testing()

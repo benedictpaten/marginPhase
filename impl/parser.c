@@ -101,6 +101,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterMatchThreshold = 0.90;
     params->useReferencePrior = false;
     params->addInsertionColumns = false;
+    params->insertionCountThreshold = 5;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -240,6 +241,12 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->addInsertionColumns = strcmp(tokStr, "true") == 0;
         }
+        if (strcmp(keyString, "insertionCountThreshold") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->insertionCountThreshold = atoi(tokStr);
+            i++;
+        }
         if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
@@ -348,8 +355,6 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         // Variables to keep track of position in sequence / cigar operations
         cig_idx = 0;
         int64_t currPosInOp = 0;
-//        int64_t cigarOp = -1;
-//        int64_t cigarNum = -1;
         int64_t cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
         int64_t cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
         int64_t idxInSeq = start_read;
@@ -373,7 +378,6 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         }
         int64_t firstPos = 0;
         pSeq->refCoords[firstPos] = pSeq->refStart;
-//        pSeq->insertionsBeforePosition[firstPos] = 0;
 
         idxInSeq++;
         currPosInOp++;
@@ -381,16 +385,10 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             cig_idx++;
             currPosInOp = 0;
         }
+        // FIXME deallocate
         int64_t *indexes = st_calloc(trueLength, sizeof(int64_t));
         indexes[0] = 0;
         stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[firstPos], &indexes[0]);
-
-        if (pSeq->refStart == 8199217 || pSeq->refStart == 8199576) {
-            st_logInfo("*** SeqId: %s  span: %d - %d (len: %d)\n", pSeq->readId, pSeq->refStart,
-                       pSeq->refStart + pSeq->length, pSeq->length);
-            st_logInfo("NumInsertions: %d   NumDeletions: %d \n", numInsertions, numDeletions);
-            st_logInfo("starting len: %d   start_read: %d   end_read: %d   \n", len, start_read, end_read);
-        }
 
         // For each position turn character into profile probability
         // As is, this makes the probability 1 for the base read in, and 0 otherwise
@@ -399,22 +397,13 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
                 cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
             }
-
-//            pSeq->insertionsBeforePosition[i] = 0;
-//            st_logInfo("Pos: %d\tCigarNum: %d\tCigarOp: %d \n", i, cigarNum, cigarOp);
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
 
-                // TODO What about collisions?
                 indexes[i] = i;
-                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
-                    int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                    st_logInfo("!! Collision 1 !! %d (at %d)\n", *p, pSeq->refCoords[i]);
-                }
                 stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
-//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
                 idxInSeq++;
             } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 // Set deletions to be a gap character
@@ -423,24 +412,16 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 pSeq->refCoords[i] = pSeq->refStart + i;
                 pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
                 indexes[i] = i;
-                if (stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]) != NULL && pSeq->refStart == 8195072) {
-                    int64_t *p = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[i]);
-                    st_logInfo("!! Collision 2 !! %d (at %d)\n", *p, pSeq->refCoords[i]);
-                }
                 stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
-//                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &i);
-//                int64_t *jPtr = stHash_search(pSeq->refCoordMap, &pSeq->refCoords[0]);
-
             } else if (cigarOp == BAM_CINS) {
                 if (params->addInsertionColumns) {
-//                    st_logInfo("  insertionSeqs[%d][%d]  \n", i, currPosInOp);
                     int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+                    // Don't add the base itself to the profile sequence, but keep track of it
                     if (currPosInOp == 0) {
                         // Store the number of inserted bases and allocate memory for the bases themselves
                         // Put this in the previous index (there won't have been an insertion there)
                         pSeq->insertions[i - 1] = cigarNum;
                         pSeq->insertionSeqs[i - 1] = st_calloc(cigarNum, sizeof(int64_t));
-//                        pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                     }
                     pSeq->insertionSeqs[i - 1][currPosInOp] = b;
                     pSeq->numInsertions++;
@@ -461,20 +442,10 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 currPosInOp = 0;
             }
         }
-
-
         stList_append(profileSequences, pSeq);
-//        if (readCount == 1) {
-////            stProfileSeq_print(pSeq, stderr, 1);
-//            st_logInfo("pSeq length: %d \n", pSeq->length);
-//            st_logInfo("len: %d  start_read: %d  end_read: %d  \n", len, start_read, end_read);
-//            st_logInfo("numDeletions: %d \t numInsertions: %d \n", numDeletions, numInsertions);
-//
-//        }
     }
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
 }
-

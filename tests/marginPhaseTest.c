@@ -51,7 +51,7 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *paramsFile = "../params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_100kb";
-    bool verbose = false;
+    bool verbose = true;
 
     char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
 //    char *bamFile = "../tests/NA12878.np.chr3.100kb.3.bam";

@@ -241,7 +241,9 @@ double emissionLogProbability(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refCoords, referencePriorProbs->refCoordMap);
+//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
+    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
                                                           cell->partition, bitCountVectors, rProbs, params);
 
@@ -359,7 +361,9 @@ double emissionLogProbabilitySlow(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refCoords, referencePriorProbs->refCoordMap);
+//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
+    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
                                                             cell->partition, bitCountVectors, rProbs, params, maxNotSum);
     for(int64_t i=1; i<column->length; i++) {
@@ -422,10 +426,9 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refCoords, referencePriorProbs->refCoordMap);
+//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
-
-
 
     // Get the haplotype characters that are most probable given the root character
     double characterProbsHap1[ALPHABET_SIZE];
@@ -466,7 +469,8 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-    int64_t j = column->refStart - gF->refStart + index;
+    int64_t j = findCorrespondingRefCoordIndex(index, column->refCoords, gF->refCoordMap);
+//    int64_t j = column->refStart - gF->refStart + index;
 
     // Get the haplotype characters with highest posterior probability.
     uint64_t hapChar1 = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
@@ -496,10 +500,10 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
                                      invertScaleToLogIntegerSubMatrix(rProbs[i]));
     }
     gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
-    gF->refCoords[j] = referencePriorProbs->refCoords[rProbsIndex];
-//    if (gF->refCoords[j] == 8098619) {
-//        st_logInfo("!! gF hapChar1: %d  hapChar2: %d\n", hapChar1, hapChar2);
-//    }
+//    gF->refCoords[j] = referencePriorProbs->refCoords[rProbsIndex];
+    if (gF->refCoords[j] == 8098619) {
+        st_logInfo("!! gF hapChar1: %d  hapChar2: %d\n", hapChar1, hapChar2);
+    }
 //    if (rProbsIndex < 5 || rProbsIndex > referencePriorProbs->length-5) {
 //        st_logInfo("$$$ rProbsIndex: %d   j: %d   gF->refCoords: %d\n", rProbsIndex,j, gF->refCoords[j]);
 //        st_logInfo("hapChar1: %d   hapChar2: %d\n", hapChar1, hapChar2);

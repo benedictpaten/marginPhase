@@ -106,18 +106,20 @@ struct _stProfileSeq {
     char *readId;
     // TODO: either add refEnd, or get rid of refStart?
     int64_t refStart;
+    int64_t refEnd;
     int64_t length;
     // The probability of alphabet characters, as specified by uint8_t
     // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
     // 1.0/255
     uint8_t *profileProbs;
+
+    // Additional data structures to deal with change in coordinates
     int64_t *refCoords;
     int64_t *insertions;
     int64_t **insertionSeqs; // so we don't have to re-parse the bam file
     stHash *refCoordMap;
     int64_t numInsertions;
-//    int64_t *insertionsBeforePosition;
 };
 
 stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId,
@@ -135,11 +137,11 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 
 int stRPProfileSeq_cmpFn(const void *a, const void *b);
 
-stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNamesToReferencePriors, int64_t threshold);
+stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNamesToReferencePriors, int64_t threshold, int64_t *numInsertions);
 
 int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index);
 
-int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap1, int64_t *refCoords2, stHash *refCoordMap2);
+int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap2);
 
 int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold);
 
@@ -164,21 +166,23 @@ struct _stReferencePriorProbs {
     // Locations of insertions relative to the reference
     int64_t *insertionCounts;
     int64_t *gapSizes;
+    int64_t *insertionsBeforePosition;
     // Reference coordinates for each index
     int64_t *refCoords;
     stHash *refCoordMap;
 };
 
-stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
+int stHash_intPtrEqualKey(const void *key1, const void *key2);
+
+stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t refLength, int64_t numInsertions);
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
 
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, bool includeInsertions);
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t numInsertions, stRPHmmParameters *params);
 
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
-        stBaseMapper *baseMapper, stRPHmmParameters *params, bool includeInsertions);
+        stBaseMapper *baseMapper, stRPHmmParameters *params, int64_t numInsertions);
 
-int64_t findIndexForRefCoord(int64_t *coords, int64_t *refCoords, int64_t index, int64_t coordsLength);
 
 /*
  * Emission probabilities
@@ -238,6 +242,7 @@ struct _stRPHmmParameters {
 
     // Add columns where insertions are seen in the reads
     bool addInsertionColumns;
+    int64_t insertionCountThreshold;
 
     // Verbosity options for printing
     bool verboseTruePositives;
@@ -266,6 +271,8 @@ struct _stRPHmm {
     double backwardLogProb;
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
+    int64_t *refCoords;
+    stHash *refCoordMap;
 };
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
@@ -318,6 +325,8 @@ struct _stRPColumn {
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
+    int64_t *refCoords;
+    stHash *refCoordMap;
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
@@ -428,12 +437,12 @@ struct _stGenomeFragment {
     int64_t refStart;
     int64_t length;
     int64_t *refCoords;
-    int64_t *insertionsBeforePosition;
+    stHash *refCoordMap;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
-void stGenomeFragment_setInsertionCounts(stGenomeFragment *gF);
+//void stGenomeFragment_setInsertionCounts(stGenomeFragment *gF);
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
@@ -499,6 +508,11 @@ void printGenotypeResults(stGenotypeResults *results);
 
 void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
+
+//int stHash_intPtrEqualKey(const void *key1, const void *key2);
+
+
+//int64_t *indexes;
 
 
 #endif /* ST_RP_HMM_H_ */
