@@ -79,7 +79,6 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
     if(includeProbs) {
         // FIXME
         for(int64_t i=0; i<seq->length; i++) {
-//        for(int64_t i=0; i<26; i++) {
             int64_t o = seq->refCoords[i];
             fprintf(fileHandle, "\t%"PRIi64 "", o);
             uint8_t *p = &seq->profileProbs[i * ALPHABET_SIZE];
@@ -153,18 +152,7 @@ void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds) {
     stSet_destructIterator(it);
 }
 
-int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold) {
-    /*
-     * Returns the total number of columns that will be inserted into the model.
-     */
-    int64_t numColumns = 0;
-    for (int64_t i = 0; i < rProbs->length; i++) {
-        if (rProbs->insertionCounts[i] >= threshold) {
-            numColumns += rProbs->gapSizes[i];
-        }
-    }
-    return numColumns;
-}
+
 
 int64_t numInsertionColumnsInSeq(stProfileSeq *pSeq, stReferencePriorProbs *rProbs, int64_t threshold) {
     /*
@@ -174,7 +162,6 @@ int64_t numInsertionColumnsInSeq(stProfileSeq *pSeq, stReferencePriorProbs *rPro
     int64_t numColumns = 0;
     for (int64_t i = 0; i < pSeq->length; i++) {
         int64_t j = findCorrespondingRefCoordIndex(i, pSeq->refCoords, rProbs->refCoordMap);
-//        int64_t j = i + pSeq->refStart - rProbs->refStart;
         if (j >= 0 && j < rProbs->length) {
             if (rProbs->insertionCounts[j] >= threshold) {
                 numColumns += rProbs->gapSizes[j];
@@ -198,7 +185,8 @@ void addInsertedBases(stReferencePriorProbs *rProbs, stProfileSeq *seq1, stProfi
                     = ALPHABET_MAX_PROB;
         }
         // Reference coordinates for the sequence all refer back to the start of the gap
-        seq2->refCoords[seq2Index+1] = seq1Index + seq1->refStart;
+//        seq2->refCoords[seq2Index+1] = seq1Index + seq1->refStart;
+        seq2->refCoords[seq2Index+1] = seq1->refCoords[seq1Index];
         seq2->insertions[seq2Index+1] = 1;
         seq2Index++;
     }
@@ -256,7 +244,7 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
             }
         }
     }
-    insertionSeq->refEnd = insertionSeq->refCoords[insertionSeq->length - 1];
+    assert(insertionSeq->refEnd = insertionSeq->refCoords[insertionSeq->length - 1]);
     return insertionSeq;
 }
 

@@ -34,6 +34,7 @@ typedef struct _stGenomeFragment stGenomeFragment;
 typedef struct _stReferencePriorProbs stReferencePriorProbs;
 typedef struct _stBaseMapper stBaseMapper;
 typedef struct _stGenotypeResults stGenotypeResults;
+typedef struct _stRefIndex stRefIndex;
 
 /*
  * Overall coordination functions
@@ -104,10 +105,10 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 struct _stProfileSeq {
     char *referenceName;
     char *readId;
-    // TODO: either add refEnd, or get rid of refStart?
     int64_t refStart;
     int64_t refEnd;
     int64_t length;
+
     // The probability of alphabet characters, as specified by uint8_t
     // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
     // 0xFF representing 1.0 and each step between representing a linear step in probability of
@@ -143,7 +144,17 @@ int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index);
 
 int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap2);
 
-int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold);
+
+// Struct used to keep track of indexes / reference coordinates
+struct _stRefIndex {
+    // Reference coordinate
+    int64_t refCoord;
+    // Distance to beginning of reference coordinate (if in insertion)
+    int64_t offset;
+    // Index in whatever specific data structure
+    int64_t index;
+};
+
 
 /*
  * Prior over reference positions
@@ -154,6 +165,7 @@ int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshol
 struct _stReferencePriorProbs {
     char *referenceName;
     int64_t refStart;
+    int64_t refEnd;
     int64_t length;
     // The log probability of alphabet characters, as specified by uint16_t
     // see scaleToLogIntegerSubMatrix()
@@ -170,6 +182,7 @@ struct _stReferencePriorProbs {
     // Reference coordinates for each index
     int64_t *refCoords;
     stHash *refCoordMap;
+    stRefIndex *refIndexes;
 };
 
 int stHash_intPtrEqualKey(const void *key1, const void *key2);
@@ -182,6 +195,10 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t
 
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
         stBaseMapper *baseMapper, stRPHmmParameters *params, int64_t numInsertions);
+
+int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold);
+
+int64_t insertionsInRange(stReferencePriorProbs *rProbs, int64_t leftIndex, int64_t rightIndex, int64_t threshold);
 
 
 /*
@@ -259,7 +276,8 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 struct _stRPHmm {
     char *referenceName;
     int64_t refStart;
-    int64_t refLength;
+    int64_t refEnd;
+    int64_t length;
     stList *profileSeqs; // List of stProfileSeq
     int64_t columnNumber; // Number of columns, excluding merge columns
     int64_t maxDepth;
@@ -318,6 +336,7 @@ double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t 
 
 struct _stRPColumn {
     int64_t refStart;
+    int64_t refEnd;
     int64_t length;
     int64_t depth;
     stProfileSeq **seqHeaders;
@@ -435,6 +454,7 @@ struct _stGenomeFragment {
     // The reference coordinates of the genotypes
     char *referenceName;
     int64_t refStart;
+    int64_t refEnd;
     int64_t length;
     int64_t *refCoords;
     stHash *refCoordMap;

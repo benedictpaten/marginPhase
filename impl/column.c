@@ -84,14 +84,12 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
         seqs[i] = &(column->seqs[i][firstHalfLength * ALPHABET_SIZE]);
     }
     assert(firstHalfLength > 0); // Non-zero length for first half
-    if (column->length-firstHalfLength <= 0) {
-        st_logInfo("column->length: %d   firstHalfLength: %d \n", column->length, firstHalfLength);
-    }
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
+
     stRPColumn *rColumn = stRPColumn_construct(column->refCoords[firstHalfLength],
             column->length-firstHalfLength, column->depth, seqHeaders, seqs);
-    //    stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
-//            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+
+    // Set ref coords for new column
     int64_t *indexes = st_calloc(rColumn->length, sizeof(int64_t));
     for (int64_t i = 0; i < rColumn->length; i++) {
         rColumn->refCoords[i] = column->refCoords[i + firstHalfLength];
@@ -100,7 +98,8 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
             stHash_insert(rColumn->refCoordMap, &rColumn->refCoords[i], &indexes[i]);
         }
     }
-    assert(rColumn->refCoords[rColumn->length - 1] == column->refCoords[column->length - 1]);
+    rColumn->refEnd = rColumn->refCoords[rColumn->length-1];
+    assert(rColumn->refEnd == column->refEnd);
 
     // Create merge column
     uint64_t acceptMask = makeAcceptMask(column->depth);
@@ -137,6 +136,7 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
     // Adjust length of previous column
     column->length = firstHalfLength;
+    column->refEnd = column->refCoords[column->length-1];
 }
 
 stSet *stRPColumn_getColumnSequencesAsSet(stRPColumn *column) {

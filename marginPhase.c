@@ -330,7 +330,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
 //        stListIterator *itor = stList_getIterator(hmms);
 //        stRPHmm *hmm = NULL;
 //        while ((hmm = stList_getNext(itor)) != NULL) {
-//            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength), hmm->columnNumber);
+//            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->length), hmm->columnNumber);
 //            idx++;
 //        }
 //    }
@@ -343,7 +343,7 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
      */
     if(st_getLogLevel() == debug) {
         st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
-                    hmm->referenceName, hmm->refStart, hmm->refLength);
+                    hmm->referenceName, hmm->refStart, hmm->length);
         st_logDebug("\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                     stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
@@ -529,8 +529,6 @@ int main(int argc, char *argv[]) {
         st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*100/initialSize);
     }
 
-    int64_t positionOfInterest = 8098619;
-
     // Add columns for insertions into profile sequences
     if (params->addInsertionColumns) {
         st_logInfo("> Adding insertion columns to profile sequences\n");
@@ -545,15 +543,6 @@ int main(int argc, char *argv[]) {
         // Create new reference priors, using updated coordinates
         st_logInfo("> Updating reference information\n");
         referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, numInsertions);
-        st_logInfo("Pos: %d  gapIndex: 0 \n", positionOfInterest);
-        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 0);
-        printBaseComposition2(baseCounts);
-        st_logInfo("Pos: %d  gapIndex: 1 \n", positionOfInterest);
-        double *baseCounts2 = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 1);
-        printBaseComposition2(baseCounts2);
-    } else {
-        double *baseCounts = getProfileSequenceCompositionAtIndex(profileSequences, positionOfInterest, 0);
-        printBaseComposition2(baseCounts);
     }
 
     // Learn the parameters for the input data
@@ -594,13 +583,7 @@ int main(int argc, char *argv[]) {
 
         // Compute the genome fragment
         stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-//        stGenomeFragment_setInsertionCounts(gF);
         totalGFlength += gF->length;
-
-
-        if (positionOfInterest >= hmm->refStart && positionOfInterest < hmm->refStart + hmm->refLength) {
-            printColumnAtPosition(hmm, positionOfInterest);
-        }
 
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);

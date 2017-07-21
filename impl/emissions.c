@@ -501,14 +501,6 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
     }
     gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
 //    gF->refCoords[j] = referencePriorProbs->refCoords[rProbsIndex];
-    if (gF->refCoords[j] == 8098619) {
-        st_logInfo("!! gF hapChar1: %d  hapChar2: %d\n", hapChar1, hapChar2);
-    }
-//    if (rProbsIndex < 5 || rProbsIndex > referencePriorProbs->length-5) {
-//        st_logInfo("$$$ rProbsIndex: %d   j: %d   gF->refCoords: %d\n", rProbsIndex,j, gF->refCoords[j]);
-//        st_logInfo("hapChar1: %d   hapChar2: %d\n", hapChar1, hapChar2);
-//        st_logInfo("gF: %d - %d\n", gF->refStart, gF->refStart+gF->length-1);
-//    }
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,

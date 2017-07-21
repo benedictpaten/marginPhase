@@ -30,9 +30,9 @@
 
   "offDiagonalReadErrorPseudoCount" : 10,
 
-  "trainingIterations" : 0,
+  "trainingIterations" : 1,
 
-  "filterBadReads" : false,
+  "filterBadReads" : true,
   
   "filterMatchThreshold" : 0.9,
 
@@ -42,5 +42,5 @@
 
   "insertionCountThreshold" : 8,
 
-  "verbose" : 0
+  "verbose" : "01"
 }

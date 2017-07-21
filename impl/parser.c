@@ -442,6 +442,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 currPosInOp = 0;
             }
         }
+        assert(pSeq->refEnd == pSeq->refCoords[pSeq->length-1]);
         stList_append(profileSequences, pSeq);
     }
 

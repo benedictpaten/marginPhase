@@ -36,6 +36,8 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
     referencePriorProbs->insertionsBeforePosition = st_calloc(length, sizeof(int64_t));
     referencePriorProbs->refCoords = st_calloc(length, sizeof(int64_t));
     referencePriorProbs->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
+
+//    referencePriorProbs->refIndexes = st_calloc(length, sizeof(stRefIndex));
     return referencePriorProbs;
 }
 
@@ -51,6 +53,8 @@ void stReferencePriorProbs_destruct(stReferencePriorProbs *referencePriorProbs) 
     free(referencePriorProbs->insertionsBeforePosition);
     free(referencePriorProbs->refCoords);
     stHash_destruct(referencePriorProbs->refCoordMap);
+
+//    free(referencePriorProbs->refIndexes);
     free(referencePriorProbs);
 }
 
@@ -92,7 +96,9 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences) 
     // First position
     rProbs->refCoords[0] = rProbs->refStart;
     indexes[0] = 0;
-    stHash_insert(rProbs->refCoordMap, &rProbs->refStart, &indexes[0]);
+    if (stHash_search(rProbs->refCoordMap, &rProbs->refStart) == NULL) {
+        stHash_insert(rProbs->refCoordMap, &rProbs->refStart, &indexes[0]);
+    }
     int64_t rProbsIndex = 1;
     int64_t nextSeqStartingIndex = 1;
     stProfileSeq *pSeq = stList_get(profileSequences, 0);
@@ -100,19 +106,12 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences) 
         if (nextSeqStartingIndex <= 0 || nextSeqStartingIndex >= pSeq->length) {
             stProfileSeq *pSeq2 = stList_get(profileSequences, i);
             nextSeqStartingIndex = findCorrespondingRefCoordIndex(pSeq->length-1, pSeq->refCoords, pSeq2->refCoordMap) + 1;
-//            st_logInfo("\t\t\t\tpSeq->length - 1 = %d\n", pSeq->length-1);
             if (nextSeqStartingIndex > 0 && nextSeqStartingIndex < pSeq2->length) {
                 pSeq = pSeq2;
-            } else {
-//                st_logInfo("\t\t\tSkipped seq from %d - %d\n", pSeq2->refStart, pSeq2->refStart + pSeq2->length);
             }
         } else {
-//            st_logInfo("Starting at:\t%d  (%d) i = %d\n", pSeq->refCoords[nextSeqStartingIndex], nextSeqStartingIndex, i);
-//            st_logInfo("  Adding %d more indexes  (rProbsIndex: %d - %d) (pSeqIndex: %d-%d)\n", pSeq->length - nextSeqStartingIndex, rProbsIndex, rProbsIndex + pSeq->length - nextSeqStartingIndex, pSeq->refStart, pSeq->refCoords[pSeq->length-1]);
-//        st_logInfo("  nextSeqStartingIndex: %d  i = %d  rProbsIndex: %d (out of %d)\n", nextSeqStartingIndex,i, rProbsIndex, rProbs->length);
             // Only look at a profile sequence until you reach the start of the next
             for (int64_t j = nextSeqStartingIndex; j < pSeq->length; j++) {
-
                 rProbs->refCoords[rProbsIndex] = pSeq->refCoords[j];
                 indexes[rProbsIndex] = rProbsIndex;
                 // Only insert if not already in the table
@@ -121,25 +120,15 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences) 
                 }
                 rProbsIndex++;
             }
-//            st_logInfo("  Ending at: %d \n", rProbs->refCoords[rProbsIndex-1]);
-//            st_logInfo("\t\t\t\tpSeq->length - 1 = %d\n", pSeq->length-1);
             stProfileSeq *pSeq2 = stList_get(profileSequences, i);
             nextSeqStartingIndex = findCorrespondingRefCoordIndex(pSeq->length-1, pSeq->refCoords, pSeq2->refCoordMap) + 1;
 
             if (nextSeqStartingIndex > 0 && nextSeqStartingIndex < pSeq2->length) {
                 pSeq = pSeq2;
-            } else {
-//                st_logInfo("\t\t\tSkipped seq from %d - %d. nextSeqStartingIndex: %d\n", pSeq2->refStart, pSeq2->refCoords[pSeq2->length-1], nextSeqStartingIndex);
             }
         }
     }
-    // Error checking
-//    for (int64_t i = 0; i < rProbs->length; i++) {
-//        if (rProbs->refCoords[i] == 0) {
-//            st_logInfo("rProbs->refCoords[ %d ] = 0 \n", rProbs->refStart + i);
-//        }
-//    }
-    st_logInfo("\t* Indexes filled in in rProbs: %d  (rProbs length: %d)\n", rProbsIndex, rProbs->length);
+    rProbs->refEnd = rProbs->refCoords[rProbs->length-1];
 }
 
 void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences, int64_t numInsertions) {
@@ -230,7 +219,6 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t
     while(stList_length(profileSequences) > 0) {
         // Get next reference prior prob interval
         stReferencePriorProbs *rProbs = getNext(profileSequences, numInsertions);
-        // TODO: make rProbslength += number of insertions added 
 
         // Fill in probability profile
         for(int64_t i=0; i<rProbs->length; i++) {
@@ -283,7 +271,7 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
         }
 
         // Build probability profile
-        assert(seqLen >= rProbs->refCoords[rProbs->length-1] + 1);
+        assert(seqLen >= rProbs->refEnd + 1);
         for(int64_t i=0; i<rProbs->length; i++) {
             uint8_t refChar =
                     stBaseMapper_getValueForChar(baseMapper, referenceSeq[rProbs->refCoords[i] - 1]);
@@ -301,4 +289,31 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
     stHash_destructIterator(hashIt);
 
     return referenceNamesToReferencePriors;
+}
+
+int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshold) {
+    /*
+     * Returns the total number of columns that will be inserted into the model.
+     */
+    int64_t numColumns = 0;
+    for (int64_t i = 0; i < rProbs->length; i++) {
+        if (rProbs->insertionCounts[i] >= threshold) {
+            numColumns += rProbs->gapSizes[i];
+        }
+    }
+    return numColumns;
+}
+
+int64_t insertionsInRange(stReferencePriorProbs *rProbs, int64_t leftIndex, int64_t rightIndex, int64_t threshold) {
+    /*
+     * Calculates the number of insertions in a given range on indexes on the reference,
+     * up to but not including the end index.
+     */
+    int64_t numInsertions = 0;
+    for (int64_t i = leftIndex; i < rightIndex; i++) {
+        if (rProbs->insertionCounts[i] >= threshold) {
+            numInsertions += rProbs->gapSizes[i];
+        }
+    }
+    return numInsertions;
 }

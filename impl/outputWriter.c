@@ -159,7 +159,8 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         bcf_rec->rid = bcf_hdr_name2id(bcf_hdr, gF->referenceName); //defined in a contig in the top
         // POS
 //        bcf_rec->pos  = i + gF->refStart - 1; // off by one?
-        int64_t recordPos = gF->refCoords[i] - 1;
+//        int64_t recordPos = gF->refCoords[i] - 1;
+        int64_t recordPos = gF->refCoords[i]-1;
         int64_t gapSize = gapSizeAtIndex(gF->refCoords, i);
 
 //        int64_t recordPos = i + gF->refStart - 1;
@@ -171,6 +172,8 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         // Get phasing info
         gt_info[0] = bcf_gt_phased(0);
         gt_info[1] = bcf_gt_phased(1);
+
+
 
         char refChar = toupper(referenceSeq[recordPos]);
         if (!differencesOnly) {
@@ -187,9 +190,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
                 bcf_write1(out, bcf_hdr, bcf_rec);
             }
-            if (recordPos == 8098619) {
-                st_logInfo("Pos: 8098619  refChar: %s  h1: %s  h2: %s \n", refChar, h1AlphChar, h2AlphChar);
-            }
+
         } else {
             if (i + 1 >= gF->length) break;
 
@@ -383,12 +384,12 @@ void printFalsePositive(bcf1_t *unpackedRecord, int64_t evalPos, stRPHmm *hmm) {
     }
 }
 
-void printAlleleInfo(bcf1_t *unpackedRecordRef, stRPHmm *hmm, int64_t referencePos, char *refChar, int h1AlphChar, int h2AlphChar) {
+void printAlleleInfo(bcf1_t *unpackedRecordRef, stRPHmm *hmm, int64_t referencePos, char *refChar, char *evalRefChar, char *evalAltChar) {
     st_logDebug("  pos: %" PRIi64 "\n  ref: %s   alt: ", referencePos, refChar);
     for (int i = 1; i < unpackedRecordRef->n_allele; i++) {
         if (i != 1) st_logDebug(",");
         st_logDebug("%s", unpackedRecordRef->d.allele[i]);
-        st_logDebug("\n  output: %c, %c\n", h1AlphChar, h2AlphChar);
+        st_logDebug("\n  output: %s, %s\n", evalRefChar, evalAltChar);
         printColumnAtPosition(hmm, referencePos);
     }
 }
@@ -401,9 +402,8 @@ void printPartitionInfo(int64_t referencePos, int64_t evalPos, stSet *reads1, st
     printBaseComposition2(read1BaseCounts);
     st_logDebug("\tPartition 2: \n");
     printBaseComposition2(read2BaseCounts);
-//    int64_t gFIndex = evalPos - gF->refStart;
-    int64_t gFIndex = findCorrespondingRefCoordIndex(evalPos, hmm->refCoords, gF->refCoordMap);
-    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[gFIndex]);
+    int64_t *gFIndex = stHash_search(gF->refCoordMap, &evalPos);
+    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[*gFIndex]);
 }
 
 void recordHomozygousVariant(stGenotypeResults *results) {
@@ -418,16 +418,15 @@ void recordTruePositive(stGenotypeResults *results, stRPHmmParameters *params, b
     char *refChar = unpackedRecordRef->d.als;
     char *refAltChar = unpackedRecordRef->d.allele[1];
     int64_t referencePos = unpackedRecordRef->pos+1;
-    int64_t gFIndex = findCorrespondingRefCoordIndex(referencePos, hmm->refCoords, gF->refCoordMap);
-//    int64_t gFIndex = referencePos - gF->refStart;
-    int h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[gFIndex]);
-    int h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[gFIndex]);
+    int64_t *gFIndex = stHash_search(gF->refCoordMap, &referencePos);
+    int h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[*gFIndex]);
+    int h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[*gFIndex]);
 
     results->truePositives++;
     if (strlen(refChar) > 1 || strlen(refAltChar) > 1) results->truePositiveGaps++;
     if (params->verboseTruePositives) {
         st_logDebug("\nTRUE POSITIVE\n");
-        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, (char *) &h1AlphChar, (char *) &h2AlphChar);
         printPartitionInfo(referencePos, referencePos, reads1, reads2, gF, hmm);
     }
 }
@@ -472,7 +471,6 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
     stRPHmm_forwardBackward(hmm);
     stList *path = stRPHmm_forwardTraceBack(hmm);
     stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-//    stGenomeFragment_setInsertionCounts(gF);
     stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
     stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
 
@@ -487,13 +485,13 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
     bool phasingHap2 = false;
     float switchErrorDistance = 0;
 
-    int64_t curiousIndex = 8098619;
-    if (curiousIndex >= gF->refStart && curiousIndex <= gF->refCoords[gF->length - 1]) {
-        st_logInfo("Got to the curious index, %d\n", curiousIndex);
-        st_setLogLevelFromString("debug");
-        printPartitionInfo(curiousIndex, curiousIndex, reads1, reads2, gF, hmm);
-        st_setLogLevelFromString("info");
-    }
+//    int64_t curiousIndex = 8098619;
+//    if (curiousIndex >= gF->refStart && curiousIndex <= gF->refCoords[gF->length - 1]) {
+//        st_logInfo("Got to the curious index, %d\n", curiousIndex);
+//        st_setLogLevelFromString("debug");
+//        printPartitionInfo(curiousIndex, curiousIndex, reads1, reads2, gF, hmm);
+//        st_setLogLevelFromString("info");
+//    }
 
 
     while(bcf_read(inRef, hdrRef, refRecord) == 0) {
@@ -520,7 +518,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
         if (referencePos < hmm->refStart) continue;
 
         // If the position is beyond the end of this hmm, get the next one
-        while ((hmm->refCoords[hmm->refLength - 1]) < referencePos) {
+        while (hmm->refEnd < referencePos) {
             hmmIndex++;
             if (hmmIndex < stList_length(hmms)) {
                 // Cleanup old stuff
@@ -533,18 +531,17 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 hmm = stList_get(hmms, hmmIndex);
                 path = stRPHmm_forwardTraceBack(hmm);
                 gF = stGenomeFragment_construct(hmm, path);
-//                stGenomeFragment_setInsertionCounts(gF);
                 reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
                 reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
                 phasingHap1 = false;
                 phasingHap2 = false;
 
-                if (curiousIndex >= gF->refStart && curiousIndex <= gF->refCoords[gF->length - 1]) {
-                    st_logInfo("Got to the curious index, %d\n", curiousIndex);
-                    st_setLogLevelFromString("debug");
-                    printPartitionInfo(curiousIndex, curiousIndex, reads1, reads2, gF, hmm);
-                    st_setLogLevelFromString("info");
-                }
+//                if (curiousIndex >= gF->refStart && curiousIndex <= gF->refCoords[gF->length - 1]) {
+//                    st_logInfo("Got to the curious index, %d\n", curiousIndex);
+//                    st_setLogLevelFromString("debug");
+//                    printPartitionInfo(curiousIndex, curiousIndex, reads1, reads2, gF, hmm);
+//                    st_setLogLevelFromString("info");
+//                }
             } else {
                 break;
             }
@@ -559,10 +556,9 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 
         int allele1 = bcf_gt_allele(gt_arr[0]);
         int allele2 = bcf_gt_allele(gt_arr[1]);
-//        int64_t gFIndex = referencePos - gF->refStart;
-        int64_t gFIndex = findCorrespondingRefCoordIndex(referencePos, hmm->refCoords, gF->refCoordMap);
-        int h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[gFIndex]);
-        int h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[gFIndex]);
+        int64_t *gFIndex = stHash_search(gF->refCoordMap, &referencePos);
+        int h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[*gFIndex]);
+        int h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[*gFIndex]);
         results->positives++;
 
         if (maybeFalsePositive && evalPos < referencePos) {
@@ -587,8 +583,6 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             bcf_unpack(unpackedRecord, BCF_UN_INFO);
             evalPos = unpackedRecord->pos+1;
             if (evalPos < refStart) continue;           // skip this record
-
-//            st_logInfo("Reference pos: %d \t eval pos: %d \n", referencePos, evalPos);
 
             // Check for false positives - variations found not in reference
             if (evalPos < referencePos) {
@@ -620,7 +614,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                     }
                 } else {
                     st_logDebug("\nUNKNOWN ERROR \n");
-                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, evalRefChar, evalAltChar);
                 }
             } else if (!phasingHap1 && !phasingHap2) {
                 // Beginning of genotype fragment, figure out which haplotype matches with ref
@@ -657,7 +651,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, evalRefChar, evalAltChar);
                         printPartitionInfo(referencePos, evalPos, reads1, reads2, gF, hmm);
                     }
                 } else {
@@ -675,7 +669,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         st_logDebug("\nINCORRECT POSITIVE\n");
                         results->falsePositives++;
                         results->error_incorrectVariant++;
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, evalRefChar, evalAltChar);
                         printPartitionInfo(referencePos, evalPos, reads1, reads2, gF, hmm);
                     }
                 }
@@ -693,7 +687,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         recordTruePositive(results, params, unpackedRecordRef, baseMapper, hmm, gF, reads1, reads2);
                     } else {
                         st_logDebug("\nINCORRECT POSITIVE\n");
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, evalRefChar, evalAltChar);
                         printPartitionInfo(referencePos, evalPos, reads1, reads2, gF, hmm);
                         results->falsePositives++;
                         results->error_incorrectVariant++;
@@ -711,7 +705,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         recordTruePositive(results, params, unpackedRecordRef, baseMapper, hmm, gF, reads1, reads2);
                     } else {
                         st_logDebug("\nINCORRECT POSITIVE\n");
-                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                        printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, evalRefChar, evalAltChar);
                         printPartitionInfo(referencePos, evalPos, reads1, reads2, gF, hmm);
                         results->falsePositives++;
                         results->error_incorrectVariant++;
@@ -733,8 +727,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 // False negative - no variation was found, but truth vcf has one
             else if (allele1 != allele2){
                 results->falseNegatives++;
-                int64_t gFIndex = findCorrespondingRefCoordIndex(referencePos, hmm->refCoords, gF->refCoordMap);
-//                int64_t gFIndex = referencePos - gF->refStart;
+                int64_t *gFIndex = stHash_search(gF->refCoordMap, &referencePos);
 
                 // Check if record was an insertion or deletion
                 if (strlen(refChar) > 1 || strlen(refAltChar) > 1) {
@@ -742,25 +735,27 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                     size_t indelLen = strlen(refChar);
                     if (strlen(refAltChar) > indelLen) indelLen = strlen(refAltChar);
 
+
                     st_logDebug("\nMISS: INDEL\n");
-                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar,
+                                    (char *) &h1AlphChar, (char *) &h2AlphChar);
 
                     for (int64_t j = 1; j < indelLen; j++) {
                         st_logDebug("\tNext pos: %" PRIi64 "\n", referencePos+j);
                         printColumnAtPosition(hmm, referencePos+j);
                     }
 
-                    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[gFIndex]);
+                    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[*gFIndex]);
                 } else {
                     results->error_badPartition++;
                     st_logDebug("\nMISS: SNV\n");
-                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, h1AlphChar, h2AlphChar);
+                    printAlleleInfo(unpackedRecordRef, hmm, referencePos, refChar, (char *) &h1AlphChar, (char *) &h2AlphChar);
 
                     st_logDebug("\tPartition 1: \n");
                     printBaseComposition2(read1BaseCounts);
                     st_logDebug("\tPartition 2: \n");
                     printBaseComposition2(read2BaseCounts);
-                    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[gFIndex]);
+                    st_logDebug("\tposterior prob: %f\n", gF->genotypeProbs[*gFIndex]);
 
                 }
                 free(read1BaseCounts);
