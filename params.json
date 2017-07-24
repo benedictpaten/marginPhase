@@ -30,7 +30,7 @@
 
   "offDiagonalReadErrorPseudoCount" : 10,
 
-  "trainingIterations" : 1,
+  "trainingIterations" : 0,
 
   "filterBadReads" : true,
   
@@ -38,7 +38,7 @@
 
   "useReferencePrior" : true,
 
-  "addInsertionColumns" : false,
+  "addInsertionColumns" : true,
 
   "insertionCountThreshold" : 8,
 

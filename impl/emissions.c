@@ -241,7 +241,7 @@ double emissionLogProbability(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refCoords, referencePriorProbs->refCoordMap);
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
 //    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
@@ -361,7 +361,7 @@ double emissionLogProbabilitySlow(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refCoords, referencePriorProbs->refCoordMap);
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
 //    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
@@ -426,7 +426,7 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refCoords, referencePriorProbs->refCoordMap);
+    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refIndexes, referencePriorProbs->refCoordMap);
 //    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
 
@@ -469,7 +469,7 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-    int64_t j = findCorrespondingRefCoordIndex(index, column->refCoords, gF->refCoordMap);
+    int64_t j = findCorrespondingRefCoordIndex(index, column->refIndexes, gF->refCoordMap);
 //    int64_t j = column->refStart - gF->refStart + index;
 
     // Get the haplotype characters with highest posterior probability.

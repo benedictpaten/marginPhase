@@ -19,10 +19,11 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *read
     seq->referenceName = stString_copy(referenceName);
     seq->readId = stString_copy(readId);
     seq->refStart = referenceStart;
-    seq->refEnd = referenceStart + length - 1;
+//    seq->refEnd = referenceStart + length - 1;
     seq->length = length;
     seq->profileProbs = st_calloc(length*ALPHABET_SIZE, sizeof(uint8_t));
-    seq->refCoords = st_calloc(length, sizeof(int64_t));
+//    seq->refCoords = st_calloc(length, sizeof(int64_t));
+    seq->refIndexes = st_calloc(length, sizeof(stRefIndex));
     seq->insertions = st_calloc(length, sizeof(int64_t));
     seq->numInsertions = 0;
     seq->insertionSeqs = st_calloc(length, sizeof(int64_t *));
@@ -79,7 +80,7 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
     if(includeProbs) {
         // FIXME
         for(int64_t i=0; i<seq->length; i++) {
-            int64_t o = seq->refCoords[i];
+            int64_t o = seq->refIndexes[i]->refCoord;
             fprintf(fileHandle, "\t%"PRIi64 "", o);
             uint8_t *p = &seq->profileProbs[i * ALPHABET_SIZE];
             // Print individual character probs
@@ -161,7 +162,7 @@ int64_t numInsertionColumnsInSeq(stProfileSeq *pSeq, stReferencePriorProbs *rPro
      */
     int64_t numColumns = 0;
     for (int64_t i = 0; i < pSeq->length; i++) {
-        int64_t j = findCorrespondingRefCoordIndex(i, pSeq->refCoords, rProbs->refCoordMap);
+        int64_t j = findCorrespondingRefCoordIndex(i, pSeq->refIndexes, rProbs->refCoordMap);
         if (j >= 0 && j < rProbs->length) {
             if (rProbs->insertionCounts[j] >= threshold) {
                 numColumns += rProbs->gapSizes[j];
@@ -171,7 +172,7 @@ int64_t numInsertionColumnsInSeq(stProfileSeq *pSeq, stReferencePriorProbs *rPro
     return numColumns;
 }
 
-void addInsertedBases(stReferencePriorProbs *rProbs, stProfileSeq *seq1, stProfileSeq *seq2, int64_t seq1Index, int64_t seq2Index, int64_t rProbsIndex, int64_t *indexes) {
+void addInsertedBases(stReferencePriorProbs *rProbs, stProfileSeq *seq1, stProfileSeq *seq2, int64_t seq1Index, int64_t seq2Index, int64_t rProbsIndex) {
     /*
      * Adds bases to be inserted (stored in seq1 insertionSeqs) into seq2.
      */
@@ -185,8 +186,7 @@ void addInsertedBases(stReferencePriorProbs *rProbs, stProfileSeq *seq1, stProfi
                     = ALPHABET_MAX_PROB;
         }
         // Reference coordinates for the sequence all refer back to the start of the gap
-//        seq2->refCoords[seq2Index+1] = seq1Index + seq1->refStart;
-        seq2->refCoords[seq2Index+1] = seq1->refCoords[seq1Index];
+        seq2->refIndexes[seq2Index+1] = stRefIndex_construct(seq1->refIndexes[seq1Index]->refCoord, seq2Index+1);
         seq2->insertions[seq2Index+1] = 1;
         seq2Index++;
     }
@@ -201,12 +201,10 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
     int64_t newLength = pSeq->length + columnsToAdd;
     stProfileSeq *insertionSeq = stProfileSeq_constructEmptyProfile(pSeq->referenceName, pSeq->readId, pSeq->refStart, newLength);
     int64_t insertionSeqIndex = 0;
-    int64_t *indexes = st_calloc(newLength, sizeof(int64_t));
-    indexes[0] = 0;
 
     for (int64_t i = 0; i < pSeq->length; i++) {
+        int64_t rProbsIndex = findCorrespondingRefCoordIndex(i, pSeq->refIndexes, rProbs->refCoordMap);
 
-        int64_t rProbsIndex = findCorrespondingRefCoordIndex(i, pSeq->refCoords, rProbs->refCoordMap);
         if(rProbsIndex >= 0 && rProbsIndex < rProbs->length) {
             // Add existing character in column
             for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
@@ -214,15 +212,18 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
                         pSeq->profileProbs[i * ALPHABET_SIZE + k];
             }
 
-            insertionSeq->refCoords[insertionSeqIndex] = pSeq->refCoords[i];
-            indexes[insertionSeqIndex] = insertionSeqIndex;
+            insertionSeq->refIndexes[insertionSeqIndex] =
+                    stRefIndex_construct(pSeq->refIndexes[i]->refCoord, insertionSeqIndex);
+            assert(stHash_search(insertionSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord) == NULL);
             stHash_insert(insertionSeq->refCoordMap,
-                          &insertionSeq->refCoords[insertionSeqIndex], &indexes[insertionSeqIndex]);
+                          &insertionSeq->refIndexes[insertionSeqIndex]->refCoord,
+                          &insertionSeq->refIndexes[insertionSeqIndex]->index);
             insertionSeq->insertions[insertionSeqIndex] = 0;
+
             if(pSeq->insertions[i] > 0 && rProbs->insertionCounts[rProbsIndex] >= threshold) {
                 // Insertion in both this sequence and others
                 addInsertedBases(rProbs, pSeq, insertionSeq,
-                                 i, insertionSeqIndex, rProbsIndex, indexes);
+                                 i, insertionSeqIndex, rProbsIndex);
                 insertionSeqIndex += rProbs->gapSizes[rProbsIndex] + 1;
             } else if (pSeq->insertions[i] > 0) {
                 // Number of insertions didn't exceed threshold, don't add this spot
@@ -233,7 +234,8 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
                 for (int64_t j = 0; j < rProbs->gapSizes[rProbsIndex]; j++) {
                     insertionSeq->profileProbs[(insertionSeqIndex+1) * ALPHABET_SIZE + (ALPHABET_SIZE - 1)]
                             = ALPHABET_MAX_PROB;
-                    insertionSeq->refCoords[insertionSeqIndex+1] = pSeq->refCoords[i];
+                    insertionSeq->refIndexes[insertionSeqIndex+1] =
+                            stRefIndex_construct(pSeq->refIndexes[i]->refCoord, insertionSeqIndex+1);
                     insertionSeq->insertions[insertionSeqIndex+1] = 1;
                     insertionSeqIndex++;
                 }
@@ -244,7 +246,8 @@ stProfileSeq *stProfileSeq_constructProfileWithInsertions(stProfileSeq *pSeq, st
             }
         }
     }
-    assert(insertionSeq->refEnd = insertionSeq->refCoords[insertionSeq->length - 1]);
+    insertionSeq->refEnd = insertionSeq->refIndexes[insertionSeq->length - 1]->refCoord;
+    assert(insertionSeq->refEnd == pSeq->refEnd);
     return insertionSeq;
 }
 
@@ -270,13 +273,13 @@ stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNam
     return insertionPSeqs;
 }
 
-int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index) {
+int64_t gapSizeAtIndex(stRefIndex **refIndexes, int64_t index) {
     /*
      * Returns the offset from the index in the profile sequence to the first spot with the
      * same reference coordinate (the size of the current gap up until the index)
      */
     int64_t gapSize = 0;
-    while(index > 0 && refCoords[index] == refCoords[index - 1]) {
+    while(index > 0 && refIndexes[index]->refCoord == refIndexes[index - 1]->refCoord) {
         gapSize++;
         index--;
     }
@@ -284,16 +287,17 @@ int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index) {
 }
 
 
-int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap2) {
+int64_t findCorrespondingRefCoordIndex(int64_t index1, stRefIndex **refIndexes1, stHash *refCoordMap2) {
     /*
      * Given an index for an object that has reference coordinates,
      * return the index of the corresponding location found in another object with reference coordinates.
      */
-    int64_t *idxPtr = stHash_search(refCoordMap2, &refCoords1[index1]);
+    int64_t refCoord = refIndexes1[index1]->refCoord;
+    int64_t *idxPtr = stHash_search(refCoordMap2, &refCoord);
     int64_t index2;
     if (idxPtr != NULL) {
         index2 = *idxPtr;
-        int64_t gapSize = gapSizeAtIndex(refCoords1, index1);
+        int64_t gapSize = gapSizeAtIndex(refIndexes1, index1);
         index2 += gapSize;
         return index2;
     } else {

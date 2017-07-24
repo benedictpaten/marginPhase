@@ -351,6 +351,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
 
         // Create empty profile sequence
         stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
+        pSeq->refEnd = pSeq->refStart+pSeq->length-1;
 
         // Variables to keep track of position in sequence / cigar operations
         cig_idx = 0;
@@ -376,8 +377,8 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
         } else {
             pSeq->profileProbs[firstBase] = ALPHABET_MAX_PROB;
         }
-        int64_t firstPos = 0;
-        pSeq->refCoords[firstPos] = pSeq->refStart;
+        pSeq->refIndexes[0] = stRefIndex_construct(pSeq->refStart, 0);
+        stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[0]->refCoord, &pSeq->refIndexes[0]->index);
 
         idxInSeq++;
         currPosInOp++;
@@ -385,10 +386,6 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             cig_idx++;
             currPosInOp = 0;
         }
-        // FIXME deallocate
-        int64_t *indexes = st_calloc(trueLength, sizeof(int64_t));
-        indexes[0] = 0;
-        stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[firstPos], &indexes[0]);
 
         // For each position turn character into profile probability
         // As is, this makes the probability 1 for the base read in, and 0 otherwise
@@ -398,22 +395,23 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
             }
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+                // Match
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-                pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
-
-                indexes[i] = i;
-                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
+                pSeq->refIndexes[i] = stRefIndex_construct(pSeq->refIndexes[i-1]->refCoord + 1, i);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord, &pSeq->refIndexes[i]->index);
                 idxInSeq++;
-            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                // Set deletions to be a gap character
+            }
+            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                // Deletion
+                // Set to be a gap character
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-                pSeq->refCoords[i] = pSeq->refStart + i;
-                pSeq->refCoords[i] = pSeq->refCoords[i - 1] + 1;
-                indexes[i] = i;
-                stHash_insert(pSeq->refCoordMap, &pSeq->refCoords[i], &indexes[i]);
-            } else if (cigarOp == BAM_CINS) {
+                pSeq->refIndexes[i] = stRefIndex_construct(pSeq->refIndexes[i-1]->refCoord + 1, i);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord, &pSeq->refIndexes[i]->index);
+            }
+            else if (cigarOp == BAM_CINS) {
+                // Insertion
                 if (params->addInsertionColumns) {
                     int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                     // Don't add the base itself to the profile sequence, but keep track of it
@@ -429,6 +427,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 idxInSeq++;
                 i--;
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                // Clipping
                 // Nothing really to do here. Skip to next cigar operation
                 currPosInOp = cigarNum - 1;
                 i--;
@@ -442,7 +441,7 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
                 currPosInOp = 0;
             }
         }
-        assert(pSeq->refEnd == pSeq->refCoords[pSeq->length-1]);
+        assert(pSeq->refEnd == pSeq->refIndexes[pSeq->length-1]->refCoord);
         stList_append(profileSequences, pSeq);
     }
 

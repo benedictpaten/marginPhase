@@ -102,6 +102,18 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 #define FIRST_ALPHABET_CHAR 48 // Ascii symbol '0'
 
+// Struct used to keep track of indexes / reference coordinates
+struct _stRefIndex {
+    // Reference coordinate
+    int64_t refCoord;
+    // Index in whatever specific data structure
+    int64_t index;
+};
+// TODO figure out if offset should be included
+
+stRefIndex *stRefIndex_construct(int64_t refCoord, int64_t index);
+
+
 struct _stProfileSeq {
     char *referenceName;
     char *readId;
@@ -116,11 +128,12 @@ struct _stProfileSeq {
     uint8_t *profileProbs;
 
     // Additional data structures to deal with change in coordinates
-    int64_t *refCoords;
+//    int64_t *refCoords;
     int64_t *insertions;
     int64_t **insertionSeqs; // so we don't have to re-parse the bam file
     stHash *refCoordMap;
     int64_t numInsertions;
+    stRefIndex **refIndexes;
 };
 
 stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId,
@@ -140,20 +153,9 @@ int stRPProfileSeq_cmpFn(const void *a, const void *b);
 
 stList *addInsertionColumnsToSeqs(stList *profileSequences, stHash *referenceNamesToReferencePriors, int64_t threshold, int64_t *numInsertions);
 
-int64_t gapSizeAtIndex(int64_t *refCoords, int64_t index);
+int64_t gapSizeAtIndex(stRefIndex **refIndexes, int64_t index);
 
-int64_t findCorrespondingRefCoordIndex(int64_t index1, int64_t *refCoords1, stHash *refCoordMap2);
-
-
-// Struct used to keep track of indexes / reference coordinates
-struct _stRefIndex {
-    // Reference coordinate
-    int64_t refCoord;
-    // Distance to beginning of reference coordinate (if in insertion)
-    int64_t offset;
-    // Index in whatever specific data structure
-    int64_t index;
-};
+int64_t findCorrespondingRefCoordIndex(int64_t index1, stRefIndex **refIndexes1, stHash *refCoordMap2);
 
 
 /*
@@ -180,9 +182,9 @@ struct _stReferencePriorProbs {
     int64_t *gapSizes;
     int64_t *insertionsBeforePosition;
     // Reference coordinates for each index
-    int64_t *refCoords;
+//    int64_t *refCoords;
     stHash *refCoordMap;
-    stRefIndex *refIndexes;
+    stRefIndex **refIndexes;
 };
 
 int stHash_intPtrEqualKey(const void *key1, const void *key2);
@@ -289,8 +291,9 @@ struct _stRPHmm {
     double backwardLogProb;
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
-    int64_t *refCoords;
+//    int64_t *refCoords;
     stHash *refCoordMap;
+    stRefIndex **refIndexes;
 };
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
@@ -344,8 +347,9 @@ struct _stRPColumn {
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
-    int64_t *refCoords;
+//    int64_t *refCoords;
     stHash *refCoordMap;
+    stRefIndex **refIndexes;
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
@@ -456,8 +460,9 @@ struct _stGenomeFragment {
     int64_t refStart;
     int64_t refEnd;
     int64_t length;
-    int64_t *refCoords;
+//    int64_t *refCoords;
     stHash *refCoordMap;
+    stRefIndex **refIndexes;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);

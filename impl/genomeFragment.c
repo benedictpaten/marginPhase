@@ -15,17 +15,20 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Set coordinates
     gF->referenceName = stString_copy(hmm->referenceName);
     gF->refStart = hmm->refStart;
-    gF->length = hmm->length;
-    gF->refCoords = st_calloc(hmm->length, sizeof(int64_t));
-    gF->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-    // TODO: this indexes array is awful. make separate struct
-    int64_t *indexes = st_calloc(hmm->length, sizeof(int64_t));
-    for (int64_t i = 0; i < gF->length; i++) {
-        gF->refCoords[i] = hmm->refCoords[i];
-        indexes[i] = i;
-        stHash_insert(gF->refCoordMap, &gF->refCoords[i], &indexes[i]);
-    }
     gF->refEnd = hmm->refEnd;
+    gF->length = hmm->length;
+    gF->refCoordMap = hmm->refCoordMap;
+    gF->refIndexes = hmm->refIndexes;
+//    gF->refCoords = st_calloc(hmm->length, sizeof(int64_t));
+//    gF->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
+//    gF->refIndexes = st_calloc(hmm->length, sizeof(stRefIndex));
+//    int64_t *indexes = st_calloc(hmm->length, sizeof(int64_t));
+//    for (int64_t i = 0; i < gF->length; i++) {
+//        gF->refCoords[i] = hmm->refCoords[i];
+//        indexes[i] = i;
+//        stHash_insert(gF->refCoordMap, &gF->refCoords[i], &indexes[i]);
+//    }
+
 
     // Allocate genotype arrays
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));

@@ -160,8 +160,9 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         // POS
 //        bcf_rec->pos  = i + gF->refStart - 1; // off by one?
 //        int64_t recordPos = gF->refCoords[i] - 1;
-        int64_t recordPos = gF->refCoords[i]-1;
-        int64_t gapSize = gapSizeAtIndex(gF->refCoords, i);
+        int64_t recordPos = gF->refIndexes[i]->refCoord -1;
+                //gF->refCoords[i]-1;
+//        int64_t gapSize = gapSizeAtIndex(gF->refCoords, i);
 
 //        int64_t recordPos = i + gF->refStart - 1;
         bcf_rec->pos = recordPos;
@@ -178,7 +179,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, ch
         char refChar = toupper(referenceSeq[recordPos]);
         if (!differencesOnly) {
             // TODO: What to do on this where there is a gap?
-            if (gF->refCoords[i] != gF->refCoords[i-1]) {
+            if (i == 0 || gF->refIndexes[i]->refCoord != gF->refIndexes[i-1]->refCoord) {
                 kputc(refChar, &str); // REF
                 kputc(',', &str);
                 kputc(h1AlphChar, &str);

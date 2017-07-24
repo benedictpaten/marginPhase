@@ -105,7 +105,7 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
         // Establish if the coordinate is in both sequences
 //        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
 //        st_logInfo("\ni = %d  (%d) ", i, pSeq1->refCoords[i]);
-        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refCoords, pSeq2->refCoordMap);
+        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refIndexes, pSeq2->refCoordMap);
 //        st_logInfo(" j = %d  (%d)", j, pSeq2->refCoords[j]);
         if (j >= 0 && j < pSeq2->length) {
             (*totalAlignedPositions)++;
@@ -125,7 +125,7 @@ double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t i
     double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
     for (int64_t i = 0; i < stList_length(profileSequences); i++) {
         stProfileSeq *seq = stList_get(profileSequences, i);
-        if (index >= seq->refCoords[0] && index <= seq->refCoords[seq->length - 1]) {
+        if (index >= seq->refIndexes[0]->refCoord && index <= seq->refIndexes[seq->length - 1]->refCoord) {
             for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
                 // TODO change for insertions
 //                int64_t seqIndex = index + seq->insertionsBeforePosition[index - seq->refCoords[0]] - seq->refCoords[0];
@@ -145,12 +145,12 @@ void getExpectedMatchesBetweenProfileSeqs2(stProfileSeq *pSeq1, stProfileSeq *pS
 
     for(int64_t i=0; i<pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
-        int64_t refCoord1 = pSeq1->refCoords[i];
+        int64_t refCoord1 = pSeq1->refIndexes[i]->refCoord;
         int64_t j = i + pSeq1->refStart - pSeq2->refStart;
         int64_t *jPtr = stHash_search(pSeq2->refCoordMap, &refCoord1);
         if (jPtr != NULL) {
             int64_t j = *jPtr;
-            int64_t refCoord2 = pSeq2->refCoords[j];
+            int64_t refCoord2 = pSeq2->refIndexes[j]->refCoord;
             if (j >= 0 && j < pSeq2->length) {
                 (*totalAlignedPositions)++;
 
