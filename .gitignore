@@ -1,4 +1,4 @@
-.idea
+.idea*
 cmake-build-debug/
 CMakeCache.txt
 CMakeFiles
@@ -13,3 +13,5 @@ vcfCompare
 marginPhase.cbp
 libjsmn.a
 *.bai
+venv
+s3am

@@ -1,0 +1,3 @@
+[console_scripts]
+toil-marginphase = toil_marginphase.marginphase_pipeline:main
+
