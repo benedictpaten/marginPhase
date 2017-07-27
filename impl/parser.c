@@ -53,7 +53,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
     return UINT8_MAX;
 }
 
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+char stBaseMapper_getCharForValue(stBaseMapper *bm, int64_t value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
@@ -104,6 +104,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterBadReads = false;
     params->filterMatchThreshold = 0.92;
     params->useReferencePrior = false;
+    params->addInsertionColumns = false;
+    params->insertionCountThreshold = 8;
     params->includeInvertedPartitions = true;
     params->filterLikelyHomozygousSites = false;
     params->minSecondMostFrequentBaseFilter = 2;
@@ -261,6 +263,19 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->includeInvertedPartitions = strcmp(tokStr, "true") == 0;
             i++;
         }
+        else if (strcmp(keyString, "addInsertionColumns") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->addInsertionColumns = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "insertionCountThreshold") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->insertionCountThreshold = atoi(tokStr);
+            i++;
+        }
         else if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
@@ -320,22 +335,21 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
  * signal level alignments).
  * */
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
+void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
-        return -1;
     }
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
 
-    while(sam_read1(in,bamHdr,aln) > 0){
+    while(sam_read1(in,bamHdr,aln) > 0) {
 
-        int64_t pos = aln->core.pos+1; //left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
+        int64_t pos = aln->core.pos + 1; //left most position of alignment
+        char *chr = bamHdr->target_name[aln->core.tid]; //contig name (chromosome)
         int64_t len = aln->core.l_qseq; //length of the read.
         uint8_t *seq = bam_get_seq(aln);  // DNA sequence
         char *readName = bam_get_qname(aln);
@@ -355,14 +369,13 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 
         // Find the correct starting locations on the read and reference sequence,
         // to deal with things like inserts / deletions / soft clipping
-        while(cig_idx < aln->core.n_cigar) {
+        while (cig_idx < aln->core.n_cigar) {
             int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
             int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 break;
-            }
-            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 start_ref += cigarNum;
                 cig_idx++;
             } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
@@ -376,8 +389,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         }
 
         // Check for soft clipping at the end
-        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+        int lastCigarOp = cigar[aln->core.n_cigar - 1] & BAM_CIGAR_MASK;
+        int lastCigarNum = cigar[aln->core.n_cigar - 1] >> BAM_CIGAR_SHIFT;
         if (lastCigarOp == BAM_CSOFT_CLIP) {
             end_read += lastCigarNum;
         }
@@ -386,43 +399,92 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         int64_t numInsertions = 0;
         int64_t numDeletions = 0;
         countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-        int64_t trueLength = len-start_read-end_read+numDeletions-numInsertions;
+        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+//        int64_t trueLength = len - start_read - end_read + numDeletions;
 
         // Create empty profile sequence
         stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
+        pSeq->refEnd = pSeq->refStart+pSeq->length-1;
 
         // Variables to keep track of position in sequence / cigar operations
         cig_idx = 0;
         int64_t currPosInOp = 0;
-        int64_t cigarOp = -1;
-        int64_t cigarNum = -1;
+        int64_t cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+        int64_t cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
         int64_t idxInSeq = start_read;
+
+        // First spot in sequence
+//        //TODO: this assumes first spot is a match. what if indel?
+        while (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+            cig_idx++;
+            cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+            cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+        }
+        int64_t firstBase = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+
+        if (cigarOp == BAM_CINS) {
+            st_logInfo("* INSERTION AT FIRST INDEX IN PROFILE SEQUENCE!\n");
+            pSeq->insertions[0] = cigarNum;
+            pSeq->insertionSeqs[0] = st_calloc(cigarNum, sizeof(int64_t));
+            if (params->addInsertionColumns) pSeq->profileProbs[0 * ALPHABET_SIZE + firstBase] = ALPHABET_MAX_PROB;
+        } else {
+            pSeq->profileProbs[firstBase] = ALPHABET_MAX_PROB;
+        }
+        pSeq->refIndexes[0] = stRefIndex_construct(pSeq->refStart, 0);
+        stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[0]->refCoord, &pSeq->refIndexes[0]->index);
+
+        idxInSeq++;
+        currPosInOp++;
+        if (currPosInOp == cigarNum) {
+            cig_idx++;
+            currPosInOp = 0;
+        }
 
         // For each position turn character into profile probability
         // As is, this makes the probability 1 for the base read in, and 0 otherwise
-        for (uint32_t i = 0; i < trueLength; i++) {
-
+        for (uint32_t i = 1; i < trueLength; i++) {
             if (currPosInOp == 0) {
                 cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
                 cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
             }
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+                // Match
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                pSeq->refIndexes[i] = stRefIndex_construct(pSeq->refIndexes[i-1]->refCoord + 1, i);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord, &pSeq->refIndexes[i]->index);
                 idxInSeq++;
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                // Deletion
                 if (params->gapCharactersForDeletions) {
                     // This assumes gap character is the last character in the alphabet given
-                    pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
+                    int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
+                    pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 }
-            } else if (cigarOp == BAM_CINS) {
-                // Currently, ignore insertions
+                pSeq->refIndexes[i] = stRefIndex_construct(pSeq->refIndexes[i-1]->refCoord + 1, i);
+                stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord, &pSeq->refIndexes[i]->index);
+            }
+            else if (cigarOp == BAM_CINS) {
+                // Insertion
+                if (params->addInsertionColumns) {
+                    int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+                    // Don't add the base itself to the profile sequence, but keep track of it
+                    if (currPosInOp == 0) {
+                        // Store the number of inserted bases and allocate memory for the bases themselves
+                        // Put this in the previous index (there won't have been an insertion there)
+                        pSeq->insertions[i - 1] = cigarNum;
+                        pSeq->insertionSeqs[i - 1] = st_calloc(cigarNum, sizeof(int64_t));
+                    }
+                    pSeq->insertionSeqs[i - 1][currPosInOp] = b;
+                    pSeq->numInsertions++;
+                }
                 idxInSeq++;
                 i--;
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                // nothing really to do here. skip to next cigar operation
-                currPosInOp = cigarNum-1;
+                // Clipping
+                // Nothing really to do here. Skip to next cigar operation
+                currPosInOp = cigarNum - 1;
                 i--;
             } else {
                 st_logCritical("Unidentifiable cigar operation\n");
@@ -434,14 +496,11 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 currPosInOp = 0;
             }
         }
+        assert(pSeq->refEnd == pSeq->refIndexes[pSeq->length-1]->refCoord);
         stList_append(profileSequences, pSeq);
     }
-
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
-
-    return readCount;
 }
-

@@ -16,12 +16,11 @@ int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
     char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s "
-                                           " --referenceVcf %s",
-                                   bamFile, referenceFile, logString,
-                                   paramsFile, outputBase, vcfReference);
-    st_logInfo("Running command: %s\n", command);
-    st_logInfo("> Running margin phase on %s\n", bamFile);
-
+            " --referenceVcf %s",
+            bamFile, referenceFile, logString,
+            paramsFile, outputBase, vcfReference);
+    fprintf(stderr, "Running command: %s\n", command);
+    fprintf(stderr, "> Running margin phase on %s\n", bamFile);
     return st_system(command);
 
     // TODO : Do VCF comparison using VCF eval
@@ -52,9 +51,10 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *paramsFile = "../params.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_100kb";
-    bool verbose = false;
+    bool verbose = true;
 
     char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
+//    char *bamFile = "../tests/NA12878.np.chr3.100kb.3.bam";
 //    char *bamFile = "../tests/NA12878.np.chr3.100kb.2.bam";
 //    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";

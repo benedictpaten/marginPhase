@@ -15,7 +15,10 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Set coordinates
     gF->referenceName = stString_copy(hmm->referenceName);
     gF->refStart = hmm->refStart;
-    gF->length = hmm->refLength;
+    gF->refEnd = hmm->refEnd;
+    gF->length = hmm->length;
+    gF->referencePriorProbs = hmm->referencePriorProbs;
+    gF->refStartIndex = hmm->refStartIndex;
 
     // Allocate genotype arrays
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
@@ -63,4 +66,3 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
 
     free(genomeFragment);
 }
-

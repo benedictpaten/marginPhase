@@ -140,7 +140,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         stList_append(referenceSeqs, referenceSeq);
 
         stReferencePriorProbs *rProbs =
-                stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength);
+                stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength, 0);
         stHash_insert(referenceNamesToReferencePriors, stString_copy(referenceName), rProbs);
 
 		char *noisyReferenceSeq = permuteSequence(referenceSeq, hetRate);
@@ -327,11 +327,11 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 if(!splitHmmsWherePhasingUncertain) { // The profile sequence is only guaranteed to be wholly contained
                     // in the hmm if the hmm was not split at points where the phasing is uncertain
                     CuAssertTrue(testCase, hmm->refStart <= profileSeq->refStart);
-                    CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                    CuAssertTrue(testCase, hmm->refStart + hmm->length >= profileSeq->refStart + profileSeq->length);
                 }
                 else {
                     // Must overlap
-                    assert(hmm->refStart + hmm->refLength > profileSeq->refStart);
+                    assert(hmm->refStart + hmm->length > profileSeq->refStart);
                     assert(profileSeq->refStart + profileSeq->length > hmm->refStart);
                 }
             }
@@ -348,7 +348,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 // If are on the same reference sequence
                 if(stString_eq(profileSeq->referenceName, hmm->referenceName)) {
                     // If overlapping
-                    if(hmm->refStart <= profileSeq->refStart && hmm->refStart + hmm->refLength > profileSeq->refStart) {
+                    if(hmm->refStart <= profileSeq->refStart && hmm->refStart + hmm->length > profileSeq->refStart) {
 
                         // Must be contained in the hmm
                         CuAssertTrue(testCase, stList_contains(hmm->profileSeqs, profileSeq));
@@ -356,11 +356,11 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                         if(!splitHmmsWherePhasingUncertain) { // The profile sequence is only guaranteed to be wholly contained
                                             // in the hmm if the hmm was not split at points where the phasing is uncertain
                             // Must not be partially overlapping
-                            CuAssertTrue(testCase, hmm->refStart + hmm->refLength >= profileSeq->refStart + profileSeq->length);
+                            CuAssertTrue(testCase, hmm->refStart + hmm->length >= profileSeq->refStart + profileSeq->length);
                         }
                         else {
                             // Must overlap
-                            assert(hmm->refStart + hmm->refLength > profileSeq->refStart);
+                            assert(hmm->refStart + hmm->length > profileSeq->refStart);
                             assert(profileSeq->refStart + profileSeq->length > hmm->refStart);
                         }
 
@@ -664,7 +664,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             // Check coordinates
             CuAssertStrEquals(testCase, hmm->referenceName, gF->referenceName);
             CuAssertIntEquals(testCase, hmm->refStart, gF->refStart);
-            CuAssertIntEquals(testCase, hmm->refLength, gF->length);
+            CuAssertIntEquals(testCase, hmm->length, gF->length);
 
             // Get the haplotype sequences
             stList *tokens = stString_splitByString(hmm->referenceName, "_");
@@ -756,17 +756,17 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     " Got %" PRIi64 " hap2 differences, rate: %f\n"
                     " Got %" PRIi64 " hap1 het differences, rate: %f\n"
                     " Got %" PRIi64 " hap2 het differences, rate: %f\n",
-                    hmm->refLength,
-                    correctGenotypes, (float)correctGenotypes/hmm->refLength,
+                    hmm->length,
+                    correctGenotypes, (float)correctGenotypes/hmm->length,
                     totalHets, correctHets, (float)correctHets/totalHets,
-                    hap1ToPredictedHap1Diffs, (float)hap1ToPredictedHap1Diffs/hmm->refLength,
-                    hap2ToPredictedHap2Diffs, (float)hap2ToPredictedHap2Diffs/hmm->refLength,
+                    hap1ToPredictedHap1Diffs, (float)hap1ToPredictedHap1Diffs/hmm->length,
+                    hap2ToPredictedHap2Diffs, (float)hap2ToPredictedHap2Diffs/hmm->length,
                     hap1ToPredictedHap1HetDiffs, (float)hap1ToPredictedHap1HetDiffs/totalHets,
                     hap2ToPredictedHap2HetDiffs, (float)hap2ToPredictedHap2HetDiffs/totalHets);
 
             fprintf(stderr, "Avg posterior prob. of correct genotype call: %f, avg. posterior"
                     " prob. of incorrect genotype call: %f\n", probsOfCorrectGenotypes/correctGenotypes,
-                    probsOfIncorrectGenotypes/(hmm->refLength - correctGenotypes));
+                    probsOfIncorrectGenotypes/(hmm->length - correctGenotypes));
 
             // Cleanup
             stGenomeFragment_destruct(gF);

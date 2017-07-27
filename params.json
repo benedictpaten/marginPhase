@@ -19,11 +19,11 @@
     0.01, 0.01, 0.01, 0.01, 0.96 ],
 
   "maxNotSumTransitions" : true,
-  
+
   "minPartitionsInAColumn" : 100,
 
   "maxPartitionsInAColumn" : 100,
-  
+
   "minPosteriorProbabilityForPartition" : 0.0,
 
   "maxCoverageDepth" : 64,
@@ -37,18 +37,22 @@
   "trainingIterations" : 1,
 
   "filterBadReads" : true,
-  
+
   "filterMatchThreshold" : 0.9,
 
   "useReferencePrior" : true,
-  
+
   "includeInvertedPartitions" : true,
-  
+
   "filterLikelyHomozygousSites" : true,
-  
+
   "minSecondMostFrequentBaseFilter" : 3,
 
   "gapCharactersForDeletions" : true,
 
-  "verbose" : "00"
+  "addInsertionColumns" : false,
+
+  "insertionCountThreshold" : 8,
+
+  "verbose" : "01"
 }

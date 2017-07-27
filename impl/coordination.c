@@ -43,7 +43,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
         }
 
         // If hmm2 does not overlap hmm1 it must be the closest non-overlapping hmm to hmm1
-        if(hmm1->refStart + hmm1->refLength <= hmm2->refStart) {
+        if(hmm1->refEnd < hmm2->refStart) {
             break;
         }
     }
@@ -207,6 +207,7 @@ stList *getTilingPaths(stSortedSet *hmms) {
         // set of hmms left to tile
         stRPHmm *hmm2;
         while((hmm2 = getNextClosestNonoverlappingHmm(hmm, hmms)) != NULL) {
+
             stSortedSet_remove(hmms, hmm);
             stList_append(tilingPath, hmm2);
             hmm = hmm2;
@@ -268,6 +269,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
      *  same format as the input lists.
      *  Destroys the input tilingPaths in the process and cleans them up.
      */
+
     // Partition of the hmms into overlapping connected components
     stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
     // Cleanup the input tiling paths
@@ -278,10 +280,12 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
     stList *newTilingPath = stList_construct();
 
     // Fuse the hmms
-
     // For each component of overlapping hmms
     stList *componentsList = stSet_getList(components);
     for(int64_t i=0; i<stList_length(componentsList); i++) {
+        // TODO delete
+//        st_logInfo("Merging %d\t", i);
+
         stSortedSet *component = stList_get(componentsList, i);
         stSet_remove(components, component);
 
@@ -298,17 +302,37 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
             stRPHmm *hmm1 = fuseTilingPath(subTilingPath1);
             stRPHmm *hmm2 = fuseTilingPath(subTilingPath2);
 
+//            st_logInfo("hmm1: %d - %d    hmm2: %d - %d    (%d, %d)\n", hmm1->refStart, hmm1->refEnd, hmm2->refStart, hmm2->refEnd, hmm1->refStart+hmm1->length-1, hmm2->refStart+hmm2->length-1);
+
+            int64_t endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
+            endCoordIndex = getRefCoordIndex(hmm2->refEnd, hmm2->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm2->refStartIndex + 1 == hmm2->length);
+
             // Align
             stRPHmm_alignColumns(hmm1, hmm2);
+
+            endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
+            endCoordIndex = getRefCoordIndex(hmm2->refEnd, hmm2->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm2->refStartIndex + 1 == hmm2->length);
 
             // Merge
             hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
             stRPHmm_destruct(hmm1, 1);
             stRPHmm_destruct(hmm2, 1);
 
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
+
             // Prune
             stRPHmm_forwardBackward(hmm);
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
+
             stRPHmm_prune(hmm);
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
         }
         else { // Case that component is just one hmm that does not
             // overlap anything else

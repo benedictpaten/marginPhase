@@ -142,8 +142,10 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activ
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
                                    int64_t position, int64_t characterIndex) {
     /*
-     * Returns the number of instances of a character, given by characterIndex, at the given position within the column for
-     * the given partition. Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
+     * Returns the number of instances of a character, given by characterIndex,
+     * at the given position within the column for the given partition.
+     * Returns value scaled between 0 and ALPHABET_MAX_PROB,
+     * where the return value divided by ALPHABET_MAX_PROB
      * is the expected number of instances of the given character in the given subpartition of the column.
      */
     uint64_t *j = retrieveBitCountVector(bitCountVectors, position, characterIndex, 0);
@@ -234,9 +236,7 @@ static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t in
     return logColumnProb;
 }
 
-double emissionLogProbability(stRPColumn *column,
-                              stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-                              stRPHmmParameters *params) {
+double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
@@ -245,8 +245,9 @@ double emissionLogProbability(stRPColumn *column,
     for(int64_t i=0; i<column->totalActivePositions; i++) {
 
         // Get the reference prior probabilities
-        int64_t j = column->refStart + column->activePositions[i] - referencePriorProbs->refStart;
+        int64_t j = column->refStartIndex + column->activePositions[i];
         uint16_t *rProbs = &referencePriorProbs->profileProbs[j * ALPHABET_SIZE];
+        assert(referencePriorProbs->referencePositionsIncluded[j]);
 
         logPartitionProb += columnIndexLogProbability(column, i, cell->partition, bitCountVectors, rProbs, params);
     }
@@ -352,14 +353,13 @@ double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
     return logColumnProb; // + log(1.0/params->alphabetSize);
 }
 
-double emissionLogProbabilitySlow(stRPColumn *column,
-                                  stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-                                  stRPHmmParameters *params, bool maxNotSum) {
+double emissionLogProbabilitySlow(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params, bool maxNotSum) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
+    int64_t rProbsIndex = column->refStartIndex;
+    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
                                                             cell->partition, bitCountVectors, rProbs, params, maxNotSum);
     for(int64_t i=1; i<column->length; i++) {
@@ -422,7 +422,8 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart-referencePriorProbs->refStart + index)*ALPHABET_SIZE];
+    int64_t rProbsIndex = column->refStartIndex + index;
+    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
 
     // Get the haplotype characters that are most probable given the root character
     double characterProbsHap1[ALPHABET_SIZE];
@@ -463,13 +464,15 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-    int64_t j = column->refStart + index - gF->refStart;
+    int64_t j = column->refStartIndex - gF->refStartIndex + index;
 
     // Get the haplotype characters with highest posterior probability.
-    uint64_t hapChar1  = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
+    uint64_t hapChar1 = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
     gF->haplotypeString1[j] = hapChar1;
     uint64_t hapChar2 = getMLHapChar(characterProbsHap2, params, maxProbRootChar);
     gF->haplotypeString2[j] = hapChar2;
+
+
 
     // Calculate haplotype probabilities
     gF->haplotypeProbs1[j] = exp(getHaplotypeProb(characterProbsHap1[hapChar1],

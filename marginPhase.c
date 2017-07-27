@@ -95,19 +95,20 @@ double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_
     return ((double)totalMatches)/(length - numGaps);
 }
 
+
+
 void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
     /*
      * Calculates the number of base overlaps and expected base matches between two profile sequences.
      */
-
-    for(int64_t i=0; i<pSeq1->length; i++) {
+    for (int64_t i = 0; i < pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
-        int64_t j = i + pSeq1->refStart - pSeq2->refStart;
-        if(j >= 0 && j < pSeq2->length) {
+        int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refIndexes, pSeq2->refCoordMap);
+        if (j >= 0 && j < pSeq2->length) {
             (*totalAlignedPositions)++;
 
             // Calculate expectation of match
-            for(int64_t k=0; k<ALPHABET_SIZE; k++) {
+            for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
                 double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
                 double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
                 assert(e1 * e2 <= 1.0);
@@ -115,6 +116,21 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
             }
         }
     }
+}
+
+double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t index, int64_t indexInGap) {
+    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+    for (int64_t i = 0; i < stList_length(profileSequences); i++) {
+        stProfileSeq *seq = stList_get(profileSequences, i);
+        if (index >= seq->refIndexes[0]->refCoord && index <= seq->refIndexes[seq->length - 1]->refCoord) {
+            for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
+                int64_t *seqIndex = stHash_search(seq->refCoordMap, &index);
+                (*seqIndex) += indexInGap;
+                baseCounts[j] += getProb(&seq->profileProbs[(*seqIndex) * ALPHABET_SIZE], j);
+            }
+        }
+    }
+    return baseCounts;
 }
 
 void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences, int64_t maxSeqs) {
@@ -129,11 +145,10 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
         for(int64_t j=i+1; j<stList_length(profileSequences) && j<maxSeqs; j++) {
             getExpectedMatchesBetweenProfileSeqs(stList_get(profileSequences, i), stList_get(profileSequences, j),
                                                 &totalAlignedPositions, &totalExpectedMatches);
-
         }
     }
-
-    fprintf(fH, "\tAvg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
+    fprintf(fH, "\tAvg. pairwise identity between profile sequences:"
+                    " %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
 }
 double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
@@ -280,7 +295,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
         stListIterator *itor = stList_getIterator(hmms);
         stRPHmm *hmm = NULL;
         while ((hmm = stList_getNext(itor)) != NULL) {
-            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength));
+            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->length), hmm->columnNumber);
             idx++;
         }
     }
@@ -293,7 +308,7 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
      */
     if(st_getLogLevel() == debug) {
         st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
-                    hmm->referenceName, hmm->refStart, hmm->refLength);
+                    hmm->referenceName, hmm->refStart, hmm->length);
         st_logDebug("\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                     stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
@@ -448,25 +463,24 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
-    st_logInfo("\tCreated %d profile sequences\n", readCount);
+    parseReads(profileSequences, bamInFile, baseMapper, params);
 
     // Print some stats about the input sequences
-    if(st_getLogLevel() == debug) {
-        printSequenceStats(stderr, profileSequences);
-        printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
-    }
+    printSequenceStats(stderr, profileSequences);
+    printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
+
 
     // Getting reference sequence priors
     stHash *referenceNamesToReferencePriors;
     if(!params->useReferencePrior) {
         st_logInfo("> Using a flat prior over reference positions\n");
-        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences);
+        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0);
     }
     else {
         st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
-        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences,
-                baseMapper, params);
+        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile,
+                                                                            profileSequences,
+                                                                            baseMapper, params, 0);
 	}
 
     // Filter reads that are too divergent from the consensus sequence
@@ -476,7 +490,23 @@ int main(int argc, char *argv[]) {
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
         profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
-        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
+        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*100/initialSize);
+    }
+
+    // Add columns for insertions into profile sequences
+    if (params->addInsertionColumns) {
+        st_logInfo("> Adding insertion columns to profile sequences\n");
+        int64_t numInsertions = 0;
+        // TODO: make it so insertions are counted per rProbs (not over all)
+        profileSequences = addInsertionColumnsToSeqs(profileSequences, referenceNamesToReferencePriors, params->insertionCountThreshold, &numInsertions);
+        st_logInfo("\tInserted a total of %d columns\n", numInsertions);
+        printSequenceStats(stderr, profileSequences);
+        printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
+
+        // TODO destroy old referencePriors
+        // Create new reference priors, using updated coordinates
+        st_logInfo("> Updating reference information\n");
+        referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, numInsertions);
     }
 
     // Setup a filter to ignore likely homozygous reference positions
@@ -503,6 +533,7 @@ int main(int argc, char *argv[]) {
     stList_destruct(profileSequences);
     profileSequences = filteredProfileSeqs;
 
+
     // Learn the parameters for the input data
     if(params->trainingIterations > 0) {
         st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
@@ -525,6 +556,8 @@ int main(int argc, char *argv[]) {
     stSet *read1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     stSet *read2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     int64_t totalGFlength = 0;
+
+    st_logInfo("> Writing output vcf\n");
 
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
@@ -576,6 +609,8 @@ int main(int argc, char *argv[]) {
 
     // Compare the output vcf with the reference vcf
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+
+    st_logInfo("> Comparing vcf files \n");
 
     compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
 
