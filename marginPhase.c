@@ -554,8 +554,11 @@ int main(int argc, char *argv[]) {
         st_logDebug("> Learned parameters\n");
         stRPHmmParameters_printParameters(params, stderr);
     }
-    st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
-    writeParamFile(paramsOutFile, params);
+    if (iterationsOfParameterLearning > 0) {
+        st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
+        writeParamFile(paramsOutFile, params);
+    }
+
 
     // Get the final list of hmms
     stList *hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);
@@ -564,6 +567,8 @@ int main(int argc, char *argv[]) {
     stSet *read1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     stSet *read2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
     int64_t totalGFlength = 0;
+
+    st_logInfo("> Writing output vcf\n");
 
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");

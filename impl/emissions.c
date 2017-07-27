@@ -142,8 +142,10 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
                                    int64_t position, int64_t characterIndex) {
     /*
-     * Returns the number of instances of a character, given by characterIndex, at the given position within the column for
-     * the given partition. Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
+     * Returns the number of instances of a character, given by characterIndex,
+     * at the given position within the column for the given partition.
+     * Returns value scaled between 0 and ALPHABET_MAX_PROB,
+     * where the return value divided by ALPHABET_MAX_PROB
      * is the expected number of instances of the given character in the given subpartition of the column.
      */
     uint64_t *j = retrieveBitCountVector(bitCountVectors, position, characterIndex, 0);
@@ -241,8 +243,7 @@ double emissionLogProbability(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
-//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
+    int64_t rProbsIndex = column->refStartIndex;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
                                                           cell->partition, bitCountVectors, rProbs, params);
@@ -361,8 +362,9 @@ double emissionLogProbabilitySlow(stRPColumn *column,
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
+//    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
 //    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
+    int64_t rProbsIndex = column->refStartIndex;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
                                                             cell->partition, bitCountVectors, rProbs, params, maxNotSum);
@@ -426,8 +428,9 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refIndexes, referencePriorProbs->refCoordMap);
+//    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refIndexes, referencePriorProbs->refCoordMap);
 //    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
+    int64_t rProbsIndex = column->refStartIndex + index;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
 
     // Get the haplotype characters that are most probable given the root character
@@ -469,8 +472,9 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-    int64_t j = findCorrespondingRefCoordIndex(index, column->refIndexes, gF->refCoordMap);
+//    int64_t j = findCorrespondingRefCoordIndex(index, column->refIndexes, gF->refCoordMap);
 //    int64_t j = column->refStart - gF->refStart + index;
+    int64_t j = column->refStartIndex - gF->refStartIndex + index;
 
     // Get the haplotype characters with highest posterior probability.
     uint64_t hapChar1 = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
@@ -500,7 +504,6 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
                                      invertScaleToLogIntegerSubMatrix(rProbs[i]));
     }
     gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
-//    gF->refCoords[j] = referencePriorProbs->refCoords[rProbsIndex];
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,

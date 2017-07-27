@@ -80,7 +80,8 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
     if(includeProbs) {
         // FIXME
         for(int64_t i=0; i<seq->length; i++) {
-            int64_t o = seq->refIndexes[i]->refCoord;
+//            int64_t o = seq->refIndexes[i]->refCoord;
+            int64_t o = seq->refStart + i;
             fprintf(fileHandle, "\t%"PRIi64 "", o);
             uint8_t *p = &seq->profileProbs[i * ALPHABET_SIZE];
             // Print individual character probs
@@ -304,4 +305,5 @@ int64_t findCorrespondingRefCoordIndex(int64_t index1, stRefIndex **refIndexes1,
         return -1;
     }
 }
+
 

@@ -10,12 +10,13 @@
  * Read partitioning hmm column (stRPColumn) functions
  */
 
-stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
+stRPColumn *stRPColumn_construct(int64_t refStart, int64_t refStartIndex, int64_t length, int64_t depth,
         stProfileSeq **seqHeaders, uint8_t **seqs) {
     stRPColumn *column = st_calloc(1, sizeof(stRPColumn));
 
     // Reference coordinates
     column->refStart = refStart;
+    column->refStartIndex = refStartIndex;
     column->length = length;
 
     // Sequences
@@ -25,11 +26,6 @@ stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth
 
     // Initially contains not states
     column->head = NULL;
-
-    // TODO: can refCoords be shared by hmm or do they need to be calloc'ed separately?
-//    column->refCoords = st_calloc(length, sizeof(int64_t));
-    column->refIndexes = st_calloc(length, sizeof(stRefIndex));
-    column->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
 
     return column;
 }
@@ -42,8 +38,6 @@ void stRPColumn_destruct(stRPColumn *column) {
         cell = cell->nCell;
         stRPCell_destruct(pCell);
     }
-//    free(column->refCoords);
-    //    stHash_destruct(column->refCoordMap);
     free(column->seqHeaders);
     free(column->seqs);
     free(column);
@@ -87,21 +81,11 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     assert(firstHalfLength > 0); // Non-zero length for first half
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
 
-    stRPColumn *rColumn = stRPColumn_construct(column->refIndexes[firstHalfLength]->refCoord,
-            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+    int64_t splitPointIndex = column->refStartIndex + firstHalfLength;
 
-    // Set ref coords for new column
-    int64_t *indexes = st_calloc(rColumn->length, sizeof(int64_t));
-    for (int64_t i = 0; i < rColumn->length; i++) {
-        rColumn->refIndexes[i] = column->refIndexes[i + firstHalfLength];
-//        rColumn->refCoords[i] = column->refCoords[i + firstHalfLength];
-        indexes[i] = i;
-        if (stHash_search(rColumn->refCoordMap, &rColumn->refIndexes[i]->refCoord) == NULL) {
-            stHash_insert(rColumn->refCoordMap, &rColumn->refIndexes[i]->refCoord, &indexes[i]);
-        }
-    }
-    rColumn->refEnd = rColumn->refIndexes[rColumn->length-1]->refCoord;
-    assert(rColumn->refEnd == column->refEnd);
+    stRPColumn *rColumn = stRPColumn_construct(hmm->referencePriorProbs->refIndexes[splitPointIndex]->refCoord, splitPointIndex,
+            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
+    rColumn->refEnd = column->refEnd;
 
     // Create merge column
     uint64_t acceptMask = makeAcceptMask(column->depth);
@@ -138,7 +122,11 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
 
     // Adjust length of previous column
     column->length = firstHalfLength;
-    column->refEnd = column->refIndexes[column->length-1]->refCoord;
+    column->refEnd = hmm->referencePriorProbs->refIndexes[splitPointIndex-1]->refCoord;
+
+    assert(getRefCoordIndex(column->refEnd, hmm->referencePriorProbs, 1) == getRefCoordIndex(rColumn->refStart, hmm->referencePriorProbs, 0) -1);
+    assert(getRefCoordIndex(column->refStart, hmm->referencePriorProbs, 0) == column->refStartIndex);
+    assert(getRefCoordIndex(rColumn->refStart, hmm->referencePriorProbs, 0) == rColumn->refStartIndex);
 }
 
 stSet *stRPColumn_getColumnSequencesAsSet(stRPColumn *column) {

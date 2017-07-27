@@ -43,7 +43,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
         }
 
         // If hmm2 does not overlap hmm1 it must be the closest non-overlapping hmm to hmm1
-        if(hmm1->refIndexes[hmm1->length-1]->refCoord < hmm2->refStart) {
+        if(hmm1->refEnd < hmm2->refStart) {
             break;
         }
     }
@@ -207,6 +207,7 @@ stList *getTilingPaths(stSortedSet *hmms) {
         // set of hmms left to tile
         stRPHmm *hmm2;
         while((hmm2 = getNextClosestNonoverlappingHmm(hmm, hmms)) != NULL) {
+
             stSortedSet_remove(hmms, hmm);
             stList_append(tilingPath, hmm2);
             hmm = hmm2;
@@ -282,17 +283,37 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
             stRPHmm *hmm1 = fuseTilingPath(subTilingPath1);
             stRPHmm *hmm2 = fuseTilingPath(subTilingPath2);
 
+//            st_logInfo("hmm1: %d - %d    hmm2: %d - %d    (%d, %d)\n", hmm1->refStart, hmm1->refEnd, hmm2->refStart, hmm2->refEnd, hmm1->refStart+hmm1->length-1, hmm2->refStart+hmm2->length-1);
+
+            int64_t endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
+            endCoordIndex = getRefCoordIndex(hmm2->refEnd, hmm2->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm2->refStartIndex + 1 == hmm2->length);
+
             // Align
             stRPHmm_alignColumns(hmm1, hmm2);
+
+            endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
+            endCoordIndex = getRefCoordIndex(hmm2->refEnd, hmm2->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm2->refStartIndex + 1 == hmm2->length);
 
             // Merge
             hmm = stRPHmm_createCrossProductOfTwoAlignedHmm(hmm1, hmm2);
             stRPHmm_destruct(hmm1, 1);
             stRPHmm_destruct(hmm2, 1);
 
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
+
             // Prune
             stRPHmm_forwardBackward(hmm);
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
+
             stRPHmm_prune(hmm);
+            endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+            assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
         }
         else { // Case that component is just one hmm that does not
             // overlap anything else
@@ -412,6 +433,8 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
 
     // Organise HMMs into "tiling paths" consisting of sequences of hmms that do not overlap
     stList *tilingPaths = getTilingPaths(readHmms);
+
+    st_logInfo("\tNumber of tiling paths: %d\n", stList_length(tilingPaths));
 
     if (stList_length(tilingPaths) > params->maxCoverageDepth)
         st_logInfo("  > Eliminating %d extra tiling paths to reduce max depth\n", stList_length(tilingPaths) - params->maxCoverageDepth);

@@ -128,7 +128,6 @@ struct _stProfileSeq {
     uint8_t *profileProbs;
 
     // Additional data structures to deal with change in coordinates
-//    int64_t *refCoords;
     int64_t *insertions;
     int64_t **insertionSeqs; // so we don't have to re-parse the bam file
     stHash *refCoordMap;
@@ -182,12 +181,13 @@ struct _stReferencePriorProbs {
     int64_t *gapSizes;
     int64_t *insertionsBeforePosition;
     // Reference coordinates for each index
-//    int64_t *refCoords;
     stHash *refCoordMap;
     stRefIndex **refIndexes;
 };
 
 int stHash_intPtrEqualKey(const void *key1, const void *key2);
+
+int64_t getRefCoordIndex(int64_t refCoord, stReferencePriorProbs *rProbs, bool last);
 
 stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t refLength, int64_t numInsertions);
 
@@ -291,9 +291,7 @@ struct _stRPHmm {
     double backwardLogProb;
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
-//    int64_t *refCoords;
-    stHash *refCoordMap;
-    stRefIndex **refIndexes;
+    int64_t refStartIndex;
 };
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
@@ -329,8 +327,9 @@ void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm);
 stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm);
 
 void printBaseComposition2(double *baseCounts);
-double *getColumnBaseComposition(stRPColumn *column, int64_t pos);
+double *getColumnBaseComposition(stRPColumn *column, int64_t pos, int64_t indexAtPos);
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos);
+void printColumnAtPosition2(stRPColumn *column, stReferencePriorProbs *rProbs, int64_t pos);
 double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos);
 
 /*
@@ -347,12 +346,10 @@ struct _stRPColumn {
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
-//    int64_t *refCoords;
-    stHash *refCoordMap;
-    stRefIndex **refIndexes;
+    int64_t refStartIndex;
 };
 
-stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
+stRPColumn *stRPColumn_construct(int64_t refStart, int64_t refStartIndex, int64_t length, int64_t depth,
         stProfileSeq **seqHeaders, uint8_t **seqs);
 
 void stRPColumn_destruct(stRPColumn *column);
@@ -461,13 +458,17 @@ struct _stGenomeFragment {
     int64_t refEnd;
     int64_t length;
 //    int64_t *refCoords;
-    stHash *refCoordMap;
-    stRefIndex **refIndexes;
+//    stHash *refCoordMap;
+//    stRefIndex **refIndexes;
+
+    // Prior over reference bases
+    stReferencePriorProbs *referencePriorProbs;
+    int64_t refStartIndex;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
-//void stGenomeFragment_setInsertionCounts(stGenomeFragment *gF);
+
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {
@@ -506,6 +507,7 @@ struct _stGenotypeResults {
     // Variants in reference
     int64_t negatives;
     int64_t positives;
+    int64_t indels;
 
     // Variants in evaluated vcf
     int64_t truePositives;

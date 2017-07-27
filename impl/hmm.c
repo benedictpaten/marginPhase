@@ -41,18 +41,18 @@ static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     }
 }
 
-double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
+double *getColumnBaseComposition(stRPColumn *column, int64_t pos, int64_t indexAtPos) {
     /*
      * Get the observed counts for each base seen at a particular position in a column
      */
     double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
     for (int64_t i=0; i<column->depth; i++) {
         stProfileSeq *seq = column->seqHeaders[i];
-        int64_t *p = stHash_search(seq->refCoordMap, &pos);
-        if (seq->refIndexes[*p]->refCoord >= seq->refStart &&
-                seq->refIndexes[*p]->refCoord < seq->refEnd) {
+        if (pos >= seq->refStart && pos <= seq->refEnd) {
+            int64_t *p = stHash_search(seq->refCoordMap, &pos);
+            assert(p != NULL);
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(seq->profileProbs[(*p) * ALPHABET_SIZE]), j);
+                baseCounts[j] += getProb(&(seq->profileProbs[(*p + indexAtPos) * ALPHABET_SIZE]), j);
             }
         }
     }
@@ -86,14 +86,35 @@ void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     stRPColumn *column = hmm->firstColumn;
     while(1) {
         if (pos >= column->refStart && pos <= column->refEnd) {
-            double *columnBaseCounts = getColumnBaseComposition(column, pos);
-            printBaseComposition2(columnBaseCounts);
-            free(columnBaseCounts);
+            int64_t indelLen = getRefCoordIndex(pos, hmm->referencePriorProbs, 1) - getRefCoordIndex(pos, hmm->referencePriorProbs, 0);
+            assert(indelLen >= 0);
+            for (int64_t i = 0; i <= indelLen; i++) {
+                double *columnBaseCounts = getColumnBaseComposition(column, pos, i);
+                st_logDebug("\tBase counts for pos: %d   index: %d\n", pos, i);
+                printBaseComposition2(columnBaseCounts);
+                free(columnBaseCounts);
+            }
         }
         if (column->nColumn == NULL) {
             break;
         }
         column = column->nColumn->nColumn;
+    }
+}
+
+void printColumnAtPosition2(stRPColumn *column, stReferencePriorProbs *rProbs, int64_t pos) {
+    /*
+     * Print out the column base counts at a specific position.
+     */
+    if (pos >= column->refStart && pos <= column->refEnd) {
+        int64_t indelLen = getRefCoordIndex(pos, rProbs, 1) - getRefCoordIndex(pos, rProbs, 0);
+        assert(indelLen >= 0);
+        for (int64_t i = 0; i <= indelLen; i++) {
+            double *columnBaseCounts = getColumnBaseComposition(column, pos, i);
+            st_logDebug("\tBase counts for pos: %d   index: %d\n", pos, i);
+            printBaseComposition2(columnBaseCounts);
+            free(columnBaseCounts);
+        }
     }
 }
 
@@ -103,6 +124,7 @@ double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t 
      * as an array.
      */
     double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
+
     stSetIterator *it = stSet_getIterator(profileSeqs);
     stProfileSeq *pSeq;
     while((pSeq = stSet_getNext(it)) != NULL) {
@@ -155,17 +177,20 @@ static void calculateReadErrorSubModel(double *readErrorSubModel, stGenomeFragme
         int64_t i = gF->refStart > pSeq->refStart ? gF->refStart : pSeq->refStart;
         int64_t j = gF->refEnd < pSeq->refEnd ? gF->refEnd : pSeq->refEnd;
         // For each pair of read and haplotype characters
+        int64_t gFIndex = getRefCoordIndex(i, gF->referencePriorProbs, 0) - gF->refStartIndex;
+        int64_t pSeqIndex = *(int64_t *)stHash_search(pSeq->refCoordMap, &i);
         for(;i<j;i++) {
             // Check coordinates in bounds
-            int64_t *pSeqIndex = stHash_search(pSeq->refCoordMap, &i);
-            int64_t *gFIndex = stHash_search(gF->refCoordMap, &i);
-            assert(*pSeqIndex >= 0 && *pSeqIndex < pSeq->length);
-            assert(*gFIndex >= 0 && *gFIndex < gF->length);
-            int64_t hapChar = haplotypeSeq[*gFIndex];
+            assert(pSeqIndex >= 0 && pSeqIndex < pSeq->length);
+            assert(gFIndex >= 0 && gFIndex < gF->length);
+            assert(gF->referencePriorProbs->refIndexes[gFIndex + gF->refStartIndex]->refCoord == pSeq->refIndexes[pSeqIndex]->refCoord);
+            int64_t hapChar = haplotypeSeq[gFIndex];
             for(int64_t readChar=0; readChar<ALPHABET_SIZE; readChar++) {
-                double probOfReadChar = getProb(&(pSeq->profileProbs[(*pSeqIndex) * ALPHABET_SIZE]), readChar);
+                double probOfReadChar = getProb(&(pSeq->profileProbs[(pSeqIndex) * ALPHABET_SIZE]), readChar);
                 *getSubstitutionProbSlow(readErrorSubModel, hapChar, readChar) += probOfReadChar;
             }
+            gFIndex++;
+            pSeqIndex++;
         }
     }
     stSet_destructIterator(readIt);
@@ -309,6 +334,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     //  Set reference coordinates
     hmm->referenceName = stString_copy(profileSeq->referenceName);
     hmm->refStart = profileSeq->refStart;
+    hmm->refStartIndex = getRefCoordIndex(hmm->refStart, referencePriorProbs, 0);
     hmm->length = profileSeq->length;
 
     // Add the single profile sequence to the list of the hmm's sequences
@@ -321,19 +347,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
     assert(hmm->refStart >= referencePriorProbs->refStart);
 
-
-    // Set reference coordinates from those in the profile sequence
-    hmm->refIndexes = st_calloc(hmm->length, sizeof(stRefIndex));
-    hmm->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-    for (int64_t i = 0; i < profileSeq->length; i++) {
-        hmm->refIndexes[i] = profileSeq->refIndexes[i];
-        if (stHash_search(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord) == NULL) {
-            stHash_insert(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord, &hmm->refIndexes[i]->index);
-        }
-    }
-    hmm->refEnd = hmm->refIndexes[hmm->length - 1]->refCoord;
-
-//    st_logInfo("hmm->refEnd: %d   rProbs->refEnd: %d \n", hmm->refEnd, referencePriorProbs->refEnd);
+    hmm->refEnd = hmm->referencePriorProbs->refIndexes[hmm->refStartIndex + hmm->length - 1]->refCoord;
     assert(hmm->refEnd <= referencePriorProbs->refEnd);
 
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
@@ -344,15 +358,9 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     seqHeaders[0] = profileSeq;
     uint8_t **seqs = st_malloc(sizeof(uint8_t *));
     seqs[0] = profileSeq->profileProbs;
-    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->length, 1, seqHeaders, seqs);
-    for (int64_t i = 0; i < hmm->length; i++) {
-        column->refIndexes[i] = hmm->refIndexes[i];
-        // Do these indexes line up?
-        if (stHash_search(column->refCoordMap, &column->refIndexes[i]->refCoord) == NULL) {
-            stHash_insert(column->refCoordMap, &column->refIndexes[i]->refCoord, &column->refIndexes[i]->index);
-        }
-    }
-    column->refEnd = column->refIndexes[column->length-1]->refCoord;
+    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refStartIndex, hmm->length, 1, seqHeaders, seqs);
+
+    column->refEnd = hmm->refEnd;
     hmm->firstColumn = column;
     hmm->lastColumn = column;
 
@@ -383,11 +391,7 @@ void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
             column = mColumn->nColumn;
             stRPMergeColumn_destruct(mColumn);
         }
-        // Only free if columns are being destroyed?
-//        free(hmm->refCoords);
     }
-    // FIXME actually destroy
-    //    stHash_destruct(hmm->refCoordMap);
 
     free(hmm);
 }
@@ -534,20 +538,8 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
         st_errAbort("Left hmm does not precede right hmm in reference coordinates for merge");
     }
 
-//    st_logInfo("\tFuse left: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", leftHmm->refIndexes[0]->refCoord, leftHmm->refIndexes[leftHmm->length-1]->refCoord, leftHmm->length, leftHmm->refStart, leftHmm->refIndexes[0]->index, leftHmm->refEnd, leftHmm->refIndexes[leftHmm->length-1]->index);
-
-    assert(leftHmm->refIndexes[0]->refCoord == leftHmm->refStart);
-    assert(leftHmm->refIndexes[leftHmm->length-1]->refCoord == leftHmm->refEnd);
-    assert(leftHmm->refIndexes[0]->index == 0);
-    assert(leftHmm->refIndexes[leftHmm->length-1]->index == leftHmm->length-1);
-
-//    st_logInfo("\tFuse right: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", rightHmm->refIndexes[0]->refCoord, rightHmm->refIndexes[rightHmm->length-1]->refCoord, rightHmm->length, rightHmm->refStart, rightHmm->refIndexes[0]->index, rightHmm->refEnd, rightHmm->refIndexes[rightHmm->length-1]->index);
-
-    assert(rightHmm->refIndexes[0]->refCoord == rightHmm->refStart);
-    assert(rightHmm->refIndexes[rightHmm->length-1]->refCoord == rightHmm->refEnd);
-    assert(rightHmm->refIndexes[0]->index == 0);
-    assert(rightHmm->refIndexes[rightHmm->length-1]->index == rightHmm->length-1);
-
+    assert(getRefCoordIndex(leftHmm->refStart, leftHmm->referencePriorProbs, 0) == leftHmm->refStartIndex);
+    assert(getRefCoordIndex(rightHmm->refStart, rightHmm->referencePriorProbs, 0) == rightHmm->refStartIndex);
 
     // Create a new empty hmm
     stRPHmm *hmm = st_malloc(sizeof(stRPHmm));
@@ -555,10 +547,11 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     hmm->referenceName = stString_copy(leftHmm->referenceName);
     hmm->refStart = leftHmm->refStart;
     hmm->refEnd = rightHmm->refEnd;
+    hmm->refStartIndex = leftHmm->refStartIndex;
 
     // TODO what about insertions in the gap? taken care of by rProbs?
-    int64_t gapLeftIndex = findCorrespondingRefCoordIndex(leftHmm->length - 1, leftHmm->refIndexes, leftHmm->referencePriorProbs->refCoordMap);
-    int64_t gapRightIndex = findCorrespondingRefCoordIndex(0, rightHmm->refIndexes, rightHmm->referencePriorProbs->refCoordMap);
+    int64_t gapLeftIndex = getRefCoordIndex(leftHmm->refEnd, leftHmm->referencePriorProbs, 1);
+    int64_t gapRightIndex = getRefCoordIndex(rightHmm->refStart, rightHmm->referencePriorProbs, 0);
     int64_t gapLength = gapRightIndex - gapLeftIndex - 1;
     assert(gapLength >= 0);
     hmm->length = leftHmm->length + rightHmm->length + gapLength;
@@ -582,23 +575,6 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     }
     hmm->referencePriorProbs = leftHmm->referencePriorProbs;
 
-    // Assign reference coords from those in left & right hmms
-    hmm->refIndexes = st_calloc(hmm->length, sizeof(stRefIndex));
-    hmm->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-
-    for (int64_t i = 0; i < leftHmm->length; i++) {
-        hmm->refIndexes[i] = stRefIndex_construct(leftHmm->refIndexes[i]->refCoord, i);
-        if (stHash_search(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord) == NULL) {
-            stHash_insert(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord, &hmm->refIndexes[i]->index);
-        }
-    }
-    for (int64_t i = 0; i < rightHmm->length; i++) {
-        int64_t rightIndex = i + leftHmm->length + gapLength;
-        hmm->refIndexes[rightIndex] = stRefIndex_construct(rightHmm->refIndexes[i]->refCoord, rightIndex);
-        if (stHash_search(hmm->refCoordMap, &hmm->refIndexes[rightIndex]->refCoord) == NULL) {
-            stHash_insert(hmm->refCoordMap, &hmm->refIndexes[rightIndex]->refCoord, &hmm->refIndexes[rightIndex]->index);
-        }
-    }
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
 
@@ -611,24 +587,10 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
 
     if(gapLength > 0) {
         // Make column in the gap
-        stRPColumn *column = stRPColumn_construct(leftHmm->refEnd + 1,
+        stRPColumn *column = stRPColumn_construct(leftHmm->refEnd + 1, gapLeftIndex+1,
                 gapLength, 0, NULL, NULL);
-        for (int64_t i = 0; i < gapLength; i++) {
-            // Assign hmm ref coords
-            int64_t rProbsIndex = i + gapLeftIndex;
-            int64_t refCoord = leftHmm->referencePriorProbs->refIndexes[rProbsIndex+1]->refCoord;
-            int64_t hmmIndex = i + leftHmm->length;
-            hmm->refIndexes[hmmIndex] = stRefIndex_construct(refCoord, hmmIndex);
-            if (stHash_search(hmm->refCoordMap, &hmm->refIndexes[hmmIndex]->refCoord) == NULL) {
-                stHash_insert(hmm->refCoordMap, &hmm->refIndexes[hmmIndex]->refCoord, &hmm->refIndexes[hmmIndex]->index);
-            }
-            // Assign column ref Coords
-            column->refIndexes[i] = stRefIndex_construct(refCoord, i);
-            if (stHash_search(column->refCoordMap, &column->refIndexes[i]->refCoord) == NULL) {
-                stHash_insert(column->refCoordMap, &column->refIndexes[i]->refCoord, &column->refIndexes[i]->index);
-            }
-        }
-        column->refEnd = column->refIndexes[column->length-1]->refCoord;
+        column->refEnd = rightHmm->refStart-1;
+        assert(getRefCoordIndex(column->refStart, hmm->referencePriorProbs, 0) == column->refStartIndex);
 
         // Links
         mColumn->nColumn = column;
@@ -661,14 +623,10 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     // TODO destroy their refIndexes and refCoordMap too
 
     assert(hmm->lastColumn->refEnd == hmm->refEnd);
+    assert(hmm->firstColumn->refStart == hmm->refStart);
 
-//    st_logInfo("\tFuse: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[0]->refCoord, hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
-
-    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-    assert(hmm->refIndexes[0]->index == 0);
-    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
-
+    int64_t endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+    assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
 
     return hmm;
 }
@@ -681,6 +639,9 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
      *  (3) so that for all i, column i in each model span the same interval.
      */
     assert(hmm1 != hmm2);
+    assert(getRefCoordIndex(hmm1->refStart, hmm1->referencePriorProbs, 0) == hmm1->refStartIndex);
+    assert(getRefCoordIndex(hmm2->refStart, hmm2->referencePriorProbs, 0) == hmm2->refStartIndex);
+
 
     // If the two hmms don't overlap in reference space then complain
     if(!stRPHmm_overlapOnReference(hmm1, hmm2)) {
@@ -698,21 +659,14 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     if(hmm1->refStart < hmm2->refStart) {
 
         // Find length of gap from reference coordinates
-        int64_t gapLeftIndex = findCorrespondingRefCoordIndex(0, hmm1->refIndexes, hmm1->referencePriorProbs->refCoordMap);
-        int64_t gapRightIndex = findCorrespondingRefCoordIndex(0, hmm2->refIndexes, hmm2->referencePriorProbs->refCoordMap);
+        int64_t gapLeftIndex = getRefCoordIndex(hmm1->refStart, hmm1->referencePriorProbs, 0);
+        int64_t gapRightIndex = getRefCoordIndex(hmm2->refStart, hmm2->referencePriorProbs, 0);
         int64_t gapLength = gapRightIndex - gapLeftIndex;
 
         // Create column
-        stRPColumn *column = stRPColumn_construct(hmm1->refStart, gapLength,
+        stRPColumn *column = stRPColumn_construct(hmm1->refStart, hmm1->refStartIndex, gapLength,
                 0, NULL, NULL);
-        for (int64_t i = 0; i < column->length; i++) {
-            // Column will have same reference coordinates as hmm1
-            column->refIndexes[i] = stRefIndex_construct(hmm1->refIndexes[i]->refCoord, i);
-            if (stHash_search(column->refCoordMap, &column->refIndexes[i]->refCoord) == NULL) {
-                stHash_insert(column->refCoordMap, &column->refIndexes[i]->refCoord, &column->refIndexes[i]->index);
-            }
-        }
-        column->refEnd = column->refIndexes[column->length-1]->refCoord;
+        column->refEnd = hmm2->refStart-1;
 
         // Add cell
         column->head = stRPCell_construct(0);
@@ -730,41 +684,12 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         //Adjust start and length of hmm2 interval
         hmm2->length += gapLength;
         hmm2->refStart = hmm1->refStart;
+        hmm2->refStartIndex = hmm1->refStartIndex;
         // Increase column number
         hmm2->columnNumber++;
 
-        // Fix ref coords
-        stRefIndex **newRefIndexes = st_calloc(hmm2->length, sizeof(stRefIndex));
-        stHash *newRefCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-
-        // Fill in ref coords at the prefix
-        for (int64_t i = 0; i < gapLength; i++) {
-            newRefIndexes[i] = stRefIndex_construct(hmm1->refIndexes[i]->refCoord, i);
-            if (stHash_search(newRefCoordMap, &newRefIndexes[i]->refCoord) == NULL) {
-                stHash_insert(newRefCoordMap, &newRefIndexes[i]->refCoord, &newRefIndexes[i]->index);
-            }
-        }
-        // Fill in the rest of the ref coords from hmm2
-        for (int64_t i = 0; i < hmm2->length-gapLength; i++) {
-            int64_t hmmIndex = i + gapLength;
-            newRefIndexes[hmmIndex] = stRefIndex_construct(hmm2->refIndexes[i]->refCoord, hmmIndex);
-            if (stHash_search(newRefCoordMap, &newRefIndexes[hmmIndex]->refCoord) == NULL) {
-                stHash_insert(newRefCoordMap, &newRefIndexes[hmmIndex]->refCoord, &newRefIndexes[hmmIndex]->index);
-            }
-        }
-        // Free old data, assign new ones
-        free(hmm2->refIndexes);
-        hmm2->refIndexes = newRefIndexes;
-        hmm2->refEnd = hmm2->refIndexes[hmm2->length-1]->refCoord;
-        stHash_destruct(hmm2->refCoordMap);
-        hmm2->refCoordMap = newRefCoordMap;
-
-        // TODO remove when done testing
-        for (int64_t j = 0; j < hmm2->length && j < hmm1->length; j++) {
-            assert(hmm1->refIndexes[j]->refCoord == hmm2->refIndexes[j]->refCoord);
-        }
         assert(hmm2->lastColumn->refEnd == hmm2->refEnd);
-
+        assert(hmm2->firstColumn->refStart == hmm2->refStart);
     }
 
     // If hmm1 has a shorter reference interval length than hmm2 then call the function
@@ -779,27 +704,16 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     if(hmm1->length > hmm2->length) {
 
         // Find length of gap by reference coordinates
-        int64_t gapRightIndex = findCorrespondingRefCoordIndex(hmm1->length-1, hmm1->refIndexes, hmm1->referencePriorProbs->refCoordMap);
-        int64_t gapLeftIndex = findCorrespondingRefCoordIndex(hmm2->length-1, hmm2->refIndexes, hmm2->referencePriorProbs->refCoordMap);
+        int64_t gapRightIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+        int64_t gapLeftIndex = getRefCoordIndex(hmm2->refEnd, hmm2->referencePriorProbs, 1);
         int64_t gapLength = gapRightIndex - gapLeftIndex;
 
         // Create column
-        stRPColumn *column = stRPColumn_construct(hmm2->refIndexes[hmm2->length - 1]->refCoord + 1,
+        stRPColumn *column = stRPColumn_construct(hmm2->refEnd+1, gapLeftIndex +1,
                 gapLength , 0, NULL, NULL);
 
-        // TODO remove when done testing
-        for (int64_t j = 0; j < hmm2->length; j++) {
-            assert(hmm1->refIndexes[j]->refCoord == hmm2->refIndexes[j]->refCoord);
-        }
         assert(hmm1->refStart == hmm2->refStart);
-        for (int64_t i = 0; i < column->length; i++) {
-            int64_t colIndex = i + hmm2->length;
-            column->refIndexes[i] = stRefIndex_construct(hmm1->refIndexes[colIndex]->refCoord, i);
-            if (stHash_search(column->refCoordMap, &column->refIndexes[i]->refCoord) == NULL) {
-                stHash_insert(column->refCoordMap, &column->refIndexes[i]->refCoord, &column->refIndexes[i]->index);
-            }
-        }
-        column->refEnd = column->refIndexes[column->length-1]->refCoord;
+        column->refEnd = hmm1->refEnd;
 
         // Add cell
         column->head = stRPCell_construct(0);
@@ -818,40 +732,22 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         hmm2->length = hmm1->length;
         // Increase column number
         hmm2->columnNumber++;
+        hmm2->refEnd = hmm1->refEnd;
 
-        // Fix ref coords
-        // Hmms should be completely aligned now, so just use hmm1's
-        free(hmm2->refIndexes);
-        stHash_destruct(hmm2->refCoordMap);
-        hmm2->refIndexes = hmm1->refIndexes;
-        hmm2->refCoordMap = hmm1->refCoordMap;
-
-//        stRefIndex **newRefIndexes = st_calloc(hmm2->length, sizeof(int64_t));
-//        stHash *newRefCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-//        int64_t *indexes = st_calloc(hmm2->length, sizeof(int64_t));
-//        for (int64_t i = 0; i < hmm2->length; i++) {
-//            newRefIndexes[i] = hmm1->refIndexes[i];
-////            indexes[i] = i;
-//            if (stHash_search(hmm2->refCoordMap, &hmm2->refIndexes[i]->refCoord) == NULL) {
-//                stHash_insert(hmm2->refCoordMap, &hmm2->refIndexes[i]->refCoord, &hmm2->refIndexes[i]->index);
-//            }
-//        }
-        hmm2->refEnd = hmm2->refIndexes[hmm2->length-1]->refCoord;
-
-        // TODO remove when done testing
-        for (int64_t j = 0; j < hmm2->length && j < hmm1->length; j++) {
-            assert(hmm1->refIndexes[j]->refCoord == hmm2->refIndexes[j]->refCoord);
-        }
         assert(hmm2->lastColumn->refEnd == hmm2->refEnd);
+        assert(hmm2->firstColumn->refStart == hmm2->refStart);
     }
 
     // Quick coordinate checks
     assert(hmm1->refStart == hmm2->refStart);
+    assert(hmm1->refEnd == hmm2->refEnd);
     assert(hmm1->length == hmm2->length);
     assert(hmm1->firstColumn->refStart == hmm1->refStart);
     assert(hmm2->firstColumn->refStart == hmm2->refStart);
     assert(hmm1->lastColumn->refEnd == hmm1->refEnd);
     assert(hmm2->lastColumn->refEnd == hmm2->refEnd);
+
+    assert(hmm1->refStartIndex == hmm2->refStartIndex);
 
     // At this point both hmms have the same reference interval
 
@@ -864,6 +760,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
         if(column1->length > column2->length) {
             stRPColumn_split(column1, column2->length, hmm1);
+            // TODO only works with no insertions
 //            assert(column1->nColumn->nColumn->refStart == column1->refStart + column2->length);
         }
         else if(column1->length < column2->length) {
@@ -890,19 +787,8 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
     assert(hmm1->columnNumber == hmm2->columnNumber);
 
-//    st_logInfo("\tAlign columns 1: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", hmm1->refIndexes[0]->refCoord, hmm1->refIndexes[hmm1->length-1]->refCoord, hmm1->length, hmm1->refStart, hmm1->refIndexes[0]->index, hmm1->refEnd, hmm1->refIndexes[hmm1->length-1]->index);
-
-    assert(hmm1->refIndexes[0]->refCoord == hmm1->refStart);
-    assert(hmm1->refIndexes[hmm1->length-1]->refCoord == hmm1->refEnd);
-    assert(hmm1->refIndexes[0]->index == 0);
-    assert(hmm1->refIndexes[hmm1->length-1]->index == hmm1->length-1);
-
-//    st_logInfo("\tAlign columns 2: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", hmm2->refIndexes[0]->refCoord, hmm2->refIndexes[hmm2->length-1]->refCoord, hmm2->length, hmm2->refStart, hmm2->refIndexes[0]->index, hmm2->refEnd, hmm2->refIndexes[hmm2->length-1]->index);
-
-    assert(hmm2->refIndexes[0]->refCoord == hmm2->refStart);
-    assert(hmm2->refIndexes[hmm2->length-1]->refCoord == hmm2->refEnd);
-    assert(hmm2->refIndexes[0]->index == 0);
-    assert(hmm2->refIndexes[hmm2->length-1]->index == hmm2->length-1);
+    int64_t endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
+    assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
 }
 
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
@@ -932,16 +818,13 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         st_errAbort("Trying to create cross product of two HMMs "
                 "with different column numbers");
     }
-    // TODO debugging  - remove when done
-    for (int64_t i = 0; i < hmm1->length; i++) {
-        assert(hmm1->refIndexes[i]->refCoord == hmm2->refIndexes[i]->refCoord);
-    }
 
     // Create a new empty hmm
     stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
     // Set the reference interval
     hmm->referenceName = stString_copy(hmm1->referenceName);
     hmm->refStart = hmm1->refStart;
+    hmm->refStartIndex = hmm1->refStartIndex;
     hmm->refEnd = hmm1->refEnd;
     hmm->length = hmm1->length;
     // Create the combined list of profile seqs
@@ -960,25 +843,6 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     }
     hmm->referencePriorProbs = hmm1->referencePriorProbs;
 
-
-//    hmm->refCoords = st_calloc(hmm->length, sizeof(int64_t));
-//    hmm->refIndexes = st_calloc(hmm->length, sizeof(stRefIndex));
-//    hmm->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-////    int64_t *indexes = st_calloc(hmm->length, sizeof(int64_t));
-//    for (int64_t i = 0; i < hmm->length; i++) {
-////        hmm->refCoords[i] = hmm1->refCoords[i];
-////        indexes[i] = i;
-//        hmm->refIndexes[i] = hmm1->refIndexes[i];
-//        if (stHash_search(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord) == NULL) {
-//            stHash_insert(hmm->refCoordMap, &hmm->refIndexes[i]->refCoord, &hmm->refIndexes[i]->index);
-//        }
-//    }
-
-    // Set reference coordinates
-    // Hmms are aligned, so just use hmm1's
-    hmm->refIndexes = hmm1->refIndexes;
-    hmm->refCoordMap = hmm1->refCoordMap;
-
     // For each pair of corresponding columns
     stRPColumn *column1 = hmm1->firstColumn;
     stRPColumn *column2 = hmm2->firstColumn;
@@ -991,6 +855,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         assert(column1->refStart == column2->refStart);
         assert(column1->refEnd == column2->refEnd);
         assert(column1->length == column2->length);
+        assert(column1->refStartIndex == column2->refStartIndex);
 
         // Create the new column
 
@@ -1010,20 +875,8 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         memcpy(seqs, column1->seqs, sizeof(uint8_t *) * column1->depth);
         memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
 
-        stRPColumn *column = stRPColumn_construct(column1->refStart, column1->length,
+        stRPColumn *column = stRPColumn_construct(column1->refStart, column1->refStartIndex, column1->length,
                 newColumnDepth, seqHeaders, seqs);
-        // TODO the refCoords should be the same as the old ones... don't bother making new ones?
-//        int64_t *indexes = st_calloc(column->length, sizeof(int64_t));
-//        for (int64_t i = 0; i < column->length; i++) {
-//            column->refIndexes[i] = column1->refIndexes[i];
-////            indexes[i] = i;
-//            if (stHash_search(column->refCoordMap, &column->refIndexes[i]->refCoord) == NULL) {
-//                stHash_insert(column->refCoordMap, &column->refIndexes[i]->refCoord, &column->refIndexes[i]->index);
-//            }
-//        }
-        // Columns are aligned, use column1's reference coordinates
-        column->refIndexes = column1->refIndexes;
-        column->refCoordMap = column1->refCoordMap;
         column->refEnd = column1->refEnd;
 
         // If the there is a previous column
@@ -1104,13 +957,9 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         assert(column1 != NULL);
         assert(column2 != NULL);
     }
-//    st_logInfo("\tEnd of cross product: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[0]->refCoord, hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
 
-    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-    assert(hmm->refIndexes[0]->index == 0);
-    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
-
+    int64_t endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+    assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
 
     return hmm;
 }
@@ -1606,34 +1455,18 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     if(splitPoint > hmm->refEnd) {
         st_errAbort("The split point %" PRIi64 " is after the last position of the reference interval\n", splitPoint);
     }
-    st_logInfo("\tAt beginning of split: hmm %d - %d (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[0]->refCoord, hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
-
-    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-    assert(hmm->refIndexes[0]->index == 0);
-    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
 
     stRPHmm *suffixHmm = st_calloc(1, sizeof(stRPHmm));
 
     // Set the reference interval for the two hmms
     suffixHmm->referenceName = stString_copy(hmm->referenceName);
     suffixHmm->refStart = splitPoint;
+    suffixHmm->refStartIndex = getRefCoordIndex(splitPoint, hmm->referencePriorProbs, 0);
     suffixHmm->refEnd = hmm->refEnd;
 
-    int64_t *splitPointIndex = stHash_search(hmm->refCoordMap, &splitPoint);
-//    if (splitPointIndex == NULL) {
-//        for (int64_t i = 0; i < hmm->length; i++) {
-//            if (hmm->refIndexes[i]->refCoord == splitPoint) {
-//                st_logInfo("Saw split point %d at index %d\n", splitPoint, i);
-//            }
-////            st_logInfo("%d: %d  ", i, hmm->refIndexes[i]->refCoord);
-//        }
-//    }
-    st_logInfo("Split point: %d  Split point index: %d\n", splitPoint, *splitPointIndex);
-    assert(splitPointIndex != NULL);
-    suffixHmm->length = hmm->length - *splitPointIndex;
+    int64_t firstHmmLength = suffixHmm->refStartIndex - hmm->refStartIndex;
+    suffixHmm->length = hmm->length - firstHmmLength;
     assert(suffixHmm->length > 0);
-
 
     // Parameters
     suffixHmm->parameters = hmm->parameters;
@@ -1656,40 +1489,9 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     stList_destruct(hmm->profileSeqs);
     hmm->profileSeqs = prefixProfileSeqs;
 
-    // Set ref coords
-    //TODO can this share with hmm? how to deal with deallocation?
-//    suffixHmm->refCoords = st_calloc(suffixHmm->length, sizeof(int64_t));
-    suffixHmm->refIndexes = st_calloc(suffixHmm->length, sizeof(stRefIndex));
-    suffixHmm->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-//    int64_t *indexes = st_calloc(suffixHmm->length, sizeof(int64_t));
-    for (int64_t i = 0; i < suffixHmm->length; i++) {
-//        suffixHmm->refCoords[i] = hmm->refCoords[*splitPointIndex + i];
-//        indexes[i] = i;
-//        suffixHmm->refIndexes[i] = hmm->refIndexes[*splitPointIndex + i];
-        suffixHmm->refIndexes[i] = stRefIndex_construct(hmm->refIndexes[*splitPointIndex+i]->refCoord, i);
-        if (stHash_search(suffixHmm->refCoordMap, &suffixHmm->refIndexes[i]->refCoord) == NULL) {
-            stHash_insert(suffixHmm->refCoordMap, &suffixHmm->refIndexes[i]->refCoord, &suffixHmm->refIndexes[i]->index);
-        }
-    }
-
-    hmm->length = *splitPointIndex;
+    hmm->length = firstHmmLength;
     hmm->refEnd = splitPoint-1;
     assert(hmm->length > 0);
-
-    // Recreate indexes for prefix hmm
-    stRefIndex **newRefIndexes = st_calloc(hmm->length, sizeof(stRefIndex));
-    stHash *newRefCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
-    for (int64_t i = 0; i < hmm->length; i++) {
-//        newRefIndexes[i] = hmm->refIndexes[i];
-        newRefIndexes[i] = stRefIndex_construct(hmm->refIndexes[i]->refCoord, i);
-        if (stHash_search(newRefCoordMap, &newRefIndexes[i]->refCoord) == NULL) {
-            stHash_insert(newRefCoordMap, &newRefIndexes[i]->refCoord, &newRefIndexes[i]->index);
-        }
-    }
-    stHash_destruct(hmm->refCoordMap);
-    free(hmm->refIndexes);
-    hmm->refCoordMap = newRefCoordMap;
-    hmm->refIndexes = newRefIndexes;
 
     // Get the column containing the split point
     stRPColumn *splitColumn = getColumn(hmm->firstColumn, splitPoint);
@@ -1700,9 +1502,10 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     // If the split point is within the column, split the column
     if(splitPoint > splitColumn->refStart) {
         // TODO check this
-        int64_t *colSplitPointIndex = stHash_search(splitColumn->refCoordMap, &splitPoint);
-        assert(colSplitPointIndex != NULL);
-        stRPColumn_split(splitColumn, *colSplitPointIndex, hmm);
+        int64_t colSplitPointIndex = getRefCoordIndex(splitPoint, hmm->referencePriorProbs, 0) - splitColumn->refStartIndex;
+//        int64_t *colSplitPointIndex = stHash_search(splitColumn->refCoordMap, &splitPoint);
+//        assert(colSplitPointIndex != NULL);
+        stRPColumn_split(splitColumn, colSplitPointIndex, hmm);
         splitColumn = splitColumn->nColumn->nColumn;
         assert(splitPoint == splitColumn->refStart);
     }
@@ -1719,17 +1522,22 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     stRPHmm_resetColumnNumberAndDepth(hmm);
     stRPHmm_resetColumnNumberAndDepth(suffixHmm);
 
-    st_logInfo("\tLast hmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
-    st_logInfo("\tLast suffixhmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", suffixHmm->refIndexes[suffixHmm->length-1]->refCoord, suffixHmm->length, suffixHmm->refStart, suffixHmm->refIndexes[0]->index, suffixHmm->refEnd, suffixHmm->refIndexes[suffixHmm->length-1]->index);
+    int64_t endCoordIndex = getRefCoordIndex(hmm->refEnd, hmm->referencePriorProbs, 1);
+    assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
+    int64_t endCoordIndex2 = getRefCoordIndex(suffixHmm->refEnd, suffixHmm->referencePriorProbs, 1);
+    assert(endCoordIndex2-suffixHmm->refStartIndex + 1 == suffixHmm->length);
 
-    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-    assert(hmm->refIndexes[0]->index == 0);
-    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
-    assert(suffixHmm->refIndexes[0]->refCoord == suffixHmm->refStart);
-    assert(suffixHmm->refIndexes[suffixHmm->length-1]->refCoord == suffixHmm->refEnd);
-    assert(suffixHmm->refIndexes[0]->index == 0);
-    assert(suffixHmm->refIndexes[suffixHmm->length-1]->index == suffixHmm->length-1);
+//    st_logInfo("\tLast hmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
+//    st_logInfo("\tLast suffixhmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", suffixHmm->refIndexes[suffixHmm->length-1]->refCoord, suffixHmm->length, suffixHmm->refStart, suffixHmm->refIndexes[0]->index, suffixHmm->refEnd, suffixHmm->refIndexes[suffixHmm->length-1]->index);
+
+//    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
+//    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
+//    assert(hmm->refIndexes[0]->index == 0);
+//    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
+//    assert(suffixHmm->refIndexes[0]->refCoord == suffixHmm->refStart);
+//    assert(suffixHmm->refIndexes[suffixHmm->length-1]->refCoord == suffixHmm->refEnd);
+//    assert(suffixHmm->refIndexes[0]->index == 0);
+//    assert(suffixHmm->refIndexes[suffixHmm->length-1]->index == suffixHmm->length-1);
 
     return suffixHmm;
 }
@@ -1775,7 +1583,11 @@ stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
     for(int64_t i=0; i<gF->length; i++) {
         // If heterozygous site
         if(gF->haplotypeString1[i] != gF->haplotypeString2[i]) {
-            stList_append(hetSites, stIntTuple_construct1(gF->refIndexes[i]->refCoord));
+            int64_t refCoord = gF->referencePriorProbs->refIndexes[i + gF->refStartIndex]->refCoord;
+            int64_t prevRefCoord = gF->referencePriorProbs->refIndexes[i + gF->refStartIndex -1]->refCoord;
+            if (refCoord != prevRefCoord) {
+                stList_append(hetSites, stIntTuple_construct1(refCoord));
+            }
         }
     }
 
@@ -1786,25 +1598,28 @@ stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
     for(int64_t i=0; i<stList_length(hetSites)-1; i++) {
         int64_t j = stIntTuple_get(stList_get(hetSites, i), 0);
         int64_t k = stIntTuple_get(stList_get(hetSites, i+1), 0);
+        if (k <= j) {
+            st_logInfo("  j = %d  k = %d \n", j, k);
+        }
         assert(k > j);
 
         // If not well supported by reads
         if(!sitesLinkageIsWellSupported(hmm, j, k)) {
             // Split hmm
             int64_t splitPoint = j+(k-j+1)/2;
-            st_logInfo("before splitting: hmm: %d - %d,  splitPoint: %d\n", hmm->refStart, hmm->refEnd, splitPoint);
+//            st_logInfo("before splitting: hmm: %d - %d,  splitPoint: %d\n", hmm->refStart, hmm->refEnd, splitPoint);
             stRPHmm *rightHmm = stRPHmm_split(hmm, splitPoint);
-            st_logInfo("after splitting: hmm: %d - %d,  righthmm: %d - %d\n", hmm->refStart, hmm->refEnd, rightHmm->refStart, rightHmm->refEnd);
+//            st_logInfo("after splitting: hmm: %d - %d,  righthmm: %d - %d\n", hmm->refStart, hmm->refEnd, rightHmm->refStart, rightHmm->refEnd);
             assert(rightHmm->refStart == splitPoint);
             assert(hmm->refEnd+1 == splitPoint);
 
-            st_logInfo("After: Last hmm refCoord: %d\n", hmm->refIndexes[hmm->length-1]->refCoord);
-            st_logInfo("After: Last suffixhmm refCoord: %d\n", rightHmm->refIndexes[rightHmm->length-1]->refCoord);
+//            st_logInfo("After: Last hmm refCoord: %d\n", hmm->refIndexes[hmm->length-1]->refCoord);
+//            st_logInfo("After: Last suffixhmm refCoord: %d\n", rightHmm->refIndexes[rightHmm->length-1]->refCoord);
 
-            assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-            assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-            assert(rightHmm->refIndexes[0]->refCoord == rightHmm->refStart);
-            assert(rightHmm->refIndexes[rightHmm->length-1]->refCoord == rightHmm->refEnd);
+//            assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
+//            assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
+//            assert(rightHmm->refIndexes[0]->refCoord == rightHmm->refStart);
+//            assert(rightHmm->refIndexes[rightHmm->length-1]->refCoord == rightHmm->refEnd);
             // Add prefix of hmm to list of split hmms
             stList_append(splitHmms, hmm);
             // Set hmm as right hmm
