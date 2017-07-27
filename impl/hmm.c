@@ -16,7 +16,7 @@ inline double logAddP(double a, double b, bool maxNotSum) {
     /*
      * Local function for doing addition of logs or (if doing Viterbi style calculation), to take the max.
      */
-    return maxNotSum ? (a > b ? a : b) : stMath_logAdd(a, b);
+    return maxNotSum ? (a > b ? a : b) : stMath_logAddExact(a, b);
 }
 
 /*
@@ -161,6 +161,7 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
     fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\tDeletions as gap?: %i\n", (int) params->gapCharactersForDeletions);
     fprintf(fH, "\tVerbose Attributes:\n");
     if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
     if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");
@@ -216,8 +217,8 @@ static void normaliseSubstitutionMatrix(double *subMatrix) {
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
         stHash *referenceNamesToReferencePriors) {
     /*
-     * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
-     * of stochastic parameter search to do.
+     * Learn the substitution matrices iteratively, updating the params object in place.
+     * Iterations is the number of cycles of stochastic parameter search to do.
      */
 
     // For each iteration construct a set of HMMs and estimate the parameters from it.
@@ -309,13 +310,15 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
      * Compares two read partitioning HMMs by coordinate on the reference.
      * Will return equal only if they are the same HMM, with the same memory
      * address, otherwise compares pointers for equal HMMs.
+     *
      */
     stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
     int i = strcmp(hmm1->referenceName, hmm2->referenceName);
     if(i == 0) {
         i = cmpint64(hmm1->refStart,  hmm2->refStart);
         if(i == 0) {
-            i = cmpint64(hmm1->length,  hmm2->length);
+            // Sort by descending order of length
+            i = cmpint64(hmm2->length,  hmm1->length);
             if(i == 0) {
                 i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
             }
@@ -358,9 +361,9 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     seqHeaders[0] = profileSeq;
     uint8_t **seqs = st_malloc(sizeof(uint8_t *));
     seqs[0] = profileSeq->profileProbs;
-    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refStartIndex, hmm->length, 1, seqHeaders, seqs);
-
+    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refStartIndex, hmm->length, 1, seqHeaders, seqs, referencePriorProbs);
     column->refEnd = hmm->refEnd;
+
     hmm->firstColumn = column;
     hmm->lastColumn = column;
 
@@ -588,7 +591,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     if(gapLength > 0) {
         // Make column in the gap
         stRPColumn *column = stRPColumn_construct(leftHmm->refEnd + 1, gapLeftIndex+1,
-                gapLength, 0, NULL, NULL);
+                gapLength, 0, NULL, NULL, leftHmm->referencePriorProbs);
         column->refEnd = rightHmm->refStart-1;
         assert(getRefCoordIndex(column->refStart, hmm->referencePriorProbs, 0) == column->refStartIndex);
 
@@ -665,7 +668,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm1->refStart, hmm1->refStartIndex, gapLength,
-                0, NULL, NULL);
+                0, NULL, NULL, hmm1->referencePriorProbs);
         column->refEnd = hmm2->refStart-1;
 
         // Add cell
@@ -710,7 +713,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm2->refEnd+1, gapLeftIndex +1,
-                gapLength , 0, NULL, NULL);
+                gapLength , 0, NULL, NULL, hmm1->referencePriorProbs);
 
         assert(hmm1->refStart == hmm2->refStart);
         column->refEnd = hmm1->refEnd;
@@ -789,6 +792,30 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
 
     int64_t endCoordIndex = getRefCoordIndex(hmm1->refEnd, hmm1->referencePriorProbs, 1);
     assert(endCoordIndex-hmm1->refStartIndex + 1 == hmm1->length);
+}
+
+static uint64_t intHashFn(const void *a) {
+    return *(uint64_t *)a;
+}
+
+static int intEqualsFn(const void *key1, const void *key2) {
+    return *(uint64_t *)key1 == *(uint64_t *)key2;
+}
+
+stRPCell **makeCell(uint64_t partition, stRPCell **pCell, stHash *seen) {
+    /*
+     * Make a cell for a column.
+     */
+    // Make the cell
+    stRPCell *cell = stRPCell_construct(partition);
+
+    // Add the partition to those already seen
+    assert(stHash_search(seen, &cell->partition) == NULL);
+    stHash_insert(seen, &cell->partition, cell);
+
+    // Link cells
+    *pCell = cell;
+    return &cell->nCell;
 }
 
 stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2) {
@@ -876,8 +903,9 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
 
         stRPColumn *column = stRPColumn_construct(column1->refStart, column1->refStartIndex, column1->length,
-                newColumnDepth, seqHeaders, seqs);
+                newColumnDepth, seqHeaders, seqs, hmm->referencePriorProbs);
         column->refEnd = column1->refEnd;
+
 
         // If the there is a previous column
         if(mColumn != NULL) {
@@ -892,16 +920,51 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         // Create cross product of columns
         stRPCell **pCell = &column->head;
         stRPCell *cell1 = column1->head;
-        do {
-            stRPCell *cell2 = column2->head;
+
+        // includeInvertedPartitions forces that the partition and its inverse
+        // are included in the resulting combined hmm.
+        if(hmm->parameters->includeInvertedPartitions) {
+            stHash *seen = stHash_construct3(intHashFn, intEqualsFn, NULL, NULL);
             do {
-                stRPCell *cell = stRPCell_construct(mergePartitionsOrMasks(cell1->partition, cell2->partition,
-                        column1->depth, column2->depth));
-                // Link cells
-                *pCell = cell;
-                pCell = &cell->nCell;
-            } while((cell2 = cell2->nCell) != NULL);
-        } while((cell1 = cell1->nCell) != NULL);
+                stRPCell *cell2 = column2->head;
+                do {
+                    uint64_t partition = mergePartitionsOrMasks(cell1->partition, cell2->partition,
+                            column1->depth, column2->depth);
+
+                    // We have not seen the combined partition before
+                    if(stHash_search(seen, &partition) == NULL) {
+                        // Add the partition to the column
+                        pCell = makeCell(partition, pCell, seen);
+
+                        // Check if the column has non-zero depth and only add the inverse partition if it does
+                        // because if zero length the inverse partition is the same as for the forward, and therefore
+                        // a duplicate
+                        if(newColumnDepth > 0) {
+                            uint64_t invertedPartition = invertPartition(partition, newColumnDepth);
+                            assert(stHash_search(seen, &invertedPartition) == NULL);
+
+                            pCell = makeCell(invertedPartition, pCell, seen);
+                        }
+                    }
+                } while((cell2 = cell2->nCell) != NULL);
+            } while((cell1 = cell1->nCell) != NULL);
+
+            // Cleanup
+            stHash_destruct(seen);
+        }
+        // If not forcing symmetry
+        else {
+            do {
+                stRPCell *cell2 = column2->head;
+                do {
+                    stRPCell *cell = stRPCell_construct(mergePartitionsOrMasks(cell1->partition, cell2->partition,
+                            column1->depth, column2->depth));
+                    // Link cells
+                    *pCell = cell;
+                    pCell = &cell->nCell;
+                } while((cell2 = cell2->nCell) != NULL);
+            } while((cell1 = cell1->nCell) != NULL);
+        }
 
         // Get the next merged column
         stRPMergeColumn *mColumn1 = column1->nColumn;
@@ -924,6 +987,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                 mColumn1->pColumn->depth, mColumn2->pColumn->depth);
         uint64_t toMask = mergePartitionsOrMasks(mColumn1->maskTo, mColumn2->maskTo,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
+        assert(popcount64(fromMask) == popcount64(toMask));
         mColumn = stRPMergeColumn_construct(fromMask, toMask);
 
         // Connect links
@@ -945,7 +1009,26 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                         mCell2->toPartition,
                         mColumn1->nColumn->depth, mColumn2->nColumn->depth);
 
-                stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+                assert(popcount64(fromPartition) == popcount64(toPartition));
+
+                // includeInvertedPartitions forces that the partition and its inverse are included in the resulting combined
+                // hmm.
+                if(hmm->parameters->includeInvertedPartitions) {
+                    if(stHash_search(mColumn->mergeCellsFrom, &fromPartition) == NULL) {
+                        stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+
+                        // If the mask includes no sequences then the the inverted will be identical, so we check
+                        // to avoid adding the same partition twice
+                        if(popcount64(fromMask) > 0) {
+                            uint64_t invertedFromPartition = mColumn->maskFrom & invertPartition(fromPartition, mColumn1->pColumn->depth + mColumn2->pColumn->depth);
+                            uint64_t invertedToPartition = mColumn->maskTo & invertPartition(toPartition, mColumn1->nColumn->depth + mColumn2->nColumn->depth);
+
+                            stRPMergeCell_construct(invertedFromPartition, invertedToPartition, mColumn);
+                        }
+                    }
+                } else {
+                    stRPMergeCell_construct(fromPartition, toPartition, mColumn);
+                }
             }
             stHash_destructIterator(cellIt2);
         }
@@ -1048,7 +1131,7 @@ static void stRPHmm_forward(stRPHmm *hmm) {
     while(1) {
         // Get the bit count vectors for the column
         uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->length);
+                column->activePositions, column->totalActivePositions);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1134,8 +1217,6 @@ static void stRPHmm_backward(stRPHmm *hmm) {
     while(1) {
         // Iterate through states in column
         stRPCell *cell = column->head;
-
-        // Otherwise do it without the need for the cell buffer
         do {
             backwardCellCalc(hmm, column, cell);
         }
@@ -1283,7 +1364,9 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         stList *cells = getLinkedCells(column, stRPMergeColumn_getPreviousMergeCell, mColumn);
 
         // Get rid of the excess cells
-        while(stList_length(cells) > hmm->parameters->maxPartitionsInAColumn) {
+        while(stList_length(cells) > hmm->parameters->minPartitionsInAColumn &&
+              (stList_length(cells) > hmm->parameters->maxPartitionsInAColumn ||
+               stRPCell_posteriorProb(stList_peek(cells), column) < hmm->parameters->minPosteriorProbabilityForPartition)) {
             stRPCell_destruct(stList_pop(cells));
         }
 
@@ -1306,7 +1389,9 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         // Shrink the the number of chosen cells to less than equal to the desired number
         stList *chosenMergeCellsList = stSet_getList(chosenMergeCellsSet);
         stList_sort2(chosenMergeCellsList, mergeCellCmpFn, mColumn);
-        while(stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn) {
+        while(stList_length(chosenMergeCellsList) > hmm->parameters->minPartitionsInAColumn &&
+              (stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn ||
+               stRPMergeCell_posteriorProb(stList_peek(chosenMergeCellsList), mColumn) < hmm->parameters->minPosteriorProbabilityForPartition)) {
             stSet_remove(chosenMergeCellsSet, stList_pop(chosenMergeCellsList));
         }
         assert(stList_length(chosenMergeCellsList) == stSet_size(chosenMergeCellsSet));
@@ -1501,10 +1586,8 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
 
     // If the split point is within the column, split the column
     if(splitPoint > splitColumn->refStart) {
-        // TODO check this
-        int64_t colSplitPointIndex = getRefCoordIndex(splitPoint, hmm->referencePriorProbs, 0) - splitColumn->refStartIndex;
-//        int64_t *colSplitPointIndex = stHash_search(splitColumn->refCoordMap, &splitPoint);
-//        assert(colSplitPointIndex != NULL);
+        int64_t colSplitPointIndex = getRefCoordIndex(splitPoint, hmm->referencePriorProbs, 0)
+                                     - splitColumn->refStartIndex;
         stRPColumn_split(splitColumn, colSplitPointIndex, hmm);
         splitColumn = splitColumn->nColumn->nColumn;
         assert(splitPoint == splitColumn->refStart);
@@ -1526,18 +1609,6 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     assert(endCoordIndex-hmm->refStartIndex + 1 == hmm->length);
     int64_t endCoordIndex2 = getRefCoordIndex(suffixHmm->refEnd, suffixHmm->referencePriorProbs, 1);
     assert(endCoordIndex2-suffixHmm->refStartIndex + 1 == suffixHmm->length);
-
-//    st_logInfo("\tLast hmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", hmm->refIndexes[hmm->length-1]->refCoord, hmm->length, hmm->refStart, hmm->refIndexes[0]->index, hmm->refEnd, hmm->refIndexes[hmm->length-1]->index);
-//    st_logInfo("\tLast suffixhmm refCoord: %d  (len: %d)  (%d (%d) - %d (%d))\n", suffixHmm->refIndexes[suffixHmm->length-1]->refCoord, suffixHmm->length, suffixHmm->refStart, suffixHmm->refIndexes[0]->index, suffixHmm->refEnd, suffixHmm->refIndexes[suffixHmm->length-1]->index);
-
-//    assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-//    assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-//    assert(hmm->refIndexes[0]->index == 0);
-//    assert(hmm->refIndexes[hmm->length-1]->index == hmm->length-1);
-//    assert(suffixHmm->refIndexes[0]->refCoord == suffixHmm->refStart);
-//    assert(suffixHmm->refIndexes[suffixHmm->length-1]->refCoord == suffixHmm->refEnd);
-//    assert(suffixHmm->refIndexes[0]->index == 0);
-//    assert(suffixHmm->refIndexes[suffixHmm->length-1]->index == suffixHmm->length-1);
 
     return suffixHmm;
 }
@@ -1607,19 +1678,10 @@ stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
         if(!sitesLinkageIsWellSupported(hmm, j, k)) {
             // Split hmm
             int64_t splitPoint = j+(k-j+1)/2;
-//            st_logInfo("before splitting: hmm: %d - %d,  splitPoint: %d\n", hmm->refStart, hmm->refEnd, splitPoint);
             stRPHmm *rightHmm = stRPHmm_split(hmm, splitPoint);
-//            st_logInfo("after splitting: hmm: %d - %d,  righthmm: %d - %d\n", hmm->refStart, hmm->refEnd, rightHmm->refStart, rightHmm->refEnd);
             assert(rightHmm->refStart == splitPoint);
             assert(hmm->refEnd+1 == splitPoint);
 
-//            st_logInfo("After: Last hmm refCoord: %d\n", hmm->refIndexes[hmm->length-1]->refCoord);
-//            st_logInfo("After: Last suffixhmm refCoord: %d\n", rightHmm->refIndexes[rightHmm->length-1]->refCoord);
-
-//            assert(hmm->refIndexes[0]->refCoord == hmm->refStart);
-//            assert(hmm->refIndexes[hmm->length-1]->refCoord == hmm->refEnd);
-//            assert(rightHmm->refIndexes[0]->refCoord == rightHmm->refStart);
-//            assert(rightHmm->refIndexes[rightHmm->length-1]->refCoord == rightHmm->refEnd);
             // Add prefix of hmm to list of split hmms
             stList_append(splitHmms, hmm);
             // Set hmm as right hmm

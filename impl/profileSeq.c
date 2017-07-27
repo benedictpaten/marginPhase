@@ -19,10 +19,8 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *read
     seq->referenceName = stString_copy(referenceName);
     seq->readId = stString_copy(readId);
     seq->refStart = referenceStart;
-//    seq->refEnd = referenceStart + length - 1;
     seq->length = length;
     seq->profileProbs = st_calloc(length*ALPHABET_SIZE, sizeof(uint8_t));
-//    seq->refCoords = st_calloc(length, sizeof(int64_t));
     seq->refIndexes = st_calloc(length, sizeof(stRefIndex));
     seq->insertions = st_calloc(length, sizeof(int64_t));
     seq->numInsertions = 0;
@@ -39,8 +37,8 @@ void stProfileSeq_destruct(stProfileSeq *seq) {
         free(seq->insertionSeqs[i]);
     }
     free(seq->insertionSeqs);
-//    stHash_destruct(seq->refCoordMap);
-//    free(seq->refCoords);
+    stHash_destruct(seq->refCoordMap);
+    free(seq->refIndexes);
     free(seq->insertions);
     free(seq->profileProbs);
     free(seq->readId);
@@ -80,8 +78,8 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
     if(includeProbs) {
         // FIXME
         for(int64_t i=0; i<seq->length; i++) {
-//            int64_t o = seq->refIndexes[i]->refCoord;
-            int64_t o = seq->refStart + i;
+            int64_t o = seq->refIndexes[i]->refCoord;
+//            int64_t o = seq->refStart + i;
             fprintf(fileHandle, "\t%"PRIi64 "", o);
             uint8_t *p = &seq->profileProbs[i * ALPHABET_SIZE];
             // Print individual character probs

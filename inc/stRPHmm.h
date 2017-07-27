@@ -35,12 +35,16 @@ typedef struct _stReferencePriorProbs stReferencePriorProbs;
 typedef struct _stBaseMapper stBaseMapper;
 typedef struct _stGenotypeResults stGenotypeResults;
 typedef struct _stRefIndex stRefIndex;
+typedef struct _stReferencePositionFilter stReferencePositionFilter;
+
 
 /*
  * Overall coordination functions
  */
 
-stList *filterProfileSeqsToMaxCoverageDepth(stList *profileSeqs, int64_t maxDepth);
+
+stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
+        stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors);
 
 stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
@@ -87,7 +91,7 @@ double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to);
 
 char * intToBinaryString(uint64_t i);
 
-uint64_t makeAcceptMask(int64_t depth);
+uint64_t makeAcceptMask(uint64_t depth);
 
 uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
         uint64_t depthOfPartition1, uint64_t depthOfPartition2);
@@ -95,6 +99,8 @@ uint64_t mergePartitionsOrMasks(uint64_t partition1, uint64_t partition2,
 uint64_t maskPartition(uint64_t partition, uint64_t mask);
 
 bool seqInHap1(uint64_t partition, int64_t seqIndex);
+
+uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
 /*
  * Profile sequence
@@ -176,6 +182,7 @@ struct _stReferencePriorProbs {
     uint8_t *profileSequence;
     // Read counts for the bases seen in reads
     double *baseCounts;
+
     // Locations of insertions relative to the reference
     int64_t *insertionCounts;
     int64_t *gapSizes;
@@ -183,6 +190,11 @@ struct _stReferencePriorProbs {
     // Reference coordinates for each index
     stHash *refCoordMap;
     stRefIndex **refIndexes;
+
+    // Filter array of positions in the reference, used
+    // to ignore some columns in the alignment
+    bool *referencePositionsIncluded;
+
 };
 
 int stHash_intPtrEqualKey(const void *key1, const void *key2);
@@ -193,7 +205,7 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
 
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t numInsertions, stRPHmmParameters *params);
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t numInsertions);
 
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
         stBaseMapper *baseMapper, stRPHmmParameters *params, int64_t numInsertions);
@@ -202,6 +214,8 @@ int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshol
 
 int64_t insertionsInRange(stReferencePriorProbs *rProbs, int64_t leftIndex, int64_t rightIndex, int64_t threshold);
 
+
+int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
 
 /*
  * Emission probabilities
@@ -225,7 +239,7 @@ int popcount64(uint64_t x);
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
         int64_t position, int64_t characterIndex);
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length);
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions);
 
 /*
  * Read partitioning hmm
@@ -240,8 +254,15 @@ struct _stRPHmmParameters {
     double *hetSubModelSlow;
     double *readErrorSubModelSlow;
     bool maxNotSumTransitions;
+
+    // Filters on the number of states in a column
+    // Used to prune the hmm
+    int64_t minPartitionsInAColumn;
     int64_t maxPartitionsInAColumn;
-    // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
+    double minPosteriorProbabilityForPartition;
+
+    // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base.
+    // If the coverage depth is higher
     // than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
@@ -266,6 +287,16 @@ struct _stRPHmmParameters {
     // Verbosity options for printing
     bool verboseTruePositives;
     bool verboseFalsePositives;
+
+    // Ensure symmetry in the HMM such that the inverted partition of each partition is included in the HMM
+    bool includeInvertedPartitions;
+
+    // Options to filter which positions in the reference sequence are included in the computation
+    bool filterLikelyHomozygousSites;
+    double minSecondMostFrequentBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
+
+    // Whether or not to make deletions gap characters (otherwise, profile probs will be flat)
+    bool gapCharactersForDeletions;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -278,6 +309,7 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
 struct _stRPHmm {
     char *referenceName;
     int64_t refStart;
+    int64_t refStartIndex;
     int64_t refEnd;
     int64_t length;
     stList *profileSeqs; // List of stProfileSeq
@@ -291,7 +323,9 @@ struct _stRPHmm {
     double backwardLogProb;
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
-    int64_t refStartIndex;
+
+    // Filter used to mask column positions from consideration
+    stReferencePositionFilter *referencePositionFilter;
 };
 
 stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
@@ -347,10 +381,13 @@ struct _stRPColumn {
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
     int64_t refStartIndex;
+    // Record of which positions in the column are not filtered out
+    int64_t *activePositions; // List of positions that are not filtered out, relative to the start of the column in reference coordinates
+    int64_t totalActivePositions; // The length of activePositions
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t refStartIndex, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, uint8_t **seqs);
+        stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs);
 
 void stRPColumn_destruct(stRPColumn *column);
 
@@ -457,9 +494,6 @@ struct _stGenomeFragment {
     int64_t refStart;
     int64_t refEnd;
     int64_t length;
-//    int64_t *refCoords;
-//    stHash *refCoordMap;
-//    stRefIndex **refIndexes;
 
     // Prior over reference bases
     stReferencePriorProbs *referencePriorProbs;
@@ -488,6 +522,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
+
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
@@ -528,6 +563,7 @@ struct _stGenotypeResults {
     float switchErrorDistance;
     int64_t uncertainPhasing;
 };
+
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void printGenotypeResults(stGenotypeResults *results);
@@ -535,11 +571,6 @@ void printGenotypeResults(stGenotypeResults *results);
 
 void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
-
-//int stHash_intPtrEqualKey(const void *key1, const void *key2);
-
-
-//int64_t *indexes;
 
 
 #endif /* ST_RP_HMM_H_ */

@@ -115,23 +115,23 @@ uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
     return bitCountVector;
 }
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t length) {
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions) {
     /*
-     * Calculates the bit count vector for every position, character and bit in the column.
+     * Calculates the bit count vector for every active position, character and bit in the column.
      */
 
     // Array of bit vectors, for each position, for each character and for each bit in uint8_t
-    uint64_t *bitCountVectors = st_malloc(length * ALPHABET_SIZE *
+    uint64_t *bitCountVectors = st_malloc(totalActivePositions * ALPHABET_SIZE *
                                           ALPHABET_CHARACTER_BITS * sizeof(uint64_t));
 
     // For each position
-    for(int64_t i=0; i<length; i++) {
+    for(int64_t i=0; i<totalActivePositions; i++) {
         // For each character
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
             // For each bit
             for(int64_t k=0; k<ALPHABET_CHARACTER_BITS; k++) {
                 *retrieveBitCountVector(bitCountVectors, i, j, k) =
-                        calculateBitCountVector(seqs, depth, i, j, k);
+                        calculateBitCountVector(seqs, depth, activePositions[i], j, k);
             }
         }
     }
@@ -236,22 +236,20 @@ static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t in
     return logColumnProb;
 }
 
-double emissionLogProbability(stRPColumn *column,
-                              stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-                              stRPHmmParameters *params) {
+double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-    int64_t rProbsIndex = column->refStartIndex;
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
-    uint64_t logPartitionProb = columnIndexLogProbability(column, 0,
-                                                          cell->partition, bitCountVectors, rProbs, params);
+    uint64_t logPartitionProb = 0;
+    for(int64_t i=0; i<column->totalActivePositions; i++) {
 
-    for(int64_t i=1; i<column->length; i++) {
-        rProbs = &rProbs[ALPHABET_SIZE]; // Move to the next column of the reference prior
-        logPartitionProb = logPartitionProb + columnIndexLogProbability(column, i,
-                                                                        cell->partition, bitCountVectors, rProbs, params);
+        // Get the reference prior probabilities
+        int64_t j = column->refStartIndex + column->activePositions[i];
+        uint16_t *rProbs = &referencePriorProbs->profileProbs[j * ALPHABET_SIZE];
+        assert(referencePriorProbs->referencePositionsIncluded[j]);
+
+        logPartitionProb += columnIndexLogProbability(column, i, cell->partition, bitCountVectors, rProbs, params);
     }
 
     return invertScaleToLogIntegerSubMatrix(logPartitionProb)/ALPHABET_MAX_PROB;
@@ -355,15 +353,11 @@ double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
     return logColumnProb; // + log(1.0/params->alphabetSize);
 }
 
-double emissionLogProbabilitySlow(stRPColumn *column,
-                                  stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-                                  stRPHmmParameters *params, bool maxNotSum) {
+double emissionLogProbabilitySlow(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params, bool maxNotSum) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
-//    int64_t rProbsIndex = findCorrespondingRefCoordIndex(0, column->refIndexes, referencePriorProbs->refCoordMap);
-//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart;
     int64_t rProbsIndex = column->refStartIndex;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
@@ -428,8 +422,6 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-//    int64_t rProbsIndex = findCorrespondingRefCoordIndex(index, column->refIndexes, referencePriorProbs->refCoordMap);
-//    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
     int64_t rProbsIndex = column->refStartIndex + index;
     uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
 
@@ -472,8 +464,6 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
         }
     }
 
-//    int64_t j = findCorrespondingRefCoordIndex(index, column->refIndexes, gF->refCoordMap);
-//    int64_t j = column->refStart - gF->refStart + index;
     int64_t j = column->refStartIndex - gF->refStartIndex + index;
 
     // Get the haplotype characters with highest posterior probability.
@@ -515,8 +505,15 @@ void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
      */
 
     // Calculate the bit vectors
+    
+    //  Following makes an array in which all positions are marked active
+    int64_t activePositions[column->length];
+    for(int64_t i=0; i<column->length; i++) {
+        activePositions[i] = i;
+    }
+    
     uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                                                         column->length);
+                                                         activePositions, column->length);
 
     assert(column->length > 0);
 

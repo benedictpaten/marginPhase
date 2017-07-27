@@ -4,15 +4,15 @@
   "wildcard" : "Nn",
 
   "haplotypeSubstitutionModel" : [
-    0.99, 0.0033, 0.0033, 0.0033, 0.0001,
-    0.0033, 0.99, 0.0033, 0.0033, 0.0001,
-    0.0033, 0.0033, 0.99, 0.0033, 0.0001,
-    0.0033, 0.0033, 0.0033, 0.99, 0.0001,
-    0.0001, 0.0001, 0.0001, 0.0001, 0.9996
+    0.99, 0.003, 0.003, 0.003, 0.001,
+    0.003, 0.99, 0.003, 0.003, 0.001,
+    0.003, 0.003, 0.99, 0.003, 0.001,
+    0.003, 0.003, 0.003, 0.99, 0.001,
+    0.001, 0.001, 0.001, 0.001, 0.996
   ],
 
   "readErrorModel" : [
-    0.975, 0.005, 0.005, 0.005, 0.01,
+   0.975, 0.005, 0.005, 0.005, 0.01,
     0.005, 0.975, 0.005, 0.005, 0.01,
     0.005, 0.005, 0.975, 0.005, 0.01,
     0.005, 0.005, 0.005, 0.975, 0.01,
@@ -20,11 +20,15 @@
 
   "maxNotSumTransitions" : true,
 
-  "maxPartitionsInAColumn" : 50,
+  "minPartitionsInAColumn" : 100,
+
+  "maxPartitionsInAColumn" : 100,
+
+  "minPosteriorProbabilityForPartition" : 0.0,
 
   "maxCoverageDepth" : 64,
 
-  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 5,
+  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 2,
 
   "onDiagonalReadErrorPseudoCount" : 1000,
 
@@ -33,12 +37,20 @@
   "trainingIterations" : 1,
 
   "filterBadReads" : true,
-  
+
   "filterMatchThreshold" : 0.9,
 
   "useReferencePrior" : true,
 
-  "addInsertionColumns" : true,
+  "includeInvertedPartitions" : true,
+
+  "filterLikelyHomozygousSites" : true,
+
+  "minSecondMostFrequentBaseFilter" : 3,
+
+  "gapCharactersForDeletions" : true,
+
+  "addInsertionColumns" : false,
 
   "insertionCountThreshold" : 8,
 

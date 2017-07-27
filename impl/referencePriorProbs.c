@@ -59,6 +59,11 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
     referencePriorProbs->insertionsBeforePosition = st_calloc(length, sizeof(int64_t));
     referencePriorProbs->refCoordMap = stHash_construct3(stHash_stringKey, stHash_intPtrEqualKey, NULL, NULL);
     referencePriorProbs->refIndexes = st_calloc(length, sizeof(stRefIndex));
+    referencePriorProbs->referencePositionsIncluded = st_calloc(length, sizeof(bool));
+    for(int64_t i=0; i<length; i++) {
+        referencePriorProbs->referencePositionsIncluded[i] = true;
+    }
+
     return referencePriorProbs;
 }
 
@@ -74,6 +79,8 @@ void stReferencePriorProbs_destruct(stReferencePriorProbs *referencePriorProbs) 
     free(referencePriorProbs->insertionsBeforePosition);
     stHash_destruct(referencePriorProbs->refCoordMap);
     free(referencePriorProbs->refIndexes);
+    free(referencePriorProbs->baseCounts);
+    free(referencePriorProbs->referencePositionsIncluded);
     free(referencePriorProbs);
 }
 
@@ -84,11 +91,11 @@ stRefIndex *stRefIndex_construct(int64_t refCoord, int64_t index) {
     stRefIndex *refIndex = st_calloc(1, sizeof(stRefIndex));
     refIndex->refCoord = refCoord;
     refIndex->index = index;
-//    refIndex->offset = offset;
     return refIndex;
 }
 
-static stReferencePriorProbs *getNext(stList *profileSequences, int64_t numInsertions) {
+
+static stReferencePriorProbs *getNext(stList *profileSequences, stList *profileSequencesOnReference, int64_t numInsertions) {
     /*
      * Construct an empty stReferencePriorProbs for the next interval of a reference sequence.
      */
@@ -98,6 +105,10 @@ static stReferencePriorProbs *getNext(stList *profileSequences, int64_t numInser
     int64_t refStart = pSeq->refStart;
     int64_t refEnd = pSeq->refEnd;
 
+    // Add to list of profile sequences contained within the reference interval
+    // being considered
+    stList_append(profileSequencesOnReference, pSeq);
+
     while(stList_length(profileSequences) > 0) {
         stProfileSeq *pSeq = stList_peek(profileSequences);
 
@@ -105,6 +116,8 @@ static stReferencePriorProbs *getNext(stList *profileSequences, int64_t numInser
             break;
         }
         stList_pop(profileSequences);
+
+        stList_append(profileSequencesOnReference, pSeq);
 
         assert(pSeq->refStart <= refStart);
         refStart = pSeq->refStart;
@@ -165,10 +178,11 @@ void setRefCoordinates(stReferencePriorProbs *rProbs, stList *profileSequences) 
 
 void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences, int64_t numInsertions) {
     /*
-     * Set the base counts observed in the set of profile sequences at each position.
+     * Set the base counts observed in the set of profile sequences at each reference position.
      */
     for(int64_t i=0; i<stList_length(profileSequences); i++) {
         stProfileSeq *pSeq = stList_get(profileSequences, i);
+        assert(stString_eq(rProbs->referenceName, pSeq->referenceName));
         for (int64_t j = 0; j < pSeq->length; j++) {
             int64_t k = numInsertions > 0 ?
                         findCorrespondingRefCoordIndex(j, pSeq->refIndexes, rProbs->refCoordMap)
@@ -183,13 +197,11 @@ void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences, 
     }
 }
 
-void setInsertions(stReferencePriorProbs *rProbs, stList *profileSequences, int64_t insertionCountThreshold) {
+void setInsertions(stReferencePriorProbs *rProbs, stList *profileSequences) {
     /*
      * Set the counts of insertions observed at each position in the set of profile sequences.
      */
 
-    int64_t numDiffInsertionSizes = 0;
-    int64_t numSameInsertionSizes = 0;
     for (int64_t i = 0; i < stList_length(profileSequences); i++) {
         stProfileSeq *pSeq = stList_get(profileSequences, i);
         for (int64_t j = 0; j < pSeq->length; j++) {
@@ -197,13 +209,6 @@ void setInsertions(stReferencePriorProbs *rProbs, stList *profileSequences, int6
             if(k >= 0 && k < rProbs->length) {
                 rProbs->insertionCounts[k] += (pSeq->insertions[j] > 1 ? 1 : pSeq->insertions[j]);
 
-                if ((rProbs->gapSizes[k] > 0 && pSeq-> insertions[j] > 0) &&
-                        (rProbs->gapSizes[k] != pSeq->insertions[j]))
-                {
-                    numDiffInsertionSizes++;
-                } else {
-                    numSameInsertionSizes++;
-                }
                 // Update gap size
                 // If there's already a gap, choose the smaller gap size
                 // TODO: choose most common size instead? or floor of average?
@@ -224,12 +229,10 @@ void setInsertions(stReferencePriorProbs *rProbs, stList *profileSequences, int6
             rProbs->insertionsBeforePosition[i] = rProbs->insertionsBeforePosition[i-1];
         }
     }
-//    st_logInfo("Number of times gap size differed: %d \n", numDiffInsertionSizes);
-//    st_logInfo("Number of times gap size same: %d \n", numSameInsertionSizes);
 }
 
 
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t numInsertions, stRPHmmParameters *params) {
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t numInsertions) {
     /*
      * Create a set of stReferencePriorProbs that cover the reference intervals included in the profile sequences.
      * Each has a flat probability over reference positions.
@@ -244,13 +247,14 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t
     // Copy and sort profile sequences in order
     // TODO need destructors?
     profileSequences = stList_copy(profileSequences, (void (*)(void *))stProfileSeq_destruct);
-    stList *profileSequencesCopy = stList_copy(profileSequences, (void (*)(void *))stProfileSeq_destruct);
     stList_sort(profileSequences, stRPProfileSeq_cmpFn);
 
     uint16_t flatValue = scaleToLogIntegerSubMatrix(log(1.0/ALPHABET_SIZE));
     while(stList_length(profileSequences) > 0) {
         // Get next reference prior prob interval
-        stReferencePriorProbs *rProbs = getNext(profileSequences, numInsertions);
+        stList *l = stList_construct();
+        stReferencePriorProbs *rProbs = getNext(profileSequences, l, numInsertions);
+        stList_sort(l, stRPProfileSeq_cmpFn);
 
         // Fill in probability profile
         for(int64_t i=0; i<rProbs->length; i++) {
@@ -258,9 +262,12 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences, int64_t
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = flatValue;
             }
         }
-        setRefCoordinates(rProbs, profileSequencesCopy);
-        setReadBaseCounts(rProbs, profileSequencesCopy, numInsertions);
-        setInsertions(rProbs, profileSequencesCopy, params->insertionCountThreshold);
+        // Set the coordinates and counts of each base observed at each reference position
+        setRefCoordinates(rProbs, l);
+        setReadBaseCounts(rProbs, l, numInsertions);
+        setInsertions(rProbs, l);
+
+        stList_destruct(l);
 
         assert(stHash_search(referenceNamesToReferencePriors, rProbs->referenceName) == NULL);
         stHash_insert(referenceNamesToReferencePriors, rProbs->referenceName, rProbs);
@@ -281,7 +288,7 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
 
     // Make map from reference sequence names to reference priors
     stHash *referenceNamesToReferencePriors =
-            createEmptyReferencePriorProbabilities(profileSequences, numInsertions, params);
+            createEmptyReferencePriorProbabilities(profileSequences, numInsertions);
 
     // Load reference fasta index
     faidx_t *fai = fai_load(referenceFastaFile);
@@ -334,6 +341,82 @@ int64_t numTotalInsertionColumns(stReferencePriorProbs *rProbs, int64_t threshol
         }
     }
     return numColumns;
+}
+
+int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *rProbs, stRPHmmParameters *params) {
+    /*
+     * Sets the rProbs->referencePositionsIncluded array to exclude positions likely to be homozygous.
+     *
+     * In a column, let x be the number of occurrences of the most frequent non-reference base.
+     * If x is less than params.minNonReferenceBaseFilter then the column is filtered out.
+     */
+    int64_t filteredPositions = 0;
+    for(int64_t i=0; i<rProbs->length; i++) {
+        double *baseCounts = &rProbs->baseCounts[i*ALPHABET_SIZE];
+
+        // Get total expected coverage at base and most frequent base in column
+        double totalCount = baseCounts[0];
+        int64_t mostFrequentBase = 0;
+        double mostFrequentBaseCount = totalCount;
+        for(int64_t j=1; j<ALPHABET_SIZE; j++) {
+            totalCount += baseCounts[j];
+            if(baseCounts[j] > mostFrequentBaseCount) {
+                mostFrequentBase = j;
+                mostFrequentBaseCount = baseCounts[j];
+            }
+        }
+
+        // Maximum number of instances of a non-reference base
+        double secondMostFrequentBaseCount = 0.0;
+        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+            if(j != mostFrequentBase && baseCounts[j] > secondMostFrequentBaseCount) {
+                secondMostFrequentBaseCount = baseCounts[j];
+            }
+        }
+
+        if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter) {
+            filteredPositions++;
+            // Mask the position
+            assert(rProbs->referencePositionsIncluded[i] == true);
+            rProbs->referencePositionsIncluded[i] = false;
+        }
+        else if(st_getLogLevel() == debug) {
+            stList *l = stList_construct3(0, free);
+            for(int64_t k=0; k<ALPHABET_SIZE; k++) {
+                stList_append(l, stString_print("%f", baseCounts[k]));
+            }
+            char *baseCountString = stString_join2(" ", l);
+//            st_logDebug("Including position: %s %" PRIi64 " with coverage depth: %f and base counts: %s\n",
+//                    rProbs->referenceName, rProbs->refIndexes[i]->refCoord, totalCount, baseCountString);
+            stList_destruct(l);
+            free(baseCountString);
+        }
+    }
+
+    return filteredPositions;
+}
+
+int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions) {
+    /*
+     * Sets a column filter to ignore columns likely to be homozygous reference.
+     *
+     * Returns total number of positions filtered out, sets totalPositions to the total number of
+     * reference positions.
+     */
+    int64_t filteredPositions = 0;
+    *totalPositions = 0;
+    stHashIterator *hashIt = stHash_getIterator(referenceNamesToReferencePriors);
+    char *referenceName;
+    while((referenceName = stHash_getNext(hashIt)) != NULL) {
+        stReferencePriorProbs *rProbs = stHash_search(referenceNamesToReferencePriors, referenceName);
+        filteredPositions += stReferencePriorProbs_setReferencePositionFilter(rProbs, params);
+        *totalPositions += rProbs->length;
+    }
+
+    // Cleanup
+    stHash_destructIterator(hashIt);
+
+    return filteredPositions;
 }
 
 int64_t insertionsInRange(stReferencePriorProbs *rProbs, int64_t leftIndex, int64_t rightIndex, int64_t threshold) {

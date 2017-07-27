@@ -79,7 +79,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     jsmntok_t tokens[numTokens];
     char *js = NULL;
     size_t jslen = 0;
-    char buf[BUFSIZ];
+    char buf[BUFSIZ * 10]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
     int r;
 
     // Params object
@@ -90,18 +90,26 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
     params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+
     params->maxNotSumTransitions = true;
-    params->maxPartitionsInAColumn = 50;
+    params->minPartitionsInAColumn = 50;
+    params->maxPartitionsInAColumn = 200;
+    params->minPosteriorProbabilityForPartition = 0.001;
+
     params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
     params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
     params->offDiagonalReadErrorPseudoCount = 1;
     params->onDiagonalReadErrorPseudoCount = 1;
     params->trainingIterations = 0;
     params->filterBadReads = false;
-    params->filterMatchThreshold = 0.90;
+    params->filterMatchThreshold = 0.92;
     params->useReferencePrior = false;
     params->addInsertionColumns = false;
-    params->insertionCountThreshold = 5;
+    params->insertionCountThreshold = 8;
+    params->includeInvertedPartitions = true;
+    params->filterLikelyHomozygousSites = false;
+    params->minSecondMostFrequentBaseFilter = 2;
+    params->gapCharactersForDeletions = true;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -121,7 +129,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     }
 
     if (r == JSMN_ERROR_NOMEM) {
-        st_logDebug("Error when parsing json: not enough tokens allocated. Is the JSON file too big? %d\n", r);
+        st_errAbort("Error when parsing json: not enough tokens allocated. Is the JSON file too big? %d\n", r);
         return NULL;
     }
 
@@ -143,13 +151,13 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             }
             i += ALPHABET_SIZE + 1;
         }
-        if (strcmp(keyString, "wildcard") == 0) {
+        else if (strcmp(keyString, "wildcard") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             stBaseMapper_setWildcard(baseMapper, tokStr);
             i++;
         }
-        if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
+        else if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
             jsmntok_t hapSubTok = tokens[i+1];
             if (hapSubTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
                 st_errAbort("ERROR: Size of haplotype substitution model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
@@ -161,7 +169,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             }
             i += hapSubTok.size + 1;
         }
-        if (strcmp(keyString, "readErrorModel") == 0) {
+        else if (strcmp(keyString, "readErrorModel") == 0) {
             jsmntok_t readErrTok = tokens[i+1];
             if (readErrTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
                 st_errAbort("ERROR: Size of read error model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
@@ -174,86 +182,131 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             }
             i += readErrTok.size + 1;
         }
-        if (strcmp(keyString, "maxNotSumTransitions") == 0) {
+        else if (strcmp(keyString, "maxNotSumTransitions") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->maxNotSumTransitions = strcmp(tokStr, "true") == 0;
             i++;
         }
-        if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
+        else if (strcmp(keyString, "minPartitionsInAColumn") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minPartitionsInAColumn = atoi(tokStr);
+            i++;
+        }
+        else if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->maxPartitionsInAColumn = atoi(tokStr);
             i++;
         }
-        if (strcmp(keyString, "maxCoverageDepth") == 0) {
+        else if (strcmp(keyString, "minPosteriorProbabilityForPartition") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minPosteriorProbabilityForPartition = atof(tokStr);
+            i++;
+        }
+        else if (strcmp(keyString, "maxCoverageDepth") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->maxCoverageDepth = atoi(tokStr);
             i++;
         }
-        if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
+        else if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = atoi(tokStr);
             i++;
         }
-        if (strcmp(keyString, "onDiagonalReadErrorPseudoCount") == 0) {
+        else if (strcmp(keyString, "onDiagonalReadErrorPseudoCount") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->onDiagonalReadErrorPseudoCount = atof(tokStr);
             i++;
         }
-        if (strcmp(keyString, "offDiagonalReadErrorPseudoCount") == 0) {
+        else if (strcmp(keyString, "offDiagonalReadErrorPseudoCount") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->offDiagonalReadErrorPseudoCount = atof(tokStr);
             i++;
         }
-        if (strcmp(keyString, "trainingIterations") == 0) {
+        else if (strcmp(keyString, "trainingIterations") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->trainingIterations = atoi(tokStr);
             i++;
         }
-        if (strcmp(keyString, "filterBadReads") == 0) {
+        else if (strcmp(keyString, "filterBadReads") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             if (strcmp(tokStr, "true") == 0) params->filterBadReads = true;
             i++;
         }
-        if (strcmp(keyString, "filterMatchThreshold") == 0) {
+        else if (strcmp(keyString, "filterMatchThreshold") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->filterMatchThreshold = atof(tokStr);
             i++;
         }
-        if (strcmp(keyString, "useReferencePrior") == 0) {
+        else if (strcmp(keyString, "useReferencePrior") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->useReferencePrior = strcmp(tokStr, "true") == 0;
+            i++;
         }
-        if (strcmp(keyString, "addInsertionColumns") == 0) {
+        else if (strcmp(keyString, "includeInvertedPartitions") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->includeInvertedPartitions = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "addInsertionColumns") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->addInsertionColumns = strcmp(tokStr, "true") == 0;
+            i++;
         }
-        if (strcmp(keyString, "insertionCountThreshold") == 0) {
+        else if (strcmp(keyString, "insertionCountThreshold") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             params->insertionCountThreshold = atoi(tokStr);
             i++;
         }
-        if (strcmp(keyString, "verbose") == 0) {
+        else if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             int64_t bitstring = atoi(tokStr);
             setVerbosity(params, bitstring);
             i++;
         }
+        else if(strcmp(keyString, "filterLikelyHomozygousSites") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->filterLikelyHomozygousSites = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "minSecondMostFrequentBaseFilter") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minSecondMostFrequentBaseFilter = atof(tokStr);
+            i++;
+        }
+        else if (strcmp(keyString, "gapCharactersForDeletions") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->gapCharactersForDeletions = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else {
+            st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
+        }
+
     }
 
     free(js);
@@ -404,9 +457,11 @@ void parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMappe
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 // Deletion
-                // Set to be a gap character
-                int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
-                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                if (params->gapCharactersForDeletions) {
+                    // This assumes gap character is the last character in the alphabet given
+                    int64_t b = stBaseMapper_getValueForChar(baseMapper, '-');
+                    pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                }
                 pSeq->refIndexes[i] = stRefIndex_construct(pSeq->refIndexes[i-1]->refCoord + 1, i);
                 stHash_insert(pSeq->refCoordMap, &pSeq->refIndexes[i]->refCoord, &pSeq->refIndexes[i]->index);
             }

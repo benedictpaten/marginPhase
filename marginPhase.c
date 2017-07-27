@@ -103,10 +103,7 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
      */
     for (int64_t i = 0; i < pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
-//        int64_t j = findRefCoordIndexInProfileSeq(pSeq1, pSeq2, i);
-//        st_logInfo("\ni = %d  (%d) ", i, pSeq1->refCoords[i]);
         int64_t j = findCorrespondingRefCoordIndex(i, pSeq1->refIndexes, pSeq2->refCoordMap);
-//        st_logInfo(" j = %d  (%d)", j, pSeq2->refCoords[j]);
         if (j >= 0 && j < pSeq2->length) {
             (*totalAlignedPositions)++;
 
@@ -127,8 +124,6 @@ double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t i
         stProfileSeq *seq = stList_get(profileSequences, i);
         if (index >= seq->refIndexes[0]->refCoord && index <= seq->refIndexes[seq->length - 1]->refCoord) {
             for (int64_t j = 0; j < ALPHABET_SIZE; j++) {
-                // TODO change for insertions
-//                int64_t seqIndex = index + seq->insertionsBeforePosition[index - seq->refCoords[0]] - seq->refCoords[0];
                 int64_t *seqIndex = stHash_search(seq->refCoordMap, &index);
                 (*seqIndex) += indexInGap;
                 baseCounts[j] += getProb(&seq->profileProbs[(*seqIndex) * ALPHABET_SIZE], j);
@@ -136,34 +131,6 @@ double *getProfileSequenceCompositionAtIndex(stList *profileSequences, int64_t i
         }
     }
     return baseCounts;
-}
-
-void getExpectedMatchesBetweenProfileSeqs2(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
-    /*
-     * Calculates the number of base overlaps and expected base matches between two profile sequences.
-     */
-
-    for(int64_t i=0; i<pSeq1->length; i++) {
-        // Establish if the coordinate is in both sequences
-        int64_t refCoord1 = pSeq1->refIndexes[i]->refCoord;
-        int64_t j = i + pSeq1->refStart - pSeq2->refStart;
-        int64_t *jPtr = stHash_search(pSeq2->refCoordMap, &refCoord1);
-        if (jPtr != NULL) {
-            int64_t j = *jPtr;
-            int64_t refCoord2 = pSeq2->refIndexes[j]->refCoord;
-            if (j >= 0 && j < pSeq2->length) {
-                (*totalAlignedPositions)++;
-
-                // Calculate expectation of match
-                for (int64_t k = 0; k < ALPHABET_SIZE; k++) {
-                    double e1 = getProb(&(pSeq1->profileProbs[i * ALPHABET_SIZE]), k);
-                    double e2 = getProb(&(pSeq2->profileProbs[j * ALPHABET_SIZE]), k);
-                    assert(e1 * e2 <= 1.0);
-                    *totalExpectedMatches += e1 * e2;
-                }
-            }
-        }
-    }
 }
 
 void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences, int64_t maxSeqs) {
@@ -299,8 +266,6 @@ stList *prefilterReads(stList *profileSequences, int64_t *misses, stHash *refere
     return filteredProfileSequences;
 }
 
-
-
 stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*
      * Create the set of hmms that the forward-backward algorithm will eventually be run on.
@@ -325,15 +290,15 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     st_logInfo("Created %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
                 stList_length(hmms), initialHmmListSize);
 
-//    int64_t idx = 0;
-//    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
-//        stListIterator *itor = stList_getIterator(hmms);
-//        stRPHmm *hmm = NULL;
-//        while ((hmm = stList_getNext(itor)) != NULL) {
-//            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->length), hmm->columnNumber);
-//            idx++;
-//        }
-//    }
+    int64_t idx = 0;
+    if(st_getLogLevel() == debug && stList_length(hmms) != initialHmmListSize) {
+        stListIterator *itor = stList_getIterator(hmms);
+        stRPHmm *hmm = NULL;
+        while ((hmm = stList_getNext(itor)) != NULL) {
+            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d \tcolumnNumber: %d\n", idx, hmm->refStart, (hmm->refStart + hmm->length), hmm->columnNumber);
+            idx++;
+        }
+    }
     return hmms;
 }
 
@@ -406,7 +371,6 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
 }
 
-
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
@@ -416,7 +380,6 @@ int main(int argc, char *argv[]) {
 
     char *outputBase = "output";
     char *paramsFile = "params.json";
-    int64_t iterationsOfParameterLearning = 0;
     int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
@@ -506,11 +469,12 @@ int main(int argc, char *argv[]) {
     printSequenceStats(stderr, profileSequences);
     printAvgIdentityBetweenProfileSequences(stderr, profileSequences, 100);
 
+
     // Getting reference sequence priors
     stHash *referenceNamesToReferencePriors;
     if(!params->useReferencePrior) {
         st_logInfo("> Using a flat prior over reference positions\n");
-        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0, params);
+        referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences, 0);
     }
     else {
         st_logInfo("> Parsing prior probabilities on positions from reference sequences: %s\n", referenceFastaFile);
@@ -545,20 +509,45 @@ int main(int argc, char *argv[]) {
         referenceNamesToReferencePriors = createReferencePriorProbabilities(referenceFastaFile, profileSequences, baseMapper, params, numInsertions);
     }
 
-    // Learn the parameters for the input data
-    st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
-    stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
-
-    // Print a report of the parsed parameters
-    if(st_getLogLevel() == debug && iterationsOfParameterLearning > 0) {
-        st_logDebug("> Learned parameters\n");
-        stRPHmmParameters_printParameters(params, stderr);
+    // Setup a filter to ignore likely homozygous reference positions
+    if(params->filterLikelyHomozygousSites) {
+        int64_t totalPositions;
+        st_logInfo("> Filtering likely homozygous positions\n");
+        int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
+        st_logInfo("\tFiltered %" PRIi64 " (%f) likely homozygous positions, \n\teach with fewer than %" PRIi64
+                " aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64 " (%f) positions of %" PRIi64
+                " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
+                (int64_t)params->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
+                (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
     }
-    if (iterationsOfParameterLearning > 0) {
+
+    // Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
+    st_logInfo("> Filtering reads by coverage depth\n");
+    stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+    stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
+    st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
+            stList_length(discardedProfileSeqs), stList_length(profileSequences), params->maxCoverageDepth);
+    stList_destruct(discardedProfileSeqs);
+    stList_setDestructor(profileSequences, NULL);
+    stList_destruct(profileSequences);
+    profileSequences = filteredProfileSeqs;
+
+
+    // Learn the parameters for the input data
+    if(params->trainingIterations > 0) {
+        st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
+        stRPHmmParameters_learnParameters(params, profileSequences, referenceNamesToReferencePriors);
+
+        // Print a report of the parsed parameters
+        if(st_getLogLevel() == debug) {
+            st_logDebug("> Learned parameters\n");
+            stRPHmmParameters_printParameters(params, stderr);
+        }
+
         st_logInfo("\tWriting learned parameters to file: %s\n", paramsOutFile);
         writeParamFile(paramsOutFile, params);
     }
-
 
     // Get the final list of hmms
     stList *hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);
@@ -598,7 +587,7 @@ int main(int argc, char *argv[]) {
         addProfileSeqIdsToSet(reads2, read2Ids);
 
         // Log information about the hmm
-//        logHmm(hmm, reads1, reads2, gF);
+        logHmm(hmm, reads1, reads2, gF);
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
