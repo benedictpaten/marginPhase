@@ -20,7 +20,7 @@ import yaml
 from bd2k.util.files import mkdir_p
 from bd2k.util.processes import which
 from toil.job import Job
-from toil.lib.docker import dockerCall, dockerCheckOutput, _fixPermissions
+from toil.lib.docker import dockerCall, dockerCheckOutput, _docker, _fixPermissions
 from toil_lib import require, UserError
 from toil_lib.files import tarball_files, copy_files
 from toil_lib.jobs import map_job
@@ -82,10 +82,22 @@ def prepare_input(job, sample, config):
     #config.memory
     #config.disk
 
+    # download references
+    #ref genome
+    download_url(job, url=config.reference_contig, work_dir=work_dir)
+    ref_genome_filename = os.path.basename(config.reference_contig)
+    ref_genome_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_genome_filename))
+    config.reference_genome_fileid = ref_genome_fileid
+    #ref vcf
+    download_url(job, url=config.reference_vcf, work_dir=work_dir)
+    ref_vcf_filename = os.path.basename(config.reference_vcf)
+    ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
+    config.reference_vcf_fileid = ref_vcf_fileid
 
+    # download bam
     download_url(job, url=url, work_dir=work_dir)
-    filename = os.path.basename(url)
-    data_bam_location = os.path.join("/data", filename)
+    bam_filename = os.path.basename(url)
+    data_bam_location = os.path.join("/data", bam_filename)
 
     # index the bam
     docker_params = ["index", data_bam_location]
@@ -94,19 +106,19 @@ def prepare_input(job, sample, config):
     _fixPermissions(DOCKER_SAMTOOLS, work_dir)  # todo tmpfix
 
     # sanity check
-    workdir_bai_location = os.path.join(work_dir, filename + ".bai")
+    workdir_bai_location = os.path.join(work_dir, bam_filename + ".bai")
     if not os.path.isfile(workdir_bai_location):
-        raise UserError("BAM index file not created for {}: {}".format(filename, workdir_bai_location))
+        raise UserError("BAM index file not created for {}: {}".format(bam_filename, workdir_bai_location))
 
     # get start and end location
     get_idx_cmd = [
         ["samtools", "view", data_bam_location],
-        ["head", "-1"],
-        ["awk", "'{print $4}'"]
+        ["head", "-n", "1"],
+        [os.path.join("/data", write_select_column_script(work_dir))]
     ]
-    start_idx_str = dockerCheckOutput(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=get_idx_cmd)
+    start_idx_str = dockerCheckOutputExcept141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
     get_idx_cmd[1][0] = "tail"
-    end_idx_str = dockerCheckOutput(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=get_idx_cmd)
+    end_idx_str = dockerCheckOutputExcept141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
     start_idx = int(start_idx_str) - 1
     end_idx = int(end_idx_str) + 1
@@ -124,20 +136,84 @@ def prepare_input(job, sample, config):
     idx = 0
     return_values = list()
     for position in positions:
-        margin_phase_job = job.addChildJobFn(run_margin_phase, config, "file_id", idx)
-        return_values.append(margin_phase_job.rv())
+        #prep
+        chunk_position_description = "{}:{}-{}".format(config.contig_name, position[0], position[1])
+        bam_split_command = ["view", "-b", data_bam_location, chunk_position_description]
+        chunk_name = "{}.{}.bam".format(config.uuid, idx)
+        #write chunk
+        chunk_location = os.path.join(work_dir, chunk_name)
+        with open(chunk_location, 'w') as out:
+            dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
+        #document read count
+        read_count= get_bam_read_count(job, work_dir, chunk_name)
+        job.fileStore.logToMaster("{}: chunk from {} for idx {} has {} reads"
+                                  .format(config.uuid, chunk_position_description, idx, read_count))
+        # enqueue marginPhase job
+        if read_count > 0:
+            chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
+            margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, idx)
+            return_values.append(margin_phase_job.rv())
+        idx += 1
 
-    # enqueue consolidation
+    # enqueue consolidation job
     job.addFollowOnJobFn(consolidate_output, config, return_values)
 
     # log
     _log_time(job, "prepare_input", start, config.uuid)
 
 
+def write_select_column_script(work_dir, column=4):
+    # I feel bad for doing this, but I can't send single quotes into a toil command without them becoming escaped
+    # so I'm just creating a script which does that
+    filename = "select_column_{}.sh".format(column)
+    file_location = os.path.join(work_dir, filename)
+    with open(file_location, 'w') as out:
+        print("#!/usr/bin/awk -f", file=out)
+        print("{print $%d}" % column, file=out)
+    os.chmod(file_location, 1023) #rwxrwxrwx
+    return filename
+
+
+def dockerCheckOutputExcept141(job, tool, work_dir, parameters):
+    # there's something strange with the return code for commands which stop reading from stdin (like "head")
+    # and so we need to ignore the returncode
+    try:
+        return dockerCheckOutput(job, tool, parameters=parameters, workDir=work_dir)
+    except subprocess.CalledProcessError, e:
+        if e.returncode == 141:
+            return e.output
+        else:
+            raise e
+
+def get_bam_read_count(job, work_dir, bam_name):
+    params = [
+        ["samtools", "view", os.path.join("/data", bam_name)],
+        ["wc", "-l"]
+    ]
+    line_count_str = dockerCheckOutput(job, DOCKER_SAMTOOLS, params, work_dir)
+    return int(line_count_str)
+
+
 def run_margin_phase(job, config, chunk_file_id, chunk_idx):
-    job.fileStore.logToMaster("run_margin_phase : {} : chunk_{}".format(config.uuid, chunk_idx))
-    chunk_identifier = "{}.{}".format(config.uuid, chunk_idx)
-    return chunk_identifier
+    # prep
+    start = time.time()
+    work_dir = job.fileStore.getLocalTempDir()
+    chunk_name = "{}.{}.bam".format(config.uuid, chunk_idx)
+    chunk_location = os.path.join(work_dir, chunk_name)
+    job.fileStore.logToMaster("run_margin_phase:{}:{}:{}".format(config.uuid, chunk_idx, datetime.datetime.now()))
+
+    # download file
+    job.fileStore.readGlobalFile(chunk_file_id, chunk_location)
+    if not os.path.isfile(chunk_location):
+        raise UserError("Failed to download chunk {} from {}".format(chunk_name, chunk_file_id))
+
+    # run marginPhase
+
+    # tarball the output and save
+
+    # log
+    _log_time(job, "run_margin_phase", start, config.uuid)
+    return chunk_name
 
 def consolidate_output(job, config, output_list):
     job.fileStore.logToMaster("consolidate_output : {}".format(config.uuid))
@@ -167,7 +243,14 @@ def generate_config():
         ##############################################################################################################
         # Required: URL {scheme} to reference contig
         # TODO: this should be altered to accept multiple references
-        reference: file:///your/reference/here.fa
+        reference-contig: file:///your/reference/here.fa
+
+        # Required: URL {scheme} to reference vcf
+        reference-vcf: s3://your/reference/here.vcf
+
+        # Required: Name of contig
+        # TODO: this should be done better
+        contig-name: chr3
 
         # Required: Output location of sample. Can be full path to a directory or an s3:// URL
         # Warning: S3 buckets must exist prior to upload or it will fail.
@@ -189,34 +272,15 @@ def generate_manifest():
         #   There are 4 tab-separated columns: filetype, paired/single, UUID, URL(s) to sample
         #
         #   UUID        This should be a unique identifier for the sample to be processed
-        #   filetype    Filetype of the sample. Options: "tar", "fq", "bam"
-        #   paired      Indicates whether the data is paired or single-ended. Options:  "paired" or "single"
         #   URL         A URL {scheme} pointing to the sample or a full path to a directory
-        #
-        #   If samples are in .tar or .tar.gz format, the files must be in the root of the tarball (not in a folder)
-        #   If samples are submitted as multiple fastq files, provide comma separated URLs.
-        #   If samples are submitted as multiple bam files, provide comma separated URLs.
-        #   Samples must have the same extension - do not mix and match gzip and non-gzipped sample pairs.
-        #
-        #   Samples in "tar" format must have one of these extensions: .tar .tar.gz
-        #   Files in the tarballs must have one of these extensions: .fastq .fq
-        #   Paired files in tarballs must follow name conventions ending in an R1/R2 or _1/_2
-        #
-        #   Samples in "fq" format must have one of these extensions: fastq.gz, fastq, fq.gz, fq
-        #   Paired samples in "fq" format must follow name conventions ending in an R1/R2 or _1/_2.  Ordering in manifest does not matter.
-        #
-        #   Samples in "bam" format will be converted to fastq with picard's SamToFastq utility.
-        #   The paired/single parameter will determine whether the pipleine requests single or paired output from picard
-        #
-        #   When multiple samples are submitted, they will be concatinated into a single (or pair of) fastq file(s) before alignment
         #
         #   If a full path to a directory is provided for a sample, every file inside needs to be a fastq(.gz).
         #   Do not have other superfluous files / directories inside or the pipeline will complain.
         #
         #   Examples of several combinations are provided below. Lines beginning with # are ignored.
         #
-        #   UUID_1  file:///path/to/file.bam
-        #   UUID_2  s3://path/to/file.bam
+        #   UUID_1  file:///path/to/file.bam    chr3
+        #   UUID_2  s3://path/to/file.bam   chrX
         #
         #   Place your samples below, one per line.
         """.format(scheme=[x + '://' for x in SCHEMES])[1:])
@@ -307,7 +371,9 @@ def main():
             mkdir_p(config.output_dir)
         if not config.output_dir.endswith('/'):
             config.output_dir += '/'
-        require(config.reference, 'No reference contig specified')
+        require(config.reference_contig, 'No reference contig specified')
+        require(config.contig_name, 'No contig name specified')
+        require(config.reference_vcf, 'No reference vcf specified')
         require(config.partition_size, "Configuration parameter partition_size is required")
         require(config.partition_margin, "Configuration parameter partition_margin is required")
 
