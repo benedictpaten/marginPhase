@@ -15,12 +15,13 @@ import glob
 import time
 import datetime
 import logging
+from contextlib import closing
 
 import yaml
 from bd2k.util.files import mkdir_p
 from bd2k.util.processes import which
 from toil.job import Job
-from toil.lib.docker import dockerCall, dockerCheckOutput, _docker, _fixPermissions
+from toil.lib.docker import dockerCall, dockerCheckOutput, _fixPermissions
 from toil_lib import require, UserError
 from toil_lib.files import tarball_files, copy_files
 from toil_lib.jobs import map_job
@@ -35,6 +36,14 @@ DEFAULT_MANIFEST_NAME = 'manifest-toil-marginphase.tsv'
 
 # docker images
 DOCKER_SAMTOOLS = "quay.io/ucsc_cgl/samtools:1.3--256539928ea162949d8a65ca5c79a72ef557ce7c"
+DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase:latest"
+
+# resource
+MP_CPU = 2
+MP_MEM_BAM_FACTOR = 2048
+MP_MEM_REF_FACTOR = 2
+MP_DSK_BAM_FACTOR = 2.5
+MP_DSK_REF_FACTOR = 1.5
 
 
 def parse_samples(path_to_manifest):
@@ -88,11 +97,18 @@ def prepare_input(job, sample, config):
     ref_genome_filename = os.path.basename(config.reference_contig)
     ref_genome_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_genome_filename))
     config.reference_genome_fileid = ref_genome_fileid
+    ref_genome_size = os.stat(os.path.join(work_dir, ref_genome_filename)).st_size
     #ref vcf
     download_url(job, url=config.reference_vcf, work_dir=work_dir)
     ref_vcf_filename = os.path.basename(config.reference_vcf)
     ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
     config.reference_vcf_fileid = ref_vcf_fileid
+    #params
+    download_url(job, url=config.params, work_dir=work_dir)
+    params_filename = os.path.basename(config.params)
+    params_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, params_filename))
+    config.params_fileid = params_fileid
+
 
     # download bam
     download_url(job, url=url, work_dir=work_dir)
@@ -143,6 +159,7 @@ def prepare_input(job, sample, config):
         #write chunk
         chunk_location = os.path.join(work_dir, chunk_name)
         with open(chunk_location, 'w') as out:
+            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, bam_split_command))
             dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         read_count= get_bam_read_count(job, work_dir, chunk_name)
@@ -150,8 +167,13 @@ def prepare_input(job, sample, config):
                                   .format(config.uuid, chunk_position_description, idx, read_count))
         # enqueue marginPhase job
         if read_count > 0:
+            chunk_size = os.stat(chunk_location).st_size
             chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
-            margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, idx)
+            mp_cores = int(min(MP_CPU, config.maxCores))
+            mp_mem = int(min(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR, config.maxMemory))
+            mp_disk = int(min(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR, config.maxDisk))
+            margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, idx,
+                                                 memory=mp_mem, cores=mp_cores, disk=mp_disk)
             return_values.append(margin_phase_job.rv())
         idx += 1
 
@@ -198,28 +220,96 @@ def run_margin_phase(job, config, chunk_file_id, chunk_idx):
     # prep
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
-    chunk_name = "{}.{}.bam".format(config.uuid, chunk_idx)
+    chunk_identifier = "{}.{}".format(config.uuid, chunk_idx)
+    chunk_name = "{}.in.bam".format(chunk_identifier)
     chunk_location = os.path.join(work_dir, chunk_name)
     job.fileStore.logToMaster("run_margin_phase:{}:{}:{}".format(config.uuid, chunk_idx, datetime.datetime.now()))
 
-    # download file
+    # download bam chunk
     job.fileStore.readGlobalFile(chunk_file_id, chunk_location)
     if not os.path.isfile(chunk_location):
         raise UserError("Failed to download chunk {} from {}".format(chunk_name, chunk_file_id))
 
+    # download references
+    #ref genome
+    genome_reference_name = "reference.fa"
+    genome_reference_location = os.path.join(work_dir, genome_reference_name)
+    job.fileStore.readGlobalFile(config.reference_genome_fileid, genome_reference_location)
+    if not os.path.isfile(genome_reference_location):
+        raise UserError("Failed to download genome reference {} from {}"
+                        .format(os.path.basename(config.reference_genome), config.reference_genome_fileid))
+    #ref vcf
+    vcf_reference_name = "reference.vcf"
+    vcf_reference_location = os.path.join(work_dir, vcf_reference_name)
+    job.fileStore.readGlobalFile(config.reference_vcf_fileid, vcf_reference_location)
+    if not os.path.isfile(genome_reference_location):
+        raise UserError("Failed to download vcf reference {} from {}"
+                        .format(os.path.basename(config.reference_vcf), config.reference_vcf_fileid))
+    # params
+    params_name = "params.json"
+    params_location = os.path.join(work_dir, params_name)
+    job.fileStore.readGlobalFile(config.params_fileid, params_location)
+    if not os.path.isfile(params_location):
+        raise UserError("Failed to download params {} from {}"
+                        .format(os.path.basename(config.params), config.params_fileid))
+
     # run marginPhase
+    params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
+              "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
+              "-r",  os.path.join("/data", vcf_reference_name)]
+    job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_MARGIN_PHASE, params))
+    dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
+    os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
+
+    # document output
+    job.fileStore.logToMaster("Output files for {}:".format(chunk_identifier))
+    output_file_locations = glob.glob(os.path.join(work_dir, "{}*".format(chunk_identifier)))
+    for f in output_file_locations:
+        job.fileStore.logToMaster("\t{}".format(os.path.basename(f)))
 
     # tarball the output and save
+    tarball_name = "{}.tar.gz".format(chunk_identifier)
+    tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+    output_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
 
     # log
-    _log_time(job, "run_margin_phase", start, config.uuid)
-    return chunk_name
+    _log_time(job, "run_margin_phase", start, chunk_identifier)
+    return output_fileid
 
-def consolidate_output(job, config, output_list):
-    job.fileStore.logToMaster("consolidate_output : {}".format(config.uuid))
-    for elem in output_list:
-        job.fileStore.logToMaster(str(elem))
+def consolidate_output(job, config, all_output):
+    #prep
+    start = time.time()
+    work_dir = job.fileStore.getLocalTempDir()
+    out_tar = os.path.join(work_dir, '{}.tar.gz'.format(config.uuid))
+    job.fileStore.logToMaster("consolidate_output:{}:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("consolidating {} files".format(len(all_output)))
 
+    # build tarball
+    out_tars = [out_tar]
+    with tarfile.open(out_tar, 'w:gz') as f_out:
+        idx = 0
+        for tar in all_output:
+            tar_file = os.path.join(work_dir, "{}.tar.gz".format(idx))
+            job.fileStore.readGlobalFile(tar, tar_file)
+            out_tars.append(tar_file)
+            with tarfile.open(tar_file, 'r') as f_in:
+                for tarinfo in f_in:
+                    with closing(f_in.extractfile(tarinfo)) as f_in_file:
+                        f_out.addfile(tarinfo, fileobj=f_in_file)
+            idx += 1
+
+    # Move to output location
+    if urlparse(config.output_dir).scheme == 's3':
+        job.fileStore.logToMaster('Uploading {} to S3: {}'.format(out_tar, config.output_dir))
+        s3am_upload(fpath=out_tar, s3_dir=config.output_dir, num_cores=config.cores)
+    else:
+        job.fileStore.logToMaster('Moving {} to output dir: {}'.format(out_tar, config.output_dir))
+        mkdir_p(config.output_dir)
+        copy_files(file_paths=[out_tar], output_dir=config.output_dir)
+
+    # log
+    _log_time(job, "consolidate_output", start, config.uuid)
+    job.fileStore.logToMaster("END:{}:{}".format(config.uuid, datetime.datetime.now()))
 
 
 def _log_time(job, function_name, start_time, sample_identifier=''):
@@ -245,8 +335,11 @@ def generate_config():
         # TODO: this should be altered to accept multiple references
         reference-contig: file:///your/reference/here.fa
 
-        # Required: URL {scheme} to reference vcf
+        # Required: URL {scheme} to reference VCF
         reference-vcf: s3://your/reference/here.vcf
+
+        # Required: URL {scheme} to marginPhase params JSON file
+        params: ftp://your/params/here.vcf
 
         # Required: Name of contig
         # TODO: this should be done better
@@ -254,6 +347,7 @@ def generate_config():
 
         # Required: Output location of sample. Can be full path to a directory or an s3:// URL
         # Warning: S3 buckets must exist prior to upload or it will fail.
+        # Warning: Do not use "file://" syntax if output directory is local location
         output-dir:
 
         # Required: Size of each bam partition
@@ -363,7 +457,6 @@ def main():
         config.maxCores = int(args.maxCores) if args.maxCores else sys.maxint
         config.maxDisk = int(args.maxDisk) if args.maxDisk else sys.maxint
         config.maxMemory = args.maxMemory if args.maxMemory else str(sys.maxint)
-        config.memory = args.maxMemory if args.maxMemory else str(sys.maxint)
 
         # Config sanity checks
         require(config.output_dir, 'No output location specified')
@@ -374,6 +467,7 @@ def main():
         require(config.reference_contig, 'No reference contig specified')
         require(config.contig_name, 'No contig name specified')
         require(config.reference_vcf, 'No reference vcf specified')
+        require(config.params, 'No params specified')
         require(config.partition_size, "Configuration parameter partition_size is required")
         require(config.partition_margin, "Configuration parameter partition_margin is required")
 
