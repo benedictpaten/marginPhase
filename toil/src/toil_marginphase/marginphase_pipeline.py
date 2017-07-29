@@ -176,8 +176,8 @@ def prepare_input(job, sample, config):
             mp_cores = int(min(MP_CPU, config.maxCores))
             mp_mem = int(min(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR, config.maxMemory))
             mp_disk = int(min(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR, config.maxDisk))
-            job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb} disk, {}b ({}gb) mem"
-                                      .format(config.uuid, idx, mp_cores,mp_disk, int(mp_disk / 1024 / 1024 ),
+            job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb) disk, {}b ({}gb) mem"
+                                      .format(config.uuid, idx, mp_cores, mp_disk, int(mp_disk / 1024 / 1024 ),
                                               mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
             total_mem += mp_mem
             mp_mem = str(int(mp_mem / 1024)) + "K"
