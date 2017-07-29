@@ -195,7 +195,7 @@ def prepare_input(job, sample, config):
         idx += 1
 
     job.fileStore.logToMaster("{}: Enqueued {} jobs, requested total of {}gb ({}b) mem"
-                              .format(config.uuid, int(total_mem/1024/1024/1024), total_mem))
+                              .format(config.uuid, enqueued_jobs, int(total_mem/1024/1024/1024), total_mem))
 
     # enqueue consolidation job
     job.addFollowOnJobFn(consolidate_output, config, return_values)
