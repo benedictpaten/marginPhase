@@ -45,6 +45,7 @@ MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 2.5
 MP_DSK_REF_FACTOR = 1.1
 
+DEBUG = True
 
 def parse_samples(path_to_manifest):
     """
@@ -87,8 +88,9 @@ def prepare_input(job, sample, config):
     job.fileStore.logToMaster("START:{}:{}".format(config.uuid, datetime.datetime.now()))
 
     # todo global resource estimation
-    #config.cores = min(config.maxCores, multiprocessing.cpu_count())
-    #config.memory
+    config.maxCores = min(config.maxCores, multiprocessing.cpu_count())
+    if DEBUG:
+        config.maxMemory = min(config.maxMemory, 210 * 1024 * 1024 * 1024)
     #config.disk
 
     # download references
@@ -170,12 +172,16 @@ def prepare_input(job, sample, config):
         job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
                                   .format(config.uuid, chunk_position_description, idx, chunk_size,
                                           int(chunk_size / 1024 / 1024), read_count))
+        if DEBUG:
+            job.fileStore.logToMaster("Copying {} to {}".format(chunk_name, config.output_dir))
+            copy_files(file_paths=[chunk_location], output_dir=config.output_dir)
+
         # enqueue marginPhase job
         if read_count > 0:
             chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
             mp_cores = int(min(MP_CPU, config.maxCores))
-            mp_mem = int(min(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR, config.maxMemory))
-            mp_disk = int(min(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR, config.maxDisk))
+            mp_mem = int(min(int(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR), config.maxMemory))
+            mp_disk = int(min(int(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR), config.maxDisk))
             job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb) disk, {}b ({}gb) mem"
                                       .format(config.uuid, idx, mp_cores, mp_disk, int(mp_disk / 1024 / 1024 ),
                                               mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
