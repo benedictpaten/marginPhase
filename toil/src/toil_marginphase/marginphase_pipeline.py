@@ -40,10 +40,10 @@ DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase:latest"
 
 # resource
 MP_CPU = 2
-MP_MEM_BAM_FACTOR = 2048
+MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 2.5
-MP_DSK_REF_FACTOR = 1.5
+MP_DSK_REF_FACTOR = 1.1
 
 
 def parse_samples(path_to_manifest):
@@ -162,12 +162,13 @@ def prepare_input(job, sample, config):
             job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, bam_split_command))
             dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
+        chunk_size = os.stat(chunk_location).st_size
         read_count= get_bam_read_count(job, work_dir, chunk_name)
-        job.fileStore.logToMaster("{}: chunk from {} for idx {} has {} reads"
-                                  .format(config.uuid, chunk_position_description, idx, read_count))
+        job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
+                                  .format(config.uuid, chunk_position_description, idx, chunk_size,
+                                          int(chunk_size / 1024 / 1024), read_count))
         # enqueue marginPhase job
         if read_count > 0:
-            chunk_size = os.stat(chunk_location).st_size
             chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
             mp_cores = int(min(MP_CPU, config.maxCores))
             mp_mem = int(min(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR, config.maxMemory))
