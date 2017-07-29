@@ -149,8 +149,11 @@ def prepare_input(job, sample, config):
         positions.append([chunk_start, chunk_end])
 
     # enqueue jobs
+    job.fileStore.logToMaster("{}: Enqueueing {} jobs".format(config.uuid, len(positions)))
     idx = 0
+    enqueued_jobs = 0
     return_values = list()
+    total_mem = 0
     for position in positions:
         #prep
         chunk_position_description = "{}:{}-{}".format(config.contig_name, position[0], position[1])
@@ -175,8 +178,16 @@ def prepare_input(job, sample, config):
             mp_disk = int(min(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR, config.maxDisk))
             margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, idx,
                                                  memory=mp_mem, cores=mp_cores, disk=mp_disk)
+            job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb} disk, {}b ({}gb) mem"
+                                      .format(config.uuid, idx, mp_cores,mp_disk, int(mp_disk / 1024 / 1024 ),
+                                              mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
+            total_mem += mp_mem
             return_values.append(margin_phase_job.rv())
+            enqueued_jobs += 1
         idx += 1
+
+    job.fileStore.logToMaster("{}: Enqueued {} jobs, requested total of {}gb ({}b) mem"
+                              .format(config.uuid, int(total_mem/1024/1024/1024), total_mem))
 
     # enqueue consolidation job
     job.addFollowOnJobFn(consolidate_output, config, return_values)
@@ -455,7 +466,7 @@ def main():
         # Parse config
         parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
         config = argparse.Namespace(**parsed_config)
-        config.maxCores = int(args.maxCores) if args.maxCores else sys.maxint
+        config.maxCores = int(args.maxCores) if args.maxCores else sys.maxsize
         config.maxDisk = int(args.maxDisk) if args.maxDisk else sys.maxint
         config.maxMemory = args.maxMemory if args.maxMemory else str(sys.maxint)
 
