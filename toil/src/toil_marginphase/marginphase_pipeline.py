@@ -42,8 +42,8 @@ DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase:latest"
 MP_CPU = 2
 MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
-MP_DSK_BAM_FACTOR = 2.5
-MP_DSK_REF_FACTOR = 1.1
+MP_DSK_BAM_FACTOR = 5 #input bam chunk, output (in sam fmt), vcf etc
+MP_DSK_REF_FACTOR = 2
 
 DEBUG = True
 
