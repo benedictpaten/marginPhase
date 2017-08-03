@@ -266,8 +266,8 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
                 stList_append(l, stString_print("%f", baseCounts[k]));
             }
             char *baseCountString = stString_join2(" ", l);
-            st_logDebug("Including position: %s %" PRIi64 " with coverage depth: %f and base counts: %s\n",
-                        rProbs->referenceName, rProbs->refStart + i, totalCount, baseCountString);
+//            st_logDebug("Including position: %s %" PRIi64 " with coverage depth: %f and base counts: %s\n",
+//                        rProbs->referenceName, rProbs->refStart + i, totalCount, baseCountString);
             stList_destruct(l);
             free(baseCountString);
         }

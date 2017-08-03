@@ -487,18 +487,23 @@ struct _stGenotypeResults {
     // Variants in reference
     int64_t negatives;
     int64_t positives;
+    int64_t indelsInRef;
+    int64_t homozygousVariantsInRef;
 
     // Variants in evaluated vcf
     int64_t truePositives;
     int64_t falsePositives;
     int64_t trueNegatives;
     int64_t falseNegatives;
-    int64_t falsePositiveGaps;
+
+    // Stats for specific types of variants
     int64_t truePositiveGaps;
+    int64_t falsePositiveGaps;
+    int64_t falseNegativeGaps;
+    int64_t truePositiveHomozygous;
 
     // Types of errors
     int64_t error_badPartition;
-    int64_t error_missedIndels;
     int64_t error_homozygousInRef;
     int64_t error_incorrectVariant;
 

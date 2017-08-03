@@ -35,7 +35,7 @@
 
   "offDiagonalReadErrorPseudoCount" : 10,
 
-  "trainingIterations" : 0,
+  "trainingIterations" : 1,
   
   "estimateReadErrorProbsEmpirically" : false,
 
@@ -57,5 +57,5 @@
   
   "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
 
-  "verbose" : "00"
+  "verbose" : "11"
 }
