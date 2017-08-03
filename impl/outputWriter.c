@@ -666,6 +666,13 @@ void printGenotypeResults(stGenotypeResults *results) {
                        PRIi64 " out of % "PRIi64 ")\n",
                (float)results->trueNegatives/results->negatives,
                results->trueNegatives, results->negatives);
+
+    // Precision
+    st_logInfo("\nPrecision: %f \n\t(= fraction of true positives compared to all calls, \t%"
+                           PRIi64 " out of % "PRIi64 ")\n",
+                   (float)results->truePositives/(results->truePositives+results->falsePositives),
+                   results->truePositives, results->truePositives+results->falsePositives);
+
     st_logInfo("\tIncorrect positives: %" PRIi64 "\n", results->error_incorrectVariant);
     st_logInfo("\tFalse positives: %" PRIi64 ",\twith gaps: %" PRIi64 "\n", results->falsePositives, results->falsePositiveGaps);
 
