@@ -35,7 +35,8 @@ static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         fprintf(fH, "\t\t");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
+            fprintf(fH, " %f, ", exp(matrixSlow[i*ALPHABET_SIZE + j]));
+            //fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
         }
         fprintf(fH, "\n");
     }
@@ -169,7 +170,7 @@ static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refSta
     stSet_destructIterator(readIt);
 }
 
-static void normaliseSubstitutionMatrix(double *subMatrix) {
+void normaliseSubstitutionMatrix(double *subMatrix) {
     /*
      * Normalise matrix so that counts are converted to conditional probabilities of observing
      * derived character given source character.
@@ -186,6 +187,32 @@ static void normaliseSubstitutionMatrix(double *subMatrix) {
     }
 }
 
+void stRPHmmParameters_setReadErrorSubstitutionParameters(stRPHmmParameters *params, double *readErrorSubModel) {
+    /*
+     * Set the substitution parameters of the read error substitution model from the given matrix.
+     */
+    for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+        for(int64_t k=0; k<ALPHABET_SIZE; k++) {
+            setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j, k,
+                    *getSubstitutionProbSlow(readErrorSubModel, j, k));
+        }
+    }
+}
+
+double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params) {
+    /*
+     * Get an empty substitution matrix initializaed with the pseudo counts specified by params.
+     */
+    double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
+    for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
+        readErrorSubModel[j] = params->offDiagonalReadErrorPseudoCount;
+    }
+    for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+        readErrorSubModel[j*ALPHABET_SIZE + j] = params->onDiagonalReadErrorPseudoCount;
+    }
+    return readErrorSubModel;
+}
+
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
         stHash *referenceNamesToReferencePriors) {
     /*
@@ -197,13 +224,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
     for(int64_t i=0; i<params->trainingIterations; i++) {
         st_logDebug("\tStarting training iteration %" PRIi64 "\n", i);
         // Substitution model for haplotypes to reads
-        double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
-        for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
-            readErrorSubModel[j] = params->offDiagonalReadErrorPseudoCount;
-        }
-        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            readErrorSubModel[j*ALPHABET_SIZE + j] = params->onDiagonalReadErrorPseudoCount;
-        }
+        double *readErrorSubModel = getEmptyReadErrorSubstitutionMatrix(params);
 
         stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
@@ -242,7 +263,6 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
             stList_destruct(path);
         }
 
-
         // Cleanup
         st_logDebug("\t\tcleaning\n");
         //TODO I think we need to destruct each hmm in here too
@@ -254,12 +274,7 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
 
         // Update the read error substitution parameters of the parameters object
         st_logDebug("\t\tupdating sub prob\n");
-        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            for(int64_t k=0; k<ALPHABET_SIZE; k++) {
-                setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j, k,
-                        *getSubstitutionProbSlow(readErrorSubModel, j, k));
-            }
-        }
+        stRPHmmParameters_setReadErrorSubstitutionParameters(params, readErrorSubModel);
 
         // Cleanup
         st_logDebug("\t\tcleaning\n");

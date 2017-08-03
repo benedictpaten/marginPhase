@@ -29,7 +29,7 @@ uint16_t scaleToLogIntegerSubMatrix(double logProb) {
      * Convert log probability into scaled form for substitution matrix.
      */
     assert(logProb <= 0);
-    if(logProb < -10) {
+    if(logProb < -12) {
         st_errAbort("Attempting to set a substitution probability smaller than x=0.00001 (log(x) ~= -12)");
     }
     return round(ALPHABET_MIN_SUBSTITUTION_PROB * (-logProb/12.0));

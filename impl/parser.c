@@ -107,7 +107,10 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->includeInvertedPartitions = true;
     params->filterLikelyHomozygousSites = false;
     params->minSecondMostFrequentBaseFilter = 2;
+    params->minSecondMostFrequentBaseLogProbFilter = 0;
     params->gapCharactersForDeletions = true;
+    params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
+    params->estimateReadErrorProbsEmpirically = false;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -264,8 +267,8 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         else if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            int64_t bitstring = atoi(tokStr);
-            setVerbosity(params, bitstring);
+            int64_t bitString = atoi(tokStr);
+            setVerbosity(params, bitString);
             i++;
         }
         else if(strcmp(keyString, "filterLikelyHomozygousSites") == 0) {
@@ -281,11 +284,34 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->minSecondMostFrequentBaseFilter = atof(tokStr);
             i++;
         }
+        else if (strcmp(keyString, "minSecondMostFrequentBaseLogProbFilter") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->minSecondMostFrequentBaseLogProbFilter = atof(tokStr);
+            i++;
+        }
         else if (strcmp(keyString, "gapCharactersForDeletions") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->gapCharactersForDeletions = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "filterAReadWithAnyOneOfTheseSamFlagsSet") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            int64_t bitString = atoi(tokStr);
+            if(bitString < 0 || bitString > UINT16_MAX) {
+                st_errAbort("ERROR: Attempting to set 16-bit string with invalid argument: %s", tokStr);
+            }
+            params->filterAReadWithAnyOneOfTheseSamFlagsSet = bitString;
+            i++;
+        }
+        else if (strcmp(keyString, "estimateReadErrorProbsEmpirically") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->estimateReadErrorProbsEmpirically = strcmp(tokStr, "true") == 0;
             i++;
         }
         else {
@@ -332,6 +358,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 
     int64_t readCount = 0;
 
+    int64_t filteredReads = 0;
+
     while(sam_read1(in,bamHdr,aln) > 0){
 
         int64_t pos = aln->core.pos+1; //left most position of alignment
@@ -341,9 +369,16 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
 
+        // Filter out any reads we don't one.
+        if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
+            filteredReads++;
+            continue;
+        }
+
         // If there isn't a cigar string, don't bother including the read, since we don't
         // know how it aligns
         if (aln->core.n_cigar == 0) {
+            filteredReads++;
             continue;
         }
 
@@ -416,6 +451,9 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                     // This assumes gap character is the last character in the alphabet given
                     pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
                 }
+                else {
+                    // If ignoring gaps then nothing to be done
+                }
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
                 idxInSeq++;
@@ -437,6 +475,13 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         stList_append(profileSequences, pSeq);
     }
 
+    if(st_getLogLevel() == debug) {
+        char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
+        st_logDebug("Filtered %" PRIi64
+                " reads with either missing cigar lines or undesired sam flags (sam flags being filtered on: %s\n",
+                filteredReads, samFlagBitString);
+        free(samFlagBitString);
+    }
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
