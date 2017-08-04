@@ -595,7 +595,9 @@ int main(int argc, char *argv[]) {
     // Compare the output vcf with the reference vcf
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
 
-    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+    if (params->compareVCFs) {
+        compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+    }
 
     // Write out two BAMs, one for each read partition
     st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,

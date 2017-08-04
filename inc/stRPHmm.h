@@ -249,6 +249,9 @@ struct _stRPHmmParameters {
     // Any read that has one of the following sam flags is ignored when parsing the reads from the SAM/BAM file.
     // This allows the ability to optionally ignore, for example, secondary alignments.
     uint16_t filterAReadWithAnyOneOfTheseSamFlagsSet;
+
+    // Whether or not to do the vcf comparison within marginPhase
+    bool compareVCFs;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -445,6 +448,7 @@ struct _stGenomeFragment {
     char *referenceName;
     int64_t refStart;
     int64_t length;
+    uint8_t *referenceSequence;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);

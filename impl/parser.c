@@ -111,6 +111,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->gapCharactersForDeletions = true;
     params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
     params->estimateReadErrorProbsEmpirically = false;
+    params->compareVCFs = false;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -312,6 +313,13 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->estimateReadErrorProbsEmpirically = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "compareVCFs") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->compareVCFs = strcmp(tokStr, "true") == 0;
             i++;
         }
         else {

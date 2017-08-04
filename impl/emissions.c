@@ -422,7 +422,8 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
      * probabilities for a given position within a cell/column.
      */
 
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart-referencePriorProbs->refStart + index)*ALPHABET_SIZE];
+    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
+    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
 
     // Get the haplotype characters that are most probable given the root character
     double characterProbsHap1[ALPHABET_SIZE];
@@ -491,6 +492,8 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
                                      invertScaleToLogIntegerSubMatrix(rProbs[i]));
     }
     gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
+    gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
+
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,

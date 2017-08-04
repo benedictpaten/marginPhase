@@ -57,5 +57,7 @@
   
   "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
 
+  "compareVCFs" : true,
+
   "verbose" : "11"
 }

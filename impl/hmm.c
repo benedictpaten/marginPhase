@@ -106,7 +106,7 @@ double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t 
     stSetIterator *it = stSet_getIterator(profileSeqs);
     stProfileSeq *pSeq;
     while((pSeq = stSet_getNext(it)) != NULL) {
-        if (pos > pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
+        if (pos >= pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 baseCounts[j] += getProb(&(pSeq->profileProbs[(pos - pSeq->refStart)*ALPHABET_SIZE]), j);
             }

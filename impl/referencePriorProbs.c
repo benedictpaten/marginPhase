@@ -246,11 +246,15 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
         }
 
         // Filter columns with either of two options:
-        // (1) If the second most frequent character in the column occurs less than params->minSecondMostFrequentBaseFilter times; this is
+        // (1) If the second most frequent character in the column occurs less than
+        // params->minSecondMostFrequentBaseFilter times; this is
         // intentionally a simple and somewhat robust filter
-        // (2) If the -log probability of observing the second most frequent character as a result of independent substitutions from the
-        // most frequent character is less than params->minSecondMostFrequentBaseLogProbFilter. This second options takes
-        // into account read error substitution probabilities. It can be used to ignore columns with larger numbers of gaps, for example, if
+        // (2) If the -log probability of observing the second most frequent character as a result
+        // of independent substitutions from the
+        // most frequent character is less than params->minSecondMostFrequentBaseLogProbFilter.
+        // This second options takes
+        // into account read error substitution probabilities. It can be used to ignore columns with
+        // larger numbers of gaps, for example, if
         // gaps occur frequently, while including columns with rarer apparent substitution patterns
         if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter ||
            -*getSubstitutionProbSlow(params->readErrorSubModelSlow, mostFrequentBase, secondMostFrequentBase) * secondMostFrequentBaseCount <

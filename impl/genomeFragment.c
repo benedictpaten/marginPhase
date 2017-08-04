@@ -20,6 +20,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Allocate genotype arrays
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
     gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
+    gF->referenceSequence = st_calloc(gF->length, sizeof(uint8_t));
 
     // Allocate haplotype arrays
     gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
@@ -50,6 +51,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Coordinates
     free(genomeFragment->referenceName);
+    free(genomeFragment->referenceSequence);
 
     // Genotypes
     free(genomeFragment->genotypeString);
