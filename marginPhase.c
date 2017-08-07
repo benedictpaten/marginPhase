@@ -503,6 +503,24 @@ int main(int argc, char *argv[]) {
     stList_destruct(profileSequences);
     profileSequences = filteredProfileSeqs;
 
+    // Estimate the read error substitution matrix from the alignment of the reads to the reference and set the read error
+    // substitution probs
+    if(params->estimateReadErrorProbsEmpirically) {
+        st_logInfo("> Estimating read errors from alignment (quick and dirty)\n");
+        // Make read error substitution matrix
+        double *readErrorSubModel = stReferencePriorProbs_estimateReadErrorProbs(referenceNamesToReferencePriors, params);
+
+        // Set substitution probabilities
+        stRPHmmParameters_setReadErrorSubstitutionParameters(params, readErrorSubModel);
+
+        // Cleanup
+        free(readErrorSubModel);
+
+        if(st_getLogLevel() == debug) {
+            stRPHmmParameters_printParameters(params, stderr);
+        }
+    }
+
     // Learn the parameters for the input data
     if(params->trainingIterations > 0) {
         st_logInfo("> Learning parameters for HMM model (%" PRIi64 " iterations)\n", params->trainingIterations);
@@ -577,7 +595,9 @@ int main(int argc, char *argv[]) {
     // Compare the output vcf with the reference vcf
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
 
-    compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+    if (params->compareVCFs) {
+        compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+    }
 
     // Write out two BAMs, one for each read partition
     st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,

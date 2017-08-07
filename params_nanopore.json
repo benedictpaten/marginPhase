@@ -1,0 +1,63 @@
+{
+  "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ],
+
+  "wildcard" : "Nn",
+
+  "haplotypeSubstitutionModel" : [
+            0.999, 0.000323, 0.000323, 0.000323, 0.00003,
+            0.000323, 0.999, 0.000323, 0.000323, 0.00003,
+            0.000323, 0.000323, 0.999, 0.000323, 0.00003,
+            0.000323, 0.000323, 0.000323, 0.999, 0.00003,
+            0.00025, 0.00025, 0.00025, 0.00025, 0.999 
+  ],
+
+  "readErrorModel" : [
+            0.850679,  0.007290,  0.022363,  0.008796,  0.110872, 
+            0.010585,  0.824577,  0.006190,  0.035344,  0.123303, 
+            0.035124,  0.006171,  0.824774,  0.010601,  0.123329, 
+            0.008898,  0.021689,  0.007437,  0.853454,  0.108522, 
+            0.000025,  0.000025,  0.000025,  0.000025,  0.9999 
+   ],
+
+  "maxNotSumTransitions" : true,
+  
+  "minPartitionsInAColumn" : 100,
+
+  "maxPartitionsInAColumn" : 100,
+  
+  "minPosteriorProbabilityForPartition" : 0.0,
+
+  "maxCoverageDepth" : 64,
+
+  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 2,
+
+  "onDiagonalReadErrorPseudoCount" : 100,
+
+  "offDiagonalReadErrorPseudoCount" : 1,
+
+  "trainingIterations" : 0,
+  
+  "estimateReadErrorProbsEmpirically" : false,
+
+  "filterBadReads" : true,
+  
+  "filterMatchThreshold" : 0.8,
+
+  "useReferencePrior" : true,
+  
+  "includeInvertedPartitions" : true,
+  
+  "filterLikelyHomozygousSites" : true,
+  
+  "minSecondMostFrequentBaseFilter" : 0,
+  
+  "minSecondMostFrequentBaseLogProbFilter" : 20,
+  
+  "gapCharactersForDeletions" : false,
+  
+  "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
+
+  "compareVCFs" : true,
+
+  "verbose" : "00"
+}

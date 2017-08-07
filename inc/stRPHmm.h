@@ -145,8 +145,8 @@ struct _stReferencePriorProbs {
     // see scaleToLogIntegerSubMatrix()
     // and invertScaleToLogIntegerSubMatrix() to see how probabilities are stored
     uint16_t *profileProbs;
-    // The profile sequence
-    uint8_t *profileSequence;
+    // The reference sequence
+    uint8_t *referenceSequence;
     // Read counts for the bases seen in reads
     double *baseCounts;
     // Filter array of positions in the reference, used
@@ -164,6 +164,8 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
         stBaseMapper *baseMapper, stRPHmmParameters *params);
 
 int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
+
+double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
 /*
  * Emission probabilities
@@ -218,6 +220,8 @@ struct _stRPHmmParameters {
     // Pseudo counts used to make training of substitution matrices a bit more robust
     double offDiagonalReadErrorPseudoCount;
     double onDiagonalReadErrorPseudoCount;
+    // Before doing any training estimate the read error substitution parameters empirically
+    bool estimateReadErrorProbsEmpirically;
     // Number of iterations of training
     int64_t trainingIterations;
     // Whether or not to filter out poorly matching reads after one round and try again
@@ -237,9 +241,17 @@ struct _stRPHmmParameters {
     // Options to filter which positions in the reference sequence are included in the computation
     bool filterLikelyHomozygousSites;
     double minSecondMostFrequentBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
+    double minSecondMostFrequentBaseLogProbFilter; //  See stReferencePriorProbs_setReferencePositionFilter
 
     // Whether or not to make deletions gap characters (otherwise, profile probs will be flat)
     bool gapCharactersForDeletions;
+
+    // Any read that has one of the following sam flags is ignored when parsing the reads from the SAM/BAM file.
+    // This allows the ability to optionally ignore, for example, secondary alignments.
+    uint16_t filterAReadWithAnyOneOfTheseSamFlagsSet;
+
+    // Whether or not to do the vcf comparison within marginPhase
+    bool compareVCFs;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -248,6 +260,12 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         stHash *referenceNamesToReferencePriors);
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
+
+void stRPHmmParameters_setReadErrorSubstitutionParameters(stRPHmmParameters *params, double *readErrorSubModel);
+
+void normaliseSubstitutionMatrix(double *subMatrix);
+
+double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params);
 
 struct _stRPHmm {
     char *referenceName;
@@ -430,6 +448,7 @@ struct _stGenomeFragment {
     char *referenceName;
     int64_t refStart;
     int64_t length;
+    uint8_t *referenceSequence;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
@@ -472,18 +491,23 @@ struct _stGenotypeResults {
     // Variants in reference
     int64_t negatives;
     int64_t positives;
+    int64_t indelsInRef;
+    int64_t homozygousVariantsInRef;
 
     // Variants in evaluated vcf
     int64_t truePositives;
     int64_t falsePositives;
     int64_t trueNegatives;
     int64_t falseNegatives;
-    int64_t falsePositiveGaps;
+
+    // Stats for specific types of variants
     int64_t truePositiveGaps;
+    int64_t falsePositiveGaps;
+    int64_t falseNegativeGaps;
+    int64_t truePositiveHomozygous;
 
     // Types of errors
     int64_t error_badPartition;
-    int64_t error_missedIndels;
     int64_t error_homozygousInRef;
     int64_t error_incorrectVariant;
 

@@ -21,7 +21,7 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
     referencePriorProbs->refStart = referenceStart;
     referencePriorProbs->length = length;
     referencePriorProbs->profileProbs = st_calloc(length*ALPHABET_SIZE, sizeof(uint16_t));
-    referencePriorProbs->profileSequence = st_calloc(length, sizeof(uint8_t));
+    referencePriorProbs->referenceSequence = st_calloc(length, sizeof(uint8_t));
     referencePriorProbs->baseCounts = st_calloc(length*ALPHABET_SIZE, sizeof(double));
     referencePriorProbs->referencePositionsIncluded = st_calloc(length, sizeof(bool));
     for(int64_t i=0; i<length; i++) {
@@ -33,7 +33,7 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
 void stReferencePriorProbs_destruct(stReferencePriorProbs *referencePriorProbs) {
     free(referencePriorProbs->profileProbs);
     free(referencePriorProbs->referenceName);
-    free(referencePriorProbs->profileSequence);
+    free(referencePriorProbs->referenceSequence);
     free(referencePriorProbs->baseCounts);
     free(referencePriorProbs->referencePositionsIncluded);
     free(referencePriorProbs);
@@ -166,7 +166,7 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
         for(int64_t i=0; i<rProbs->length; i++) {
             uint8_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart-1]);
             assert(refChar >= 0 && refChar < ALPHABET_SIZE);
-            rProbs->profileSequence[i] = refChar;
+            rProbs->referenceSequence[i] = refChar;
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j);
             }
@@ -178,6 +178,38 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
     stHash_destructIterator(hashIt);
 
     return referenceNamesToReferencePriors;
+}
+
+double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+    /*
+     * Estimate the read error substitution matrix from the alignment of the reads to the reference.
+     */
+    
+    // Make read error substitution matrix
+    double *readErrorSubModel = getEmptyReadErrorSubstitutionMatrix(params);
+
+    stHashIterator *rProbsIt = stHash_getIterator(referenceNamesToReferencePriors);
+    char *refSeq;
+    while((refSeq = stHash_getNext(rProbsIt)) != NULL) {
+        stReferencePriorProbs *rProbs = stHash_search(referenceNamesToReferencePriors, refSeq);
+        for(int64_t i=0; i<rProbs->length; i++) {
+            // Reference character
+            uint8_t refChar = rProbs->referenceSequence[i];
+
+            // Now get read bases
+            double *baseCounts = &rProbs->baseCounts[i*ALPHABET_SIZE];
+
+            //
+            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+                readErrorSubModel[ALPHABET_SIZE*refChar + j] += baseCounts[j];
+            }
+        }
+    }
+    stHash_destructIterator(rProbsIt);
+    
+    normaliseSubstitutionMatrix(readErrorSubModel);
+
+    return readErrorSubModel;
 }
 
 int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *rProbs, stRPHmmParameters *params) {
@@ -205,13 +237,28 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
 
         // Maximum number of instances of a non-reference base
         double secondMostFrequentBaseCount = 0.0;
+        int64_t secondMostFrequentBase = 0;
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
             if(j != mostFrequentBase && baseCounts[j] > secondMostFrequentBaseCount) {
                 secondMostFrequentBaseCount = baseCounts[j];
+                secondMostFrequentBase = j;
             }
         }
 
-        if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter) {
+        // Filter columns with either of two options:
+        // (1) If the second most frequent character in the column occurs less than
+        // params->minSecondMostFrequentBaseFilter times; this is
+        // intentionally a simple and somewhat robust filter
+        // (2) If the -log probability of observing the second most frequent character as a result
+        // of independent substitutions from the
+        // most frequent character is less than params->minSecondMostFrequentBaseLogProbFilter.
+        // This second options takes
+        // into account read error substitution probabilities. It can be used to ignore columns with
+        // larger numbers of gaps, for example, if
+        // gaps occur frequently, while including columns with rarer apparent substitution patterns
+        if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter ||
+           -*getSubstitutionProbSlow(params->readErrorSubModelSlow, mostFrequentBase, secondMostFrequentBase) * secondMostFrequentBaseCount <
+           params->minSecondMostFrequentBaseLogProbFilter) {
             filteredPositions++;
             // Mask the position
             assert(rProbs->referencePositionsIncluded[i] == true);
@@ -223,8 +270,8 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
                 stList_append(l, stString_print("%f", baseCounts[k]));
             }
             char *baseCountString = stString_join2(" ", l);
-            st_logDebug("Including position: %s %" PRIi64 " with coverage depth: %f and base counts: %s\n",
-                    rProbs->referenceName, rProbs->refStart + i, totalCount, baseCountString);
+//            st_logDebug("Including position: %s %" PRIi64 " with coverage depth: %f and base counts: %s\n",
+//                        rProbs->referenceName, rProbs->refStart + i, totalCount, baseCountString);
             stList_destruct(l);
             free(baseCountString);
         }
