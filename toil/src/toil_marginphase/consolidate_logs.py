@@ -58,7 +58,10 @@ class LogDetails():
         self.switch_error_denominator = -1
         self.average_distance_between_switch_errors = -1
         self.uncertain_phasing_spots = -1
-        self.load_details(lines_for_analysis)
+        if len(lines_for_analysis) != 0:
+            self.load_details(lines_for_analysis)
+        else:
+            log("Found no lines for analysis in %s" % self.log_name)
 
     def load_details(self, lines_for_analysis):
         lines_for_analysis.reverse()
@@ -109,7 +112,7 @@ class LogDetails():
         self.switch_error_denominator = int(line[7].rstrip(","))
 
         line = lines_for_analysis.pop().strip().split()
-        self.average_distance_between_switch_errors = None if line[5].find("nan") != -1 else int(line[5])
+        self.average_distance_between_switch_errors = None if line[5].find("nan") != -1 else float(line[5])
 
         line = lines_for_analysis.pop().strip().split()
         self.uncertain_phasing_spots = int(line[3])
