@@ -335,6 +335,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
     params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
     params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) > 0;
+    params->verboseFalseNegatives = !((bitstring & LOG_FALSE_NEGATIVES) > 0);
 }
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {

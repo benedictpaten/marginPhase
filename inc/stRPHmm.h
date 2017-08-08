@@ -234,6 +234,7 @@ struct _stRPHmmParameters {
     // Verbosity options for printing
     bool verboseTruePositives;
     bool verboseFalsePositives;
+    bool verboseFalseNegatives;
 
     // Ensure symmetry in the HMM such that the inverted partition of each partition is included in the HMM
     bool includeInvertedPartitions;
@@ -477,6 +478,7 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
 #define LOG_TRUE_POSITIVES 1
 #define LOG_FALSE_POSITIVES 2
+#define LOG_FALSE_NEGATIVES 4
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
 
 // File writing
@@ -507,20 +509,24 @@ struct _stGenotypeResults {
     int64_t truePositiveHomozygous;
 
     // Types of errors
-    int64_t error_badPartition;
+    int64_t error_SNV;
     int64_t error_homozygousInRef;
-    int64_t error_incorrectVariant;
+    int64_t error_homozygousIndels;
 
     // Phasing
     int64_t switchErrors;
     float switchErrorDistance;
     int64_t uncertainPhasing;
 };
+void printGenotypeResults(stGenotypeResults *results);
+
+// VCF comparison
 
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
-void printGenotypeResults(stGenotypeResults *results);
+void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
 
+// Output file writing
 
 void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
