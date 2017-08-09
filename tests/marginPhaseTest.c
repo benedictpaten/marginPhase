@@ -76,7 +76,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     st_logInfo("Testing all PacBio regions\n");
 
-    char *paramsFile = "../params_pacbio_no_gaps.json";
+    char *paramsFile = "../params_pacbio_gaps.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 

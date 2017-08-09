@@ -67,3 +67,10 @@ char * intToBinaryString(uint64_t i) {
 
     return str;
 }
+
+uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex) {
+    /*
+     * Switches which the partition of a given read whose index in the partition vector is readIndex.
+     */
+    return partition ^ ((uint64_t)1 << readIndex);
+}

@@ -100,6 +100,8 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
+uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex);
+
 /*
  * Profile sequence
  */
