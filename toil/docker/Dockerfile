@@ -13,17 +13,16 @@ RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
 # get marginPhase
 WORKDIR /opt
-#TODO don't clone it, copy all files from current toil directory?
-RUN git clone  --recursive https://github.com/benedictpaten/marginPhase.git
+ADD tempMarginPhase /opt/marginPhase
 
 # build htslib
 WORKDIR /opt/marginPhase/externalTools/htslib
-RUN autoconf ; autoheader ; ./configure ; make
+RUN autoconf ; autoheader ; ./configure ; make clean ; make
 
 # build marginPhase
 WORKDIR /opt/marginPhase
 RUN cmake .
-RUN make
+RUN make clean && make
 
 # setup entrypoint
 COPY wrapper.sh /opt/

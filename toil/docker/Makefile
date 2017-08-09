@@ -8,8 +8,19 @@ tag = ${git_commit}
 
 # Steps
 build:
+    # so that our docker tag and build match the current git hash and repo
+	cp -r ../../../marginPhase ../../../tempMarginPhase
+	-rm -rf ../../../tempMarginPhase/toil
+	-rm -rf ../../../tempMarginPhase/cmake-build-debug
+	-rm -rf ../../../tempMarginPhase/CMakeCache.txt
+	-rm -rf ../../../tempMarginPhase/CMakeFiles
+	-rm -rf ../../../tempMarginPhase/*.cmake
+	-cd ../../../tempMarginPhase && make clean
+	mv ../../../tempMarginPhase tempMarginPhase
+	# do the docker build
 	docker build -t ${name}:${tag} .
 	docker tag ${name}:${tag} ${name}:latest
+	rm -rf tempMarginPhase
 	touch ${build_tool}
 
 push: build
