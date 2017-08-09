@@ -63,6 +63,7 @@ double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t len
         totalExpectedNumberOfMatches += getExpectedNumberOfMatches(haplotypeString, start, length, pSeq);
         totalLength += pSeq->length;
     }
+    stSet_destructIterator(it);
     return totalExpectedNumberOfMatches/totalLength;
 }
 
@@ -567,6 +568,11 @@ int main(int argc, char *argv[]) {
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
+
+        // Refine the genome fragment by repartitoning the reads iteratively
+        if(params->roundsOfIterativeRefinement > 0) {
+            stGenomeFragment_refineGenomeFragment(gF, reads1, reads2, hmm, path, params->roundsOfIterativeRefinement);
+        }
 
         addProfileSeqIdsToSet(reads1, read1Ids);
         addProfileSeqIdsToSet(reads2, read2Ids);

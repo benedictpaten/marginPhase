@@ -302,7 +302,3 @@ int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePrio
 
     return filteredPositions;
 }
-
-
-
-
