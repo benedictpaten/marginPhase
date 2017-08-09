@@ -18,3 +18,4 @@ s3am
 *.pyc
 config-toil-marginphase.yaml
 manifest-toil-marginphase.tsv
+toil/docker/runtime-container.DONE

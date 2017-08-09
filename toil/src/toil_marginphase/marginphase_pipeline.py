@@ -225,8 +225,7 @@ def prepare_input(job, sample, config):
 
     # enqueue merging and consolidation job
     merge_job = job.addFollowOnJobFn(merge_chunks, config, returned_tarballs)
-    returned_tarballs.append(merge_job.rv())
-    merge_job.addFollowOnJobFn(consolidate_output, config, returned_tarballs)
+    merge_job.addFollowOnJobFn(consolidate_output, config, merge_job.rv())
 
     # log
     _log_time(job, "prepare_input", start, config.uuid)
@@ -343,7 +342,7 @@ def merge_chunks(job, config, chunk_infos):
     merged_hap1_file, merged_hap2_file, merged_vcf_file = None, None, None
 
     # sort by chunk index and validate
-    chunk_infos.sort(lambda x: x[CI_CHUNK_INDEX])
+    chunk_infos.sort(key=(lambda x: x[CI_CHUNK_INDEX]))
     idx = 0
     missing_indices = []
     for ci in chunk_infos:
@@ -357,22 +356,28 @@ def merge_chunks(job, config, chunk_infos):
 
     # prep for iteration
     prev_hap1_read_ids, prev_hap2_read_ids = set(), set()
+    prev_chunk = {CI_CHUNK_INDEX: "start"}
 
     # iterate over all chunks
     for chunk in chunk_infos:
         # get current chunk
+        if os.path.isdir(tar_work_dir):
+            shutil.rmtree(tar_work_dir)
         sam_hap1_file, sam_hap2_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
 
         # get reads
+        read_start_pos = chunk[CI_CHUNK_START]
+        read_end_pos = chunk[CI_CHUNK_BOUNDARY_START]
+        if read_start_pos == read_end_pos: read_end_pos += config.partition_margin
         curr_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
-                                           config.contig_name, chunk[CI_CHUNK_START], chunk[CI_CHUNK_BOUNDARY_START])
-        curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
-                                           config.contig_name, chunk[CI_CHUNK_START], chunk[CI_CHUNK_BOUNDARY_START])
+                                           config.contig_name, read_start_pos, read_end_pos)
+        curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
+                                           config.contig_name, read_start_pos, read_end_pos)
 
         # log the matching info
-        same_haplotype_ordering = _should_same_haplotype_ordering_be_maintained(job, config, prev_hap1_read_ids,
-                                                                                prev_hap2_read_ids, curr_hap1_read_ids,
-                                                                                curr_hap2_read_ids)
+        same_haplotype_ordering = _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, chunk,
+                                                                                prev_hap1_read_ids, prev_hap2_read_ids,
+                                                                                curr_hap1_read_ids, curr_hap2_read_ids)
         # exclude reads already in a haplotype
         excluded_read_ids = set()
         for id in prev_hap1_read_ids:
@@ -386,12 +391,12 @@ def merge_chunks(job, config, chunk_infos):
                                       .format(config.uuid, merged_chunk_idx, chunk[CI_CHUNK_INDEX]))
 
             # get merged haplotype names and files
-            merged_hap1_name = "{}.merged.hap1.{}.sam".format(config.uuid, merged_chunk_idx)
-            merged_hap2_name = "{}.merged.hap2.{}.sam".format(config.uuid, merged_chunk_idx)
-            merged_vcf_name = "{}.merged.{}.vcf".format(config.uuid, merged_chunk_idx)
+            merged_hap1_name = "{}.merged.{}.hap1.sam".format(config.uuid, merged_chunk_idx)
+            merged_hap2_name = "{}.merged.{}.hap2.sam".format(config.uuid, merged_chunk_idx)
+            merged_vcf_name  = "{}.merged.{}.vcf".format(config.uuid, merged_chunk_idx)
             merged_hap1_file = os.path.join(merged_chunks_directory, merged_hap1_name)
             merged_hap2_file = os.path.join(merged_chunks_directory, merged_hap2_name)
-            merged_vcf_file = os.path.join(merged_chunks_directory, merged_vcf_name)
+            merged_vcf_file  = os.path.join(merged_chunks_directory, merged_vcf_name)
 
             # prep the hap1 and hap2 bams - the headers should be the same for all chunks, so we can just start with
             #   the extracted haplotype sam files
@@ -441,19 +446,26 @@ def merge_chunks(job, config, chunk_infos):
                                                 config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
         prev_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
                                                 config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
-        _cleanup_tarfile_location(job, config, tar_work_dir)
+        prev_chunk = chunk
+
+    # post-processing
+    #TODO sort the bam
+    #TODO sort the vcf
 
     # tarball the output and save
     job.fileStore.logToMaster("{}: Output files for merge:".format(config.uuid))
     output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))
+    output_file_locations.sort()
     for f in output_file_locations:
         job.fileStore.logToMaster("\t{}".format(os.path.basename(f)))
     tarball_name = "{}.merged.tar.gz".format(config.uuid)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+    # we need to return the input list of chunk infos for consolidation
+    chunk_infos.append({CI_OUTPUT_FILE_ID: output_file_id, CI_CHUNK_INDEX: "merged"})
 
     _log_time(job, "merge_chunks", start, config.uuid)
-    return output_file_id
+    return chunk_infos
 
 
 def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_chunk,
@@ -467,6 +479,9 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
     prev_hap2_read_count = len(prev_hap2_read_ids)
     curr_hap1_read_count = len(curr_hap1_read_ids)
     curr_hap2_read_count = len(curr_hap2_read_ids)
+    job.fileStore.logToMaster("{}:\tprev_hap1_cnt:{}\tprev_hap2_cnt:{}\tcurr_hap1_cnt:{}\tcurr_hap2_cnt:{}"
+                              .format(match_identifier, prev_hap1_read_count, prev_hap2_read_count,
+                                      curr_hap1_read_count, curr_hap2_read_count))
 
     # intersect counts
     reads_in_curr1_and_prev1 = 0
@@ -491,18 +506,17 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
     reads_in_currs_not_in_prevs = curr_hap1_read_count + curr_hap2_read_count \
                                   - reads_in_curr1_and_neither_prev - reads_in_curr2_and_neither_prev
 
-    ratio_supporting_same_ordering = reads_supporting_same_ordering / reads_in_currs_not_in_prevs
-    ratio_supporting_different_ordering = reads_supporting_different_ordering / reads_in_currs_not_in_prevs
+    ratio_supporting_same_ordering, ratio_supporting_different_ordering = -1, -1
+    if reads_in_currs_not_in_prevs != 0:
+        ratio_supporting_same_ordering = 1.0 * reads_supporting_same_ordering / reads_in_currs_not_in_prevs
+        ratio_supporting_different_ordering = 1.0 * reads_supporting_different_ordering / reads_in_currs_not_in_prevs
 
     # log stuff (maybe this can be removed later)
-    job.fileStore.logToMaster("{}: prev_hap1_cnt:{} prev_hap2_cnt:{} curr_hap1_cnt:{} curr_hap2_cnt:{}"
-                              .format(match_identifier, prev_hap1_read_count, prev_hap2_read_count,
-                                      curr_hap1_read_count, curr_hap2_read_count))
-    job.fileStore.logToMaster("{}: cur1_prev1:{} cur1_prev2:{} cur1_only:{} cur2_prev1:{} cur2_prev2:{} cur2_only:{}"
+    job.fileStore.logToMaster("{}:\tcur1_prev1:{}\tcur1_prev2:{}\tcur1_only:{}\tcur2_prev1:{}\tcur2_prev2:{}\tcur2_only:{}"
                               .format(match_identifier, reads_in_curr1_and_prev1, reads_in_curr1_and_prev2,
                                       reads_in_curr1_and_neither_prev, reads_in_curr2_and_prev1,
                                       reads_in_curr2_and_prev2, reads_in_curr2_and_neither_prev))
-    job.fileStore.logToMaster("{}: reads_supporting_current_order:{} ({}) reads_supporting_different_order:{} ({})"
+    job.fileStore.logToMaster("{}:\treads_supporting_current_order:{} ({})\treads_supporting_different_order:{} ({})"
                               .format(match_identifier, reads_supporting_same_ordering, ratio_supporting_same_ordering,
                                       reads_supporting_different_ordering, ratio_supporting_different_ordering))
 
@@ -583,14 +597,25 @@ def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
     return sam_hap1_file, sam_hap2_file, vcf_file
 
 
-def _cleanup_tarfile_location(job, config, tar_work_dir):
-    os.rmdir(tar_work_dir)
-
-
 def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end_pos):
-    #prep
+    # samtools can't get random locations from sam files, so we convert to bam first :/
+    bam_name = "{}.bam".format(file_name)
+    bai_name = "{}.bai".format(bam_name)
+
+    if not os.path.isfile(os.path.join(work_dir, bai_name)):
+        # convert to bam
+        convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, convert_cmd))
+        dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=convert_cmd)
+
+        # index
+        index_cmd = ["index", os.path.join("/data", bam_name)]
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
+        dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=index_cmd)
+
+    # read_ids prep
     reads_filename = "{}.reads.txt".format(file_name)
-    samtools_cmd = ["samtools", "view", os.path.join("/data", file_name), "{}:{}-{}".format(contig_name, start_pos, end_pos)]
+    samtools_cmd = ["samtools", "view", os.path.join("/data", bam_name), "{}:{}-{}".format(contig_name, start_pos, end_pos)]
     column_script = [os.path.join("/data", _write_select_column_script(work_dir, 1))]
     tee_script = ["tee", os.path.join("/data", reads_filename)]
 
@@ -627,13 +652,14 @@ def consolidate_output(job, config, chunk_infos):
                 for tarinfo in f_in:
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
                         f_out.addfile(tarinfo, fileobj=f_in_file)
+    job.fileStore.logToMaster("{}: Consolidated {} tarballs".format(config.uuid, len(out_tars)))
 
     # Move to output location
     if urlparse(config.output_dir).scheme == 's3':
-        job.fileStore.logToMaster('Uploading {} to S3: {}'.format(out_tar, config.output_dir))
+        job.fileStore.logToMaster('{}: Uploading {} to S3: {}'.format(config.uuid, out_tar, config.output_dir))
         s3am_upload(fpath=out_tar, s3_dir=config.output_dir, num_cores=config.cores)
     else:
-        job.fileStore.logToMaster('Moving {} to output dir: {}'.format(out_tar, config.output_dir))
+        job.fileStore.logToMaster('{}: Moving {} to output dir: {}'.format(config.uuid, out_tar, config.output_dir))
         mkdir_p(config.output_dir)
         copy_files(file_paths=[out_tar], output_dir=config.output_dir)
 
