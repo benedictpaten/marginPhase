@@ -111,6 +111,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->gapCharactersForDeletions = true;
     params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
     params->estimateReadErrorProbsEmpirically = false;
+    params->roundsOfIterativeRefinement = 0;
     params->compareVCFs = false;
     setVerbosity(params, 0);
 
@@ -315,6 +316,12 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->estimateReadErrorProbsEmpirically = strcmp(tokStr, "true") == 0;
             i++;
         }
+        else if (strcmp(keyString, "roundsOfIterativeRefinement") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->roundsOfIterativeRefinement = atoi(tokStr);
+            i++;
+        }
         else if (strcmp(keyString, "compareVCFs") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
@@ -335,6 +342,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
     params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
     params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) > 0;
+    params->verboseFalseNegatives = !((bitstring & LOG_FALSE_NEGATIVES) > 0);
 }
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {

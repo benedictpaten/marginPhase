@@ -200,6 +200,7 @@ set(SOURCE_FILES
         impl/referencePriorProbs.c
         impl/parser.c
         impl/outputWriter.c
+        impl/vcfTools.c
         )
 
 
