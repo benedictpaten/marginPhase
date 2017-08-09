@@ -13,6 +13,7 @@ RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
 # get marginPhase
 WORKDIR /opt
+#TODO don't clone it, copy all files from current toil directory?
 RUN git clone  --recursive https://github.com/benedictpaten/marginPhase.git
 
 # build htslib

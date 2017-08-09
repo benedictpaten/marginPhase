@@ -45,7 +45,23 @@ MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 5 #input bam chunk, output (in sam fmt), vcf etc
 MP_DSK_REF_FACTOR = 2
 
-DEBUG = True
+# for debugging (shouldn't be committed as true)
+DEBUG = False
+
+#chunk_info_keys
+CI_CHUNK_BOUNDARY_START = "chunk_bounary_start_pos" #position where chunk split occured
+CI_CHUNK_BOUNDARY_END = "chunk_bounary_end_pos" #position where chunk split occured
+CI_CHUNK_START = "chunk_start_pos" #chunk boundary modified by the margin
+CI_CHUNK_END = "chunk_end_pos" #chunk boundary modified by the margin
+CI_READ_COUNT = "read_count" #how many reads were in the chunk
+CI_CHUNK_SIZE = "chunk_size" #chunk size in bytes
+CI_CHUNK_INDEX = "chunk_index" #index of the chunk
+CI_OUTPUT_FILE_ID = "output_file_id"
+
+# output naming conventions
+SAM_HAP_1_SUFFIX = "out.1.sam"
+SAM_HAP_2_SUFFIX = "out.2.sam"
+VCF_SUFFIX = "out.vcf"
 
 def parse_samples(path_to_manifest):
     """
@@ -132,33 +148,41 @@ def prepare_input(job, sample, config):
     get_idx_cmd = [
         ["samtools", "view", data_bam_location],
         ["head", "-n", "1"],
-        [os.path.join("/data", write_select_column_script(work_dir))]
+        [os.path.join("/data", _write_select_column_script(work_dir))]
     ]
-    start_idx_str = dockerCheckOutputExcept141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
+    start_idx_str = _dockerCheckOutput_except_141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
     get_idx_cmd[1][0] = "tail"
-    end_idx_str = dockerCheckOutputExcept141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
+    end_idx_str = _dockerCheckOutput_except_141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
     start_idx = int(start_idx_str) - 1
     end_idx = int(end_idx_str) + 1
 
     # get reads from positions
-    positions = list()
+    chunk_infos = list()
     idx = start_idx
     while idx < end_idx:
+        ci = dict()
+        ci[CI_CHUNK_BOUNDARY_START] = idx
         chunk_start = idx - (config.partition_margin if idx != start_idx else 0)
+        ci[CI_CHUNK_START] = chunk_start
         idx += config.partition_size
+        ci[CI_CHUNK_BOUNDARY_END] = idx
         chunk_end = idx + config.partition_margin
-        positions.append([chunk_start, chunk_end])
+        ci[CI_CHUNK_END] = chunk_end
+        chunk_infos.append(ci)
 
     # enqueue jobs
-    job.fileStore.logToMaster("{}: Enqueueing {} jobs".format(config.uuid, len(positions)))
+    job.fileStore.logToMaster("{}: Enqueueing {} jobs".format(config.uuid, len(chunk_infos)))
     idx = 0
     enqueued_jobs = 0
-    return_values = list()
+    returned_tarballs = list()
     total_mem = 0
-    for position in positions:
+    for ci in chunk_infos:
         #prep
-        chunk_position_description = "{}:{}-{}".format(config.contig_name, position[0], position[1])
+        ci[CI_CHUNK_INDEX] = idx
+        chunk_start = ci[CI_CHUNK_START]
+        chunk_end = ci[CI_CHUNK_END]
+        chunk_position_description = "{}:{}-{}".format(config.contig_name, chunk_start, chunk_end)
         bam_split_command = ["view", "-b", data_bam_location, chunk_position_description]
         chunk_name = "{}.{}.bam".format(config.uuid, idx)
         #write chunk
@@ -168,7 +192,9 @@ def prepare_input(job, sample, config):
             dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         chunk_size = os.stat(chunk_location).st_size
-        read_count= get_bam_read_count(job, work_dir, chunk_name)
+        ci[CI_CHUNK_SIZE] = chunk_size
+        read_count= _get_bam_read_count(job, work_dir, chunk_name)
+        ci[CI_READ_COUNT] = read_count
         job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
                                   .format(config.uuid, chunk_position_description, idx, chunk_size,
                                           int(chunk_size / 1024 / 1024), read_count))
@@ -188,23 +214,25 @@ def prepare_input(job, sample, config):
             total_mem += mp_mem
             mp_mem = str(int(mp_mem / 1024)) + "K"
             mp_disk = str(int(mp_disk) / 1024) + "K"
-            margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, idx,
+            margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, ci,
                                                  memory=mp_mem, cores=mp_cores, disk=mp_disk)
-            return_values.append(margin_phase_job.rv())
+            returned_tarballs.append(margin_phase_job.rv())
             enqueued_jobs += 1
         idx += 1
 
     job.fileStore.logToMaster("{}: Enqueued {} jobs, requested total of {}gb ({}b) mem"
                               .format(config.uuid, enqueued_jobs, int(total_mem/1024/1024/1024), total_mem))
 
-    # enqueue consolidation job
-    job.addFollowOnJobFn(consolidate_output, config, return_values)
+    # enqueue merging and consolidation job
+    merge_job = job.addFollowOnJobFn(merge_chunks, config, returned_tarballs)
+    returned_tarballs.append(merge_job.rv())
+    merge_job.addFollowOnJobFn(consolidate_output, config, returned_tarballs)
 
     # log
     _log_time(job, "prepare_input", start, config.uuid)
 
 
-def write_select_column_script(work_dir, column=4):
+def _write_select_column_script(work_dir, column=4):
     # I feel bad for doing this, but I can't send single quotes into a toil command without them becoming escaped
     # so I'm just creating a script which does that
     filename = "select_column_{}.sh".format(column)
@@ -216,7 +244,7 @@ def write_select_column_script(work_dir, column=4):
     return filename
 
 
-def dockerCheckOutputExcept141(job, tool, work_dir, parameters):
+def _dockerCheckOutput_except_141(job, tool, work_dir, parameters):
     # there's something strange with the return code for commands which stop reading from stdin (like "head")
     # and so we need to ignore the returncode
     try:
@@ -227,7 +255,7 @@ def dockerCheckOutputExcept141(job, tool, work_dir, parameters):
         else:
             raise e
 
-def get_bam_read_count(job, work_dir, bam_name):
+def _get_bam_read_count(job, work_dir, bam_name):
     params = [
         ["samtools", "view", os.path.join("/data", bam_name)],
         ["wc", "-l"]
@@ -236,10 +264,11 @@ def get_bam_read_count(job, work_dir, bam_name):
     return int(line_count_str)
 
 
-def run_margin_phase(job, config, chunk_file_id, chunk_idx):
+def run_margin_phase(job, config, chunk_file_id, chunk_info):
     # prep
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
+    chunk_idx = chunk_info[CI_CHUNK_INDEX]
     chunk_identifier = "{}.{}".format(config.uuid, chunk_idx)
     chunk_name = "{}.in.bam".format(chunk_identifier)
     chunk_location = os.path.join(work_dir, chunk_name)
@@ -290,33 +319,314 @@ def run_margin_phase(job, config, chunk_file_id, chunk_idx):
     # tarball the output and save
     tarball_name = "{}.tar.gz".format(chunk_identifier)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
-    output_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+    output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+    chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
 
     # log
     _log_time(job, "run_margin_phase", start, chunk_identifier)
-    return output_fileid
+    return chunk_info
 
-def consolidate_output(job, config, all_output):
+
+def merge_chunks(job, config, chunk_infos):
+    # prep
+    start = time.time()
+    work_dir = job.fileStore.getLocalTempDir()
+    job.fileStore.logToMaster("merging_chunks:{}:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("merging {} chunks".format(len(chunk_infos)))
+    # work directory for tar management
+    tar_work_dir = os.path.join(work_dir, "tmp")
+    # output files
+    merged_chunks_directory = os.path.join(work_dir, "merged")
+    os.mkdir(merged_chunks_directory)
+    merged_chunk_idx = 0  # for areas where merging can't happen
+    merged_hap1_name, merged_hap2_name, merged_vcf_name = None, None, None
+    merged_hap1_file, merged_hap2_file, merged_vcf_file = None, None, None
+
+    # sort by chunk index and validate
+    chunk_infos.sort(lambda x: x[CI_CHUNK_INDEX])
+    idx = 0
+    missing_indices = []
+    for ci in chunk_infos:
+        while ci[CI_CHUNK_INDEX] > idx:
+            missing_indices.append(idx)
+            idx += 1
+        idx += 1
+    if len(missing_indices) > 0:
+        job.fileStore.logToMaster("{}: Found {} missing indices: {}"
+                                  .format(config.uuid, len(missing_indices), missing_indices))
+
+    # prep for iteration
+    prev_hap1_read_ids, prev_hap2_read_ids = set(), set()
+
+    # iterate over all chunks
+    for chunk in chunk_infos:
+        # get current chunk
+        sam_hap1_file, sam_hap2_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
+
+        # get reads
+        curr_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
+                                           config.contig_name, chunk[CI_CHUNK_START], chunk[CI_CHUNK_BOUNDARY_START])
+        curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
+                                           config.contig_name, chunk[CI_CHUNK_START], chunk[CI_CHUNK_BOUNDARY_START])
+
+        # log the matching info
+        same_haplotype_ordering = _should_same_haplotype_ordering_be_maintained(job, config, prev_hap1_read_ids,
+                                                                                prev_hap2_read_ids, curr_hap1_read_ids,
+                                                                                curr_hap2_read_ids)
+        # exclude reads already in a haplotype
+        excluded_read_ids = set()
+        for id in prev_hap1_read_ids:
+            excluded_read_ids.add(id)
+        for id in prev_hap2_read_ids:
+            excluded_read_ids.add(id)
+
+        # this indicates there was no (or equal) read overlap.  probably it means we've just started the process
+        if same_haplotype_ordering is None:
+            job.fileStore.logToMaster("{}: starting new merged chunk idx {} from chunk {}"
+                                      .format(config.uuid, merged_chunk_idx, chunk[CI_CHUNK_INDEX]))
+
+            # get merged haplotype names and files
+            merged_hap1_name = "{}.merged.hap1.{}.sam".format(config.uuid, merged_chunk_idx)
+            merged_hap2_name = "{}.merged.hap2.{}.sam".format(config.uuid, merged_chunk_idx)
+            merged_vcf_name = "{}.merged.{}.vcf".format(config.uuid, merged_chunk_idx)
+            merged_hap1_file = os.path.join(merged_chunks_directory, merged_hap1_name)
+            merged_hap2_file = os.path.join(merged_chunks_directory, merged_hap2_name)
+            merged_vcf_file = os.path.join(merged_chunks_directory, merged_vcf_name)
+
+            # prep the hap1 and hap2 bams - the headers should be the same for all chunks, so we can just start with
+            #   the extracted haplotype sam files
+            subprocess.check_call(["cp", sam_hap1_file, merged_hap1_file])
+            subprocess.check_call(["cp", sam_hap2_file, merged_hap2_file])
+            subprocess.check_call(["cp", vcf_file, merged_vcf_file])
+
+            # increment merged chunk idx
+            merged_chunk_idx += 1
+        elif same_haplotype_ordering:
+            job.fileStore.logToMaster("{}:chunk{}:hap1: writing same ordering"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX]))
+            #append reads
+            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, excluded_read_ids)
+            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, excluded_read_ids)
+            #document excluded reads
+            excl_ids_hap1_cnt = len(excl_ids_hap1)
+            excl_ids_hap2_cnt = len(excl_ids_hap2)
+            job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
+                                              int(100.0 * excl_ids_hap1_cnt / len(curr_hap1_read_ids))))
+            job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
+                                              int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
+            # append vcf calls
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, False)
+        else:
+            job.fileStore.logToMaster("{}:chunk{}:hap1: writing different ordering"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX]))
+            #append reads
+            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, excluded_read_ids)
+            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap1_file, excluded_read_ids)
+            #document excluded reads
+            excl_ids_hap1_cnt = len(excl_ids_hap1)
+            excl_ids_hap2_cnt = len(excl_ids_hap2)
+            job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
+                                              int(100.0 * excl_ids_hap1_cnt / len(curr_hap1_read_ids))))
+            job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
+                                              int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
+            # append vcf calls
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, True)
+
+        # prep for iteration / cleanup
+        prev_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
+                                                config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
+        prev_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
+                                                config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
+        _cleanup_tarfile_location(job, config, tar_work_dir)
+
+    # tarball the output and save
+    job.fileStore.logToMaster("{}: Output files for merge:".format(config.uuid))
+    output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))
+    for f in output_file_locations:
+        job.fileStore.logToMaster("\t{}".format(os.path.basename(f)))
+    tarball_name = "{}.merged.tar.gz".format(config.uuid)
+    tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+    output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+
+    _log_time(job, "merge_chunks", start, config.uuid)
+    return output_file_id
+
+
+def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_chunk,
+                                                  prev_hap1_read_ids, prev_hap2_read_ids,
+                                                  curr_hap1_read_ids, curr_hap2_read_ids):
+    # prep
+    match_identifier = "{}:read_matching {}-{}".format(config.uuid, prev_chunk[CI_CHUNK_INDEX], curr_chunk[CI_CHUNK_INDEX])
+
+    # total counts
+    prev_hap1_read_count = len(prev_hap1_read_ids)
+    prev_hap2_read_count = len(prev_hap2_read_ids)
+    curr_hap1_read_count = len(curr_hap1_read_ids)
+    curr_hap2_read_count = len(curr_hap2_read_ids)
+
+    # intersect counts
+    reads_in_curr1_and_prev1 = 0
+    reads_in_curr1_and_prev2 = 0
+    reads_in_curr1_and_neither_prev = 0
+    reads_in_curr2_and_prev1 = 0
+    reads_in_curr2_and_prev2 = 0
+    reads_in_curr2_and_neither_prev = 0
+
+    # calculate intersection
+    for id in curr_hap1_read_ids:
+        if id in prev_hap1_read_ids: reads_in_curr1_and_prev1 += 1
+        if id in prev_hap2_read_ids: reads_in_curr1_and_prev2 += 1
+        if id not in prev_hap1_read_ids and id not in prev_hap2_read_ids: reads_in_curr1_and_neither_prev += 1
+    for id in curr_hap2_read_ids:
+        if id in prev_hap1_read_ids: reads_in_curr2_and_prev1 += 1
+        if id in prev_hap2_read_ids: reads_in_curr2_and_prev2 += 1
+        if id not in prev_hap1_read_ids and id not in prev_hap2_read_ids: reads_in_curr2_and_neither_prev += 1
+
+    reads_supporting_same_ordering = reads_in_curr1_and_prev1 + reads_in_curr2_and_prev2
+    reads_supporting_different_ordering = reads_in_curr1_and_prev2 + reads_in_curr2_and_prev1
+    reads_in_currs_not_in_prevs = curr_hap1_read_count + curr_hap2_read_count \
+                                  - reads_in_curr1_and_neither_prev - reads_in_curr2_and_neither_prev
+
+    ratio_supporting_same_ordering = reads_supporting_same_ordering / reads_in_currs_not_in_prevs
+    ratio_supporting_different_ordering = reads_supporting_different_ordering / reads_in_currs_not_in_prevs
+
+    # log stuff (maybe this can be removed later)
+    job.fileStore.logToMaster("{}: prev_hap1_cnt:{} prev_hap2_cnt:{} curr_hap1_cnt:{} curr_hap2_cnt:{}"
+                              .format(match_identifier, prev_hap1_read_count, prev_hap2_read_count,
+                                      curr_hap1_read_count, curr_hap2_read_count))
+    job.fileStore.logToMaster("{}: cur1_prev1:{} cur1_prev2:{} cur1_only:{} cur2_prev1:{} cur2_prev2:{} cur2_only:{}"
+                              .format(match_identifier, reads_in_curr1_and_prev1, reads_in_curr1_and_prev2,
+                                      reads_in_curr1_and_neither_prev, reads_in_curr2_and_prev1,
+                                      reads_in_curr2_and_prev2, reads_in_curr2_and_neither_prev))
+    job.fileStore.logToMaster("{}: reads_supporting_current_order:{} ({}) reads_supporting_different_order:{} ({})"
+                              .format(match_identifier, reads_supporting_same_ordering, ratio_supporting_same_ordering,
+                                      reads_supporting_different_ordering, ratio_supporting_different_ordering))
+
+    #return recommendation
+    # None if no recommendation, else returns whether data indicates same ordering (T or F)
+    if ratio_supporting_same_ordering == ratio_supporting_different_ordering: return None
+    return ratio_supporting_same_ordering > ratio_supporting_different_ordering
+
+
+def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excluded_read_ids=set()):
+    written_lines = 0
+    read_ids_not_written = set()
+    with open(output_sam_file, 'a') as output, open(input_sam_file, 'r') as input:
+        for line in input:
+            if line.startswith("@"): continue  # header
+            read_id = line.split(sep="\t")[0]
+            if read_id in excluded_read_ids: # already written
+                read_ids_not_written.add(read_id)
+                continue
+            output.write(line)
+            written_lines += 1
+    job.fileStore.logToMaster("{}: wrote {} lines ({} excluded) from {} to {}"
+                              .format(config.uuid, written_lines, len(read_ids_not_written),
+                                      os.path.basename(input_sam_file), os.path.basename(output_sam_file)))
+    return read_ids_not_written
+
+
+def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, reverse_phasing=False):
+    written_lines = 0
+    with open(output_vcf_file, 'a') as output, open(input_vcf_file, 'r') as input:
+        for line in input:
+            if line.startswith("#"): continue  # header
+            if reverse_phasing:
+                line = line.split(sep="\t")
+                phase = line[-1]
+                has_bar = "|" in phase
+                has_slash = "/" in phase
+                if (not has_bar and not has_slash) or (has_bar and has_slash):
+                    raise UserError("{}: Malformed vcf {} phasing line: {}"
+                                    .format(config.uuid, os.path.basename(input_vcf_file), "\\t".join(line)))
+                phase = phase.split(sep="|") if has_bar else phase.split(sep="/")
+                phase.reverse()
+                phase = ("|" if has_bar else "/").join(phase)
+                line[-1] = phase
+                line = "\t".join(line)
+            output.write(line)
+            written_lines += 1
+    job.fileStore.logToMaster("{}: wrote {} lines from {} to {}"
+                              .format(config.uuid, written_lines,
+                                      os.path.basename(input_vcf_file), os.path.basename(output_vcf_file)))
+    return written_lines
+
+
+def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
+    # prep
+    os.mkdir(tar_work_dir)
+    tar_file = os.path.join(tar_work_dir, "chunk.tar.gz")
+
+    # get file
+    job.fileStore.readGlobalFile(chunk[CI_OUTPUT_FILE_ID], tar_file)
+    with tarfile.open(tar_file, 'r') as tar:
+        tar.extractall(tar_work_dir)
+
+    # find desired files
+    sam_hap1, sam_hap2, vcf = None, None, None
+    for name in os.listdir(tar_work_dir):
+        if name.endswith(VCF_SUFFIX): vcf = name
+        elif name.endswith(SAM_HAP_1_SUFFIX): sam_hap1 = name
+        elif name.endswith(SAM_HAP_2_SUFFIX): sam_hap2 = name
+    if sam_hap1 is None or sam_hap2 is None or vcf is None:
+        raise UserError("{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}"
+                        .format(config.uuid, sam_hap1, sam_hap2, vcf, chunk))
+    sam_hap1_file = os.path.join(tar_work_dir, sam_hap1)
+    sam_hap2_file = os.path.join(tar_work_dir, sam_hap2)
+    vcf_file = os.path.join(tar_work_dir, vcf)
+
+    # return file locations
+    return sam_hap1_file, sam_hap2_file, vcf_file
+
+
+def _cleanup_tarfile_location(job, config, tar_work_dir):
+    os.rmdir(tar_work_dir)
+
+
+def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end_pos):
+    #prep
+    reads_filename = "{}.reads.txt".format(file_name)
+    samtools_cmd = ["samtools", "view", os.path.join("/data", file_name), "{}:{}-{}".format(contig_name, start_pos, end_pos)]
+    column_script = [os.path.join("/data", _write_select_column_script(work_dir, 1))]
+    tee_script = ["tee", os.path.join("/data", reads_filename)]
+
+    # call docker
+    params = [samtools_cmd, column_script, tee_script]
+    job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, params))
+    dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=params)
+
+    # get output
+    read_ids = set()
+    with open(os.path.join(work_dir, reads_filename), 'r') as reads:
+        for id in reads:
+            read_ids.add(id.strip())
+    return read_ids
+
+
+def consolidate_output(job, config, chunk_infos):
     #prep
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
     out_tar = os.path.join(work_dir, '{}.tar.gz'.format(config.uuid))
     job.fileStore.logToMaster("consolidate_output:{}:{}".format(config.uuid, datetime.datetime.now()))
-    job.fileStore.logToMaster("consolidating {} files".format(len(all_output)))
+    job.fileStore.logToMaster("consolidating {} files".format(len(chunk_infos)))
 
     # build tarball
     out_tars = [out_tar]
     with tarfile.open(out_tar, 'w:gz') as f_out:
-        idx = 0
-        for tar in all_output:
-            tar_file = os.path.join(work_dir, "{}.tar.gz".format(idx))
-            job.fileStore.readGlobalFile(tar, tar_file)
+        for ci in chunk_infos:
+            file_id = ci[CI_OUTPUT_FILE_ID]
+            tar_file = os.path.join(work_dir, "{}.tar.gz".format(ci[CI_CHUNK_INDEX]))
+            job.fileStore.readGlobalFile(file_id, tar_file)
             out_tars.append(tar_file)
             with tarfile.open(tar_file, 'r') as f_in:
                 for tarinfo in f_in:
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
                         f_out.addfile(tarinfo, fileobj=f_in_file)
-            idx += 1
 
     # Move to output location
     if urlparse(config.output_dir).scheme == 's3':
@@ -330,6 +640,7 @@ def consolidate_output(job, config, all_output):
     # log
     _log_time(job, "consolidate_output", start, config.uuid)
     job.fileStore.logToMaster("END:{}:{}".format(config.uuid, datetime.datetime.now()))
+
 
 
 def _log_time(job, function_name, start_time, sample_identifier=''):
