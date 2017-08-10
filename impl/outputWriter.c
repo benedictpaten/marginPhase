@@ -186,35 +186,82 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
             int next_h2AlphVal = gF->haplotypeString2[i+1];
             char next_h1AlphChar = stBaseMapper_getCharForValue(baseMapper, next_h1AlphVal);
             char next_h2AlphChar = stBaseMapper_getCharForValue(baseMapper, next_h2AlphVal);
-
+            char nextRefChar = toupper(referenceSeq[i + 1 + gF->refStart-1]);
 
             if (next_h1AlphChar != next_h2AlphChar && (h1AlphChar != '-' && h2AlphChar != '-')) {
                 // Check to see if there was an insertion or deletion in the next spot
                 if (next_h1AlphChar == '-' || next_h2AlphChar == '-') {
+                    kstring_t refstr = {0,0,NULL};
+                    kputc(refChar, &refstr);
+                    kputc(nextRefChar, &refstr);
                     kputc(h1AlphChar, &str);
                     // Count how many positions are involved in indel
                     int j = 2;
+                    int genotype1length = 1;
+                    int genotype2length = 1;
                     while(i+j < gF->length &&
                             (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) == '-' ||
                             stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) == '-')) {
+
+                        nextRefChar = toupper(referenceSeq[i + j + gF->refStart-1]);
+                        kputc(nextRefChar, &str);
+                        if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) != '-') {
+                            genotype1length++;
+                        }
+                        if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) != '-') {
+                            genotype2length++;
+                        }
                         j++;
                     }
+                    char *genotype1 = st_calloc(genotype1length, sizeof(char));
+                    char *genotype2 = st_calloc(genotype2length, sizeof(char));
+                    genotype1[0] = h1AlphChar;
+                    genotype2[0] = h2AlphChar;
+                    int genotype1index = 1;
+                    int genotype2index = 1;
+
                     // Add the bases from the first haplotype
                     for (int64_t k = 1; k < j; k++) {
                         if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]) != '-') {
                             kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]), &str);
+                            genotype1[genotype1index] = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]);
+                            genotype1index++;
                         }
                     }
-                    // Add the bases from the second haplotype
-                    kputc(',', &str);
-                    kputc(h2AlphChar, &str);
+
+                    // Go through the second haplotype
                     for (int64_t k = 1; k < j; k++) {
                         if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
-                            kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]), &str);
+                            genotype2[genotype2index] = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]);
+                            genotype2index++;
                         }
                     }
+                    if (strcmp(genotype1, genotype2) == 0) {
+                        // Homozygous alleles
+                        // Ref allele will be the reference string constructed
+                        gt_info[0] = bcf_gt_phased(1);
+                        gt_info[1] = bcf_gt_phased(1);
+                        // Add the bases from the second haplotype
+                        kputc(',', &refstr);
+                        kputc(h2AlphChar, &refstr);
+                        for (int64_t k = 1; k < j; k++) {
+                            if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
+                                kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]), &refstr);
+                            }
+                        }
+                        bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
+                    } else {
+                        // Add the bases from the second haplotype
+                        kputc(',', &str);
+                        kputc(h2AlphChar, &str);
+                        for (int64_t k = 1; k < j; k++) {
+                            if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
+                                kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]), &str);
+                            }
+                        }
+                        bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+                    }
                     i += (j-1);
-                    bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                     bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
                     bcf_write1(out, bcf_hdr, bcf_rec);
                 }
@@ -238,34 +285,76 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
             }
             else if (next_h1AlphChar == '-' && next_h2AlphChar == '-') {
                 // Cases where both strands might have gaps relative to the reference
-                if (h1AlphChar == h2AlphChar) {
-                    gt_info[0] = bcf_gt_phased(1);
-                    gt_info[1] = bcf_gt_phased(1);
-                }
+                kstring_t refstr = {0,0,NULL};
+                kputc(refChar, &refstr);
+                kputc(nextRefChar, &refstr);
                 kputc(h1AlphChar, &str);
                 // Count how many positions are involved in indel
                 int j = 2;
+                int genotype1length = 1;
+                int genotype2length = 1;
                 while(i+j < gF->length &&
                       (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) == '-' ||
                        stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) == '-')) {
+                    nextRefChar = toupper(referenceSeq[i + j + gF->refStart-1]);
+                    kputc(nextRefChar, &str);
+                    if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+j]) != '-') {
+                        genotype1length++;
+                    }
+                    if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+j]) != '-') {
+                        genotype2length++;
+                    }
                     j++;
                 }
+                char *genotype1 = st_calloc(genotype1length, sizeof(char));
+                char *genotype2 = st_calloc(genotype2length, sizeof(char));
+                genotype1[0] = h1AlphChar;
+                genotype2[0] = h2AlphChar;
+                int genotype1index = 1;
+                int genotype2index = 1;
                 // Add the bases from the first haplotype
                 for (int64_t k = 1; k < j; k++) {
                     if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]) != '-') {
                         kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]), &str);
+                        genotype1[genotype1index] = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]);
+                        genotype1index++;
                     }
                 }
-                // Add the bases from the second haplotype
-                kputc(',', &str);
-                kputc(h2AlphChar, &str);
+                // Go through the second haplotype
                 for (int64_t k = 1; k < j; k++) {
-                    if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]) != '-') {
-                        kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[i+k]), &str);
+                    if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
+                        genotype2[genotype2index] = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]);
+                        genotype2index++;
                     }
+                }
+//                if (h1AlphChar == h2AlphChar) {
+                if (strcmp(genotype1, genotype2) == 0) {
+                    // Homozygous alleles
+                    // Ref allele will be the reference string constructed
+                    gt_info[0] = bcf_gt_phased(1);
+                    gt_info[1] = bcf_gt_phased(1);
+                    // Add the bases from the second haplotype
+                    kputc(',', &refstr);
+                    kputc(h2AlphChar, &refstr);
+                    for (int64_t k = 1; k < j; k++) {
+                        if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
+                            kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]), &refstr);
+                        }
+                    }
+                    bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
+                } else {
+                    // Add the bases from the second haplotype
+                    kputc(',', &str);
+                    kputc(h2AlphChar, &str);
+                    for (int64_t k = 1; k < j; k++) {
+                        if (stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]) != '-') {
+                            kputc(stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[i+k]), &str);
+                        }
+                    }
+                    bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                 }
                 i += (j-1);
-                bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
+
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
                 bcf_write1(out, bcf_hdr, bcf_rec);
 
@@ -297,65 +386,97 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
  * Prints information contained in genotypeResults struct.
  */
 void printGenotypeResults(stGenotypeResults *results) {
+    // Variables
+    int64_t hetsInRefIndels = results->hetsInRef_Insertions + results->hetsInRef_Deletions;
+    int64_t homozygousVariantsInRefIndels = results->homozygousVariantsInRef_Insertions + results->homozygousVariantsInRef_Deletions;
+
     // Sensitivity
     st_logInfo("\nSensitivity / recall (fraction of true positives compared to reference): \n");
-    st_logInfo("\tOverall: %f \t\t(%d out of %d)\n",
-               (float)results->truePositives/results->positives, results->truePositives, results->positives);
-    st_logInfo("\tSNVs only: %f \t\t(%d out of %d)\n",
-               (float) (results->truePositives-results->truePositiveGaps)/
-                       (results->positives-results->indelsInRef),
-               results->truePositives-results->truePositiveGaps,
-               results->positives-results->indelsInRef);
-    st_logInfo("\tIndels only: %f \t\t(%d out of %d)\n",
-               (float)results->truePositiveGaps/results->indelsInRef, results->truePositiveGaps, results->indelsInRef);
-    st_logInfo("\tHomozygous alts: %f \t\t(%d out of %d)\n",
-               (float) results->truePositiveHomozygous/results->homozygousVariantsInRef,
-               results->truePositiveHomozygous, results->indelsInRef);
+    st_logInfo("\tOverall: %.4f \t\t\t(%d out of %d)\n",
+               (float)results->truePositives/results->positives,
+               results->truePositives,
+               results->positives);
+    st_logInfo("\tNo indels: %.4f \t\t\t(%d out of %d)\n",
+               (float) (results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels)/
+                       (results->positives-hetsInRefIndels-homozygousVariantsInRefIndels),
+               results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels,
+               results->positives-hetsInRefIndels-homozygousVariantsInRefIndels);
+    st_logInfo("\t\tHets: %.4f \t\t\t(%d out of %d)\n",
+               (float) (results->truePositiveHet - results->truePositiveHetIndels)
+               / (results->hetsInRef-hetsInRefIndels),
+               results->truePositiveHet - results->truePositiveHetIndels,
+               results->hetsInRef-hetsInRefIndels);
+    st_logInfo("\t\tHomozygous alts: %.4f \t(%d out of %d)\n",
+               (float) (results->truePositiveHomozygous - results->truePositiveHomozygousIndels)
+               /(results->homozygousVariantsInRef-homozygousVariantsInRefIndels),
+               results->truePositiveHomozygous - results->truePositiveHomozygousIndels,
+               results->homozygousVariantsInRef - homozygousVariantsInRefIndels);
+    st_logInfo("\tIndels only: %.4f \t\t\t(%d out of %d)\n",
+               (float)results->truePositiveIndels/
+                       (homozygousVariantsInRefIndels + hetsInRefIndels),
+               results->truePositiveIndels,
+               hetsInRefIndels + homozygousVariantsInRefIndels);
+    st_logInfo("\t\tHets: %.4f \t\t\t(%d out of %d)\n",
+               (float) results->truePositiveHetIndels / hetsInRefIndels,
+               results->truePositiveHetIndels,
+               hetsInRefIndels);
+    st_logInfo("\t\tHomozygous alts: %.4f \t(%d out of %d)\n",
+               (float) results->truePositiveHomozygousIndels/homozygousVariantsInRefIndels,
+               results->truePositiveHomozygousIndels,
+               homozygousVariantsInRefIndels);
 
     // Specificity
-    st_logInfo("\nSpecificity: %f \n\t(= fraction of true negatives compared to reference, \t%"
-                       PRIi64 " out of % "PRIi64 ")\n",
+    st_logInfo("\nSpecificity (fraction of true negatives compared to reference): \n");
+    st_logInfo("\tOverall: %.4f \t\t(%" PRIi64 " out of %"PRIi64 ")\n",
                (float)results->trueNegatives/results->negatives,
                results->trueNegatives, results->negatives);
 
     // Precision
     st_logInfo("\nPrecision (fraction of true positives compared to all calls):\n");
-    st_logInfo("\tOverall: %f \t\t(%d out of %d)\n",
+    st_logInfo("\tOverall: %.4f \t\t(%d out of %d)\n",
                (float)results->truePositives/(results->truePositives+results->falsePositives),
                results->truePositives, results->truePositives+results->falsePositives);
-    st_logInfo("\tSNVs only: %f \t\t(%d out of %d)\n",
-               (float) (results->truePositives-results->truePositiveGaps) /
-                       (results->truePositives + results->falsePositives - results->truePositiveGaps - results->falsePositiveGaps),
-               (results->truePositives - results->truePositiveGaps),
-               (results->truePositives + results->falsePositives - results->truePositiveGaps - results->falsePositiveGaps));
-    st_logInfo("\tIndels only: %f \t\t(%d out of %d)\n",
-               (float)results->truePositiveGaps / (results->truePositiveGaps + results->falsePositiveGaps),
-               results->truePositiveGaps, results->truePositiveGaps + results->falsePositiveGaps);
+    st_logInfo("\tNo indels: %.4f \t\t(%d out of %d)\n",
+               (float) (results->truePositives-results->truePositiveIndels) /
+                       (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels),
+               (results->truePositives - results->truePositiveIndels),
+               (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels));
+    st_logInfo("\tIndels only: %.4f \t\t(%d out of %d)\n",
+               (float)results->truePositiveIndels / (results->truePositiveIndels + results->falsePositiveIndels),
+               results->truePositiveIndels, results->truePositiveIndels + results->falsePositiveIndels);
 
     // False positives
     st_logInfo("\nFalse positives:\n");
-    st_logInfo("\tOverall false positives: %" PRIi64 "\n", results->falsePositives);
-    st_logInfo("\tSNV false positives: %" PRIi64 "\n", results->falsePositives - results->falsePositiveGaps);
-    st_logInfo("\tIndel false positives: %" PRIi64 "\n", results->falsePositiveGaps);
+    st_logInfo("\tOverall: %" PRIi64 "\n", results->falsePositives);
+    st_logInfo("\tNo indels: %" PRIi64 "\n", results->falsePositives - results->falsePositiveIndels);
+    st_logInfo("\tIndels only: %" PRIi64 "\n", results->falsePositiveIndels);
 
 
     // More detailed numbers about errors
     st_logInfo("\nFalse negatives:\n");
     st_logInfo("\tOverall: %" PRIi64 "\n", results->falseNegatives);
-    st_logInfo("\tSNV missed: %" PRIi64 "\n", results->error_SNV);
-    st_logInfo("\tIndel missed: %" PRIi64 "\n", results->falseNegativeGaps);
-    st_logInfo("\tIncorrect homozygous variants: %" PRIi64 "\t(# involving indels: %" PRIi64 ")\n", results->error_homozygousInRef, results->error_homozygousIndels);
-
-    // More information about reference
-    st_logInfo("\nAdditional information about reference variants\n");
-    st_logInfo("\tIndels: %d\n", results->indelsInRef);
-    st_logInfo("\tHomozygous variants: %d\n", results->homozygousVariantsInRef);
+    st_logInfo("\tMissed hets - SNV: %" PRIi64 "\n", results->error_missedHet -
+                       results->error_missedHet_Deletions - results->error_missedHet_Insertions);
+    st_logInfo("\tMissed hets - Indels: %" PRIi64 "\n",
+               results->error_missedHet_Insertions + results->error_missedHet_Deletions);
+    st_logInfo("\t\tInsertions: %d \t(out of %d)\n",
+               results->error_missedHet_Insertions, results->hetsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(out of %d)\n",
+               results->error_missedHet_Deletions, results->hetsInRef_Deletions);
+    st_logInfo("\tIncorrect homozygous variants - SNV: %" PRIi64 "\n", results->error_homozygousInRef -
+                       results->error_homozygous_Insertions - results->error_homozygous_Deletions);
+    st_logInfo("\tIncorrect homozygous variants - Indels: %" PRIi64 "\n",
+               results->error_homozygous_Insertions + results->error_homozygous_Deletions);
+    st_logInfo("\t\tInsertions: %d \t(out of %d)\n",
+               results->error_homozygous_Insertions, results->homozygousVariantsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(out of %d)\n",
+               results->error_homozygous_Deletions, results->homozygousVariantsInRef_Deletions);
 
     // Phasing
     st_logInfo("\nPhasing:\n");
-    st_logInfo("\tSwitch error rate: %f \t (%" PRIi64 " out of %"PRIi64 ", ", (float)results->switchErrors/(results->truePositives-results->uncertainPhasing), results->switchErrors, results->truePositives-results->uncertainPhasing);
-    st_logInfo("fraction correct: %f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
-    st_logInfo("\tAverage distance between switch errors: %f\n", results->switchErrorDistance);
+    st_logInfo("\tSwitch error rate: %.4f \t (%" PRIi64 " out of %"PRIi64 ", ", (float)results->switchErrors/(results->truePositives-results->uncertainPhasing), results->switchErrors, results->truePositives-results->uncertainPhasing);
+    st_logInfo("fraction correct: %.2f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
+    st_logInfo("\tAverage distance between switch errors: %.3f\n", results->switchErrorDistance);
     st_logInfo("\tUncertain phasing spots: %" PRIi64 "\n\n", results->uncertainPhasing);
 }
 
