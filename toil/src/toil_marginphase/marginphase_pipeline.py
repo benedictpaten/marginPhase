@@ -47,6 +47,7 @@ MP_DSK_REF_FACTOR = 2
 
 # for debugging (shouldn't be committed as true)
 DEBUG = False
+DOCKER_LOGGING = False
 
 #chunk_info_keys
 CI_CHUNK_BOUNDARY_START = "chunk_bounary_start_pos" #position where chunk split occured
@@ -135,7 +136,8 @@ def prepare_input(job, sample, config):
 
     # index the bam
     docker_params = ["index", data_bam_location]
-    job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, docker_params))
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, docker_params))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=docker_params)
     _fixPermissions(DOCKER_SAMTOOLS, work_dir)  # todo tmpfix
 
@@ -188,7 +190,8 @@ def prepare_input(job, sample, config):
         #write chunk
         chunk_location = os.path.join(work_dir, chunk_name)
         with open(chunk_location, 'w') as out:
-            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, bam_split_command))
+            if DOCKER_LOGGING:
+                job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, bam_split_command))
             dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         chunk_size = os.stat(chunk_location).st_size
@@ -305,7 +308,8 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
-    job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_MARGIN_PHASE, params))
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_MARGIN_PHASE, params))
     dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
     os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
 
@@ -367,23 +371,26 @@ def merge_chunks(job, config, chunk_infos):
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
-        read_end_pos = chunk[CI_CHUNK_BOUNDARY_START]
+        read_end_pos = chunk[CI_CHUNK_BOUNDARY_START] + 1
         if read_start_pos == read_end_pos: read_end_pos += config.partition_margin
         curr_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
                                            config.contig_name, read_start_pos, read_end_pos)
         curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
                                            config.contig_name, read_start_pos, read_end_pos)
+        job.fileStore.logToMaster("{}: found {} reads for the start of chunk {} with read boundaries {} - {}"
+                                  .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
+                                          chunk[CI_CHUNK_INDEX], read_start_pos, read_end_pos))
 
         # log the matching info
         same_haplotype_ordering = _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, chunk,
                                                                                 prev_hap1_read_ids, prev_hap2_read_ids,
                                                                                 curr_hap1_read_ids, curr_hap2_read_ids)
         # exclude reads already in a haplotype
-        excluded_read_ids = set()
+        read_ids_to_exclude = set()
         for id in prev_hap1_read_ids:
-            excluded_read_ids.add(id)
+            read_ids_to_exclude.add(id)
         for id in prev_hap2_read_ids:
-            excluded_read_ids.add(id)
+            read_ids_to_exclude.add(id)
 
         # this indicates there was no (or equal) read overlap.  probably it means we've just started the process
         if same_haplotype_ordering is None:
@@ -407,11 +414,11 @@ def merge_chunks(job, config, chunk_infos):
             # increment merged chunk idx
             merged_chunk_idx += 1
         elif same_haplotype_ordering:
-            job.fileStore.logToMaster("{}:chunk{}:hap1: writing same ordering"
+            job.fileStore.logToMaster("{}:chunk{}: writing same ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
             #append reads
-            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, excluded_read_ids)
-            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, excluded_read_ids)
+            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, read_ids_to_exclude)
+            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, read_ids_to_exclude)
             #document excluded reads
             excl_ids_hap1_cnt = len(excl_ids_hap1)
             excl_ids_hap2_cnt = len(excl_ids_hap2)
@@ -424,11 +431,11 @@ def merge_chunks(job, config, chunk_infos):
             # append vcf calls
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, False)
         else:
-            job.fileStore.logToMaster("{}:chunk{}:hap1: writing different ordering"
+            job.fileStore.logToMaster("{}:chunk{}: writing different ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
             #append reads
-            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, excluded_read_ids)
-            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap1_file, excluded_read_ids)
+            excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, read_ids_to_exclude)
+            excl_ids_hap2 = _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap1_file, read_ids_to_exclude)
             #document excluded reads
             excl_ids_hap1_cnt = len(excl_ids_hap1)
             excl_ids_hap2_cnt = len(excl_ids_hap2)
@@ -442,11 +449,16 @@ def merge_chunks(job, config, chunk_infos):
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, True)
 
         # prep for iteration / cleanup
+        read_start_pos = chunk[CI_CHUNK_BOUNDARY_END]
+        read_end_pos = chunk[CI_CHUNK_END] + 1
         prev_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
-                                                config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
+                                                config.contig_name, read_start_pos, read_end_pos)
         prev_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
-                                                config.contig_name, chunk[CI_CHUNK_BOUNDARY_END], chunk[CI_CHUNK_END])
+                                                config.contig_name, read_start_pos, read_end_pos)
         prev_chunk = chunk
+        job.fileStore.logToMaster("{}: found {} reads for the end of chunk {} with read boundaries {} - {}"
+                                  .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
+                                          prev_chunk[CI_CHUNK_INDEX], read_start_pos, read_end_pos))
 
     # post-processing
     #TODO sort the bam
@@ -479,9 +491,13 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
     prev_hap2_read_count = len(prev_hap2_read_ids)
     curr_hap1_read_count = len(curr_hap1_read_ids)
     curr_hap2_read_count = len(curr_hap2_read_ids)
-    job.fileStore.logToMaster("{}:\tprev_hap1_cnt:{}\tprev_hap2_cnt:{}\tcurr_hap1_cnt:{}\tcurr_hap2_cnt:{}"
+    job.fileStore.logToMaster("{}: \tprev_hap1_cnt:{} \tprev_hap2_cnt:{} \tcurr_hap1_cnt:{} \tcurr_hap2_cnt:{}"
                               .format(match_identifier, prev_hap1_read_count, prev_hap2_read_count,
                                       curr_hap1_read_count, curr_hap2_read_count))
+    if len(curr_hap1_read_ids.intersection(curr_hap2_read_ids)) > 0:
+        job.fileStore.logToMaster("{}: chunk {} had {} reads in both haplotypes!"
+                                  .format(config.uuid, curr_chunk[CI_CHUNK_INDEX],
+                                          len(curr_hap1_read_ids.intersection(curr_hap2_read_ids))))
 
     # intersect counts
     reads_in_curr1_and_prev1 = 0
@@ -512,11 +528,11 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
         ratio_supporting_different_ordering = 1.0 * reads_supporting_different_ordering / reads_in_currs_not_in_prevs
 
     # log stuff (maybe this can be removed later)
-    job.fileStore.logToMaster("{}:\tcur1_prev1:{}\tcur1_prev2:{}\tcur1_only:{}\tcur2_prev1:{}\tcur2_prev2:{}\tcur2_only:{}"
+    job.fileStore.logToMaster("{}: \tcur1_prev1:{} \tcur1_prev2:{} \tcur1_only:{} \tcur2_prev1:{} \tcur2_prev2:{} \tcur2_only:{}"
                               .format(match_identifier, reads_in_curr1_and_prev1, reads_in_curr1_and_prev2,
                                       reads_in_curr1_and_neither_prev, reads_in_curr2_and_prev1,
                                       reads_in_curr2_and_prev2, reads_in_curr2_and_neither_prev))
-    job.fileStore.logToMaster("{}:\treads_supporting_current_order:{} ({})\treads_supporting_different_order:{} ({})"
+    job.fileStore.logToMaster("{}: \treads_supporting_current_order:{} ({}) \treads_supporting_different_order:{} ({})"
                               .format(match_identifier, reads_supporting_same_ordering, ratio_supporting_same_ordering,
                                       reads_supporting_different_ordering, ratio_supporting_different_ordering))
 
@@ -532,8 +548,8 @@ def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excl
     with open(output_sam_file, 'a') as output, open(input_sam_file, 'r') as input:
         for line in input:
             if line.startswith("@"): continue  # header
-            read_id = line.split(sep="\t")[0]
-            if read_id in excluded_read_ids: # already written
+            read_id = line.split("\t")[0]
+            if read_id in excluded_read_ids: # already written in a previous chunk
                 read_ids_not_written.add(read_id)
                 continue
             output.write(line)
@@ -550,18 +566,18 @@ def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, reve
         for line in input:
             if line.startswith("#"): continue  # header
             if reverse_phasing:
-                line = line.split(sep="\t")
+                line = line.rstrip().split("\t")
                 phase = line[-1]
                 has_bar = "|" in phase
                 has_slash = "/" in phase
                 if (not has_bar and not has_slash) or (has_bar and has_slash):
                     raise UserError("{}: Malformed vcf {} phasing line: {}"
                                     .format(config.uuid, os.path.basename(input_vcf_file), "\\t".join(line)))
-                phase = phase.split(sep="|") if has_bar else phase.split(sep="/")
+                phase = phase.split("|") if has_bar else phase.split("/")
                 phase.reverse()
                 phase = ("|" if has_bar else "/").join(phase)
                 line[-1] = phase
-                line = "\t".join(line)
+                line = "\t".join(line) + "\n"
             output.write(line)
             written_lines += 1
     job.fileStore.logToMaster("{}: wrote {} lines from {} to {}"
@@ -576,7 +592,7 @@ def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
     tar_file = os.path.join(tar_work_dir, "chunk.tar.gz")
 
     # get file
-    job.fileStore.readGlobalFile(chunk[CI_OUTPUT_FILE_ID], tar_file)
+    job.fileStore.readGlobalFile(chunk[CI_OUTPUT_FILE_ID], tar_file, mutable=True)
     with tarfile.open(tar_file, 'r') as tar:
         tar.extractall(tar_work_dir)
 
@@ -605,12 +621,14 @@ def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end
     if not os.path.isfile(os.path.join(work_dir, bai_name)):
         # convert to bam
         convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, convert_cmd))
+        if DOCKER_LOGGING:
+            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, convert_cmd))
         dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=convert_cmd)
 
         # index
         index_cmd = ["index", os.path.join("/data", bam_name)]
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
+        if DOCKER_LOGGING:
+            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
         dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=index_cmd)
 
     # read_ids prep
@@ -621,7 +639,8 @@ def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end
 
     # call docker
     params = [samtools_cmd, column_script, tee_script]
-    job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, params))
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, params))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=params)
 
     # get output
