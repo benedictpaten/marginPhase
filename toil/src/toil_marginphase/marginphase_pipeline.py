@@ -81,15 +81,15 @@ def parse_samples(path_to_manifest):
             sample = line.strip().split('\t')
 
             # validate structure
-            if len(sample) != 2:
-                raise UserError('Bad manifest format! Expected 2 tab-separated columns, got: {}'.format(sample))
+            if len(sample) != 4:
+                raise UserError('Bad manifest format! Expected 4 tab-separated columns, got: {}'.format(sample))
 
             # extract sample parts
-            uuid, url = sample
+            uuid, url, contig_name, reference_url = sample
 
             # validation?
 
-            sample = [uuid, url]
+            sample = [uuid, url, contig_name, reference_url]
             samples.append(sample)
     return samples
 
@@ -98,8 +98,10 @@ def prepare_input(job, sample, config):
 
     # job prep
     config = argparse.Namespace(**vars(config))
-    uuid, url = sample
+    uuid, url, contig_name, reference_url = sample
     config.uuid = uuid
+    config.contig_name = contig_name
+    config.reference_url = reference_url
     work_dir = job.fileStore.getLocalTempDir()
     start = time.time()
     job.fileStore.logToMaster("START:{}:{}".format(config.uuid, datetime.datetime.now()))
@@ -111,9 +113,9 @@ def prepare_input(job, sample, config):
     #config.disk
 
     # download references
-    #ref genome
-    download_url(job, url=config.reference_contig, work_dir=work_dir)
-    ref_genome_filename = os.path.basename(config.reference_contig)
+    #ref fasta
+    download_url(job, url=reference_url, work_dir=work_dir)
+    ref_genome_filename = os.path.basename(reference_url)
     ref_genome_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_genome_filename))
     config.reference_genome_fileid = ref_genome_fileid
     ref_genome_size = os.stat(os.path.join(work_dir, ref_genome_filename)).st_size
@@ -139,7 +141,6 @@ def prepare_input(job, sample, config):
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, docker_params))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=docker_params)
-    _fixPermissions(DOCKER_SAMTOOLS, work_dir)  # todo tmpfix
 
     # sanity check
     workdir_bai_location = os.path.join(work_dir, bam_filename + ".bai")
@@ -371,8 +372,7 @@ def merge_chunks(job, config, chunk_infos):
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
-        read_end_pos = chunk[CI_CHUNK_BOUNDARY_START] + 1
-        if read_start_pos == read_end_pos: read_end_pos += config.partition_margin
+        read_end_pos = chunk[CI_CHUNK_BOUNDARY_START] + config.partition_margin
         curr_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
                                            config.contig_name, read_start_pos, read_end_pos)
         curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
@@ -449,8 +449,8 @@ def merge_chunks(job, config, chunk_infos):
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, True)
 
         # prep for iteration / cleanup
-        read_start_pos = chunk[CI_CHUNK_BOUNDARY_END]
-        read_end_pos = chunk[CI_CHUNK_END] + 1
+        read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
+        read_end_pos = chunk[CI_CHUNK_END]
         prev_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
                                                 config.contig_name, read_start_pos, read_end_pos)
         prev_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
@@ -461,8 +461,9 @@ def merge_chunks(job, config, chunk_infos):
                                           prev_chunk[CI_CHUNK_INDEX], read_start_pos, read_end_pos))
 
     # post-processing
-    #TODO sort the bam
-    #TODO sort the vcf
+    for file_name in os.listdir(merged_chunks_directory):
+        if file_name.endswith(".sam"): _sort_sam_file(job, config, merged_chunks_directory, file_name)
+        if file_name.endswith(".vcf"): _sort_vcf_file(job, config, merged_chunks_directory, file_name)
 
     # tarball the output and save
     job.fileStore.logToMaster("{}: Output files for merge:".format(config.uuid))
@@ -540,6 +541,46 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
     # None if no recommendation, else returns whether data indicates same ordering (T or F)
     if ratio_supporting_same_ordering == ratio_supporting_different_ordering: return None
     return ratio_supporting_same_ordering > ratio_supporting_different_ordering
+
+
+def _sort_sam_file(job, config, work_dir, sam_file_name):
+    # prep
+    job.fileStore.logToMaster("{}: sorting {}".format(config.uuid, sam_file_name))
+    sorted_file_name = "{}.sorted.sam".format(sam_file_name)
+    # sort
+    sort_cmd = ["sort", "-o", os.path.join("/data/", sorted_file_name),
+                os.path.join("/data", sam_file_name)]
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, sort_cmd))
+    dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=sort_cmd)
+    # replace
+    subprocess.check_call(["mv", os.path.join(work_dir, sorted_file_name), os.path.join(work_dir, sam_file_name)])
+
+
+def _sort_vcf_file(job, config, work_dir, vcf_file_name):
+    #prep
+    job.fileStore.logToMaster("{}: sorting {}".format(config.uuid, vcf_file_name))
+    vcf_file = os.path.join(work_dir, vcf_file_name)
+    sorted_vcf_file = os.path.join(work_dir, "{}.sorted.vcf".format(vcf_file_name))
+    header = list()
+    content = list()
+    # read input into memeory
+    with open(vcf_file, 'r') as input:
+        for line in input:
+            if line.startswith("#"):
+                header.append(line)
+            else:
+                content.append(line)
+    #sort
+    content.sort(key=lambda x: x.split("\t")[1])
+    # write to file
+    with open(sorted_vcf_file, 'w') as output:
+        for line in header:
+            output.write(line)
+        for line in content:
+            output.write(line)
+    # replace
+    subprocess.check_call(["mv", sorted_vcf_file, vcf_file])
 
 
 def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excluded_read_ids=set()):
@@ -707,24 +748,17 @@ def generate_config():
         #
         # Comments (beginning with #) do not need to be removed. Optional parameters left blank are treated as false.
         ##############################################################################################################
-        # Required: URL {scheme} to reference contig
-        # TODO: this should be altered to accept multiple references
-        reference-contig: file:///your/reference/here.fa
-
-        # Required: URL {scheme} to reference VCF
-        reference-vcf: s3://your/reference/here.vcf
-
-        # Required: URL {scheme} to marginPhase params JSON file
-        params: ftp://your/params/here.vcf
-
-        # Required: Name of contig
-        # TODO: this should be done better
-        contig-name: chr3
 
         # Required: Output location of sample. Can be full path to a directory or an s3:// URL
         # Warning: S3 buckets must exist prior to upload or it will fail.
         # Warning: Do not use "file://" syntax if output directory is local location
         output-dir:
+
+        # Required: URL {scheme} to reference VCF
+        reference-vcf: s3://your/reference/here.vcf
+
+        # Required: URL {scheme} to marginPhase params JSON file
+        params: ftp://your/params/here.json
 
         # Required: Size of each bam partition
         partition-size: 2000000
@@ -741,16 +775,19 @@ def generate_manifest():
         #
         #   There are 4 tab-separated columns: filetype, paired/single, UUID, URL(s) to sample
         #
-        #   UUID        This should be a unique identifier for the sample to be processed
-        #   URL         A URL {scheme} pointing to the sample or a full path to a directory
+        #   UUID            This should be a unique identifier for the sample to be processed.  Must belong to a single contig
+        #   URL             A URL {scheme} pointing to the sample or a full path to a directory
+        #   CONTIG_NAME     Contig name
+        #   REFERENCE_URL   A URL {scheme} pointing to reference fasta file
         #
         #   If a full path to a directory is provided for a sample, every file inside needs to be a fastq(.gz).
         #   Do not have other superfluous files / directories inside or the pipeline will complain.
         #
         #   Examples of several combinations are provided below. Lines beginning with # are ignored.
         #
-        #   UUID_1  file:///path/to/file.bam    chr3
-        #   UUID_2  s3://path/to/file.bam   chrX
+        #   UUID_1  file:///path/to/file.bam    chr3    file:///path/to/chr3.reference.fa
+        #   UUID_2  s3://path/to/file.bam   chrX    s3://path/to/chrX.reference.fa
+        #   UUID_3  s3://path/to/file.bam   4   file:///path/to/chr4.reference.fa
         #
         #   Place your samples below, one per line.
         """.format(scheme=[x + '://' for x in SCHEMES])[1:])
@@ -840,8 +877,8 @@ def main():
             mkdir_p(config.output_dir)
         if not config.output_dir.endswith('/'):
             config.output_dir += '/'
-        require(config.reference_contig, 'No reference contig specified')
-        require(config.contig_name, 'No contig name specified')
+        # require(config.reference_contig, 'No reference contig specified')
+        # require(config.contig_name, 'No contig name specified')
         require(config.reference_vcf, 'No reference vcf specified')
         require(config.params, 'No params specified')
         require(config.partition_size, "Configuration parameter partition_size is required")
