@@ -1278,6 +1278,20 @@ void test_emissionLogProbability(CuTest *testCase) {
     }
 }
 
+void test_flipAReadsPartition(CuTest *testCase) {
+    for(uint64_t i=0; i<64; i++) {
+        CuAssertTrue(testCase, flipAReadsPartition(0, i) == ((uint64_t)1 << i));
+        CuAssertTrue(testCase, popcount64(flipAReadsPartition(0, i)) == 1);
+    }
+    for(uint64_t i=0; i<64; i++) {
+        CuAssertTrue(testCase, flipAReadsPartition(0xFFFFFFFFFFFFFFFF, i) == (0xFFFFFFFFFFFFFFFF ^ ((uint64_t)1 << i)));
+        CuAssertTrue(testCase, popcount64(flipAReadsPartition(0xFFFFFFFFFFFFFFFF, i)) == 63);
+    }
+    CuAssertTrue(testCase, flipAReadsPartition(0x1111111111111111, 16) == 0x1111111111101111);
+    CuAssertTrue(testCase, flipAReadsPartition(0x1111111111101111, 16) == 0x1111111111111111);
+}
+
+
 CuSuite *stRPHmmTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
@@ -1288,6 +1302,7 @@ CuSuite *stRPHmmTestSuite(void) {
     SUITE_ADD_TEST(suite, test_systemMultipleReferences);
 
     // Constituent function tests
+    SUITE_ADD_TEST(suite, test_flipAReadsPartition);
     SUITE_ADD_TEST(suite, test_popCount64);
     SUITE_ADD_TEST(suite, test_bitCountVectors);
     SUITE_ADD_TEST(suite, test_getOverlappingComponents);

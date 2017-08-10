@@ -58,6 +58,8 @@
   "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
 
   "compareVCFs" : true,
+  
+  "roundsOfIterativeRefinement": 10,
 
   "verbose" : "00"
 }

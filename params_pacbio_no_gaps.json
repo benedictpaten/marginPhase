@@ -56,6 +56,8 @@
   "gapCharactersForDeletions" : false,
   
   "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
+  
+  "roundsOfIterativeRefinement": 10,
 
   "compareVCFs" : true,
 

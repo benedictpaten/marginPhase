@@ -100,6 +100,8 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
+uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex);
+
 /*
  * Profile sequence
  */
@@ -179,7 +181,7 @@ double emissionLogProbabilitySlow(stRPColumn *column,
         stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
         stRPHmmParameters *params, bool maxNotSum);
 
-void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
+void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
         stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
 
 // Constituent functions tested and used to do bit twiddling
@@ -250,6 +252,9 @@ struct _stRPHmmParameters {
     // Any read that has one of the following sam flags is ignored when parsing the reads from the SAM/BAM file.
     // This allows the ability to optionally ignore, for example, secondary alignments.
     uint16_t filterAReadWithAnyOneOfTheseSamFlagsSet;
+
+    // Number of rounds of iterative refinement to attempt to improve the partition.
+    int64_t roundsOfIterativeRefinement;
 
     // Whether or not to do the vcf comparison within marginPhase
     bool compareVCFs;
@@ -454,6 +459,9 @@ struct _stGenomeFragment {
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
+
+void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2,
+        stRPHmm *hmm, stList *path, int64_t maxIterations);
 
 // Struct for alphabet and mapping bases to numbers
 struct _stBaseMapper {

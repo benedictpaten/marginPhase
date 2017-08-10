@@ -413,7 +413,7 @@ double getHaplotypeProb(double characterReadProb,
     return logHapProb;
 }
 
-void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
+void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
                                    stRPColumn *column, stRPHmmParameters *params,
                                    stReferencePriorProbs *referencePriorProbs,
                                    uint64_t *bitCountVectors, uint64_t index) {
@@ -430,11 +430,11 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
     double characterProbsHap2[ALPHABET_SIZE];
 
     columnIndexLogHapProbabilitySlow(column, index,
-                                     cell->partition, bitCountVectors,
+                                     partition, bitCountVectors,
                                      params, characterProbsHap1);
 
     columnIndexLogHapProbabilitySlow(column, index,
-                                     ~cell->partition, bitCountVectors,
+                                     ~partition, bitCountVectors,
                                      params, characterProbsHap2);
 
     // Get the root character with maximum posterior probability.
@@ -496,7 +496,7 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, stRPCell *cell,
 
 }
 
-void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
+void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
                            stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
     /*
      * Computes the most probable haplotype characters / genotypes and associated posterior
@@ -518,7 +518,7 @@ void fillInPredictedGenome(stGenomeFragment *gF, stRPCell *cell,
     assert(column->length > 0);
 
     for(int64_t i=0; i<column->length; i++) {
-        fillInPredictedGenomePosition(gF, cell, column, params,
+        fillInPredictedGenomePosition(gF, partition, column, params,
                                       referencePriorProbs, bitCountVectors, i);
     }
 
