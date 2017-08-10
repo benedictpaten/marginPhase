@@ -110,19 +110,6 @@ static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *colum
     return partition;
 }
 
-void stSet_removeAll(stSet *set, stSet *subset) {
-    /*
-     * Removes the given subset from the given set.
-     */
-    stSetIterator *it = stSet_getIterator(subset);
-
-    void *o;
-    while((o = stSet_getNext(it)) != NULL) {
-        stSet_remove(set, o);
-    }
-    stSet_destructIterator(it);
-}
-
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2, stRPHmm *hmm, stList *path, int64_t maxIterations) {
     /*
      * Refines the genome fragment and reas partitions by greedily and iteratively moving reads between the two partitions
