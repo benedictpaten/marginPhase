@@ -100,6 +100,8 @@ bool seqInHap1(uint64_t partition, int64_t seqIndex);
 
 uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
+uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex);
+
 /*
  * Profile sequence
  */
@@ -499,8 +501,13 @@ struct _stGenotypeResults {
     // Variants in reference
     int64_t negatives;
     int64_t positives;
-    int64_t indelsInRef;
     int64_t homozygousVariantsInRef;
+    int64_t homozygousVariantsInRef_Insertions;
+    int64_t homozygousVariantsInRef_Deletions;
+    int64_t hetsInRef;
+    int64_t hetsInRef_Insertions;
+    int64_t hetsInRef_Deletions;
+
 
     // Variants in evaluated vcf
     int64_t truePositives;
@@ -509,15 +516,20 @@ struct _stGenotypeResults {
     int64_t falseNegatives;
 
     // Stats for specific types of variants
-    int64_t truePositiveGaps;
-    int64_t falsePositiveGaps;
-    int64_t falseNegativeGaps;
+    int64_t truePositiveIndels;
+    int64_t falsePositiveIndels;
     int64_t truePositiveHomozygous;
+    int64_t truePositiveHet;
+    int64_t truePositiveHomozygousIndels;
+    int64_t truePositiveHetIndels;
 
     // Types of errors
-    int64_t error_SNV;
+    int64_t error_missedHet;
+    int64_t error_missedHet_Insertions;
+    int64_t error_missedHet_Deletions;
     int64_t error_homozygousInRef;
-    int64_t error_homozygousIndels;
+    int64_t error_homozygous_Insertions;
+    int64_t error_homozygous_Deletions;
 
     // Phasing
     int64_t switchErrors;

@@ -229,35 +229,27 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
 
         stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
 
-        st_logDebug("\t\thandling %d HMMs\n", stList_length(hmms));
         for(int64_t j=0; j<stList_length(hmms); j++) {
-            st_logDebug("\t\t\titer %" PRIi64 "\n", j);
             stRPHmm *hmm = stList_get(hmms, j);
 
             // Run the forward-backward algorithm
-            st_logDebug("\t\t\tforward backward\n", j);
             stRPHmm_forwardBackward(hmm);
 
             // Now compute a high probability path through the hmm
-            st_logDebug("\t\t\tpath\n", j);
             stList *path = stRPHmm_forwardTraceBack(hmm);
 
             // Compute the genome fragment
-            st_logDebug("\t\t\tget fragment\n", j);
             stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
             // Get partitioned sequences
-            st_logDebug("\t\t\tpartition\n", j);
             stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
             stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
 
             // Estimate the read error substitution parameters
-            st_logDebug("\t\t\tread error sub model\n", j);
             calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString1, reads1);
             calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString2, reads2);
 
             // Cleanup
-            st_logDebug("\t\t\tcleanup\n", j);
             stSet_destruct(reads1);
             stSet_destruct(reads2);
             stGenomeFragment_destruct(gF);
@@ -265,20 +257,16 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         }
 
         // Cleanup
-        st_logDebug("\t\tcleaning\n");
         //TODO I think we need to destruct each hmm in here too
         stList_destruct(hmms);
 
         // Normalise the probabilities
-        st_logDebug("\t\tnormalizing\n");
         normaliseSubstitutionMatrix(readErrorSubModel);
 
         // Update the read error substitution parameters of the parameters object
-        st_logDebug("\t\tupdating sub prob\n");
         stRPHmmParameters_setReadErrorSubstitutionParameters(params, readErrorSubModel);
 
         // Cleanup
-        st_logDebug("\t\tcleaning\n");
         free(readErrorSubModel);
 
         //Log the parameters info

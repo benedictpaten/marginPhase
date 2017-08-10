@@ -103,24 +103,11 @@ static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *colum
         stProfileSeq *pSeq = column->seqHeaders[i];
 
         if(stSet_search(flippingReads, pSeq) != NULL) {
-            partition = partition ^ ((uint64_t)1 << i);
+            partition = flipAReadsPartition(partition, i);
         }
     }
 
     return partition;
-}
-
-void stSet_removeAll(stSet *set, stSet *subset) {
-    /*
-     * Removes the given subset from the given set.
-     */
-    stSetIterator *it = stSet_getIterator(subset);
-
-    void *o;
-    while((o = stSet_getNext(it)) != NULL) {
-        stSet_remove(set, o);
-    }
-    stSet_destructIterator(it);
 }
 
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2, stRPHmm *hmm, stList *path, int64_t maxIterations) {
@@ -150,6 +137,8 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, 
         if(stSet_size(reads1To2) + stSet_size(reads2To1) == 0) {
             break;
         }
+
+        assert(stSet_size(reads1) + stSet_size(reads2) == stList_length(hmm->profileSeqs));
 
         // Update the read partitions
         stSet_removeAll(reads1, reads1To2);
