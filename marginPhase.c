@@ -581,8 +581,8 @@ int main(int argc, char *argv[]) {
         logHmm(hmm, reads1, reads2, gF);
 
         // Write two vcfs, one using the reference fasta file and one not
-        writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, true);
-        writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, false);
+        writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, false);
+        writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, true);
 
         // Cleanup
         stGenomeFragment_destruct(gF);

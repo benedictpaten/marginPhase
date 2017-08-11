@@ -13,3 +13,5 @@ vcfCompare
 marginPhase.cbp
 libjsmn.a
 *.bai
+*.gz
+*.tbi
