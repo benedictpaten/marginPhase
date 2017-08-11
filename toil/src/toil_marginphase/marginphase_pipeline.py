@@ -572,7 +572,7 @@ def _sort_vcf_file(job, config, work_dir, vcf_file_name):
             else:
                 content.append(line)
     #sort
-    content.sort(key=lambda x: x.split("\t")[1])
+    content.sort(key=lambda x: int(x.split("\t")[1]))
     # write to file
     with open(sorted_vcf_file, 'w') as output:
         for line in header:
