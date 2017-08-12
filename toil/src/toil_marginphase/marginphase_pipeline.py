@@ -20,6 +20,7 @@ from contextlib import closing
 import yaml
 from bd2k.util.files import mkdir_p
 from bd2k.util.processes import which
+from toil import physicalMemory
 from toil.job import Job
 from toil.lib.docker import dockerCall, dockerCheckOutput, _fixPermissions
 from toil_lib import require, UserError
@@ -27,7 +28,6 @@ from toil_lib.files import tarball_files, copy_files
 from toil_lib.jobs import map_job
 from toil_lib.urls import download_url, s3am_upload
 
-# formats
 SCHEMES = ('http', 'file', 's3', 'ftp')
 
 # filenames
@@ -45,8 +45,8 @@ MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 5 #input bam chunk, output (in sam fmt), vcf etc
 MP_DSK_REF_FACTOR = 2
 
-# for debugging (shouldn't be committed as true)
-DEBUG = False
+# for debugging
+DEBUG = True
 DOCKER_LOGGING = False
 
 #chunk_info_keys
@@ -64,7 +64,11 @@ SAM_HAP_1_SUFFIX = "out.1.sam"
 SAM_HAP_2_SUFFIX = "out.2.sam"
 VCF_SUFFIX = "out.vcf"
 
-def parse_samples(path_to_manifest):
+# tags
+TAG_GENOTYPE = "GT"
+TAG_PHASE_SET = "PS"
+
+def parse_samples(config, path_to_manifest):
     """
     Parses samples, specified in either a manifest or listed with --samples
 
@@ -81,15 +85,25 @@ def parse_samples(path_to_manifest):
             sample = line.strip().split('\t')
 
             # validate structure
-            if len(sample) != 4:
-                raise UserError('Bad manifest format! Expected 4 tab-separated columns, got: {}'.format(sample))
+            if len(sample) < 2:
+                raise UserError('Bad manifest format! Required at least 2 tab-separated columns, got: {}'.format(sample))
+            if len(sample) > 5:
+                raise UserError('Bad manifest format! Required at most 5 tab-separated columns, got: {}'.format(sample))
 
             # extract sample parts
-            uuid, url, contig_name, reference_url = sample
+            uuid = sample[0]
+            url = sample[1]
+            contig_name, reference_url, params_url = "", "", ""
+            if len(sample) > 2: contig_name = sample[2]
+            if len(sample) > 3: reference_url = sample[3]
+            if len(sample) > 4: params_url = sample[4]
 
-            # validation?
+            # fill defaults
+            if len(contig_name) == 0: contig_name = config.default_contig
+            if len(reference_url) == 0: reference_url = config.default_reference
+            if len(params_url) == 0: params_url = config.default_params
 
-            sample = [uuid, url, contig_name, reference_url]
+            sample = [uuid, url, contig_name, reference_url, params_url]
             samples.append(sample)
     return samples
 
@@ -98,18 +112,20 @@ def prepare_input(job, sample, config):
 
     # job prep
     config = argparse.Namespace(**vars(config))
-    uuid, url, contig_name, reference_url = sample
+    uuid, url, contig_name, reference_url, params_url = sample
     config.uuid = uuid
     config.contig_name = contig_name
     config.reference_url = reference_url
+    config.params_url = params_url
     work_dir = job.fileStore.getLocalTempDir()
     start = time.time()
-    job.fileStore.logToMaster("START:{}:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}:START:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}: Preparing input with URL:{}, contig:{}, reference_url:{}, params_url:{}"
+                              .format(uuid, url, contig_name, reference_url, params_url))
 
     # todo global resource estimation
     config.maxCores = min(config.maxCores, multiprocessing.cpu_count())
-    if DEBUG:
-        config.maxMemory = min(config.maxMemory, 210 * 1024 * 1024 * 1024)
+    config.maxMemory = min(config.maxMemory, int(physicalMemory() * .95))
     #config.disk
 
     # download references
@@ -125,11 +141,10 @@ def prepare_input(job, sample, config):
     ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
     config.reference_vcf_fileid = ref_vcf_fileid
     #params
-    download_url(job, url=config.params, work_dir=work_dir)
-    params_filename = os.path.basename(config.params)
+    download_url(job, url=params_url, work_dir=work_dir)
+    params_filename = os.path.basename(params_url)
     params_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, params_filename))
     config.params_fileid = params_fileid
-
 
     # download bam
     download_url(job, url=url, work_dir=work_dir)
@@ -139,7 +154,7 @@ def prepare_input(job, sample, config):
     # index the bam
     docker_params = ["index", data_bam_location]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, docker_params))
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, docker_params))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=docker_params)
 
     # sanity check
@@ -179,7 +194,6 @@ def prepare_input(job, sample, config):
     idx = 0
     enqueued_jobs = 0
     returned_tarballs = list()
-    total_mem = 0
     for ci in chunk_infos:
         #prep
         ci[CI_CHUNK_INDEX] = idx
@@ -192,7 +206,7 @@ def prepare_input(job, sample, config):
         chunk_location = os.path.join(work_dir, chunk_name)
         with open(chunk_location, 'w') as out:
             if DOCKER_LOGGING:
-                job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, bam_split_command))
+                job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, bam_split_command))
             dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         chunk_size = os.stat(chunk_location).st_size
@@ -202,9 +216,6 @@ def prepare_input(job, sample, config):
         job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
                                   .format(config.uuid, chunk_position_description, idx, chunk_size,
                                           int(chunk_size / 1024 / 1024), read_count))
-        if DEBUG:
-            job.fileStore.logToMaster("Copying {} to {}".format(chunk_name, config.output_dir))
-            copy_files(file_paths=[chunk_location], output_dir=config.output_dir)
 
         # enqueue marginPhase job
         if read_count > 0:
@@ -215,7 +226,6 @@ def prepare_input(job, sample, config):
             job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb) disk, {}b ({}gb) mem"
                                       .format(config.uuid, idx, mp_cores, mp_disk, int(mp_disk / 1024 / 1024 ),
                                               mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
-            total_mem += mp_mem
             mp_mem = str(int(mp_mem / 1024)) + "K"
             mp_disk = str(int(mp_disk) / 1024) + "K"
             margin_phase_job = job.addChildJobFn(run_margin_phase, config, chunk_fileid, ci,
@@ -224,8 +234,7 @@ def prepare_input(job, sample, config):
             enqueued_jobs += 1
         idx += 1
 
-    job.fileStore.logToMaster("{}: Enqueued {} jobs, requested total of {}gb ({}b) mem"
-                              .format(config.uuid, enqueued_jobs, int(total_mem/1024/1024/1024), total_mem))
+    job.fileStore.logToMaster("{}: Enqueued {} jobs".format(config.uuid, enqueued_jobs))
 
     # enqueue merging and consolidation job
     merge_job = job.addFollowOnJobFn(merge_chunks, config, returned_tarballs)
@@ -275,7 +284,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     chunk_identifier = "{}.{}".format(config.uuid, chunk_idx)
     chunk_name = "{}.in.bam".format(chunk_identifier)
     chunk_location = os.path.join(work_dir, chunk_name)
-    job.fileStore.logToMaster("run_margin_phase:{}:{}:{}".format(config.uuid, chunk_idx, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}:run_margin_phase:{}:{}".format(config.uuid, chunk_idx, datetime.datetime.now()))
 
     # download bam chunk
     job.fileStore.readGlobalFile(chunk_file_id, chunk_location)
@@ -310,15 +319,15 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_MARGIN_PHASE, params))
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_MARGIN_PHASE, params))
     dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
     os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
 
     # document output
-    job.fileStore.logToMaster("Output files for {}:".format(chunk_identifier))
+    job.fileStore.logToMaster("{}: Output files for {}:".format(config.uuid, chunk_identifier))
     output_file_locations = glob.glob(os.path.join(work_dir, "{}*".format(chunk_identifier)))
     for f in output_file_locations:
-        job.fileStore.logToMaster("\t{}".format(os.path.basename(f)))
+        job.fileStore.logToMaster("{}:\t\t{}".format(config.uuid, os.path.basename(f)))
 
     # tarball the output and save
     tarball_name = "{}.tar.gz".format(chunk_identifier)
@@ -335,8 +344,8 @@ def merge_chunks(job, config, chunk_infos):
     # prep
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
-    job.fileStore.logToMaster("merging_chunks:{}:{}".format(config.uuid, datetime.datetime.now()))
-    job.fileStore.logToMaster("merging {} chunks".format(len(chunk_infos)))
+    job.fileStore.logToMaster("{}:merging_chunks:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}: Merging {} chunks".format(config.uuid, len(chunk_infos)))
     # work directory for tar management
     tar_work_dir = os.path.join(work_dir, "tmp")
     # output files
@@ -373,9 +382,9 @@ def merge_chunks(job, config, chunk_infos):
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
         read_end_pos = chunk[CI_CHUNK_BOUNDARY_START] + config.partition_margin
-        curr_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
+        curr_hap1_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap1_file),
                                            config.contig_name, read_start_pos, read_end_pos)
-        curr_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
+        curr_hap2_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap2_file),
                                            config.contig_name, read_start_pos, read_end_pos)
         job.fileStore.logToMaster("{}: found {} reads for the start of chunk {} with read boundaries {} - {}"
                                   .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
@@ -406,10 +415,17 @@ def merge_chunks(job, config, chunk_infos):
             merged_vcf_file  = os.path.join(merged_chunks_directory, merged_vcf_name)
 
             # prep the hap1 and hap2 bams - the headers should be the same for all chunks, so we can just start with
-            #   the extracted haplotype sam files
+            #   the extracted haplotype sam files (reads carry onto next chunk)
             subprocess.check_call(["cp", sam_hap1_file, merged_hap1_file])
             subprocess.check_call(["cp", sam_hap2_file, merged_hap2_file])
-            subprocess.check_call(["cp", vcf_file, merged_vcf_file])
+            #   the vcf file (calls do not carry on past chunk boundaries)
+            with open(vcf_file, 'r') as input, open(merged_vcf_file, 'w') as output:
+                for line in input:
+                    if line.startswith("#"):
+                        output.write(line)
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], False)
+
 
             # increment merged chunk idx
             merged_chunk_idx += 1
@@ -446,14 +462,15 @@ def merge_chunks(job, config, chunk_infos):
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
                                               int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
             # append vcf calls
-            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, True)
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
 
         # prep for iteration / cleanup
         read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
         read_end_pos = chunk[CI_CHUNK_END]
-        prev_hap1_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap1_file),
+        prev_hap1_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap1_file),
                                                 config.contig_name, read_start_pos, read_end_pos)
-        prev_hap2_read_ids = _get_read_ids_in_range(job, tar_work_dir, os.path.basename(sam_hap2_file),
+        prev_hap2_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap2_file),
                                                 config.contig_name, read_start_pos, read_end_pos)
         prev_chunk = chunk
         job.fileStore.logToMaster("{}: found {} reads for the end of chunk {} with read boundaries {} - {}"
@@ -470,7 +487,7 @@ def merge_chunks(job, config, chunk_infos):
     output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))
     output_file_locations.sort()
     for f in output_file_locations:
-        job.fileStore.logToMaster("\t{}".format(os.path.basename(f)))
+        job.fileStore.logToMaster("{}\t\t{}".format(config.uuid, os.path.basename(f)))
     tarball_name = "{}.merged.tar.gz".format(config.uuid)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
@@ -537,9 +554,12 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
                               .format(match_identifier, reads_supporting_same_ordering, ratio_supporting_same_ordering,
                                       reads_supporting_different_ordering, ratio_supporting_different_ordering))
 
-    #return recommendation
+    # return recommendation:
     # None if no recommendation, else returns whether data indicates same ordering (T or F)
-    if ratio_supporting_same_ordering == ratio_supporting_different_ordering: return None
+    if ratio_supporting_different_ordering < config.min_merge_ratio and ratio_supporting_different_ordering < config.min_merge_ratio:
+        job.fileStore.logToMaster("{}: ratio supporting orderings below threshold {}"
+                                  .format(config.uuid, config.min_merge_ratio))
+        return None
     return ratio_supporting_same_ordering > ratio_supporting_different_ordering
 
 
@@ -551,7 +571,7 @@ def _sort_sam_file(job, config, work_dir, sam_file_name):
     sort_cmd = ["sort", "-o", os.path.join("/data/", sorted_file_name),
                 os.path.join("/data", sam_file_name)]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, sort_cmd))
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, sort_cmd))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=sort_cmd)
     # replace
     subprocess.check_call(["mv", os.path.join(work_dir, sorted_file_name), os.path.join(work_dir, sam_file_name)])
@@ -601,28 +621,69 @@ def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excl
     return read_ids_not_written
 
 
-def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, reverse_phasing=False):
+def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, start_pos, end_pos, reverse_phasing=False):
     written_lines = 0
+    lines_outside_boundaries = 0
     with open(output_vcf_file, 'a') as output, open(input_vcf_file, 'r') as input:
+        first_analyzed_line = True #may need to manage the phase set (only for the first phase of a chunk)
+        updated_phase_set_value = None
         for line in input:
             if line.startswith("#"): continue  # header
+
+            # break line into parts
+            line = line.rstrip().split("\t")
+            position = int(line[1])
+            if position < start_pos or position > end_pos: #only include positions in given range
+                lines_outside_boundaries += 1
+                continue
+
+            # get info and tags (and positions)
+            info = line[-1].split(":")
+            tags = line[-2].split(":")
+            genotype_tag_idx = None
+            phase_set_tag_idx = None
+            idx = 0
+            for tag in tags:
+                if tag == TAG_GENOTYPE: genotype_tag_idx = idx
+                if tag == TAG_PHASE_SET: phase_set_tag_idx = idx
+                idx += 1
+            if genotype_tag_idx is None:
+                raise UserError("{}: malformed vcf {} phasing line (no {} tag): {}"
+                                .format(config.uuid, os.path.basename(input_vcf_file), TAG_GENOTYPE, "\\t".join(line)))
+
+            # phase
+            phase = info[genotype_tag_idx]
+            continued_phase_set = "|" in phase
+            new_phase_set = "/" in phase
+            if (not continued_phase_set and not new_phase_set) or (continued_phase_set and new_phase_set):
+                raise UserError("{}: Malformed vcf {} phasing line: {}"
+                                .format(config.uuid, os.path.basename(input_vcf_file), "\\t".join(line)))
+            if new_phase_set: updated_phase_set_value = None # once we hit a new phase set, we stop updating
+            phase = phase.split("|") if continued_phase_set else phase.split("/")
             if reverse_phasing:
-                line = line.rstrip().split("\t")
-                phase = line[-1]
-                has_bar = "|" in phase
-                has_slash = "/" in phase
-                if (not has_bar and not has_slash) or (has_bar and has_slash):
-                    raise UserError("{}: Malformed vcf {} phasing line: {}"
-                                    .format(config.uuid, os.path.basename(input_vcf_file), "\\t".join(line)))
-                phase = phase.split("|") if has_bar else phase.split("/")
                 phase.reverse()
-                phase = ("|" if has_bar else "/").join(phase)
-                line[-1] = phase
-                line = "\t".join(line) + "\n"
+            # the first line we analyze in a vcf chunk needs to be a new phase block.  because of this, we need to
+            #   to update the phase set to match this one if it's present
+            if first_analyzed_line:
+                new_phase_set = True
+                if phase_set_tag_idx is not None:
+                    updated_phase_set_value = str(position)
+            phase = ("/" if new_phase_set else "|").join(phase)
+            info[genotype_tag_idx] = phase
+
+            # phase set
+            if updated_phase_set_value is not None:
+                info[phase_set_tag_idx] = updated_phase_set_value
+
+            # cleanup
+            line[-1] = ":".join(info)
+            line = "\t".join(line) + "\n"
             output.write(line)
             written_lines += 1
-    job.fileStore.logToMaster("{}: wrote {} lines from {} to {}"
-                              .format(config.uuid, written_lines,
+            first_analyzed_line = False
+
+    job.fileStore.logToMaster("{}: wrote {} lines ({} skipped from being outside boundaries {}-{}) from {} to {}"
+                              .format(config.uuid, written_lines, lines_outside_boundaries, start_pos, end_pos,
                                       os.path.basename(input_vcf_file), os.path.basename(output_vcf_file)))
     return written_lines
 
@@ -654,7 +715,7 @@ def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
     return sam_hap1_file, sam_hap2_file, vcf_file
 
 
-def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end_pos):
+def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_pos, end_pos):
     # samtools can't get random locations from sam files, so we convert to bam first :/
     bam_name = "{}.bam".format(file_name)
     bai_name = "{}.bai".format(bam_name)
@@ -663,13 +724,14 @@ def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end
         # convert to bam
         convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
         if DOCKER_LOGGING:
-            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, convert_cmd))
+            job.fileStore.logToMaster("{}: Running {} with parameters: {}"
+                                      .format(config.uuid, DOCKER_SAMTOOLS, convert_cmd))
         dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=convert_cmd)
 
         # index
         index_cmd = ["index", os.path.join("/data", bam_name)]
         if DOCKER_LOGGING:
-            job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
+            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
         dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=index_cmd)
 
     # read_ids prep
@@ -681,7 +743,7 @@ def _get_read_ids_in_range(job, work_dir, file_name, contig_name, start_pos, end
     # call docker
     params = [samtools_cmd, column_script, tee_script]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("Running {} with parameters: {}".format(DOCKER_SAMTOOLS, params))
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, params))
     dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=params)
 
     # get output
@@ -697,8 +759,8 @@ def consolidate_output(job, config, chunk_infos):
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
     out_tar = os.path.join(work_dir, '{}.tar.gz'.format(config.uuid))
-    job.fileStore.logToMaster("consolidate_output:{}:{}".format(config.uuid, datetime.datetime.now()))
-    job.fileStore.logToMaster("consolidating {} files".format(len(chunk_infos)))
+    job.fileStore.logToMaster("{}:consolidate_output:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}: consolidating {} files".format(config.uuid, len(chunk_infos)))
 
     # build tarball
     out_tars = [out_tar]
@@ -725,12 +787,12 @@ def consolidate_output(job, config, chunk_infos):
 
     # log
     _log_time(job, "consolidate_output", start, config.uuid)
-    job.fileStore.logToMaster("END:{}:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}:END:{}".format(config.uuid, datetime.datetime.now()))
 
 
 
 def _log_time(job, function_name, start_time, sample_identifier=''):
-    job.fileStore.logToMaster("TIME:{}:{}:{}".format(sample_identifier, function_name, int(time.time() - start_time)))
+    job.fileStore.logToMaster("{}:TIME:{}:{}".format(sample_identifier, function_name, int(time.time() - start_time)))
 
 
 def _get_default_docker_params(work_dir):
@@ -752,19 +814,28 @@ def generate_config():
         # Required: Output location of sample. Can be full path to a directory or an s3:// URL
         # Warning: S3 buckets must exist prior to upload or it will fail.
         # Warning: Do not use "file://" syntax if output directory is local location
-        output-dir:
+        output-dir: /tmp
 
         # Required: URL {scheme} to reference VCF
         reference-vcf: s3://your/reference/here.vcf
-
-        # Required: URL {scheme} to marginPhase params JSON file
-        params: ftp://your/params/here.json
 
         # Required: Size of each bam partition
         partition-size: 2000000
 
         # Required: Margin to apply on each partition
         partition-margin: 5000
+
+        # Required: Minimum ratio of reads appearing in cross-chunk boundary to trigger a merge
+        min-merge-ratio: .8
+
+        # Optional: URL {scheme} for default FASTA reference
+        default-reference: file://path/to/reference.fa
+
+        # Optional: Default contig name (must match sample URL's contig and reference fasta)
+        default-contig: chr1
+
+        # Optional: URL {scheme} for default parameters file
+        default-params: file://path/to/reference.fa
 
     """.format(scheme=[x + '://' for x in SCHEMES])[1:])
 
@@ -773,21 +844,23 @@ def generate_manifest():
     return textwrap.dedent("""
         #   Edit this manifest to include information pertaining to each sample to be run.
         #
-        #   There are 4 tab-separated columns: filetype, paired/single, UUID, URL(s) to sample
+        #   There are 5 tab-separated columns: UUID, URL, contig name, reference fasta URL, and parameters URL
         #
-        #   UUID            This should be a unique identifier for the sample to be processed.  Must belong to a single contig
-        #   URL             A URL {scheme} pointing to the sample or a full path to a directory
-        #   CONTIG_NAME     Contig name
-        #   REFERENCE_URL   A URL {scheme} pointing to reference fasta file
+        #   UUID            Required    A unique identifier for the sample to be processed.
+        #   URL             Required    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to the sample bam.  It must belong to a single contig
+        #   CONTIG_NAME     Optional    Contig name (must match the contig in the URL and the reference)
+        #   REFERENCE_URL   Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to reference fasta file
+        #   PARAMS_URL      Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to parameters file for the run
         #
-        #   If a full path to a directory is provided for a sample, every file inside needs to be a fastq(.gz).
-        #   Do not have other superfluous files / directories inside or the pipeline will complain.
+        #   For the three optional values, there must be a value specified either in this manifest, or in the configuration
+        #   file.  Any value specified in the manifest overrides whatever is specified in the config file
         #
         #   Examples of several combinations are provided below. Lines beginning with # are ignored.
         #
-        #   UUID_1  file:///path/to/file.bam    chr3    file:///path/to/chr3.reference.fa
+        #   UUID_1  file:///path/to/file.bam
         #   UUID_2  s3://path/to/file.bam   chrX    s3://path/to/chrX.reference.fa
-        #   UUID_3  s3://path/to/file.bam   4   file:///path/to/chr4.reference.fa
+        #   UUID_3  s3://path/to/file.bam   chr4    file:///path/to/chr4.reference.fa    file:///path/to/params.json
+        #   UUID_4  file:///path/to/file.bam            file:///path/to/params.json
         #
         #   Place your samples below, one per line.
         """.format(scheme=[x + '://' for x in SCHEMES])[1:])
@@ -861,9 +934,6 @@ def main():
         require(os.path.exists(args.manifest), '{} not found and no samples provided. Please '
                                                'run "toil-marginphase generate-manifest"'.format(args.manifest))
 
-        # get samples
-        samples = parse_samples(path_to_manifest=args.manifest)
-
         # Parse config
         parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
         config = argparse.Namespace(**parsed_config)
@@ -877,12 +947,15 @@ def main():
             mkdir_p(config.output_dir)
         if not config.output_dir.endswith('/'):
             config.output_dir += '/'
-        # require(config.reference_contig, 'No reference contig specified')
-        # require(config.contig_name, 'No contig name specified')
         require(config.reference_vcf, 'No reference vcf specified')
-        require(config.params, 'No params specified')
-        require(config.partition_size, "Configuration parameter partition_size is required")
-        require(config.partition_margin, "Configuration parameter partition_margin is required")
+        require(config.partition_size, "Configuration parameter partition-size is required")
+        require(config.partition_margin, "Configuration parameter partition-margin is required")
+        require(config.min_merge_ratio, "Configuration parameter min-merge-ratio is required")
+        require(config.min_merge_ratio > .5 and config.min_merge_ratio <= 1,
+                "Configuration parameter min-merge-ratio must be in range (.5,1]")
+
+        # get samples
+        samples = parse_samples(config, args.manifest)
 
         # Program checks
         for program in ['docker']:
