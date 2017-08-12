@@ -49,8 +49,11 @@ void printAlleleInfo(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm) {
         if (i != 1) st_logDebug(",");
         st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
         st_logDebug("\n  output: %c, %c\n", vcfInfo->h1AlphChar, vcfInfo->h2AlphChar);
+        st_logDebug("  ref phasing: %d | %d\n", vcfInfo->refAllele1, vcfInfo->refAllele2);
+        st_logDebug("  eval phasing: %d | %d\n", vcfInfo->evalAllele1, vcfInfo->evalAllele2);
         printColumnAtPosition(hmm, vcfInfo->referencePos);
     }
+
 }
 
 void printPartitionInfo(int64_t pos, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
@@ -91,6 +94,8 @@ stBaseMapper *baseMapper, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stS
         st_logDebug("  pos: %" PRIi64 "\n  ref: %s    alt: %s\n",
                     vcfInfo->referencePos, refSeq, refSeq);
         st_logDebug("  output: %s, %s\n", vcfInfo->refChar, vcfInfo->refAltChar);
+        st_logDebug("  ref phasing: %d | %d\n", vcfInfo->refAllele1, vcfInfo->refAllele2);
+        st_logDebug("  eval phasing: %d | %d\n", vcfInfo->evalAllele1, vcfInfo->evalAllele2);
         printColumnAtPosition(hmm, vcfInfo->referencePos);
         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
 
@@ -178,21 +183,21 @@ static void recordIncorrectVariantBasic(vcfRecordComparisonInfo *vcfInfo,
     }
 }
 
-static void determinePhasingConsistency(bool hap1, vcfRecordComparisonInfo *vcfInfo,
+static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
                                         float *switchErrorDistance, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stSet *reads2,
                                         stRPHmmParameters *params, stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
      */
-    char *evalChar1 = hap1 ? vcfInfo->evalRefChar : vcfInfo->evalAltChar;
-    char *evalChar2 = hap1 ? vcfInfo->evalAltChar : vcfInfo->evalRefChar;
+    char *evalChar1 = vcfInfo->phasingHap1 ? vcfInfo->evalRefChar : vcfInfo->evalAltChar;
+    char *evalChar2 = vcfInfo->phasingHap1 ? vcfInfo->evalAltChar : vcfInfo->evalRefChar;
 
     if (strcmp(vcfInfo->refChar, evalChar1) == 0 && strcmp(vcfInfo->refAltChar, evalChar2) == 0) {
         results->switchErrors++;
         results->switchErrorDistance += (*switchErrorDistance);
         (*switchErrorDistance) = 0;
-        vcfInfo->phasingHap1 = !hap1;
-        vcfInfo->phasingHap2 = hap1;
+        vcfInfo->phasingHap1 = !vcfInfo->phasingHap1;
+        vcfInfo->phasingHap2 = !vcfInfo->phasingHap2;
         results->truePositiveHet++;
         if (strlen(vcfInfo->refChar) > 1 || strlen(vcfInfo->refAltChar) > 1) {
             results->truePositiveHetIndels++;
@@ -213,20 +218,20 @@ static void determinePhasingConsistency(bool hap1, vcfRecordComparisonInfo *vcfI
     }
 }
 
-static void determinePhasingConsistencyBasic(bool hap1, vcfRecordComparisonInfo *vcfInfo,
+static void determinePhasingConsistencyBasic(vcfRecordComparisonInfo *vcfInfo,
                                         float *switchErrorDistance, stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
      */
-    char *evalChar1 = hap1 ? vcfInfo->evalRefChar : vcfInfo->evalAltChar;
-    char *evalChar2 = hap1 ? vcfInfo->evalAltChar : vcfInfo->evalRefChar;
+    char *evalChar1 = vcfInfo->phasingHap1 ? vcfInfo->evalRefChar : vcfInfo->evalAltChar;
+    char *evalChar2 = vcfInfo->phasingHap1 ? vcfInfo->evalAltChar : vcfInfo->evalRefChar;
 
     if (strcmp(vcfInfo->refChar, evalChar1) == 0 && strcmp(vcfInfo->refAltChar, evalChar2) == 0) {
         results->switchErrors++;
         results->switchErrorDistance += (*switchErrorDistance);
         (*switchErrorDistance) = 0;
-        vcfInfo->phasingHap1 = !hap1;
-        vcfInfo->phasingHap2 = hap1;
+        vcfInfo->phasingHap1 = !vcfInfo->phasingHap1;
+        vcfInfo->phasingHap2 = !vcfInfo->phasingHap2;
         results->truePositiveHet++;
         if (strlen(vcfInfo->refChar) > 1 || strlen(vcfInfo->refAltChar) > 1) {
             results->truePositiveHetIndels++;
@@ -266,6 +271,7 @@ void printFalsePositive(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm,
     else st_logDebug("  -  SNV");
     st_logDebug("\n  pos: %" PRIi64 "\n  ref: %s    alt: %s\n", vcfInfo->evalPos, refSeq, refSeq);
     st_logDebug("  output: %s, %s\n", vcfInfo->evalRefChar, vcfInfo->evalAltChar);
+    st_logDebug("  eval phasing: %d | %d\n", vcfInfo->evalAllele1, vcfInfo->evalAllele2);
     printColumnAtPosition(hmm, vcfInfo->evalPos);
     printPartitionInfo(vcfInfo->evalPos, reads1, reads2, gF);
 
@@ -372,6 +378,13 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             if (strlen(vcfInfo->evalRefChar) > 1 || strlen(vcfInfo->evalAltChar) > 1) {
                 results->falsePositiveIndels++;
             }
+            if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+                if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                    vcfInfo->phasingHap1 = true;
+                } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                    vcfInfo->phasingHap2 = true;
+                }
+            }
         }
 
         // Iterate through vcf until getting to the position of the variant
@@ -386,6 +399,12 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             vcfInfo->evalRefChar = evalRecord->d.als;
             vcfInfo->evalAltChar = evalRecord->d.allele[1];
             vcfInfo->unpackedRecordEval = evalRecord;
+            // Get genotype info
+            int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
+            int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
+            ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
+            vcfInfo->evalAllele1 = bcf_gt_allele(eval_gt_arr[0]);
+            vcfInfo->evalAllele2 = bcf_gt_allele(eval_gt_arr[1]);
 
             if (vcfInfo->evalPos < refStart) continue;           // skip this record
 
@@ -395,6 +414,13 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
                 if (strlen(vcfInfo->evalRefChar) > 1 || strlen(vcfInfo->evalAltChar) > 1) {
                     results->falsePositiveIndels++;
                 }
+                if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+                    if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                        vcfInfo->phasingHap1 = true;
+                    } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                        vcfInfo->phasingHap2 = true;
+                    }
+                }
             } else {
                 break;
             }
@@ -402,13 +428,6 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
 
         // At locus of known variation
         if (vcfInfo->evalPos == vcfInfo->referencePos) {
-            // Get genotype info
-            int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
-            int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
-            ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
-            vcfInfo->evalAllele1 = bcf_gt_allele(eval_gt_arr[0]);
-            vcfInfo->evalAllele2 = bcf_gt_allele(eval_gt_arr[1]);
-
             if (vcfInfo->refAllele1 == vcfInfo->refAllele2) {
                 if (vcfInfo->evalAllele1 == vcfInfo->evalAllele2) {
                     // Homozygous variant in evaluated vcf
@@ -459,39 +478,14 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
                         results->falsePositiveIndels++;
                     }
                 }
-
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    if (strcmp(vcfInfo->refChar, vcfInfo->evalRefChar) == 0 &&
-                        strcmp(vcfInfo->evalAltChar, vcfInfo->refAltChar) == 0) {
-                        vcfInfo->phasingHap1 = true;
-                    }
-                    else {
-                        vcfInfo->phasingHap2 = true;
-                    }
-                } else if (vcfInfo->refAllele1 == 1 && vcfInfo->refAllele2 == 0) {
-                    if (strcmp(vcfInfo->refChar, vcfInfo->evalAltChar) == 0 &&
-                        strcmp(vcfInfo->evalRefChar, vcfInfo->refAltChar) == 0) {
-                        vcfInfo->phasingHap1 = true;
-                    }
-                    else {
-                        vcfInfo->phasingHap2 = true;
-                    }
-                } else {
-                    // Homozygous at start of fragment
+                if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                    vcfInfo->phasingHap1 = true;
+                } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                    vcfInfo->phasingHap2 = true;
                 }
             }
             else if (vcfInfo->phasingHap1) {
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    determinePhasingConsistencyBasic(true, vcfInfo, &switchErrorDistance, results);
-                } else {
-                    determinePhasingConsistencyBasic(false, vcfInfo, &switchErrorDistance, results);
-                }
-            } else if (vcfInfo->phasingHap2) {
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    determinePhasingConsistencyBasic(false, vcfInfo, &switchErrorDistance, results);
-                } else {
-                    determinePhasingConsistencyBasic(true, vcfInfo, &switchErrorDistance, results);
-                }
+                determinePhasingConsistencyBasic(vcfInfo, &switchErrorDistance, results);
             }
 
         } else if (vcfInfo->evalPos > vcfInfo->referencePos){
@@ -664,6 +658,13 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             if (params->verboseFalsePositives) {
                 printFalsePositive(vcfInfo, hmm, reads1, reads2, gF, baseMapper);
             }
+            if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+                if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                    vcfInfo->phasingHap1 = true;
+                } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                    vcfInfo->phasingHap2 = true;
+                }
+            }
         }
 
         // Iterate through vcf until getting to the position of the variant
@@ -696,6 +697,13 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 }
                 if (params->verboseFalsePositives) {
                     printFalsePositive(vcfInfo, hmm, reads1, reads2, gF, baseMapper);
+                }
+                if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+                    if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                        vcfInfo->phasingHap1 = true;
+                    } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                        vcfInfo->phasingHap2 = true;
+                    }
                 }
             } else {
                 break;
@@ -758,45 +766,15 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         printFalsePositive(vcfInfo, hmm, reads1, reads2, gF, baseMapper);
                     }
                 }
-
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    if (strcmp(vcfInfo->refChar, vcfInfo->evalRefChar) == 0 &&
-                            strcmp(vcfInfo->evalAltChar, vcfInfo->refAltChar) == 0) {
-                        vcfInfo->phasingHap1 = true;
-                    }
-                    else {
-                        vcfInfo->phasingHap2 = true;
-                    }
-                } else if (vcfInfo->refAllele1 == 1 && vcfInfo->refAllele2 == 0) {
-                    if (strcmp(vcfInfo->refChar, vcfInfo->evalAltChar) == 0 &&
-                            strcmp(vcfInfo->evalRefChar, vcfInfo->refAltChar) == 0) {
-                        vcfInfo->phasingHap1 = true;
-                    }
-                    else {
-                        vcfInfo->phasingHap2 = true;
-                    }
-                } else {
-                    // Homozygous at start of fragment
+                if (vcfInfo->evalAllele1 == 0 && vcfInfo->evalAllele2 == 1) {
+                    vcfInfo->phasingHap1 = true;
+                } else if (vcfInfo->evalAllele1 == 1 && vcfInfo->evalAllele2 == 0) {
+                    vcfInfo->phasingHap2 = true;
                 }
+            } else {
+                determinePhasingConsistency(vcfInfo, &switchErrorDistance,
+                                   hmm, gF, reads1, reads2, params, results);
             }
-            else if (vcfInfo->phasingHap1) {
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    determinePhasingConsistency(true, vcfInfo, &switchErrorDistance,
-                                   hmm, gF, reads1, reads2, params, results);
-                } else {
-                    determinePhasingConsistency(false, vcfInfo, &switchErrorDistance,
-                                   hmm, gF, reads1, reads2, params, results);
-                }
-            } else if (vcfInfo->phasingHap2) {
-                if (vcfInfo->refAllele1 == 0 && vcfInfo->refAllele2 == 1) {
-                    determinePhasingConsistency(false, vcfInfo, &switchErrorDistance,
-                                   hmm, gF, reads1, reads2, params, results);
-                } else {
-                    determinePhasingConsistency(true, vcfInfo, &switchErrorDistance,
-                                   hmm, gF, reads1, reads2, params, results);
-                }
-            }
-
         } else if (vcfInfo->evalPos > vcfInfo->referencePos){
             // Missed the variant - False negative
 
