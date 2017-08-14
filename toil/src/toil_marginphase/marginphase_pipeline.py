@@ -480,7 +480,7 @@ def merge_chunks(job, config, chunk_infos):
                         output.write(line)
         _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
                                   chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  same_haplotype_ordering is None or same_haplotype_ordering)
+                                  not (same_haplotype_ordering is None or same_haplotype_ordering))
 
         # prep for iteration / cleanup
         read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
