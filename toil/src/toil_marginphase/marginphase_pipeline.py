@@ -216,6 +216,9 @@ def prepare_input(job, sample, config):
         job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
                                   .format(config.uuid, chunk_position_description, idx, chunk_size,
                                           int(chunk_size / 1024 / 1024), read_count))
+        if config.intermediate_file_location is not None:
+            copy_files(file_paths=[chunk_location], output_dir=config.intermediate_file_location)
+
 
         # enqueue marginPhase job
         if read_count > 0:
@@ -332,6 +335,8 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     # tarball the output and save
     tarball_name = "{}.tar.gz".format(chunk_identifier)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+    if config.intermediate_file_location is not None:
+        copy_files(file_paths=[os.path.join(work_dir, tarball_name)], output_dir=config.intermediate_file_location)
     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
     chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
 
@@ -354,6 +359,7 @@ def merge_chunks(job, config, chunk_infos):
     merged_chunk_idx = 0  # for areas where merging can't happen
     merged_hap1_name, merged_hap2_name, merged_vcf_name = None, None, None
     merged_hap1_file, merged_hap2_file, merged_vcf_file = None, None, None
+    full_merged_vcf_file = None
 
     # sort by chunk index and validate
     chunk_infos.sort(key=(lambda x: x[CI_CHUNK_INDEX]))
@@ -465,6 +471,17 @@ def merge_chunks(job, config, chunk_infos):
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
 
+        # fully merged vcf file
+        if full_merged_vcf_file is None:
+            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
+                for line in input:
+                    if line.startswith("#"):
+                        output.write(line)
+        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
+                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                  same_haplotype_ordering is None or same_haplotype_ordering)
+
         # prep for iteration / cleanup
         read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
         read_end_pos = chunk[CI_CHUNK_END]
@@ -556,9 +573,9 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
 
     # return recommendation:
     # None if no recommendation, else returns whether data indicates same ordering (T or F)
-    if ratio_supporting_different_ordering < config.min_merge_ratio and ratio_supporting_different_ordering < config.min_merge_ratio:
-        job.fileStore.logToMaster("{}: ratio supporting orderings below threshold {}"
-                                  .format(config.uuid, config.min_merge_ratio))
+    if (ratio_supporting_same_ordering < config.min_merge_ratio) and (ratio_supporting_different_ordering < config.min_merge_ratio):
+        job.fileStore.logToMaster("{}: ratios supporting orderings below threshold {}"
+                                  .format(match_identifier, config.min_merge_ratio))
         return None
     return ratio_supporting_same_ordering > ratio_supporting_different_ordering
 
@@ -837,6 +854,9 @@ def generate_config():
         # Optional: URL {scheme} for default parameters file
         default-params: file://path/to/reference.fa
 
+        # Optional: for debugging, this will save intermediate files to the output directory (only works for file:// scheme)
+        save-intermediate-files: False
+
     """.format(scheme=[x + '://' for x in SCHEMES])[1:])
 
 
@@ -953,6 +973,12 @@ def main():
         require(config.min_merge_ratio, "Configuration parameter min-merge-ratio is required")
         require(config.min_merge_ratio > .5 and config.min_merge_ratio <= 1,
                 "Configuration parameter min-merge-ratio must be in range (.5,1]")
+        if config.save_intermediate_files != True or urlparse(config.output_dir).scheme == "s3":
+            config.intermediate_file_location == None
+        else:
+            intermediate_location = os.path.join(config.output_dir, "intermediate")
+            mkdir_p(intermediate_location)
+            config.intermediate_file_location = intermediate_location
 
         # get samples
         samples = parse_samples(config, args.manifest)
