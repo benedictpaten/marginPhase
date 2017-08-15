@@ -329,7 +329,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
               "-r",  os.path.join("/data", vcf_reference_name)]
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, DOCKER_MARGIN_PHASE, params))
-    dockerCheckOutput(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
+    dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
     os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
 
     # document output
@@ -353,6 +353,11 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
                 raise UserError("{}: Failed to generate appropriate output files {} times"
                                 .format(chunk_identifier, MAX_RETRIES))
         job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}")
+        job.fileStore.logToMaster("{}: failed job log file:".format(chunk_identifier))
+        with open(os.path.join(work_dir, "{}.log".format(chunk_identifier)), 'r') as input:
+            for line in input:
+                job.fileStore.logToMaster("{}:\t\t{}".format(chunk_identifier, line.strip()))
+        # new job
         mp_cores = int(min(MP_CPU, config.maxCores))
         mp_mem = int(config.maxMemory) # on retry, try full mem
         mp_disk = int(min(int(chunk_info[CI_CHUNK_SIZE] * MP_DSK_BAM_FACTOR +
