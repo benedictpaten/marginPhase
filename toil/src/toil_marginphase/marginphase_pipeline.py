@@ -338,9 +338,9 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     found_vcf, found_hap1, found_hap2 = False, False, False
     for f in output_file_locations:
         job.fileStore.logToMaster("{}:\t\t{}".format(chunk_identifier, os.path.basename(f)))
-        if f.endsWith(VCF_SUFFIX): found_vcf = True
-        if f.endsWith(SAM_HAP_1_SUFFIX): found_hap1 = True
-        if f.endsWith(SAM_HAP_2_SUFFIX): found_hap2 = True
+        if f.endswith(VCF_SUFFIX): found_vcf = True
+        if f.endswith(SAM_HAP_1_SUFFIX): found_hap1 = True
+        if f.endswith(SAM_HAP_2_SUFFIX): found_hap2 = True
 
     # todo why do we sometimes not get these files?
     # validate output, retry if not
