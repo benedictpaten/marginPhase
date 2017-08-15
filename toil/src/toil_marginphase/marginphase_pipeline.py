@@ -28,6 +28,7 @@ from toil_lib.files import tarball_files, copy_files
 from toil_lib.jobs import map_job
 from toil_lib.urls import download_url, s3am_upload
 
+# input / output schemes
 SCHEMES = ('http', 'file', 's3', 'ftp')
 
 # filenames
@@ -42,8 +43,8 @@ DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase:latest"
 MP_CPU = 2
 MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
-MP_DSK_BAM_FACTOR = 5 #input bam chunk, output (in sam fmt), vcf etc
-MP_DSK_REF_FACTOR = 2
+MP_DSK_BAM_FACTOR = 5.5 #input bam chunk, output (in sam fmt), vcf etc
+MP_DSK_REF_FACTOR = 2.5
 
 # for debugging
 DEBUG = True
@@ -56,6 +57,7 @@ CI_CHUNK_START = "chunk_start_pos" #chunk boundary modified by the margin
 CI_CHUNK_END = "chunk_end_pos" #chunk boundary modified by the margin
 CI_READ_COUNT = "read_count" #how many reads were in the chunk
 CI_CHUNK_SIZE = "chunk_size" #chunk size in bytes
+CI_REF_FA_SIZE = "ref_fa_size" #chunk size in bytes
 CI_CHUNK_INDEX = "chunk_index" #index of the chunk
 CI_OUTPUT_FILE_ID = "output_file_id"
 
@@ -67,6 +69,9 @@ VCF_SUFFIX = "out.vcf"
 # tags
 TAG_GENOTYPE = "GT"
 TAG_PHASE_SET = "PS"
+
+# todo move this to config?
+MAX_RETRIES = 3
 
 def parse_samples(config, path_to_manifest):
     """
@@ -211,6 +216,7 @@ def prepare_input(job, sample, config):
         #document read count
         chunk_size = os.stat(chunk_location).st_size
         ci[CI_CHUNK_SIZE] = chunk_size
+        ci[CI_REF_FA_SIZE] = ref_genome_size
         read_count= _get_bam_read_count(job, work_dir, chunk_name)
         ci[CI_READ_COUNT] = read_count
         job.fileStore.logToMaster("{}: chunk from {} for idx {} is {}b ({}mb) and has {} reads"
@@ -322,15 +328,40 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_MARGIN_PHASE, params))
-    dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, DOCKER_MARGIN_PHASE, params))
+    dockerCheckOutput(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
     os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
 
     # document output
-    job.fileStore.logToMaster("{}: Output files for {}:".format(config.uuid, chunk_identifier))
+    job.fileStore.logToMaster("{}: Output files after marginPhase:".format(chunk_identifier))
     output_file_locations = glob.glob(os.path.join(work_dir, "{}*".format(chunk_identifier)))
+    found_vcf, found_hap1, found_hap2 = False, False, False
     for f in output_file_locations:
-        job.fileStore.logToMaster("{}:\t\t{}".format(config.uuid, os.path.basename(f)))
+        job.fileStore.logToMaster("{}:\t\t{}".format(chunk_identifier, os.path.basename(f)))
+        if f.endsWith(VCF_SUFFIX): found_vcf = True
+        if f.endsWith(SAM_HAP_1_SUFFIX): found_hap1 = True
+        if f.endsWith(SAM_HAP_2_SUFFIX): found_hap2 = True
+
+    # todo why do we sometimes not get these files?
+    # validate output, retry if not
+    if not (found_hap1 and found_hap2 and found_vcf):
+        if "retry_attempts" not in config:
+            config.retry_attempts = 1
+        else:
+            config.retry_attempts += 1
+            if config.retry_attempts > MAX_RETRIES:
+                raise UserError("{}: Failed to generate appropriate output files {} times"
+                                .format(chunk_identifier, MAX_RETRIES))
+        job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}")
+        mp_cores = int(min(MP_CPU, config.maxCores))
+        mp_mem = int(config.maxMemory) # on retry, try full mem
+        mp_disk = int(min(int(chunk_info[CI_CHUNK_SIZE] * MP_DSK_BAM_FACTOR +
+                              chunk_info[CI_REF_FA_SIZE] * MP_DSK_REF_FACTOR), config.maxDisk)) * 2 # on retry, double
+        mp_mem = str(int(mp_mem / 1024)) + "K"
+        mp_disk = str(int(mp_disk) / 1024) + "K"
+        retry_job = job.addChildJobFn(run_margin_phase, config, chunk_file_id, chunk_info,
+                                      memory=mp_mem, cores=mp_cores, disk=mp_disk)
+        return retry_job.rv()
 
     # tarball the output and save
     tarball_name = "{}.tar.gz".format(chunk_identifier)
