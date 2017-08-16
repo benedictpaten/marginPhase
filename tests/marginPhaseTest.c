@@ -10,7 +10,7 @@
 #include "sonLib.h"
 
 
-int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
+int64_t genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
                     char *referenceFile, char *vcfReference, bool verbose) {
 
     // Run margin phase
@@ -22,15 +22,16 @@ int genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
     st_logInfo("Running command: %s\n", command);
     st_logInfo("> Running margin phase on %s\n", bamFile);
 
-    return st_system(command);
-
+    int64_t i = st_system(command);
+    free(command);
+    return i;
     // TODO : Do VCF comparison using VCF eval
 }
 
 
 void test_5kbGenotyping(CuTest *testCase) {
 
-    char *paramsFile = "../params.json";
+    char *paramsFile = "../params_pacbio_gaps.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_5kb";
     bool verbose = true;
@@ -42,7 +43,7 @@ void test_5kbGenotyping(CuTest *testCase) {
 
 
     st_logInfo("Testing haplotype inference on %s\n", bamFile);
-    int i = genotypingTest(paramsFile, bamFile, outputBase,
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                             referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 }
@@ -66,7 +67,7 @@ void test_100kbGenotyping(CuTest *testCase) {
 
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
-    int i = genotypingTest(paramsFile, bamFile, outputBase,
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                         referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
@@ -85,7 +86,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
     char *outputBase = "test_100kb_pb_0";
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
-    int i = genotypingTest(paramsFile, bamFile, outputBase,
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                            referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
@@ -140,7 +141,7 @@ void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
     char *outputBase = "test_100kb_np_0";
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
-    int i = genotypingTest(paramsFile, bamFile, outputBase,
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                            referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
@@ -195,7 +196,7 @@ void test_multiple100kbGenotyping_illuminaHiSeq(CuTest *testCase) {
     char *outputBase = "test_100kb_ihs_0";
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
-    int i = genotypingTest(paramsFile, bamFile, outputBase,
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                            referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
@@ -241,8 +242,8 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
-    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 

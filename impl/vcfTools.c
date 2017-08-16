@@ -26,6 +26,8 @@ struct _vcfRecordComparisonInfo {
     char *gt_ref_hap2;
     char *gt_eval_hap1;
     char *gt_eval_hap2;
+    char h1AlphChar;
+    char h2AlphChar;
 
     // The phasing info
     int refPhasing1;
@@ -676,6 +678,9 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
         vcfInfo->gt_ref_hap2 = vcfInfo->refPhasing2 == 0 ? refRecord->d.als
                                                         : refRecord->d.allele[vcfInfo->refPhasing2];
 
+        vcfInfo->h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[vcfInfo->referencePos - gF->refStart]);
+        vcfInfo->h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[vcfInfo->referencePos - gF->refStart]);
+
         // Skip to the first known location of variation in file being evaluated
         if (results->positives == 0) {
             refStart = vcfInfo->referencePos;
@@ -880,7 +885,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart + i]);
                         }
 
-                        if (strlen(vcfInfo->gt_ref_hap1) > 1) {
+                        if (strlen(vcfInfo->refAllele) > 1) {
                             st_logDebug("\nMISS  -  DELETION\n");
                         } else {
                             st_logDebug("\nMISS  -  INSERTION\n");
@@ -907,7 +912,14 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                     // SNV
                     if (params->verboseFalseNegatives) {
                         st_logDebug("\nMISS  -  SNV\n");
-                        printAlleleInfo(vcfInfo, hmm);
+                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+                        for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
+                            if (i != 1) st_logDebug(",");
+                            st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
+                        }
+                        st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+                        st_logDebug("\n  output: %c, %c   \tphasing: %d | %d\n",
+                                    vcfInfo->h1AlphChar, vcfInfo->h2AlphChar, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
                         printColumnAtPosition(hmm, vcfInfo->referencePos);
 
                         st_logDebug("\tPartition 1: \n");
