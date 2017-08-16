@@ -487,7 +487,8 @@ def merge_chunks(job, config, chunk_infos):
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
                                               int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
             # append vcf calls
-            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file, False)
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
         else:
             job.fileStore.logToMaster("{}:chunk{}: writing different ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
