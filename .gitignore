@@ -22,3 +22,4 @@ toil/docker/runtime-container.DONE
 *.log
 *.gz
 *.tbi
+*.log

@@ -477,7 +477,7 @@ int main(int argc, char *argv[]) {
         int64_t misses = 0;
         st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
         profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
-        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*1/initialSize);
+        st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*100/initialSize);
     }
 
     // Setup a filter to ignore likely homozygous reference positions
@@ -606,7 +606,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Write out two BAMs, one for each read partition
-    st_logInfo("\n> Writing out BAM files for each partition into files: %s.1.bam and %s.1.bam\n", outputBase,
+    st_logInfo("\n> Writing out BAM files for each partition into files: %s.0.bam and %s.1.bam\n", outputBase,
                outputBase);
 
     writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);

@@ -79,23 +79,7 @@ void printBaseComposition2(double *baseCounts) {
     st_logDebug( "\n");
 }
 
-void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
-    /*
-     * Print out the columns of the hmm at a specific position
-     */
-    stRPColumn *column = hmm->firstColumn;
-    while(1) {
-        if (pos >= column->refStart && pos < column->refStart+column->length) {
-            double *columnBaseCounts = getColumnBaseComposition(column, pos);
-            printBaseComposition2(columnBaseCounts);
-            free(columnBaseCounts);
-        }
-        if (column->nColumn == NULL) {
-            break;
-        }
-        column = column->nColumn->nColumn;
-    }
-}
+
 
 double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos) {
     /*
