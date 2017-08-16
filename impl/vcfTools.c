@@ -26,6 +26,8 @@ struct _vcfRecordComparisonInfo {
     char *gt_ref_hap2;
     char *gt_eval_hap1;
     char *gt_eval_hap2;
+    char h1AlphChar;
+    char h2AlphChar;
 
     // The phasing info
     int refPhasing1;
@@ -384,7 +386,7 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
 
     bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
     bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
+    int evalRecordPhased;
 
     // Iterate through the vcf being checked until getting to the start of the specified interval
     // Don't bother analyzing these records
@@ -467,6 +469,11 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
             int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
             ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
+            evalRecordPhased = bcf_gt_is_phased(eval_gt_arr[1]);
+            if (evalRecordPhased == 0) {
+                vcfInfo->phasingHap1 = false;
+                vcfInfo->phasingHap2 = false;
+            }
             vcfInfo->evalPhasing1 = bcf_gt_allele(eval_gt_arr[0]);
             vcfInfo->evalPhasing2 = bcf_gt_allele(eval_gt_arr[1]);
             vcfInfo->evalRefAllele = evalRecord->d.als;
@@ -628,7 +635,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 
     bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
     bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
+    int evalRecordPhased;
 
     // Start by looking at the first hmm
     int64_t hmmIndex = 0;
@@ -675,6 +682,9 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                                                         : refRecord->d.allele[vcfInfo->refPhasing1];
         vcfInfo->gt_ref_hap2 = vcfInfo->refPhasing2 == 0 ? refRecord->d.als
                                                         : refRecord->d.allele[vcfInfo->refPhasing2];
+
+        vcfInfo->h1AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString1[vcfInfo->referencePos - gF->refStart]);
+        vcfInfo->h2AlphChar = stBaseMapper_getCharForValue(baseMapper, gF->haplotypeString2[vcfInfo->referencePos - gF->refStart]);
 
         // Skip to the first known location of variation in file being evaluated
         if (results->positives == 0) {
@@ -755,6 +765,8 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
             vcfInfo->evalPhasing1 = bcf_gt_allele(eval_gt_arr[0]);
             vcfInfo->evalPhasing2 = bcf_gt_allele(eval_gt_arr[1]);
+            evalRecordPhased = bcf_gt_is_phased(eval_gt_arr[1]);
+
             vcfInfo->evalRefAllele = evalRecord->d.als;
             vcfInfo->gt_eval_hap1 = vcfInfo->evalPhasing1 == 0 ? evalRecord->d.als
                                                               : evalRecord->d.allele[vcfInfo->evalPhasing1];
@@ -798,8 +810,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                             results->truePositiveHomozygousIndels++;
                         }
                         recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
-                    }
-                    else {
+                    } else {
                         // Predicted homozygous, but doesn't match reference
                         // This could also be an "incorrect" variant...
                         if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
@@ -827,6 +838,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 }
 
             } else if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+
                 // Beginning of genotype fragment, figure out which haplotype matches with ref
                 results->uncertainPhasing++;
                 if ((strcmp(vcfInfo->gt_ref_hap1,vcfInfo-> gt_eval_hap1) == 0 &&
@@ -880,7 +892,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart + i]);
                         }
 
-                        if (strlen(vcfInfo->gt_ref_hap1) > 1) {
+                        if (strlen(vcfInfo->refAllele) > 1) {
                             st_logDebug("\nMISS  -  DELETION\n");
                         } else {
                             st_logDebug("\nMISS  -  INSERTION\n");
@@ -907,7 +919,14 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                     // SNV
                     if (params->verboseFalseNegatives) {
                         st_logDebug("\nMISS  -  SNV\n");
-                        printAlleleInfo(vcfInfo, hmm);
+                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+                        for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
+                            if (i != 1) st_logDebug(",");
+                            st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
+                        }
+                        st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+                        st_logDebug("\n  output: %c, %c   \tphasing: %d | %d\n",
+                                    vcfInfo->h1AlphChar, vcfInfo->h2AlphChar, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
                         printColumnAtPosition(hmm, vcfInfo->referencePos);
 
                         st_logDebug("\tPartition 1: \n");
