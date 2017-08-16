@@ -145,11 +145,15 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
     if (strcmp(hap1str.s, hap2str.s) == 0) {
         // Homozygous alleles 1/1
         // Ref allele will be the reference string constructed
-        gt_info[0] = bcf_gt_unphased(1);
-        gt_info[1] = bcf_gt_unphased(1);
+
         if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(1);
+            gt_info[1] = bcf_gt_unphased(1);
             *firstVariantInPhaseBlock = false;
             *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(1);
+            gt_info[1] = bcf_gt_phased(1);
         }
         kputc(',', &refstr);
         kputs(hap2str.s, &refstr);
@@ -174,22 +178,28 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         }
     } else if (strcmp(hap1str.s, refstr.s) == 0) {
         // Het 0/1
-        gt_info[0] = bcf_gt_unphased(0);
-        gt_info[1] = bcf_gt_unphased(1);
         if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(0);
+            gt_info[1] = bcf_gt_unphased(1);
             *firstVariantInPhaseBlock = false;
             *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(0);
+            gt_info[1] = bcf_gt_phased(1);
         }
         kputc(',', &hap1str);
         kputs(hap2str.s, &hap1str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, hap1str.s);
     } else {
         // Het 1/0
-        gt_info[0] = bcf_gt_unphased(1);
-        gt_info[1] = bcf_gt_unphased(0);
         if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(1);
+            gt_info[1] = bcf_gt_unphased(0);
             *firstVariantInPhaseBlock = false;
             *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(1);
+            gt_info[1] = bcf_gt_phased(0);
         }
         kputc(',', &hap2str);
         kputs(hap1str.s, &hap2str);
@@ -634,8 +644,8 @@ void printGenotypeResults(stGenotypeResults *results) {
     // Phasing
     st_logInfo("\nPhasing:\n");
     st_logInfo("\tSwitch error rate: %.4f \t (%" PRIi64 " out of %"PRIi64 ", ", (float)results->switchErrors/(results->truePositives-results->uncertainPhasing), results->switchErrors, results->truePositives-results->uncertainPhasing);
-    st_logInfo("fraction correct: %.2f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
-    st_logInfo("\tAverage distance between switch errors: %.3f\n", results->switchErrorDistance);
+    st_logInfo("fraction correct: %.4f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
+    st_logInfo("\tAverage distance between switch errors: %.2f\n", results->switchErrorDistance);
     st_logInfo("\tUncertain phasing spots: %" PRIi64 "\n\n", results->uncertainPhasing);
 }
 

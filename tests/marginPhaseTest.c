@@ -242,8 +242,8 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-    SUITE_ADD_TEST(suite, test_100kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 

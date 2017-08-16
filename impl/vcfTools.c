@@ -386,7 +386,7 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
 
     bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
     bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
+    int evalRecordPhased;
 
     // Iterate through the vcf being checked until getting to the start of the specified interval
     // Don't bother analyzing these records
@@ -469,6 +469,11 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
             int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
             ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
+            evalRecordPhased = bcf_gt_is_phased(eval_gt_arr[1]);
+            if (evalRecordPhased == 0) {
+                vcfInfo->phasingHap1 = false;
+                vcfInfo->phasingHap2 = false;
+            }
             vcfInfo->evalPhasing1 = bcf_gt_allele(eval_gt_arr[0]);
             vcfInfo->evalPhasing2 = bcf_gt_allele(eval_gt_arr[1]);
             vcfInfo->evalRefAllele = evalRecord->d.als;
@@ -630,7 +635,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 
     bcf_hdr_t *hdrEval = bcf_hdr_read(inEval); //read header
     bcf1_t *evalRecord = bcf_init1(); //initialize for reading
-
+    int evalRecordPhased;
 
     // Start by looking at the first hmm
     int64_t hmmIndex = 0;
@@ -760,6 +765,8 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             ngt = bcf_get_genotypes(hdrEval, vcfInfo->unpackedRecordEval, &eval_gt_arr, &eval_ngt_arr);
             vcfInfo->evalPhasing1 = bcf_gt_allele(eval_gt_arr[0]);
             vcfInfo->evalPhasing2 = bcf_gt_allele(eval_gt_arr[1]);
+            evalRecordPhased = bcf_gt_is_phased(eval_gt_arr[1]);
+
             vcfInfo->evalRefAllele = evalRecord->d.als;
             vcfInfo->gt_eval_hap1 = vcfInfo->evalPhasing1 == 0 ? evalRecord->d.als
                                                               : evalRecord->d.allele[vcfInfo->evalPhasing1];
@@ -803,8 +810,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                             results->truePositiveHomozygousIndels++;
                         }
                         recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
-                    }
-                    else {
+                    } else {
                         // Predicted homozygous, but doesn't match reference
                         // This could also be an "incorrect" variant...
                         if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
@@ -832,6 +838,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 }
 
             } else if (!vcfInfo->phasingHap1 && !vcfInfo->phasingHap2) {
+
                 // Beginning of genotype fragment, figure out which haplotype matches with ref
                 results->uncertainPhasing++;
                 if ((strcmp(vcfInfo->gt_ref_hap1,vcfInfo-> gt_eval_hap1) == 0 &&
