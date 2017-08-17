@@ -36,8 +36,10 @@ DEFAULT_CONFIG_NAME = 'config-toil-marginphase.yaml'
 DEFAULT_MANIFEST_NAME = 'manifest-toil-marginphase.tsv'
 
 # docker images
-DOCKER_SAMTOOLS = "quay.io/ucsc_cgl/samtools:1.3--256539928ea162949d8a65ca5c79a72ef557ce7c"
-DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase:latest"
+DOCKER_SAMTOOLS = "quay.io/ucsc_cgl/samtools"
+DOCKER_SAMTOOLS_TAG = "1.3--256539928ea162949d8a65ca5c79a72ef557ce7c"
+DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase"
+DOCKER_MARGIN_PHASE_DEFAULT_TAG = "latest"
 
 # resource
 MP_CPU = 2
@@ -159,8 +161,8 @@ def prepare_input(job, sample, config):
     # index the bam
     docker_params = ["index", data_bam_location]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, docker_params))
-    dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=docker_params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), docker_params))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=docker_params)
 
     # sanity check
     workdir_bai_location = os.path.join(work_dir, bam_filename + ".bai")
@@ -173,9 +175,9 @@ def prepare_input(job, sample, config):
         ["head", "-n", "1"],
         [os.path.join("/data", _write_select_column_script(work_dir))]
     ]
-    start_idx_str = _dockerCheckOutput_except_141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
+    start_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     get_idx_cmd[1][0] = "tail"
-    end_idx_str = _dockerCheckOutput_except_141(job, tool=DOCKER_SAMTOOLS, work_dir=work_dir, parameters=get_idx_cmd).strip()
+    end_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
     start_idx = int(start_idx_str) - 1
     end_idx = int(end_idx_str) + 1
@@ -211,8 +213,8 @@ def prepare_input(job, sample, config):
         chunk_location = os.path.join(work_dir, chunk_name)
         with open(chunk_location, 'w') as out:
             if DOCKER_LOGGING:
-                job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, bam_split_command))
-            dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=bam_split_command, outfile=out)
+                job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), bam_split_command))
+            dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         chunk_size = os.stat(chunk_location).st_size
         ci[CI_CHUNK_SIZE] = chunk_size
@@ -281,7 +283,7 @@ def _get_bam_read_count(job, work_dir, bam_name):
         ["samtools", "view", os.path.join("/data", bam_name)],
         ["wc", "-l"]
     ]
-    line_count_str = dockerCheckOutput(job, DOCKER_SAMTOOLS, params, work_dir)
+    line_count_str = dockerCheckOutput(job, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), params, work_dir)
     return int(line_count_str)
 
 
@@ -327,9 +329,10 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
+    docker_margin_phase = "{}:{}".format(DOCKER_MARGIN_PHASE, config.margin_phase_tag)
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, DOCKER_MARGIN_PHASE, params))
-    dockerCall(job, tool=DOCKER_MARGIN_PHASE, workDir=work_dir, parameters=params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
+    dockerCall(job, tool=docker_margin_phase, workDir=work_dir, parameters=params)
     os.rename(os.path.join(work_dir, "marginPhase.log"), os.path.join(work_dir, "{}.log".format(chunk_identifier)))
 
     # document output
@@ -342,6 +345,10 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
         if f.endswith(SAM_HAP_1_SUFFIX): found_hap1 = True
         if f.endswith(SAM_HAP_2_SUFFIX): found_hap2 = True
 
+    # tarball the output and save
+    tarball_name = "{}.tar.gz".format(chunk_identifier)
+    tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+
     # todo why do we sometimes not get these files?
     # validate output, retry if not
     if not (found_hap1 and found_hap2 and found_vcf):
@@ -352,7 +359,8 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
             if config.retry_attempts > MAX_RETRIES:
                 raise UserError("{}: Failed to generate appropriate output files {} times"
                                 .format(chunk_identifier, MAX_RETRIES))
-        job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}")
+        job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}"
+                                  .format(chunk_identifier, config.retry_attempts))
         job.fileStore.logToMaster("{}: failed job log file:".format(chunk_identifier))
         with open(os.path.join(work_dir, "{}.log".format(chunk_identifier)), 'r') as input:
             for line in input:
@@ -366,11 +374,15 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
         mp_disk = str(int(mp_disk) / 1024) + "K"
         retry_job = job.addChildJobFn(run_margin_phase, config, chunk_file_id, chunk_info,
                                       memory=mp_mem, cores=mp_cores, disk=mp_disk)
+        # save failed output
+        if config.intermediate_file_location is not None:
+            tarball_fail_name = "{}.FAILURE.{}.tar.gz".format(chunk_identifier, config.retry_attempts)
+            os.rename(os.path.join(work_dir, tarball_name), os.path.join(work_dir, tarball_fail_name))
+            copy_files(file_paths=[os.path.join(work_dir, tarball_fail_name)], output_dir=config.intermediate_file_location)
+
         return retry_job.rv()
 
-    # tarball the output and save
-    tarball_name = "{}.tar.gz".format(chunk_identifier)
-    tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+    # if successfull, save output
     if config.intermediate_file_location is not None:
         copy_files(file_paths=[os.path.join(work_dir, tarball_name)], output_dir=config.intermediate_file_location)
     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
@@ -625,8 +637,8 @@ def _sort_sam_file(job, config, work_dir, sam_file_name):
     sort_cmd = ["sort", "-o", os.path.join("/data/", sorted_file_name),
                 os.path.join("/data", sam_file_name)]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, sort_cmd))
-    dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=sort_cmd)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), sort_cmd))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=sort_cmd)
     # replace
     subprocess.check_call(["mv", os.path.join(work_dir, sorted_file_name), os.path.join(work_dir, sam_file_name)])
 
@@ -779,14 +791,14 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
         convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
         if DOCKER_LOGGING:
             job.fileStore.logToMaster("{}: Running {} with parameters: {}"
-                                      .format(config.uuid, DOCKER_SAMTOOLS, convert_cmd))
-        dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=convert_cmd)
+                                      .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), convert_cmd))
+        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=convert_cmd)
 
         # index
         index_cmd = ["index", os.path.join("/data", bam_name)]
         if DOCKER_LOGGING:
-            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(DOCKER_SAMTOOLS, index_cmd))
-        dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=index_cmd)
+            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format("{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), index_cmd))
+        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=index_cmd)
 
     # read_ids prep
     reads_filename = "{}.reads.txt".format(file_name)
@@ -797,8 +809,8 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
     # call docker
     params = [samtools_cmd, column_script, tee_script]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, DOCKER_SAMTOOLS, params))
-    dockerCall(job, tool=DOCKER_SAMTOOLS, workDir=work_dir, parameters=params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), params))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=params)
 
     # get output
     read_ids = set()
@@ -881,6 +893,9 @@ def generate_config():
 
         # Required: Minimum ratio of reads appearing in cross-chunk boundary to trigger a merge
         min-merge-ratio: .8
+
+        # Optional: Tag for marginPhase Docker image (defaults to "latest")
+        margin-phase-tag: latest
 
         # Optional: URL {scheme} for default FASTA reference
         default-reference: file://path/to/reference.fa
@@ -1016,6 +1031,8 @@ def main():
             intermediate_location = os.path.join(config.output_dir, "intermediate")
             mkdir_p(intermediate_location)
             config.intermediate_file_location = intermediate_location
+        if "margin_phase_tag" not in config or len(config.margin_phase_tag) == 0:
+            config.margin_phase_tag = DOCKER_MARGIN_PHASE_DEFAULT_TAG
 
         # get samples
         samples = parse_samples(config, args.manifest)
