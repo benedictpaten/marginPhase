@@ -548,6 +548,8 @@ def merge_chunks(job, config, chunk_infos):
         if file_name.endswith(".sam"): _sort_sam_file(job, config, merged_chunks_directory, file_name)
         if file_name.endswith(".vcf"): _sort_vcf_file(job, config, merged_chunks_directory, file_name)
 
+    #todo run vcfCompare on the full_merged_vcf_file
+
     # tarball the output and save
     job.fileStore.logToMaster("{}: Output files for merge:".format(config.uuid))
     output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))

@@ -23,3 +23,5 @@ toil/docker/runtime-container.DONE
 *.gz
 *.tbi
 *.log
+toil/.cache/
+toil/docker/tempMarginPhase/
