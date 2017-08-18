@@ -35,7 +35,7 @@
 
   "offDiagonalReadErrorPseudoCount" : 1,
 
-  "trainingIterations" : 0,
+  "trainingIterations" : 1,
   
   "estimateReadErrorProbsEmpirically" : false,
 
@@ -53,13 +53,13 @@
   
   "minSecondMostFrequentBaseLogProbFilter" : 20,
   
-  "gapCharactersForDeletions" : false,
+  "gapCharactersForDeletions" : true,
   
   "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
 
   "compareVCFs" : true,
   
-  "roundsOfIterativeRefinement": 10,
+  "roundsOfIterativeRefinement": 0,
 
   "verbose" : "00"
 }

@@ -375,7 +375,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // TODO make these so they don't need flags
     bamInFile = stString_copy(argv[1]);
     referenceFastaFile = stString_copy(argv[2]);
 
@@ -609,7 +608,7 @@ int main(int argc, char *argv[]) {
     st_logInfo("\n> Writing out BAM files for each partition into files: %s.0.bam and %s.1.bam\n", outputBase,
                outputBase);
 
-    writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
+    writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
 
     st_logInfo("\n----- RESULTS -----\n");
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),

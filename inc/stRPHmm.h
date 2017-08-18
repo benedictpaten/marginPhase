@@ -543,10 +543,11 @@ void printGenotypeResults(stGenotypeResults *results);
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
+void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 
 // Output file writing
-
 void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 

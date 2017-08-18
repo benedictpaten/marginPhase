@@ -37,6 +37,11 @@ int main(int argc, char *argv[]) {
     char *logLevelString = "info";
     char *vcfReference = NULL;
     char *vcfEvaluated = NULL;
+    bool debug = false;
+    char *bamFile1 = NULL;
+    char *bamFile2 = NULL;
+    char *paramsFile = NULL;
+    char *referenceFasta = NULL;
 
     // Parse the options
     while (1) {
@@ -45,11 +50,16 @@ int main(int argc, char *argv[]) {
                 { "help", no_argument, 0, 'h' },
                 { "vcfReference", required_argument, 0, 'r'},
                 { "vcfEvaluated", required_argument, 0, 'e'},
+                { "debug", no_argument, 0, 'd'},
+                { "bamFile1", required_argument, 0, '1'},
+                { "bamFile2", required_argument, 0, '2'},
+                { "params", required_argument, 0, 'p'},
+                { "fasta", required_argument, 0, 'f'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
 
-        int key = getopt_long(argc, argv, "a:r:e:h", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:r:e:p:1:2:f:hd", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -68,6 +78,23 @@ int main(int argc, char *argv[]) {
             case 'e':
                 vcfEvaluated = stString_copy(optarg);
                 break;
+            case 'd':
+                debug = true;
+                break;
+            case '1':
+                bamFile1 = stString_copy(optarg);
+                break;
+            case '2':
+                bamFile2 = stString_copy(optarg);
+                break;
+            case 'p':
+                st_logInfo("got here...\n");
+                paramsFile = stString_copy(optarg);
+                st_logInfo("params: %s\n", paramsFile);
+                break;
+            case 'f':
+                referenceFasta = stString_copy(optarg);
+                break;
             default:
                 usage();
                 return 1;
@@ -76,7 +103,14 @@ int main(int argc, char *argv[]) {
     st_setLogLevelFromString(logLevelString);
 
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
-    compareVCFsBasic(stderr, vcfEvaluated, vcfReference, results);
+    if (debug) {
+        stBaseMapper *baseMapper = stBaseMapper_construct();
+        st_logInfo("params file: %s  bam1file: %s  bam2file: %s\n", paramsFile, bamFile1, bamFile2);
+        stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+        compareVCFs_debugWithBams(vcfEvaluated, vcfReference, bamFile1, bamFile2, referenceFasta, baseMapper, results, params);
+    } else {
+        compareVCFsBasic(stderr, vcfEvaluated, vcfReference, results);
+    }
     printGenotypeResults(results);
 
     return 0;
