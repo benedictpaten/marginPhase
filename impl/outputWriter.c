@@ -6,6 +6,8 @@
 
 #include <ctype.h>
 #include <htslib/vcf.h>
+#include <htslib/bgzf.h>
+#include <htslib/hts.h>
 #include "stRPHmm.h"
 
 
@@ -13,9 +15,67 @@
 void writeSplitBams(char *bamInFile, char *bamOutBase,
                     stSet *haplotype1Ids, stSet *haplotype2Ids) {
     // prep
-    char *haplotype1BamOutFile = stString_print("%s.1.sam", bamOutBase);
-    char *haplotype2BamOutFile = stString_print("%s.2.sam", bamOutBase);
-    char *unmatchedBamOutFile = stString_print("%s.filtered.sam", bamOutBase);
+    char *haplotype1BamOutFile = stString_print("%s.1.bam", bamOutBase);
+    char *haplotype2BamOutFile = stString_print("%s.2.bam", bamOutBase);
+    char *unmatchedBamOutFile = stString_print("%s.filtered.bam", bamOutBase);
+
+    // file management
+    samFile *in = hts_open(bamInFile, "r");
+    if (in == NULL) {
+        st_errAbort("ERROR: Cannot open bam file %s\n", bamInFile);
+    }
+    bam_hdr_t *bamHdr = bam_hdr_read(in->fp.bgzf);
+    bam1_t *aln = bam_init1();
+
+    int r;
+    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
+    BGZF *out1 = bgzf_open(haplotype1BamOutFile, "w");
+    r = bam_hdr_write(out1, bamHdr);
+
+    BGZF *out2 = bgzf_open(haplotype2BamOutFile, "w");
+    r = bam_hdr_write(out2, bamHdr);
+
+    BGZF *out3 = bgzf_open(unmatchedBamOutFile, "w");
+    r = bam_hdr_write(out3, bamHdr);
+
+    // read in input file, write out each read to one sam file
+    int32_t readCountH1 = 0;
+    int32_t readCountH2 = 0;
+    int32_t readCountFiltered = 0;
+    while(sam_read1(in,bamHdr,aln) > 0) {
+
+        char *readName = bam_get_qname(aln);
+        if (stSet_search(haplotype1Ids, readName) != NULL) {
+            r = bam_write1(out1, aln);
+            readCountH1++;
+        } else if (stSet_search(haplotype2Ids, readName) != NULL) {
+            r = bam_write1(out2, aln);
+            readCountH2++;
+        } else {
+            r = bam_write1(out3, aln);
+            readCountFiltered++;
+        }
+    }
+    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+
+    // Cleanup
+    bam_destroy1(aln);
+    bam_hdr_destroy(bamHdr);
+    sam_close(in);
+    bgzf_close(out1);
+    bgzf_close(out2);
+    bgzf_close(out3);
+    free(haplotype1BamOutFile);
+    free(haplotype2BamOutFile);
+    free(unmatchedBamOutFile);
+}
+
+void writeSplitSams(char *bamInFile, char *bamOutBase,
+                    stSet *haplotype1Ids, stSet *haplotype2Ids) {
+    // prep
+    char *haplotype1SamOutFile = stString_print("%s.1.sam", bamOutBase);
+    char *haplotype2SamOutFile = stString_print("%s.2.sam", bamOutBase);
+    char *unmatchedSamOutFile = stString_print("%s.filtered.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -26,14 +86,14 @@ void writeSplitBams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
-    samFile *out1 = hts_open(haplotype1BamOutFile, "w");
+    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1SamOutFile, haplotype2SamOutFile);
+    samFile *out1 = hts_open(haplotype1SamOutFile, "w");
     r = sam_hdr_write(out1, bamHdr);
 
-    samFile *out2 = hts_open(haplotype2BamOutFile, "w");
+    samFile *out2 = hts_open(haplotype2SamOutFile, "w");
     r = sam_hdr_write(out2, bamHdr);
 
-    samFile *out3 = hts_open(unmatchedBamOutFile, "w");
+    samFile *out3 = hts_open(unmatchedSamOutFile, "w");
     r = sam_hdr_write(out3, bamHdr);
 
     // read in input file, write out each read to one sam file
@@ -63,11 +123,10 @@ void writeSplitBams(char *bamInFile, char *bamOutBase,
     sam_close(out1);
     sam_close(out2);
     sam_close(out3);
-    free(haplotype1BamOutFile);
-    free(haplotype2BamOutFile);
-    free(unmatchedBamOutFile);
+    free(haplotype1SamOutFile);
+    free(haplotype2SamOutFile);
+    free(unmatchedSamOutFile);
 }
-
 
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName) {
     bcf_hdr_t *hdr = bcf_hdr_init("w");
