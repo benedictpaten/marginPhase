@@ -609,8 +609,9 @@ int main(int argc, char *argv[]) {
                outputBase);
 
     writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+    writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
 
-    st_logInfo("\n----- RESULTS -----\n");
+
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
                (float) totalGFlength / stList_length(hmms));
 

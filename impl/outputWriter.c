@@ -215,9 +215,10 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
             gt_info[1] = bcf_gt_phased(1);
         }
         kputc(',', &refstr);
-        kputs(hap2str.s, &refstr);
+        kputs(hap1str.s, &refstr);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
         if (gvcf) {
+            // Only write out the record for gvcf
             bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr) * 2);
             ps_info[0] = *phaseSet;
             bcf_update_format(bcf_hdr, bcf_rec, "PS", ps_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
@@ -249,7 +250,7 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &hap1str);
         kputs(hap2str.s, &hap1str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, hap1str.s);
-    } else {
+    } else if (strcmp(hap2str.s, refstr.s) == 0){
         // Het 1/0
         if (*firstVariantInPhaseBlock) {
             gt_info[0] = bcf_gt_unphased(1);
@@ -263,6 +264,23 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &hap2str);
         kputs(hap1str.s, &hap2str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, hap2str.s);
+    } else {
+        // Het 1/2
+        // Neither matched the reference
+        if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(1);
+            gt_info[1] = bcf_gt_unphased(2);
+            *firstVariantInPhaseBlock = false;
+            *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(1);
+            gt_info[1] = bcf_gt_phased(2);
+        }
+        kputc(',', &refstr);
+        kputs(hap1str.s, &refstr);
+        kputc(',', &refstr);
+        kputs(hap2str.s, &refstr);
+        bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
     }
 
     *index += (j - 1);
@@ -336,7 +354,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
 
         // ID - skip
         // QUAL - currently writing out the genotype probability
-        bcf_rec->qual = genotypeProb;
+//        bcf_rec->qual = genotypeProb;
 
         // Get phasing info
         gt_info[0] = bcf_gt_phased(0);
@@ -415,6 +433,22 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
                     kputc(h2AlphChar, &str);
                     kputc(',', &str);
                     kputc(h1AlphChar, &str);
+                } else {
+                    // Neither matched the reference
+                    if (firstVariantInPhaseBlock) {
+                        gt_info[0] = bcf_gt_unphased(1);
+                        gt_info[1] = bcf_gt_unphased(2);
+                        firstVariantInPhaseBlock = false;
+                        phaseSet = bcf_rec->pos+1;
+                    } else {
+                        gt_info[0] = bcf_gt_phased(1);
+                        gt_info[1] = bcf_gt_phased(2);
+                    }
+                    kputc(refChar, &str);
+                    kputc(',', &str);
+                    kputc(h1AlphChar, &str);
+                    kputc(',', &str);
+                    kputc(h2AlphChar, &str);
                 }
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
@@ -540,6 +574,22 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
                     kputc(h2AlphChar, &str);
                     kputc(',', &str);
                     kputc(h1AlphChar, &str);
+                } else {
+                    // Neither matched the reference
+                    if (firstVariantInPhaseBlock) {
+                        gt_info[0] = bcf_gt_unphased(1);
+                        gt_info[1] = bcf_gt_unphased(2);
+                        firstVariantInPhaseBlock = false;
+                        phaseSet = bcf_rec->pos+1;
+                    } else {
+                        gt_info[0] = bcf_gt_phased(1);
+                        gt_info[1] = bcf_gt_phased(2);
+                    }
+                    kputc(refChar, &str);
+                    kputc(',', &str);
+                    kputc(h1AlphChar, &str);
+                    kputc(',', &str);
+                    kputc(h2AlphChar, &str);
                 }
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
@@ -618,13 +668,15 @@ void printGenotypeResults(stGenotypeResults *results) {
     int64_t hetsInRefIndels = results->hetsInRef_Insertions + results->hetsInRef_Deletions;
     int64_t homozygousVariantsInRefIndels = results->homozygousVariantsInRef_Insertions + results->homozygousVariantsInRef_Deletions;
 
+    st_logInfo("\n----- RESULTS -----\n");
+
     // Sensitivity
     st_logInfo("\nSensitivity / recall (fraction of true positives compared to reference): \n");
     st_logInfo("\tOverall: %.4f \t\t\t(%d out of %d)\n",
                (float)results->truePositives/results->positives,
                results->truePositives,
                results->positives);
-    st_logInfo("\tNo indels: %.4f \t\t\t(%d out of %d)\n",
+    st_logInfo("\tSNVs: %.4f \t\t\t\t(%d out of %d)\n",
                (float) (results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels)/
                        (results->positives-hetsInRefIndels-homozygousVariantsInRefIndels),
                results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels,
@@ -639,7 +691,7 @@ void printGenotypeResults(stGenotypeResults *results) {
                /(results->homozygousVariantsInRef-homozygousVariantsInRefIndels),
                results->truePositiveHomozygous - results->truePositiveHomozygousIndels,
                results->homozygousVariantsInRef - homozygousVariantsInRefIndels);
-    st_logInfo("\tIndels only: %.4f \t\t\t(%d out of %d)\n",
+    st_logInfo("\tIndels: %.4f \t\t\t\t(%d out of %d)\n",
                (float)results->truePositiveIndels/
                        (homozygousVariantsInRefIndels + hetsInRefIndels),
                results->truePositiveIndels,
@@ -661,44 +713,65 @@ void printGenotypeResults(stGenotypeResults *results) {
 
     // Precision
     st_logInfo("\nPrecision (fraction of true positives compared to all calls):\n");
-    st_logInfo("\tOverall: %.4f \t\t(%d out of %d)\n",
+    st_logInfo("\tOverall: %.4f \t(%d out of %d)\n",
                (float)results->truePositives/(results->truePositives+results->falsePositives),
                results->truePositives, results->truePositives+results->falsePositives);
-    st_logInfo("\tNo indels: %.4f \t\t(%d out of %d)\n",
+    st_logInfo("\tSNVs: %.4f \t\t(%d out of %d)\n",
                (float) (results->truePositives-results->truePositiveIndels) /
                        (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels),
                (results->truePositives - results->truePositiveIndels),
                (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels));
-    st_logInfo("\tIndels only: %.4f \t\t(%d out of %d)\n",
+    st_logInfo("\tIndels: %.4f \t\t(%d out of %d)\n",
                (float)results->truePositiveIndels / (results->truePositiveIndels + results->falsePositiveIndels),
                results->truePositiveIndels, results->truePositiveIndels + results->falsePositiveIndels);
 
     // False positives
     st_logInfo("\nFalse positives:\n");
     st_logInfo("\tOverall: %" PRIi64 "\n", results->falsePositives);
-    st_logInfo("\tNo indels: %" PRIi64 "\n", results->falsePositives - results->falsePositiveIndels);
-    st_logInfo("\tIndels only: %" PRIi64 "\n", results->falsePositiveIndels);
+    st_logInfo("\tSNVs: %" PRIi64 "\n", results->falsePositives - results->falsePositiveIndels);
+    st_logInfo("\tIndels: %" PRIi64 "\n", results->falsePositiveIndels);
 
 
     // More detailed numbers about errors
     st_logInfo("\nFalse negatives:\n");
     st_logInfo("\tOverall: %" PRIi64 "\n", results->falseNegatives);
-    st_logInfo("\tMissed hets - SNV: %" PRIi64 "\n", results->error_missedHet -
+    st_logInfo("\tSNV - Missed hets: %" PRIi64 "\n", results->error_missedHet -
                        results->error_missedHet_Deletions - results->error_missedHet_Insertions);
-    st_logInfo("\tMissed hets - Indels: %" PRIi64 "\n",
+    st_logInfo("\tSNV - Incorrect homozygous variants: %" PRIi64 "\n",
+               results->error_homozygousInRef -
+               results->error_homozygous_Insertions - results->error_homozygous_Deletions);
+
+    st_logInfo("\tIndels - Missed hets: %" PRIi64 "\n",
                results->error_missedHet_Insertions + results->error_missedHet_Deletions);
-    st_logInfo("\t\tInsertions: %d \t(out of %d)\n",
-               results->error_missedHet_Insertions, results->hetsInRef_Insertions);
-    st_logInfo("\t\tDeletions: %d \t(out of %d)\n",
-               results->error_missedHet_Deletions, results->hetsInRef_Deletions);
-    st_logInfo("\tIncorrect homozygous variants - SNV: %" PRIi64 "\n", results->error_homozygousInRef -
-                       results->error_homozygous_Insertions - results->error_homozygous_Deletions);
-    st_logInfo("\tIncorrect homozygous variants - Indels: %" PRIi64 "\n",
+    st_logInfo("\t\tInsertions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_missedHet_Insertions,
+               results->hetsInRef_Insertions - results->error_missedHet_Insertions,
+               results->hetsInRef_Insertions,
+               (float)(results->hetsInRef_Insertions - results->error_missedHet_Insertions) /
+                       results->hetsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_missedHet_Deletions,
+               results->hetsInRef_Deletions - results->error_missedHet_Deletions,
+               results->hetsInRef_Deletions,
+               (float)(results->hetsInRef_Deletions - results->error_missedHet_Deletions) /
+                       results->hetsInRef_Deletions);
+
+    st_logInfo("\tIndels - Incorrect homozygous variants: %" PRIi64 "\n",
                results->error_homozygous_Insertions + results->error_homozygous_Deletions);
-    st_logInfo("\t\tInsertions: %d \t(out of %d)\n",
-               results->error_homozygous_Insertions, results->homozygousVariantsInRef_Insertions);
-    st_logInfo("\t\tDeletions: %d \t(out of %d)\n",
-               results->error_homozygous_Deletions, results->homozygousVariantsInRef_Deletions);
+    st_logInfo("\t\tInsertions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_homozygous_Insertions,
+               results->homozygousVariantsInRef_Insertions - results->error_homozygous_Insertions,
+               results->homozygousVariantsInRef_Insertions,
+               (float)(results->homozygousVariantsInRef_Insertions -
+                       results->error_homozygous_Insertions) /
+                       results->homozygousVariantsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_homozygous_Deletions,
+               results->homozygousVariantsInRef_Deletions - results->error_homozygous_Deletions,
+               results->homozygousVariantsInRef_Deletions,
+               (float)(results->homozygousVariantsInRef_Deletions -
+                       results->error_homozygous_Deletions) /
+                       results->homozygousVariantsInRef_Deletions);
 
     // Phasing
     st_logInfo("\nPhasing:\n");

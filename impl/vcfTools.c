@@ -22,6 +22,7 @@ struct _vcfRecordComparisonInfo {
     // The genotypes in the vcf
     char *refAllele;
     char *evalRefAllele;
+    char *evalAltAllele;
     char *gt_ref_hap1;
     char *gt_ref_hap2;
     char *gt_eval_hap1;
@@ -40,14 +41,36 @@ struct _vcfRecordComparisonInfo {
     bool phasingHap2;
 };
 
+void printBaseComposition2(double *baseCounts) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += baseCounts[i];
+    }
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", baseCounts[i]);
+    }
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", baseCounts[i]/totalCount);
+    }
+    st_logDebug( "\n");
+}
+
+
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     /*
-     * Print out the columns of the hmm at a specific position
+     * Print out the columns of the hmm at a specific positionk
      */
     stRPColumn *column = hmm->firstColumn;
     while(1) {
         if (pos >= column->refStart && pos < column->refStart+column->length) {
             double *columnBaseCounts = getColumnBaseComposition(column, pos);
+            st_logDebug("\tTotal counts: \n");
             printBaseComposition2(columnBaseCounts);
             free(columnBaseCounts);
         }
@@ -62,14 +85,16 @@ void printAlleleInfo(vcfRecordComparisonInfo *vcfInfo) {
     /*
      * Print information about the alleles found in the reference vcf and in the vcf being evaluated.
      */
-    st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+    st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+    st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
     for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
         if (i != 1) st_logDebug(",");
         st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
     }
     st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-    st_logDebug("\n  output: %s, %s   \tphasing: %d | %d\n",
-                vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+    st_logDebug("\n  output    ref: %s\t alt: %s   \tphasing: %d | %d\n",
+                vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+//                vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
 }
 
 void printPartitionInfo(int64_t pos, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
@@ -105,10 +130,35 @@ void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs) 
     st_logDebug( "\n");
 }
 
+void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i];
+        totalCount += rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i];
+    }
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
+                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]);
+    }
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", (rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
+                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]) /totalCount);
+    }
+    st_logDebug( "\n");
+}
+
 void printPartitionInfo2(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
     /*
      * Print information about the base composition of the partitions.
      */
+    st_logDebug("\tTotal counts: \n");
+    printTotalBaseCompositionAtPosition(pos, rProbs1, rProbs2);
     st_logDebug("\tPartition 1: \n");
     printBaseCompositionAtPosition(pos, rProbs1);
     st_logDebug("\tPartition 2: \n");
@@ -124,8 +174,9 @@ stBaseMapper *baseMapper, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stS
     results->falsePositives++;
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)
+        results->error_homozygous_Insertions++;
 
 
     if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
@@ -136,12 +187,11 @@ stBaseMapper *baseMapper, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stS
         for (int64_t i = 0; i < indelLen; i++) {
             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart + i]);
         }
-
-        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                    vcfInfo->referencePos, refSeq, vcfInfo->gt_ref_hap1,
-                    vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-        st_logDebug("  output: %s, %s   \tphasing: %d | %d\n",
-                    vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+        st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq,
+                    vcfInfo->gt_ref_hap1, vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+        st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                    vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
         printColumnAtPosition(hmm, vcfInfo->referencePos);
         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
 
@@ -164,8 +214,9 @@ static void recordHomozygousVariant2(stGenotypeResults *results, vcfRecordCompar
     results->falsePositives++;
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)
+        results->error_homozygous_Insertions++;
 
 
     if (params->verboseFalseNegatives || params->verboseFalsePositives) {
@@ -176,12 +227,11 @@ static void recordHomozygousVariant2(stGenotypeResults *results, vcfRecordCompar
         for (int64_t i = 0; i < indelLen; i++) {
             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->referencePos - rProbs1->refStart + i]);
         }
-
-        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                    vcfInfo->referencePos, refSeq, vcfInfo->gt_ref_hap1,
-                    vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-        st_logDebug("  output: %s, %s   \tphasing: %d | %d\n",
-                    vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+        st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq,
+                    vcfInfo->gt_ref_hap1, vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+        st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                    vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
         printPartitionInfo2(vcfInfo->referencePos, rProbs1, rProbs2);
 
         for (int64_t j = 1; j < indelLen; j++) {
@@ -197,15 +247,17 @@ static void recordHomozygousVariantMiss(stGenotypeResults *results, vcfRecordCom
     /*
      * Record a variant that was homozygous in the reference
      */
-    // VCF eval seems to count these both as false positives and as false negatives
+    // VCF eval seems to count these as only false negatives
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Insertions++;
 
 
     if (hmm->parameters->verboseFalseNegatives) {
-        st_logDebug("\nMISS - HOMOZYGOUS VARIANT\n");
+        if (strlen(vcfInfo->refAllele) > 1) st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - DELETION  (FN)\n");
+        else if (strlen(vcfInfo->gt_ref_hap1) > 1) st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - INSERTION  (FN)\n");
+        else st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - SNV  (FN)\n");
 
         size_t indelLen = strlen(vcfInfo->refAllele) > strlen(vcfInfo->gt_ref_hap1) ? strlen(vcfInfo->refAllele) : strlen(vcfInfo->gt_ref_hap1);
 
@@ -213,11 +265,16 @@ static void recordHomozygousVariantMiss(stGenotypeResults *results, vcfRecordCom
         for (int64_t i = 0; i < indelLen; i++) {
             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart + i]);
         }
+        char refChar = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart]);
 
-        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                    vcfInfo->referencePos, refSeq, vcfInfo->gt_ref_hap1,
-                    vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-        st_logDebug("  output: %s, %s   \tphasing: %d | %d\n", refSeq, refSeq, 0, 0);
+        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+        st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", vcfInfo->refAllele,
+                    vcfInfo->gt_ref_hap1, vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+        if (strlen(vcfInfo->refAllele) > 1) {
+            st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq, refSeq, 0, 0);
+        } else {
+            st_logDebug("  output    ref: %c\t alt: %c \tphasing: %d | %d\n", refChar, refChar, 0, 0);
+        }
         printColumnAtPosition(hmm, vcfInfo->referencePos);
         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
 
@@ -239,12 +296,15 @@ static void recordHomozygousVariantMiss2(stGenotypeResults *results, vcfRecordCo
     // VCF eval seems to count these both as false positives and as false negatives
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Insertions++;
 
 
     if (params->verboseFalseNegatives) {
-        st_logDebug("\nMISS - HOMOZYGOUS VARIANT\n");
+        if (strlen(vcfInfo->refAllele) > 1) st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - DELETION  (FN)\n");
+        else if (strlen(vcfInfo->gt_ref_hap1) > 1) st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - INSERTION  (FN)\n");
+        else st_logDebug("\nMISS - HOMOZYGOUS ALT VARIANT - SNV  (FN)\n");
+
 
         size_t indelLen = strlen(vcfInfo->refAllele) > strlen(vcfInfo->gt_ref_hap1) ? strlen(vcfInfo->refAllele) : strlen(vcfInfo->gt_ref_hap1);
 
@@ -252,11 +312,17 @@ static void recordHomozygousVariantMiss2(stGenotypeResults *results, vcfRecordCo
         for (int64_t i = 0; i < indelLen; i++) {
             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->referencePos - rProbs1->refStart + i]);
         }
+        char refChar = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->referencePos - rProbs1->refStart]);
 
-        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                    vcfInfo->referencePos, refSeq, vcfInfo->gt_ref_hap1,
-                    vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-        st_logDebug("  output: %s, %s   \tphasing: %d | %d\n", refSeq, refSeq, 0, 0);
+        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+        st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", vcfInfo->refAllele,
+                    vcfInfo->gt_ref_hap1, vcfInfo->refPhasing1, vcfInfo->refPhasing2);
+        if (strlen(vcfInfo->refAllele) > 1) {
+            st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq, refSeq, 0, 0);
+        } else {
+            st_logDebug("  output    ref: %c\t alt: %c \tphasing: %d | %d\n", refChar, refChar, 0, 0);
+        }
+
         printPartitionInfo2(vcfInfo->referencePos, rProbs1, rProbs2);
 
         for (int64_t j = 1; j < indelLen; j++) {
@@ -275,8 +341,9 @@ static void recordHomozygousVariantBasic(stGenotypeResults *results, vcfRecordCo
     results->falsePositives++;
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)
+        results->error_homozygous_Insertions++;
 }
 
 
@@ -286,8 +353,9 @@ static void recordHomozygousVariantMissBasic(stGenotypeResults *results, vcfReco
      */
     results->falseNegatives++;
     results->error_homozygousInRef++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Deletions++;
-    else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_homozygous_Insertions++;
+    if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+    else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)
+        results->error_homozygous_Insertions++;
 }
 
 
@@ -297,7 +365,10 @@ static void recordTruePositive(stGenotypeResults *results, stRPHmmParameters *pa
      * Record stats and print info about a true positive result.
      */
     results->truePositives++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) results->truePositiveIndels++;
+    if (strlen(vcfInfo->refAllele) > 1 ||
+            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        results->truePositiveIndels++;
+    }
 
     if (params->verboseTruePositives) {
         st_logDebug("\nTRUE POSITIVE\n");
@@ -312,7 +383,10 @@ static void recordTruePositive2(stGenotypeResults *results, stRPHmmParameters *p
      * Record stats and print info about a true positive result.
      */
     results->truePositives++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) results->truePositiveIndels++;
+    if (strlen(vcfInfo->refAllele) > 1  ||
+            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        results->truePositiveIndels++;
+    }
 
     if (params->verboseTruePositives) {
         st_logDebug("\nTRUE POSITIVE\n");
@@ -326,7 +400,8 @@ static void recordTruePositiveBasic(stGenotypeResults *results, vcfRecordCompari
      * Record stats and print info about a true positive result.
      */
     results->truePositives++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) results->truePositiveIndels++;
+    if (strlen(vcfInfo->refAllele) > 1  ||
+            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) results->truePositiveIndels++;
 }
 
 
@@ -336,20 +411,49 @@ static void recordIncorrectVariant(vcfRecordComparisonInfo *vcfInfo, stGenotypeR
     /*
      * Records an error where the bases predicted are not consistent with the ref
      */
-    st_logDebug("\nERROR: INCORRECT VARIANT\n");
     // in vcfEval, these appear as both FP and FN
     results->falseNegatives++;
     results->falsePositives++;
-    results->error_missedHet++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 0 || strlen(vcfInfo->gt_ref_hap2) > 0) {
+    if (strlen(vcfInfo->refAllele) > 1 ||
+            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
         results->falsePositiveIndels++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
-        else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_missedHet_Insertions++;
     }
+
+    if (vcfInfo->refPhasing1 == vcfInfo->refPhasing2) {
+        if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
+            st_logDebug("\nERROR: PREDICTED HET FOR HOMOZYGOUS VARIANT  (FN, FP)\n");
+        }
+        results->error_homozygousInRef++;
+        if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+        else if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Insertions++;
+    } else {
+        if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
+            if (strlen(vcfInfo->refAllele) > 1 ) {
+                st_logDebug("\nERROR: INCORRECT VARIANT - DELETION  (FN, FP)\n");
+            } else if (strlen(vcfInfo->gt_ref_hap1) || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                st_logDebug("\nERROR: INCORRECT VARIANT - INSERTION  (FN, FP)\n");
+            } else {
+                st_logDebug("\nERROR: INCORRECT VARIANT  (FN, FP)\n");
+            }
+        }
+        results->error_missedHet++;
+        if (strlen(vcfInfo->refAllele) > 1) results->error_missedHet_Deletions++;
+        else if (strlen(vcfInfo->gt_ref_hap1) || strlen(vcfInfo->gt_ref_hap2) > 1)  results->error_missedHet_Insertions++;
+    }
+
     if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
         printAlleleInfo(vcfInfo);
         printColumnAtPosition(hmm, vcfInfo->referencePos);
         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
+
+        size_t indelLen = strlen(vcfInfo->gt_eval_hap1) > strlen(vcfInfo->gt_eval_hap2) ?
+                          strlen(vcfInfo->gt_eval_hap1) : strlen(vcfInfo->gt_eval_hap2);
+
+        for (int64_t j = 1; j < indelLen; j++) {
+            st_logDebug(" -> pos: %" PRIi64 "\n", vcfInfo->evalPos+j);
+            printColumnAtPosition(hmm, vcfInfo->evalPos+j);
+            printPartitionInfo(vcfInfo->evalPos +j, reads1, reads2, gF);
+        }
     }
 }
 
@@ -357,19 +461,47 @@ static void recordIncorrectVariant2(vcfRecordComparisonInfo *vcfInfo, stGenotype
     /*
      * Records an error where the bases predicted are not consistent with the ref
      */
-    st_logDebug("\nERROR: INCORRECT VARIANT\n");
     // in vcfEval, these appear as both FP and FN
     results->falseNegatives++;
     results->falsePositives++;
-    results->error_missedHet++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 0 || strlen(vcfInfo->gt_ref_hap2) > 0) {
+    if (strlen(vcfInfo->refAllele) > 1 ||
+        strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
         results->falsePositiveIndels++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
-        else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->error_missedHet_Insertions++;
     }
+
+    if (vcfInfo->refPhasing1 == vcfInfo->refPhasing2) {
+        if (params->verboseFalseNegatives || params->verboseFalsePositives) {
+            st_logDebug("\nERROR: PREDICTED HET FOR HOMOZYGOUS VARIANT  (FN, FP)\n");
+        }
+        results->error_homozygousInRef++;
+        if (strlen(vcfInfo->refAllele) > 1) results->error_homozygous_Deletions++;
+        else if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_homozygous_Insertions++;
+    } else {
+        if (params->verboseFalseNegatives || params->verboseFalsePositives) {
+            if (strlen(vcfInfo->refAllele) > 1 ) {
+                st_logDebug("\nERROR: INCORRECT VARIANT - DELETION  (FN, FP)\n");
+            } else if (strlen(vcfInfo->gt_ref_hap1) || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                st_logDebug("\nERROR: INCORRECT VARIANT - INSERTION  (FN, FP)\n");
+            } else {
+                st_logDebug("\nERROR: INCORRECT VARIANT  (FN, FP)\n");
+            }
+        }
+        results->error_missedHet++;
+        if (strlen(vcfInfo->refAllele) > 1) results->error_missedHet_Deletions++;
+        else if (strlen(vcfInfo->gt_ref_hap1) || strlen(vcfInfo->gt_ref_hap2) > 1) results->error_missedHet_Insertions++;
+    }
+
     if (params->verboseFalseNegatives || params->verboseFalsePositives) {
         printAlleleInfo(vcfInfo);
         printPartitionInfo2(vcfInfo->referencePos, rProbs1, rProbs2);
+
+        size_t indelLen = strlen(vcfInfo->gt_eval_hap1) > strlen(vcfInfo->gt_eval_hap2) ?
+                          strlen(vcfInfo->gt_eval_hap1) : strlen(vcfInfo->gt_eval_hap2);
+
+        for (int64_t j = 1; j < indelLen; j++) {
+            st_logDebug(" -> pos: %" PRIi64 "\n", vcfInfo->evalPos+j);
+            printPartitionInfo2(vcfInfo->evalPos+j, rProbs1, rProbs2);
+        }
     }
 }
 
@@ -381,15 +513,17 @@ static void recordIncorrectVariantBasic(vcfRecordComparisonInfo *vcfInfo, stGeno
     results->falseNegatives++;
     results->falsePositives++;
     results->error_missedHet++;
-    if (strlen(vcfInfo->gt_ref_hap1) > 0 || strlen(vcfInfo->gt_ref_hap2) > 0) {
+    if (strlen(vcfInfo->refAllele) > 1  ||
+            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
         results->falsePositiveIndels++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
-        else if (strlen(vcfInfo->gt_ref_hap2) > 1)results->error_missedHet_Insertions++;
+        if (strlen(vcfInfo->refAllele) > 1) results->error_missedHet_Deletions++;
+        else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)results->error_missedHet_Insertions++;
     }
 }
 
 static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
-                                        float *switchErrorDistance, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stSet *reads2,
+                                        float *switchErrorDistance, stRPHmm *hmm, stGenomeFragment *gF,
+                                        stSet *reads1, stSet *reads2,
                                         stRPHmmParameters *params, stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
@@ -400,7 +534,8 @@ static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
     if (strcmp(vcfInfo->gt_ref_hap1, gt_eval_1) == 0 && strcmp(vcfInfo->gt_ref_hap2, gt_eval_2) == 0) {
         (*switchErrorDistance)++;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
@@ -412,7 +547,8 @@ static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
         vcfInfo->phasingHap1 = !vcfInfo->phasingHap1;
         vcfInfo->phasingHap2 = !vcfInfo->phasingHap2;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
@@ -437,7 +573,8 @@ static void determinePhasingConsistency2(vcfRecordComparisonInfo *vcfInfo,
     if (strcmp(vcfInfo->gt_ref_hap1, gt_eval_1) == 0 && strcmp(vcfInfo->gt_ref_hap2, gt_eval_2) == 0) {
         (*switchErrorDistance)++;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositive2(results, params, vcfInfo, rProbs1, rProbs2);
@@ -449,7 +586,8 @@ static void determinePhasingConsistency2(vcfRecordComparisonInfo *vcfInfo,
         vcfInfo->phasingHap1 = !vcfInfo->phasingHap1;
         vcfInfo->phasingHap2 = !vcfInfo->phasingHap2;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositive2(results, params, vcfInfo, rProbs1, rProbs2);
@@ -472,7 +610,8 @@ static void determinePhasingConsistencyBasic(vcfRecordComparisonInfo *vcfInfo,
     if (strcmp(vcfInfo->gt_ref_hap1, gt_eval_1) == 0 && strcmp(vcfInfo->gt_ref_hap2, gt_eval_2) == 0) {
         (*switchErrorDistance)++;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositiveBasic(results, vcfInfo);
@@ -484,7 +623,8 @@ static void determinePhasingConsistencyBasic(vcfRecordComparisonInfo *vcfInfo,
         vcfInfo->phasingHap1 = !vcfInfo->phasingHap1;
         vcfInfo->phasingHap2 = !vcfInfo->phasingHap2;
         results->truePositiveHet++;
-        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+        if (strlen(vcfInfo->refAllele) > 1 ||
+                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
             results->truePositiveHetIndels++;
         }
         recordTruePositiveBasic(results, vcfInfo);
@@ -501,8 +641,8 @@ void printFalsePositive(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm,
      */
     st_logDebug("\nFALSE POSITIVE");
 
-    size_t indelLen = strlen(vcfInfo->gt_eval_hap1) > strlen(vcfInfo->gt_eval_hap2) ?
-                      strlen(vcfInfo->gt_eval_hap1) : strlen(vcfInfo->gt_eval_hap2);
+    size_t indelLen = strlen(vcfInfo->evalRefAllele) > strlen(vcfInfo->evalAltAllele) ?
+                      strlen(vcfInfo->evalRefAllele) : strlen(vcfInfo->evalAltAllele);
     char *refSeq = st_calloc(indelLen, sizeof(char));
     for (int64_t i = 0; i < indelLen; i++) {
         refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->evalPos - gF->refStart + i]);
@@ -511,16 +651,19 @@ void printFalsePositive(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm,
     // example: position 4197709,  homozygous variant T->A at position 4197710
     // should output GA, GA (not GT, GT)
 
-    if (indelLen > 1) st_logDebug("  -  INDEL");
-    else st_logDebug("  -  SNV");
-    st_logDebug("\n  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                vcfInfo->evalPos, refSeq, refSeq, 0, 0);
-    st_logDebug("  output: %s, %s   \tphasing: %d | %d\n",
-                vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+    if (indelLen > 1) st_logDebug("  -  INDEL  (FP)");
+    else st_logDebug("  -  SNV  (FP)");
+    st_logDebug("\n  pos: %" PRIi64 "\n", vcfInfo->evalPos);
+    st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq, refSeq,
+                0, 0);
+    st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+
     printColumnAtPosition(hmm, vcfInfo->evalPos);
     printPartitionInfo(vcfInfo->evalPos, reads1, reads2, gF);
 
-    for (int64_t j = 1; j < indelLen; j++) {
+    // TODO take out limit on indel size to print
+    for (int64_t j = 1; (j < indelLen && j < 5); j++) {
         st_logDebug(" -> pos: %" PRIi64 "\n", vcfInfo->evalPos+j);
         printColumnAtPosition(hmm, vcfInfo->evalPos+j);
         printPartitionInfo(vcfInfo->evalPos+j, reads1, reads2, gF);
@@ -534,8 +677,8 @@ void printFalsePositive2(vcfRecordComparisonInfo *vcfInfo, stReferencePriorProbs
      */
     st_logDebug("\nFALSE POSITIVE");
 
-    size_t indelLen = strlen(vcfInfo->gt_eval_hap1) > strlen(vcfInfo->gt_eval_hap2) ?
-                      strlen(vcfInfo->gt_eval_hap1) : strlen(vcfInfo->gt_eval_hap2);
+    size_t indelLen = strlen(vcfInfo->evalRefAllele) > strlen(vcfInfo->evalAltAllele) ?
+                      strlen(vcfInfo->evalRefAllele) : strlen(vcfInfo->evalAltAllele);
     char *refSeq = st_calloc(indelLen, sizeof(char));
     for (int64_t i = 0; i < indelLen; i++) {
         refSeq[i] = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->evalPos - rProbs1->refStart + i]);
@@ -544,15 +687,17 @@ void printFalsePositive2(vcfRecordComparisonInfo *vcfInfo, stReferencePriorProbs
     // example: position 4197709,  homozygous variant T->A at position 4197710
     // should output GA, GA (not GT, GT)
 
-    if (indelLen > 1) st_logDebug("  -  INDEL");
-    else st_logDebug("  -  SNV");
-    st_logDebug("\n  pos: %" PRIi64 "\n  ref: %s  alt: %s \tphasing: %d | %d\n",
-                vcfInfo->evalPos, refSeq, refSeq, 0, 0);
-    st_logDebug("  output: %s, %s   \tphasing: %d | %d\n",
-                vcfInfo->gt_eval_hap1, vcfInfo->gt_eval_hap2, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+    if (indelLen > 1) st_logDebug("  -  INDEL  (FP)");
+    else st_logDebug("  -  SNV  (FP)s");
+    st_logDebug("\n  pos: %" PRIi64 "\n", vcfInfo->evalPos);
+    st_logDebug("  baseline  ref: %s\t alt: %s \tphasing: %d | %d\n", refSeq, refSeq,
+                0, 0);
+    st_logDebug("  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
     printPartitionInfo2(vcfInfo->evalPos, rProbs1, rProbs2);
 
-    for (int64_t j = 1; j < indelLen; j++) {
+    // TODO take out limit on indel size to print
+    for (int64_t j = 1; (j < indelLen && j < 5); j++) {
         st_logDebug(" -> pos: %" PRIi64 "\n", vcfInfo->evalPos+j);
         printPartitionInfo2(vcfInfo->evalPos+j, rProbs1, rProbs2);
     }
@@ -639,12 +784,13 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
         results->positives++;
         if (vcfInfo->refPhasing1 != vcfInfo->refPhasing2) {
             results->hetsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->hetsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->hetsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) results->hetsInRef_Deletions++;
+            else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1)
+                results->hetsInRef_Insertions++;
         } else {
             results->homozygousVariantsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->homozygousVariantsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->homozygousVariantsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) results->homozygousVariantsInRef_Deletions++;
+            else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) results->homozygousVariantsInRef_Insertions++;
         }
 
         if (maybeFalsePositive && vcfInfo->evalPos < vcfInfo->referencePos) {
@@ -671,6 +817,14 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             bcf_unpack(evalRecord, BCF_UN_INFO);
             vcfInfo->evalPos = evalRecord->pos+1;
             vcfInfo->unpackedRecordEval = evalRecord;
+
+            if (strcmp(bcf_hdr_id2name(hdrRef, refRecord->rid),
+                       bcf_hdr_id2name(hdrEval, evalRecord->rid)) != 0) {
+                st_errAbort("ERROR: contig names of records being compared not equal. "
+                                    "(contig: %s, pos: %d vs. contig: %s, pos: %d)\n",
+                            bcf_hdr_id2name(hdrRef, refRecord->rid), vcfInfo->referencePos,
+                            bcf_hdr_id2name(hdrEval, evalRecord->rid), vcfInfo->evalPos);
+            }
 
             // Get genotype info
             int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
@@ -719,7 +873,8 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
                         && strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap2) == 0) {
                         // True positive homozygous variant
                         results->truePositiveHomozygous++;
-                        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                        if (strlen(vcfInfo->refAllele) > 1 ||
+                                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                             results->truePositiveHomozygousIndels++;
                         }
                         recordTruePositiveBasic(results, vcfInfo);
@@ -753,7 +908,8 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
                     (strcmp(vcfInfo->gt_ref_hap1, vcfInfo->gt_eval_hap2) == 0 &&
                      strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap1) == 0)) {
                     results->truePositiveHet++;
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                    if (strlen(vcfInfo->refAllele) > 1 ||
+                            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                         results->truePositiveHetIndels++;
                     }
                     recordTruePositiveBasic(results, vcfInfo);
@@ -777,10 +933,10 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
                 results->error_missedHet++;
                 results->falseNegatives++;
 
-                if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
-                    // Indel
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
-                    else results->error_missedHet_Insertions++;
+                if (strlen(vcfInfo->refAllele) > 1) {
+                    results->error_missedHet_Deletions++;
+                } else if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                    results->error_missedHet_Insertions++;
                 }
             } else {
                 recordHomozygousVariantMissBasic(results, vcfInfo);
@@ -926,17 +1082,25 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
         results->positives++;
         if (vcfInfo->refPhasing1 != vcfInfo->refPhasing2) {
             results->hetsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->hetsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->hetsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) {
+                results->hetsInRef_Deletions++;
+            }
+            else if (strlen(vcfInfo->gt_ref_hap2) > 1 || strlen(vcfInfo->gt_ref_hap1) > 1) {
+                results->hetsInRef_Insertions++;
+            }
         } else {
             results->homozygousVariantsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->homozygousVariantsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->homozygousVariantsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) {
+                results->homozygousVariantsInRef_Deletions++;
+            }
+            else if (strlen(vcfInfo->gt_ref_hap2) > 1 || strlen(vcfInfo->gt_ref_hap1) > 1) {
+                results->homozygousVariantsInRef_Insertions++;
+            }
         }
 
         if (maybeFalsePositive && vcfInfo->evalPos < vcfInfo->referencePos) {
             results->falsePositives++;
-            if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+            if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                 results->falsePositiveIndels++;
             }
             if (params->verboseFalsePositives) {
@@ -962,6 +1126,14 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             vcfInfo->evalPos = evalRecord->pos+1;
             vcfInfo->unpackedRecordEval = evalRecord;
 
+            if (strcmp(bcf_hdr_id2name(hdrRef, refRecord->rid),
+                       bcf_hdr_id2name(hdrEval, evalRecord->rid)) != 0) {
+                st_errAbort("ERROR: contig names of records being compared not equal. "
+                                    "(contig: %s, pos: %d vs. contig: %s, pos: %d)\n",
+                            bcf_hdr_id2name(hdrRef, refRecord->rid), vcfInfo->referencePos,
+                            bcf_hdr_id2name(hdrEval, evalRecord->rid), vcfInfo->evalPos);
+            }
+
             // Get genotype info
             int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
             int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
@@ -971,6 +1143,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             evalRecordPhased = bcf_gt_is_phased(eval_gt_arr[1]);
 
             vcfInfo->evalRefAllele = evalRecord->d.als;
+            vcfInfo->evalAltAllele = evalRecord->d.allele[1];
             vcfInfo->gt_eval_hap1 = vcfInfo->evalPhasing1 == 0 ? evalRecord->d.als
                                                               : evalRecord->d.allele[vcfInfo->evalPhasing1];
             vcfInfo->gt_eval_hap2 = vcfInfo->evalPhasing2 == 0 ? evalRecord->d.als
@@ -981,7 +1154,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             // Check for false positives - variations found not in reference
             if (vcfInfo->evalPos < vcfInfo->referencePos) {
                 results->falsePositives++;
-                if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+                if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                     results->falsePositiveIndels++;
                 }
                 if (params->verboseFalsePositives) {
@@ -1009,7 +1182,8 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         && strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap2) == 0) {
                         // True positive homozygous variant
                         results->truePositiveHomozygous++;
-                        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                        if (strlen(vcfInfo->refAllele) > 1 ||
+                                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                             results->truePositiveHomozygousIndels++;
                         }
                         recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
@@ -1017,7 +1191,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         // Predicted homozygous, but doesn't match reference
                         // This could also be an "incorrect" variant...
                         if (params->verboseFalseNegatives || params->verboseFalsePositives) {
-                            st_logDebug("\nMISS - INCORRECT VARIANT, HOMOZYGOUS\n");
+                            st_logDebug("\nMISS - INCORRECT VARIANT, HOMOZYGOUS  (FN, FP)\n");
                         }
                         recordHomozygousVariant(results, vcfInfo, baseMapper, hmm, gF, reads1, reads2);
                     }
@@ -1030,7 +1204,7 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 
                         // Correct bases, but should have been homozygous
                         if (params->verboseFalseNegatives || params->verboseFalsePositives) {
-                            st_logDebug("\nMISS - PREDICTED HET VARIANT, HOMOZYGOUS IN REFERENCE\n");
+                            st_logDebug("\nMISS - PREDICTED HET VARIANT, HOMOZYGOUS IN REFERENCE  (FN, FP)\n");
                         }
                         recordHomozygousVariant(results, vcfInfo, baseMapper, hmm, gF, reads1, reads2);
 
@@ -1049,13 +1223,14 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         (strcmp(vcfInfo->gt_ref_hap1, vcfInfo->gt_eval_hap2) == 0 &&
                                 strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap1) == 0)) {
                     results->truePositiveHet++;
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                    if (strlen(vcfInfo->refAllele) > 1 ||
+                            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                         results->truePositiveHetIndels++;
                     }
                     recordTruePositive(results, params, vcfInfo, hmm, gF, reads1, reads2);
                 } else {
                     results->falsePositives++;
-                    if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+                    if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                         results->falsePositiveIndels++;
                     }
                     if (params->verboseFalsePositives) {
@@ -1082,9 +1257,10 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 results->error_missedHet++;
                 results->falseNegatives++;
 
-                if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                if (strlen(vcfInfo->refAllele) > 1 ||
+                        strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                     // Indel
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
+                    if (strlen(vcfInfo->refAllele) > 1) results->error_missedHet_Deletions++;
                     else results->error_missedHet_Insertions++;
 
                     if (params->verboseFalseNegatives) {
@@ -1094,20 +1270,27 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                         for (int64_t i = 0; i < indelLen; i++) {
                             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart + i]);
                         }
+                        char refChar = stBaseMapper_getCharForValue(baseMapper, gF->referenceSequence[vcfInfo->referencePos - gF->refStart]);
 
                         if (strlen(vcfInfo->refAllele) > 1) {
-                            st_logDebug("\nMISS  -  DELETION\n");
+                            st_logDebug("\nMISS  -  DELETION  (FN)\n");
                         } else {
-                            st_logDebug("\nMISS  -  INSERTION\n");
+                            st_logDebug("\nMISS  -  INSERTION  (FN)\n");
                         }
-                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s   alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+                        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+                        st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
                         for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
                             if (i != 1) st_logDebug(",");
                             st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
                         }
                         st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-                        st_logDebug("\n  output: %s, %s   \tphasing: %d | %d\n",
-                                    refSeq, refSeq, 0, 0);
+                        if (strlen(vcfInfo->refAllele) > 1) {
+                            st_logDebug("\n  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                                        refSeq, refSeq, 0, 0);
+                        } else {
+                            st_logDebug("\n  output    ref: %c\t alt: %c \tphasing: %d | %d\n",
+                                        refChar, refChar, 0, 0);
+                        }
                         printColumnAtPosition(hmm, vcfInfo->referencePos);
                         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
 
@@ -1121,15 +1304,17 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                 } else {
                     // SNV
                     if (params->verboseFalseNegatives) {
-                        st_logDebug("\nMISS  -  SNV\n");
-                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+                        st_logDebug("\nMISS  -  SNV  (FN)\n");
+                        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+                        st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
+
                         for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
                             if (i != 1) st_logDebug(",");
                             st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
                         }
                         st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-                        st_logDebug("\n  output: %c, %c   \tphasing: %d | %d\n",
-                                    vcfInfo->h1AlphChar, vcfInfo->h2AlphChar, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+                        st_logDebug("\n  output    ref: %c\t alt: %c \tphasing: %d | %d\n",
+                                    vcfInfo->h1AlphChar, vcfInfo->h2AlphChar, 0, 0);
                         printColumnAtPosition(hmm, vcfInfo->referencePos);
 
                         st_logDebug("\tPartition 1: \n");
@@ -1229,9 +1414,6 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
         rProbs2 = stHash_search(referenceNamesToReferencePriors2, referenceName2);
     }
 
-    st_logInfo("** referenceName1: %s    referenceName2: %s\n", referenceName1, referenceName2);
-    st_logInfo("** rProbs1Len: %d  rProbs2Len: %d  rProbs1Start: %d   rProbs2Start: %d\n", rProbs1->length, rProbs2->length, rProbs1->refStart, rProbs2->refStart);
-
     // Variables to keep track of some stats
     int64_t refStart = 0;
     float switchErrorDistance = 0;
@@ -1251,9 +1433,6 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
         vcfInfo->referencePos = refRecord->pos+1;
         vcfInfo->unpackedRecordRef = refRecord;
 
-        // TODO add check to make sure chromosome is same between reads & vcf
-
-
         // Get genotype info
         int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrRef);
         int32_t *gt_arr = NULL, ngt_arr = 0;
@@ -1266,27 +1445,33 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
         vcfInfo->gt_ref_hap2 = vcfInfo->refPhasing2 == 0 ? refRecord->d.als
                                                          : refRecord->d.allele[vcfInfo->refPhasing2];
 
-
         // Skip to the first known location of variation in file being evaluated
         if (results->positives == 0) {
             refStart = vcfInfo->referencePos;
         }
 
-
         results->positives++;
         if (vcfInfo->refPhasing1 != vcfInfo->refPhasing2) {
             results->hetsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->hetsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->hetsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) {
+                results->hetsInRef_Deletions++;
+            }
+            else if (strlen(vcfInfo->gt_ref_hap2) > 1 || strlen(vcfInfo->gt_ref_hap1) > 1) {
+                results->hetsInRef_Insertions++;
+            }
         } else {
             results->homozygousVariantsInRef++;
-            if (strlen(vcfInfo->gt_ref_hap1) > 1) results->homozygousVariantsInRef_Deletions++;
-            else if (strlen(vcfInfo->gt_ref_hap2) > 1) results->homozygousVariantsInRef_Insertions++;
+            if (strlen(vcfInfo->refAllele) > 1) {
+                results->homozygousVariantsInRef_Deletions++;
+            }
+            else if (strlen(vcfInfo->gt_ref_hap2) > 1 || strlen(vcfInfo->gt_ref_hap1) > 1) {
+                results->homozygousVariantsInRef_Insertions++;
+            }
         }
 
         if (maybeFalsePositive && vcfInfo->evalPos < vcfInfo->referencePos) {
             results->falsePositives++;
-            if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+            if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                 results->falsePositiveIndels++;
             }
             if (params->verboseFalsePositives) {
@@ -1312,6 +1497,14 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
             vcfInfo->evalPos = evalRecord->pos+1;
             vcfInfo->unpackedRecordEval = evalRecord;
 
+            if (strcmp(bcf_hdr_id2name(hdrRef, refRecord->rid),
+                       bcf_hdr_id2name(hdrEval, evalRecord->rid)) != 0) {
+                st_errAbort("ERROR: contig names of records being compared not equal. "
+                                    "(contig: %s, pos: %d vs. contig: %s, pos: %d)\n",
+                            bcf_hdr_id2name(hdrRef, refRecord->rid), vcfInfo->referencePos,
+                            bcf_hdr_id2name(hdrEval, evalRecord->rid), vcfInfo->evalPos);
+            }
+
             // Get genotype info
             int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdrEval);
             int32_t *eval_gt_arr = NULL, eval_ngt_arr = 0;
@@ -1320,6 +1513,7 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
             vcfInfo->evalPhasing2 = bcf_gt_allele(eval_gt_arr[1]);
 
             vcfInfo->evalRefAllele = evalRecord->d.als;
+            vcfInfo->evalAltAllele = evalRecord->d.allele[1];
             vcfInfo->gt_eval_hap1 = vcfInfo->evalPhasing1 == 0 ? evalRecord->d.als
                                                                : evalRecord->d.allele[vcfInfo->evalPhasing1];
             vcfInfo->gt_eval_hap2 = vcfInfo->evalPhasing2 == 0 ? evalRecord->d.als
@@ -1330,7 +1524,7 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
             // Check for false positives - variations found not in reference
             if (vcfInfo->evalPos < vcfInfo->referencePos) {
                 results->falsePositives++;
-                if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+                if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                     results->falsePositiveIndels++;
                 }
                 if (params->verboseFalsePositives) {
@@ -1358,7 +1552,8 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                         && strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap2) == 0) {
                         // True positive homozygous variant
                         results->truePositiveHomozygous++;
-                        if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                        if (strlen(vcfInfo->refAllele) > 1 ||
+                                strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                             results->truePositiveHomozygousIndels++;
                         }
                         recordTruePositive2(results, params, vcfInfo, rProbs1, rProbs2);
@@ -1366,7 +1561,7 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                         // Predicted homozygous, but doesn't match reference
                         // This could also be an "incorrect" variant...
                         if (params->verboseFalseNegatives || params->verboseFalsePositives) {
-                            st_logDebug("\nMISS - INCORRECT VARIANT, HOMOZYGOUS\n");
+                            st_logDebug("\nMISS - INCORRECT VARIANT, HOMOZYGOUS  (FN, FP)\n");
                         }
                         recordHomozygousVariant2(results, vcfInfo, baseMapper, params, rProbs1, rProbs2);
                     }
@@ -1379,7 +1574,7 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
 
                         // Correct bases, but should have been homozygous
                         if (params->verboseFalseNegatives || params->verboseFalsePositives) {
-                            st_logDebug("\nMISS - PREDICTED HET VARIANT, HOMOZYGOUS IN REFERENCE\n");
+                            st_logDebug("\nMISS - PREDICTED HET VARIANT, HOMOZYGOUS IN REFERENCE  (FN, FP)\n");
                         }
                         recordHomozygousVariant2(results, vcfInfo, baseMapper, params, rProbs1, rProbs2);
 
@@ -1398,13 +1593,14 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                     (strcmp(vcfInfo->gt_ref_hap1, vcfInfo->gt_eval_hap2) == 0 &&
                      strcmp(vcfInfo->gt_ref_hap2, vcfInfo->gt_eval_hap1) == 0)) {
                     results->truePositiveHet++;
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                    if (strlen(vcfInfo->refAllele) > 1 ||
+                            strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                         results->truePositiveHetIndels++;
                     }
                     recordTruePositive2(results, params, vcfInfo, rProbs1, rProbs2);
                 } else {
                     results->falsePositives++;
-                    if (strlen(vcfInfo->gt_eval_hap1) > 1 || strlen(vcfInfo->gt_eval_hap2) > 1) {
+                    if (strlen(vcfInfo->evalRefAllele) > 1 || strlen(vcfInfo->evalAltAllele) > 1) {
                         results->falsePositiveIndels++;
                     }
                     if (params->verboseFalsePositives) {
@@ -1425,9 +1621,10 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                 results->error_missedHet++;
                 results->falseNegatives++;
 
-                if (strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
+                if (strlen(vcfInfo->refAllele) > 1 ||
+                        strlen(vcfInfo->gt_ref_hap1) > 1 || strlen(vcfInfo->gt_ref_hap2) > 1) {
                     // Indel
-                    if (strlen(vcfInfo->gt_ref_hap1) > 1) results->error_missedHet_Deletions++;
+                    if (strlen(vcfInfo->refAllele) > 1) results->error_missedHet_Deletions++;
                     else results->error_missedHet_Insertions++;
 
                     if (params->verboseFalseNegatives) {
@@ -1437,20 +1634,30 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                         for (int64_t i = 0; i < indelLen; i++) {
                             refSeq[i] = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->referencePos - rProbs1->refStart + i]);
                         }
+                        char refChar = stBaseMapper_getCharForValue(baseMapper, rProbs1->referenceSequence[vcfInfo->referencePos - rProbs1->refStart]);
 
                         if (strlen(vcfInfo->refAllele) > 1) {
-                            st_logDebug("\nMISS  -  DELETION\n");
+                            st_logDebug("\nMISS  -  DELETION  (FN)\n");
                         } else {
-                            st_logDebug("\nMISS  -  INSERTION\n");
+                            st_logDebug("\nMISS  -  INSERTION  (FN)\n");
                         }
-                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s   alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+
+                        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+                        st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
                         for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
                             if (i != 1) st_logDebug(",");
                             st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
                         }
                         st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-                        st_logDebug("\n  output: %s, %s   \tphasing: %d | %d\n",
-                                    refSeq, refSeq, 0, 0);
+                        if (strlen(vcfInfo->refAllele) > 1) {
+                            st_logDebug("\n  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                                        refSeq, refSeq, 0, 0);
+                        } else {
+                            st_logDebug("\n  output    ref: %c\t alt: %c \tphasing: %d | %d\n",
+                                        refChar, refChar, 0, 0);
+                        }
+
+
                         printPartitionInfo2(vcfInfo->referencePos, rProbs1, rProbs2);
 
                         for (int64_t j = 1; j < indelLen; j++) {
@@ -1462,15 +1669,17 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
                 } else {
                     // SNV
                     if (params->verboseFalseNegatives) {
-                        st_logDebug("\nMISS  -  SNV\n");
-                        st_logDebug("  pos: %" PRIi64 "\n  ref: %s  alt: ", vcfInfo->referencePos, vcfInfo->refAllele);
+                        st_logDebug("\nMISS  -  SNV  (FN)\n");
+                        st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
+                        st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
+
                         for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
                             if (i != 1) st_logDebug(",");
                             st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
                         }
                         st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
-                        st_logDebug("\n  output: %c, %c   \tphasing: %d | %d\n",
-                                    vcfInfo->h1AlphChar, vcfInfo->h2AlphChar, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
+                        st_logDebug("\n  output    ref: %s\t alt: %s \tphasing: %d | %d\n",
+                                    vcfInfo->refAllele, vcfInfo->refAllele, 0, 0);
                         printPartitionInfo2(vcfInfo->referencePos, rProbs1, rProbs2);
                     }
                 }
