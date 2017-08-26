@@ -42,6 +42,7 @@ int main(int argc, char *argv[]) {
     char *bamFile2 = NULL;
     char *paramsFile = NULL;
     char *referenceFasta = NULL;
+    char *inputBase = NULL;
 
     // Parse the options
     while (1) {
@@ -55,11 +56,12 @@ int main(int argc, char *argv[]) {
                 { "bamFile2", required_argument, 0, '2'},
                 { "params", required_argument, 0, 'p'},
                 { "fasta", required_argument, 0, 'f'},
+                { "inputBase", required_argument, 0, 'i'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
 
-        int key = getopt_long(argc, argv, "a:r:e:p:1:2:f:hd", long_options, &option_index);
+        int key = getopt_long(argc, argv, "a:r:e:p:1:2:f:i:hd", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -80,6 +82,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 'd':
                 debug = true;
+                logLevelString = "debug";
                 break;
             case '1':
                 bamFile1 = stString_copy(optarg);
@@ -88,9 +91,10 @@ int main(int argc, char *argv[]) {
                 bamFile2 = stString_copy(optarg);
                 break;
             case 'p':
-                st_logInfo("got here...\n");
                 paramsFile = stString_copy(optarg);
-                st_logInfo("params: %s\n", paramsFile);
+                break;
+            case 'i':
+                inputBase = stString_copy(optarg);
                 break;
             case 'f':
                 referenceFasta = stString_copy(optarg);
@@ -101,17 +105,48 @@ int main(int argc, char *argv[]) {
         }
     }
     st_setLogLevelFromString(logLevelString);
+    if (inputBase != NULL) {
+        if (bamFile1 == NULL) bamFile1 = stString_print("%s.1.bam", inputBase);
+        if (bamFile2 == NULL) bamFile2 = stString_print("%s.2.bam", inputBase);
+        if (vcfEvaluated == NULL) vcfEvaluated = stString_print("%s.vcf", inputBase);
+    }
 
     stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+
+    if (vcfReference == NULL) {
+        st_errAbort("ERROR: must specify reference vcf file. Use flag -r <FILE>\n");
+    }
+    if (vcfEvaluated == NULL) {
+        st_errAbort("ERROR: must specify vcf file with calls to evaluate. Use flag -e <FILE>\n");
+    }
+
     if (debug) {
+        // Error checking
+        if (paramsFile == NULL) {
+            st_errAbort("ERROR: must specify parameters file when in debug mode. Use flag -p <FILE>\n");
+        }
+        if (bamFile1 == NULL || bamFile2 == NULL) {
+            st_errAbort("ERROR: must specify bam files for each partition when in debug mode. Use flags -1 <FILE> -2 <FILE>\n");
+        }
+        if (referenceFasta == NULL) {
+            st_errAbort("ERROR: must specify reference fasta while when in debug mode. Use flag -f <FILE>\n");
+        }
+        // Parse files
         stBaseMapper *baseMapper = stBaseMapper_construct();
-        st_logInfo("params file: %s  bam1file: %s  bam2file: %s\n", paramsFile, bamFile1, bamFile2);
+        st_logInfo("> Parsing input files. params file: %s  bam1file: %s  bam2file: %s\n",
+                   paramsFile, bamFile1, bamFile2);
         stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
-        compareVCFs_debugWithBams(vcfEvaluated, vcfReference, bamFile1, bamFile2, referenceFasta, baseMapper, results, params);
+
+        // Compare vcfs
+        compareVCFs_debugWithBams(vcfEvaluated, vcfReference, bamFile1, bamFile2,
+                                  referenceFasta, baseMapper, results, params);
+        free(params);
     } else {
         compareVCFsBasic(stderr, vcfEvaluated, vcfReference, results);
     }
     printGenotypeResults(results);
+
+    free(results);
 
     return 0;
 }

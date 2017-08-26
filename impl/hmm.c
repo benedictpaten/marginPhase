@@ -59,27 +59,6 @@ double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
     return baseCounts;
 }
 
-void printBaseComposition2(double *baseCounts) {
-    /*
-     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
-     */
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += baseCounts[i];
-    }
-    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
-    st_logDebug("    Counts:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.1f", baseCounts[i]);
-    }
-    st_logDebug("\n    Fraction:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.3f", baseCounts[i]/totalCount);
-    }
-    st_logDebug( "\n");
-}
-
-
 
 double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos) {
     /*
@@ -126,7 +105,7 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     fprintf(fH, "\tVerbose Attributes:\n");
     if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
     if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");
-    if (params->verboseFalseNegatives) fprintf(fH, "\t\tTRUE_NEGATIVES\n");
+    if (params->verboseFalseNegatives) fprintf(fH, "\t\tFALSE_NEGATIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {

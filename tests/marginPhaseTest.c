@@ -57,10 +57,10 @@ void test_100kbGenotyping(CuTest *testCase) {
     char *outputBase = "test_100kb";
     bool verbose = true;
 
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.2.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.3.bam";
 //    char *bamFile = "../tests/NA12878.np.chr3.100kb.3.bam";
 //    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.3.bam";
-    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.3.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 //    char *bamFile = "../tests/NA12878.pb.chr3.2mb.bam";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.2mb.vcf";
@@ -77,7 +77,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     st_logInfo("Testing all PacBio regions\n");
 
-    char *paramsFile = "../params_pacbio_gaps.json";
+    char *paramsFile = "../params_pacbio_no_gaps.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -242,8 +242,8 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-    SUITE_ADD_TEST(suite, test_100kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
+//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
 
