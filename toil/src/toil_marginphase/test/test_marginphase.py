@@ -25,7 +25,7 @@ class MarginPhaseTest(TestCase):
     IN_PARAMS = "params.json"
 
     OUT_TOIL_VCF_FORMAT = "{}.merged.full.vcf"
-    OUT_EXEC_VCF_FORMAT = "{}.out.vcf"
+    OUT_EXEC_VCF_FORMAT = "{}.vcf"
 
     DOCKER_MARGIN_PHASE = 'quay.io/ucsc_cgl/margin_phase:latest'
 
@@ -67,6 +67,7 @@ class MarginPhaseTest(TestCase):
 
     def test_chunking(self):
         self._make_docker_margin_phase()
+        log.info("Docker image created")
         docker_vcf = self._run_docker_marginPhase()
         log.info("Got docker output VCF '{}'".format(docker_vcf))
         toil_vcf = self._run_toil_marginPhase()
@@ -132,6 +133,7 @@ class MarginPhaseTest(TestCase):
                           MarginPhaseTest.DOCKER_MARGIN_PHASE,
                           "/data/{}".format(MarginPhaseTest.IN_BAM), "/data/{}".format(MarginPhaseTest.IN_REF_FA),
                           "-p", "/data/{}".format(MarginPhaseTest.IN_PARAMS), "-o", "/data/{}".format(self.uuid),
+                          # "-r", "/data/{}".format(MarginPhaseTest.IN_REF_VCF),
                           "-a", "info", "-v", "0"]
         log.info('Running %r', docker_command)
         subprocess.check_call(docker_command)
