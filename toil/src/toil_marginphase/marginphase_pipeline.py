@@ -1028,7 +1028,7 @@ def main():
         require(config.min_merge_ratio > .5 and config.min_merge_ratio <= 1,
                 "Configuration parameter min-merge-ratio must be in range (.5,1]")
         if config.save_intermediate_files != True or urlparse(config.output_dir).scheme == "s3":
-            config.intermediate_file_location == None
+            config.intermediate_file_location = None
         else:
             intermediate_location = os.path.join(config.output_dir, "intermediate")
             mkdir_p(intermediate_location)

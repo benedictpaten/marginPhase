@@ -25,3 +25,4 @@ toil/docker/runtime-container.DONE
 *.log
 toil/.cache/
 toil/docker/tempMarginPhase/
+toil/test-report.xml

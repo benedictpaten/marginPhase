@@ -29,6 +29,8 @@ class MarginPhaseTest(TestCase):
 
     DOCKER_MARGIN_PHASE = 'quay.io/ucsc_cgl/margin_phase:latest'
 
+    DEBUG = True
+
     @classmethod
     def setUpClass(cls):
         super(MarginPhaseTest, cls).setUpClass()
@@ -53,17 +55,9 @@ class MarginPhaseTest(TestCase):
         self.toil_full_merged_vcf = None
         self.exec_output_vcf = None
 
-
-
     def tearDown(self):
         print("tearing down {}".format(self.workdir_root))
         shutil.rmtree(self.workdir_root)
-
-    # def test_stub(self):
-    #     self._generate_manifest("test")
-    #     self._generate_config()
-    #     self._make_docker_margin_phase()
-    #     print("stub tested")
 
     def test_chunking(self):
         self._make_docker_margin_phase()
@@ -72,27 +66,31 @@ class MarginPhaseTest(TestCase):
         log.info("Got docker output VCF '{}'".format(docker_vcf))
         toil_vcf = self._run_toil_marginPhase()
         log.info("Got toil output VCF '{}'".format(toil_vcf))
-        shutil.copy(docker_vcf, os.path.join(self.toil_test_directory, "DOCKER.unittest.vcf"))
-        shutil.copy(toil_vcf, os.path.join(self.toil_test_directory, "TOIL.unittest.vcf"))
+        docker_name = "DOCKER.test.{}.vcf".format(self.uuid)
+        toil_name = "TOIL.test.{}.vcf".format(self.uuid)
+        shutil.copy(docker_vcf, os.path.join(self.workdir, docker_name))
+        shutil.copy(toil_vcf, os.path.join(self.workdir, toil_name))
+        if MarginPhaseTest.DEBUG:
+            shutil.copy(docker_vcf, os.path.join(self.toil_test_directory, docker_name))
+            shutil.copy(toil_vcf, os.path.join(self.toil_test_directory, toil_name))
 
-    # def test_samples_option(self):
-    #     self._run(self.base_command, '--samples', self.sample.geturl())
-    #     self._assertOutput()
-    #
-    # def test_manifest(self):
-    #     num_samples = int(os.environ.get('TOIL_SCRIPTS_TEST_NUM_SAMPLES', '1'))
-    #     self._run(self.base_command, '--manifest', self._generate_manifest(num_samples))
-    #     self._assertOutput(num_samples)
-    #
-    # def _run(self, *args):
-    #     args = list(concat(*args))
-    #     log.info('Running %r', args)
-    #     subprocess.check_call(args)
+    def _compare_output(self, work_dir, reference_vcf_name, evaluated_vcf_name):
+        # run the vcfCompare executable
+        docker_command = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
+                          '--entrypoint', '/opt/marginPhase/vcfCompare', MarginPhaseTest.DOCKER_MARGIN_PHASE,
+                          '-r', "/data/{}".format(reference_vcf_name), '-e', "/data/{}".format(evaluated_vcf_name)]
+        log.info('Running %r', docker_command)
+        vcf_compare_output = subprocess.check_output(docker_command)
+
+        # log output
+        log.info("VCF Comparison Output:\n{}".format(vcf_compare_output))
+        #todo validate quality of output?
 
     def _run_toil_marginPhase(self):
         #prep
         jobStore = os.path.join(self.workdir, 'toil-jobstore')
         work_dir = os.path.join(self.workdir, 'toil-workdir')
+        os.mkdir(work_dir)
 
         # run toil
         toil_command = ['toil-marginphase', 'run',
@@ -163,10 +161,11 @@ class MarginPhaseTest(TestCase):
                     partition-margin: {partition_margin}
                     min-merge-ratio: .8
                     margin-phase-tag: latest
-                    default-reference: {reference_fa}
+                    default-reference: file://{reference_fa}
                     default-contig: chr3
-                    default-params: {params}
+                    default-params: file://{params}
                     save-intermediate-files: False
+
                     """[1:]).format(
                 reference_vcf=os.path.join(self.margin_phase_test, MarginPhaseTest.IN_REF_VCF),
                 output_dir=self.toil_outputdir,
@@ -183,7 +182,7 @@ class MarginPhaseTest(TestCase):
     def _generate_manifest(self, uuid):
         path = os.path.join(self.workdir, 'manifest-toil-rnaseq.tsv')
         with open(path, 'w') as f:
-            f.write("{}\t{}".format(uuid, os.path.join(self.margin_phase_test, MarginPhaseTest.IN_BAM)))
+            f.write("{}\tfile://{}".format(uuid, os.path.join(self.margin_phase_test, MarginPhaseTest.IN_BAM)))
         # with open(path, 'r') as f:
         #     for line in f:
         #         print(line)
