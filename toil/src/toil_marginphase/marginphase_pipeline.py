@@ -494,10 +494,10 @@ def merge_chunks(job, config, chunk_infos):
             excl_ids_hap2_cnt = len(excl_ids_hap2)
             job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
-                                              int(100.0 * excl_ids_hap1_cnt / len(curr_hap1_read_ids))))
+                                              int(100.0 * excl_ids_hap1_cnt / max(len(curr_hap1_read_ids), 1))))
             job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
-                                              int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
+                                              int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
@@ -512,10 +512,10 @@ def merge_chunks(job, config, chunk_infos):
             excl_ids_hap2_cnt = len(excl_ids_hap2)
             job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
-                                              int(100.0 * excl_ids_hap1_cnt / len(curr_hap1_read_ids))))
+                                              int(100.0 * excl_ids_hap1_cnt / max(len(curr_hap1_read_ids), 1))))
             job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
-                                              int(100.0 * excl_ids_hap2_cnt / len(curr_hap2_read_ids))))
+                                              int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)

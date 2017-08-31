@@ -1,22 +1,16 @@
 import logging
 import os
+import sys
 from toil_lib import require, UserError
-from toil_marginphase.marginphase_pipeline import main
-
-import shlex
 import shutil
 import subprocess
 import tempfile
 import textwrap
-from contextlib import closing
 from unittest import TestCase
-from urlparse import urlparse
 from uuid import uuid4
 
-import posixpath
-
 log = logging.getLogger(__name__)
-
+log.addHandler(logging.StreamHandler(sys.stdout))
 
 class MarginPhaseTest(TestCase):
     IN_REF_FA = "hg19.chr3.9mb.fa"
@@ -73,6 +67,7 @@ class MarginPhaseTest(TestCase):
         if MarginPhaseTest.DEBUG:
             shutil.copy(docker_vcf, os.path.join(self.toil_test_directory, docker_name))
             shutil.copy(toil_vcf, os.path.join(self.toil_test_directory, toil_name))
+        self._compare_output(self.workdir, docker_name, toil_name)
 
     def _compare_output(self, work_dir, reference_vcf_name, evaluated_vcf_name):
         # run the vcfCompare executable
