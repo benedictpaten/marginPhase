@@ -113,6 +113,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->estimateReadErrorProbsEmpirically = false;
     params->roundsOfIterativeRefinement = 0;
     params->compareVCFs = false;
+    params->writeGVCF = false;
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -327,6 +328,13 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             char *tokStr = json_token_tostr(js, &tok);
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->compareVCFs = strcmp(tokStr, "true") == 0;
+            i++;
+        }
+        else if (strcmp(keyString, "writeGVCF") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->writeGVCF = strcmp(tokStr, "true") == 0;
             i++;
         }
         else {

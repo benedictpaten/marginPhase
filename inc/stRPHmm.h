@@ -258,6 +258,9 @@ struct _stRPHmmParameters {
 
     // Whether or not to do the vcf comparison within marginPhase
     bool compareVCFs;
+
+    // Whether or not to write a gvcf as output
+    bool writeGVCF;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -450,11 +453,12 @@ struct _stGenomeFragment {
     float *haplotypeProbs1;
     float *haplotypeProbs2;
 
-    // The reference coordinates of the genotypes
+    // The reference coordinates of the genotypes & other read info
     char *referenceName;
     int64_t refStart;
     int64_t length;
     uint8_t *referenceSequence;
+    uint64_t *readDepth;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);

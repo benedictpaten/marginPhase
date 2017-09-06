@@ -432,7 +432,7 @@ int main(int argc, char *argv[]) {
     // Output file names
     char *vcfOutFile = stString_print("%s.vcf", outputBase);
     char *paramsOutFile = stString_print("%s.params.json", outputBase);
-    char *vcfOutFile_all = stString_print("%s.allLocs.vcf", outputBase);
+    char *vcfOutFile_all = stString_print("%s.gvcf", outputBase);
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
@@ -496,8 +496,10 @@ int main(int argc, char *argv[]) {
     stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
-    st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64 " to achieve maximum coverage depth of %" PRIi64 "\n",
-            stList_length(discardedProfileSeqs), stList_length(profileSequences), params->maxCoverageDepth);
+    st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
+                       " to achieve maximum coverage depth of %" PRIi64 "\n",
+               stList_length(discardedProfileSeqs), stList_length(profileSequences),
+               params->maxCoverageDepth);
     stList_destruct(discardedProfileSeqs);
     stList_setDestructor(profileSequences, NULL);
     stList_destruct(profileSequences);
@@ -528,7 +530,7 @@ int main(int argc, char *argv[]) {
 
         // Print a report of the parsed parameters
         if(st_getLogLevel() == debug) {
-            st_logDebug("> Learned parameters\n");
+            st_logDebug("> Learned parameters:\n");
             stRPHmmParameters_printParameters(params, stderr);
         }
 
@@ -547,8 +549,12 @@ int main(int argc, char *argv[]) {
     // Start VCF generation
     vcfFile *vcfOutFP = vcf_open(vcfOutFile, "w");
     bcf_hdr_t *hdr = writeVcfHeader(vcfOutFP, hmms, referenceFastaFile);
-    vcfFile *vcfOutFP_all = vcf_open(vcfOutFile_all, "w");
-    bcf_hdr_t *hdr2 = writeVcfHeader(vcfOutFP_all, hmms, referenceFastaFile);
+    vcfFile *vcfOutFP_all;
+    bcf_hdr_t *hdr2;
+    if (params->writeGVCF) {
+        vcfOutFP_all = vcf_open(vcfOutFile_all, "w");
+        hdr2 = writeVcfHeader(vcfOutFP_all, hmms, referenceFastaFile);
+    }
 
     // For each read partitioning HMM
     for(int64_t i=0; i<stList_length(hmms); i++) {
@@ -581,7 +587,10 @@ int main(int argc, char *argv[]) {
 
         // Write two vcfs, one using the reference fasta file and one not
         writeVcfFragment(vcfOutFP, hdr, gF, referenceFastaFile, baseMapper, false);
-        writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, true);
+        if (params->writeGVCF) {
+            writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, true);
+        }
+
 
         // Cleanup
         stGenomeFragment_destruct(gF);
@@ -591,9 +600,12 @@ int main(int argc, char *argv[]) {
     }
     // Cleanup vcf
     vcf_close(vcfOutFP);
-    vcf_close(vcfOutFP_all);
     bcf_hdr_destroy(hdr);
-    bcf_hdr_destroy(hdr2);
+    if (params->writeGVCF) {
+        vcf_close(vcfOutFP_all);
+        bcf_hdr_destroy(hdr2);
+    }
+
     // Write out VCF
     st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
 

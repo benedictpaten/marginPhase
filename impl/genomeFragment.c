@@ -21,6 +21,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
     gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
     gF->referenceSequence = st_calloc(gF->length, sizeof(uint8_t));
+    gF->readDepth = st_calloc(gF->length, sizeof(uint64_t));
 
     // Allocate haplotype arrays
     gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
@@ -112,8 +113,8 @@ static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *colum
 
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2, stRPHmm *hmm, stList *path, int64_t maxIterations) {
     /*
-     * Refines the genome fragment and reas partitions by greedily and iteratively moving reads between the two partitions
-     * according to which haplotype they best match.
+     * Refines the genome fragment and reas partitions by greedily and iteratively
+     * moving reads between the two partitions according to which haplotype they best match.
      */
 
     // Copy the path as a sequence of unsigned integers, one for each cell on the path
@@ -174,6 +175,7 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Coordinates
     free(genomeFragment->referenceName);
     free(genomeFragment->referenceSequence);
+    free(genomeFragment->readDepth);
 
     // Genotypes
     free(genomeFragment->genotypeString);
