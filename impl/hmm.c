@@ -99,9 +99,20 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
 
     fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fH, "\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
+    fprintf(fH, "\tUse reference prior?: %i\n", (int) params->useReferencePrior);
     fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
     fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
-    fprintf(fH, "\tDeletions as gap?: %i\n", (int) params->gapCharactersForDeletions);
+    fprintf(fH, "\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
+    fprintf(fH, "\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
+    fprintf(fH, "\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
+    fprintf(fH, "\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
+    fprintf(fH, "\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
+    fprintf(fH, "\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
+    fprintf(fH, "\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
+
+    fprintf(fH, "\tComparing vcfs within program? : %i\n", (int)params->compareVCFs);
+    fprintf(fH, "\tWriting gvcf? : %i\n", (int)params->writeGVCF);
     fprintf(fH, "\tVerbose Attributes:\n");
     if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
     if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");

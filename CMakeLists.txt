@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O3 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -DNDEBUG")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE -D_POSIX_C_SOURCE=200112L -mpopcnt -O3")
+# add DNDEBUG flag back when done
 
 include(FindOpenMP)
 if(OPENMP_FOUND)
@@ -17,7 +18,7 @@ set(HTSLIB_HEADERS
         externalTools/htslib/cram
         )
 set(SONLIB_HEADERS
-        externalTools/sonLib/lib
+#        externalTools/sonLib/lib   # old header file location for sonlib
         externalTools/sonLib/C/inc
         externalTools/sonLib/C/impl
         externalTools/sonLib/C/tests
@@ -30,40 +31,15 @@ include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(externalTools/jsmn)
 
+file(GLOB htslib_cram_SRC "externalTools/htslib/cram/*.c")
+file(GLOB htslib_test_SRC "externalTools/htslib/test/*.c")
+file(GLOB sonlib_impl_SRC "externalTools/sonLib/C/impl/*.c")
+file(GLOB sonlib_cutest_SRC "externalTools/sonLib/externalTools/cutest/*.c")
+file(GLOB sonlib_quicktree_SRC "externalTools/sonLib/externalTools/quicktree_1.1/src/*.c")
+
 set(HTSLIB_SOURCES
-        externalTools/htslib/cram/cram_codecs.c
-        externalTools/htslib/cram/cram_decode.c
-        externalTools/htslib/cram/cram_encode.c
-        externalTools/htslib/cram/cram_external.c
-        externalTools/htslib/cram/cram_index.c
-        externalTools/htslib/cram/cram_io.c
-        externalTools/htslib/cram/cram_samtools.c
-        externalTools/htslib/cram/cram_stats.c
-        externalTools/htslib/cram/files.c
-        externalTools/htslib/cram/mFILE.c
-        externalTools/htslib/cram/open_trace_file.c
-        externalTools/htslib/cram/pooled_alloc.c
-        externalTools/htslib/cram/rANS_static.c
-        externalTools/htslib/cram/sam_header.c
-        externalTools/htslib/cram/string_alloc.c
-        externalTools/htslib/cram/vlen.c
-        externalTools/htslib/cram/zfio.c
-        externalTools/htslib/test/fieldarith.c
-        externalTools/htslib/test/hfile.c
-        externalTools/htslib/test/hts_endian.c
-        externalTools/htslib/test/sam.c
-        externalTools/htslib/test/test-bcf-sr.c
-        externalTools/htslib/test/test-regidx.c
-        externalTools/htslib/test/test-vcf-api.c
-        externalTools/htslib/test/test-vcf-sweep.c
-        externalTools/htslib/test/test_bgzf.c
-        externalTools/htslib/test/test_view.c
-        externalTools/htslib/test/thrash_threads1.c
-        externalTools/htslib/test/thrash_threads2.c
-        externalTools/htslib/test/thrash_threads3.c
-        externalTools/htslib/test/thrash_threads4.c
-        externalTools/htslib/test/thrash_threads5.c
-        externalTools/htslib/test/thrash_threads6.c
+        ${htslib_cram_SRC}
+        ${htslib_test_SRC}
         externalTools/htslib/bcf_sr_sort.c
         externalTools/htslib/bgzf.c
         externalTools/htslib/bgzip.c
@@ -81,7 +57,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/kstring.c
         externalTools/htslib/md5.c
         externalTools/htslib/multipart.c
-        #externalTools/htslib/plugin.c
+        # externalTools/htslib/plugin.c    # build problems including this file
         externalTools/htslib/probaln.c
         externalTools/htslib/realn.c
         externalTools/htslib/regidx.c
@@ -97,51 +73,13 @@ set(HTSLIB_SOURCES
         )
 
 set(SONLIB_SOURCES
-        externalTools/sonLib/C/impl/avl.c
-        externalTools/sonLib/C/impl/bioioC.c
-        externalTools/sonLib/C/impl/commonC.c
-        externalTools/sonLib/C/impl/fastCMaths.c
-        externalTools/sonLib/C/impl/hashTableC.c
-        externalTools/sonLib/C/impl/hashTableC_itr.c
-        externalTools/sonLib/C/impl/lz4.c
-        externalTools/sonLib/C/impl/lz4hc.c
-        externalTools/sonLib/C/impl/pairwiseAlignment.c
-        externalTools/sonLib/C/impl/sonLibAlign.c
-        externalTools/sonLib/C/impl/sonLibCache.c
-        externalTools/sonLib/C/impl/sonLibCommon.c
-        externalTools/sonLib/C/impl/sonLibCompression.c
-        externalTools/sonLib/C/impl/sonLibConnectivity.c
-        externalTools/sonLib/C/impl/sonLibEulerTour.c
-        externalTools/sonLib/C/impl/sonLibExcept.c
-        externalTools/sonLib/C/impl/sonLibFile.c
-        externalTools/sonLib/C/impl/sonLibHash.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase_BigRecordFile.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase_KyotoTycoon.cpp
-        externalTools/sonLib/C/impl/sonLibKVDatabase_MySql.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase_TokyoCabinet.c
-        externalTools/sonLib/C/impl/sonLibKVDatabaseConf.c
-        externalTools/sonLib/C/impl/sonLibList.c
-        externalTools/sonLib/C/impl/sonLibMath.c
-        externalTools/sonLib/C/impl/sonLibNaiveConnectivity.c
-        externalTools/sonLib/C/impl/sonLibRandom.c
-        externalTools/sonLib/C/impl/sonLibSet.c
-        externalTools/sonLib/C/impl/sonLibSortedSet.c
-        externalTools/sonLib/C/impl/sonLibString.c
-        externalTools/sonLib/C/impl/sonLibTreap.c
-        externalTools/sonLib/C/impl/sonLibTree.c
-        externalTools/sonLib/C/impl/sonLibTuples.c
-        externalTools/sonLib/C/impl/stGraph.c
-        externalTools/sonLib/C/impl/stMatrix.c
-        externalTools/sonLib/C/impl/stPhylogeny.c
-        externalTools/sonLib/C/impl/stPosetAlignment.c
-        externalTools/sonLib/C/impl/stSafeC.c
-        externalTools/sonLib/C/impl/stThreadPool.c
-        externalTools/sonLib/C/impl/stUnionFind.c
+        ${sonlib_impl_SRC}
+        ${sonlib_cutest_SRC}
+        ${sonlib_quicktree_SRC}
         externalTools/sonLib/C/tests/allTests.c
         externalTools/sonLib/C/tests/cigarsTest.c
         externalTools/sonLib/C/tests/fastaCTest.c
-        #externalTools/sonLib/C/tests/kt_connect_test.cpp
+        # externalTools/sonLib/C/tests/kt_connect_test.cpp    # build problems including this file
         externalTools/sonLib/C/tests/kvDatabaseTest.c
         externalTools/sonLib/C/tests/kvDatabaseTestCommon.c
         externalTools/sonLib/C/tests/sonLibAlignTest.c
@@ -170,22 +108,6 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/tests/stPhylogenyTest.c
         externalTools/sonLib/C/tests/stThreadPoolTest.c
         externalTools/sonLib/C/tests/stUnionFindTest.c
-        externalTools/sonLib/externalTools/cutest/AllTests.c
-        externalTools/sonLib/externalTools/cutest/CuTest.c
-        externalTools/sonLib/externalTools/cutest/CuTestTest.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/align.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/aln2dist.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/aln2tree.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/buildtree.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/cluster.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/dist2tree.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/distancemat.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/distancemat_merops.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/options.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/quicktree.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/sequence.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/tree.c
-        externalTools/sonLib/externalTools/quicktree_1.1/src/util.c
         )
 
 set(SOURCE_FILES

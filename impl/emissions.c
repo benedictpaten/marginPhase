@@ -413,6 +413,17 @@ double getHaplotypeProb(double characterReadProb,
     return logHapProb;
 }
 
+uint64_t getReadDepth(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition, int64_t index) {
+    /*
+     * Calculates the read depth at a given position.
+     */
+    uint64_t readDepth = 0;
+    for (int64_t i =0; i < ALPHABET_SIZE; i++) {
+        readDepth += getExpectedInstanceNumber(bitCountVectors, depth, partition, index, i) / ALPHABET_MAX_PROB;
+    }
+    return readDepth;
+}
+
 void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
                                    stRPColumn *column, stRPHmmParameters *params,
                                    stReferencePriorProbs *referencePriorProbs,
@@ -492,7 +503,10 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
                                      invertScaleToLogIntegerSubMatrix(rProbs[i]));
     }
     gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
+
+    // Update reference sequence and read depth info
     gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
+    gF->readDepth[j] = getReadDepth(bitCountVectors, column->depth, partition, index);
 
 }
 
