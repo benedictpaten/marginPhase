@@ -19,6 +19,10 @@ ADD tempMarginPhase /opt/marginPhase
 WORKDIR /opt/marginPhase/externalTools/htslib
 RUN autoconf ; autoheader ; ./configure ; make clean ; make
 
+# build sonlib
+WORKDIR /opt/marginPhase/externalTools/sonLib
+RUN make clean ; make
+
 # build marginPhase
 WORKDIR /opt/marginPhase
 RUN cmake .

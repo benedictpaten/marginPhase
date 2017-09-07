@@ -605,13 +605,13 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
 
     reads_supporting_same_ordering = reads_in_curr1_and_prev1 + reads_in_curr2_and_prev2
     reads_supporting_different_ordering = reads_in_curr1_and_prev2 + reads_in_curr2_and_prev1
-    reads_in_currs_not_in_prevs = curr_hap1_read_count + curr_hap2_read_count \
+    reads_in_currs_and_in_prevs = curr_hap1_read_count + curr_hap2_read_count \
                                   - reads_in_curr1_and_neither_prev - reads_in_curr2_and_neither_prev
 
     ratio_supporting_same_ordering, ratio_supporting_different_ordering = -1, -1
-    if reads_in_currs_not_in_prevs != 0:
-        ratio_supporting_same_ordering = 1.0 * reads_supporting_same_ordering / reads_in_currs_not_in_prevs
-        ratio_supporting_different_ordering = 1.0 * reads_supporting_different_ordering / reads_in_currs_not_in_prevs
+    if reads_in_currs_and_in_prevs != 0:
+        ratio_supporting_same_ordering = 1.0 * reads_supporting_same_ordering / reads_in_currs_and_in_prevs
+        ratio_supporting_different_ordering = 1.0 * reads_supporting_different_ordering / reads_in_currs_and_in_prevs
 
     # log stuff (maybe this can be removed later)
     job.fileStore.logToMaster("{}: \tcur1_prev1:{} \tcur1_prev2:{} \tcur1_only:{} \tcur2_prev1:{} \tcur2_prev2:{} \tcur2_only:{}"
