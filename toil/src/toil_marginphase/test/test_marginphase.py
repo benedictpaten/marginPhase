@@ -40,6 +40,7 @@ class MarginPhaseTest(TestCase):
         log.info("Docker image created")
 
     def setUp(self):
+        self.uuid = str(uuid4())
         # paths for test run
         self.workdir_root = tempfile.mkdtemp()
         self.workdir = os.path.join(self.workdir_root, self.uuid)
@@ -66,10 +67,10 @@ class MarginPhaseTest(TestCase):
         self._run("100", 100000, 50000)
 
     def _run(self, identifier, partition_size=100000, partition_margin=5000):
-        identifier = "{}-{}".format(identifier, str(uuid4()))
+        identifier = "{}-{}".format(identifier, self.uuid)
         docker_vcf = self._run_docker_marginPhase(identifier)
         log.info(identifier + " Got docker output VCF '{}'".format(docker_vcf))
-        toil_vcf = self._run_toil_marginPhase(partition_size, partition_margin)
+        toil_vcf = self._run_toil_marginPhase(identifier, partition_size, partition_margin)
         log.info(identifier + " Got toil output VCF '{}'".format(toil_vcf))
         docker_name = "DOCKER.test.{}.vcf".format(identifier)
         toil_name = "TOIL.test.{}.vcf".format(identifier)
