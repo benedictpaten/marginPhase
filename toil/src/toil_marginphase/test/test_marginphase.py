@@ -65,11 +65,11 @@ class MarginPhaseTest(TestCase):
     def test_five_percent_margin(self):
         self._run("005", 100000, 5000)
 
-    # def test_fifty_percent_margin(self):
-    #     self._run("050", 100000, 50000)
-    #
-    # def test_hundred_percent_margin(self):
-    #     self._run("100", 100000, 50000)
+    def test_fifty_percent_margin(self):
+        self._run("050", 100000, 50000)
+
+    def test_hundred_percent_margin(self):
+        self._run("100", 100000, 50000)
 
     def _run(self, identifier, partition_size=100000, partition_margin=5000):
         identifier = "{}-{}".format(self.uuid, identifier)
@@ -77,8 +77,8 @@ class MarginPhaseTest(TestCase):
         log.info(identifier + " Got docker output VCF '{}'".format(docker_vcf))
         toil_vcf = self._run_toil_marginPhase(identifier, partition_size, partition_margin)
         log.info(identifier + " Got toil output VCF '{}'".format(toil_vcf))
-        docker_name = "DOCKER.test.{}.vcf".format(identifier)
-        toil_name = "TOIL.test.{}.vcf".format(identifier)
+        docker_name = "{}.DOCKER.vcf".format(identifier)
+        toil_name = "{}.TOIL.vcf".format(identifier)
         shutil.copy(docker_vcf, os.path.join(self.workdir, docker_name))
         shutil.copy(toil_vcf, os.path.join(self.workdir, toil_name))
         if MarginPhaseTest.DEBUG:

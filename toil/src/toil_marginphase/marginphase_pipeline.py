@@ -71,6 +71,7 @@ VCF_SUFFIX = "out.vcf"
 # tags
 TAG_GENOTYPE = "GT"
 TAG_PHASE_SET = "PS"
+TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
 
 # todo move this to config?
 MAX_RETRIES = 3
@@ -433,6 +434,7 @@ def merge_chunks(job, config, chunk_infos):
         if os.path.isdir(tar_work_dir):
             shutil.rmtree(tar_work_dir)
         sam_hap1_file, sam_hap2_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
+        chunk_idx = chunk[CI_CHUNK_INDEX]
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
@@ -459,7 +461,7 @@ def merge_chunks(job, config, chunk_infos):
         # this indicates there was no (or equal) read overlap.  probably it means we've just started the process
         if same_haplotype_ordering is None:
             job.fileStore.logToMaster("{}: starting new merged chunk idx {} from chunk {}"
-                                      .format(config.uuid, merged_chunk_idx, chunk[CI_CHUNK_INDEX]))
+                                      .format(config.uuid, merged_chunk_idx, chunk_idx))
 
             # get merged haplotype names and files
             merged_hap1_name = "{}.merged.{}.hap1.sam".format(config.uuid, merged_chunk_idx)
@@ -479,7 +481,8 @@ def merge_chunks(job, config, chunk_infos):
                     if line.startswith("#"):
                         output.write(line)
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
-                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], False)
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), chunk_reverse_phasing=False)
 
 
             # increment merged chunk idx
@@ -501,7 +504,8 @@ def merge_chunks(job, config, chunk_infos):
                                               int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
-                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=True)
         else:
             job.fileStore.logToMaster("{}:chunk{}: writing different ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
@@ -519,7 +523,8 @@ def merge_chunks(job, config, chunk_infos):
                                               int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
-                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END], True)
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=True)
 
         # fully merged vcf file
         if full_merged_vcf_file is None:
@@ -530,7 +535,8 @@ def merge_chunks(job, config, chunk_infos):
                         output.write(line)
         _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
                                   chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  not (same_haplotype_ordering is None or same_haplotype_ordering))
+                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                  reverse_phasing=(not (same_haplotype_ordering is None or same_haplotype_ordering)))
 
         # prep for iteration / cleanup
         read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
@@ -690,7 +696,8 @@ def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excl
     return read_ids_not_written
 
 
-def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, start_pos, end_pos, reverse_phasing=False):
+def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, start_pos, end_pos,
+                              mp_identifier=None, reverse_phasing=False):
     written_lines = 0
     lines_outside_boundaries = 0
     with open(output_vcf_file, 'a') as output, open(input_vcf_file, 'r') as input:
@@ -743,6 +750,12 @@ def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, star
             # phase set
             if updated_phase_set_value is not None:
                 info[phase_set_tag_idx] = updated_phase_set_value
+
+            # update (if appropriate)
+            if mp_identifier is not None:
+                info.append(TAG_MARGIN_PHASE_IDENTIFIER)
+                tags.append(mp_identifier)
+                line[-2] = ":".join(tags)
 
             # cleanup
             line[-1] = ":".join(info)
