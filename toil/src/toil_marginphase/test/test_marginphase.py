@@ -15,9 +15,11 @@ log.addHandler(logging.StreamHandler(sys.stdout)) #this doesn't work
 
 # paths for marginPhase files
 TOIL_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+TOIL_TEST_STORAGE_DIR = os.path.abspath(os.path.join(TOIL_TEST_DIR, "test_results"))
 MARGIN_PHASE_ROOT = os.path.abspath(os.path.join(TOIL_TEST_DIR, "../../../.."))
 MARGIN_PHASE_DOCKER = os.path.join(MARGIN_PHASE_ROOT, "toil/docker")
 MARGIN_PHASE_TEST = os.path.join(MARGIN_PHASE_ROOT, "tests")
+
 
 class MarginPhaseTest(TestCase):
     IN_REF_FA = "hg19.chr3.9mb.fa"
@@ -29,6 +31,7 @@ class MarginPhaseTest(TestCase):
     OUT_EXEC_VCF_FORMAT = "{}.vcf"
 
     DOCKER_MARGIN_PHASE = 'quay.io/ucsc_cgl/margin_phase:latest'
+    DOCKER_RTG_TOOLS = 'quay.io/ucsc_cgl/rtg_tools:latest'
 
     DEBUG = True
 
@@ -38,6 +41,8 @@ class MarginPhaseTest(TestCase):
         logging.basicConfig(level=logging.INFO)
         subprocess.check_call(['make'], cwd=MARGIN_PHASE_DOCKER)
         log.info("Docker image created")
+        if MarginPhaseTest.DEBUG and not os.path.isdir(TOIL_TEST_STORAGE_DIR):
+            os.mkdir(TOIL_TEST_STORAGE_DIR)
 
     def setUp(self):
         self.uuid = str(uuid4())
@@ -58,16 +63,16 @@ class MarginPhaseTest(TestCase):
         shutil.rmtree(self.workdir_root)
         
     def test_five_percent_margin(self):
-        self._run("5", 100000, 5000)
+        self._run("005", 100000, 5000)
 
-    def test_fifty_percent_margin(self):
-        self._run("50", 100000, 50000)
-        
-    def test_hundred_percent_margin(self):
-        self._run("100", 100000, 50000)
+    # def test_fifty_percent_margin(self):
+    #     self._run("050", 100000, 50000)
+    #
+    # def test_hundred_percent_margin(self):
+    #     self._run("100", 100000, 50000)
 
     def _run(self, identifier, partition_size=100000, partition_margin=5000):
-        identifier = "{}-{}".format(identifier, self.uuid)
+        identifier = "{}-{}".format(self.uuid, identifier)
         docker_vcf = self._run_docker_marginPhase(identifier)
         log.info(identifier + " Got docker output VCF '{}'".format(docker_vcf))
         toil_vcf = self._run_toil_marginPhase(identifier, partition_size, partition_margin)
@@ -77,9 +82,9 @@ class MarginPhaseTest(TestCase):
         shutil.copy(docker_vcf, os.path.join(self.workdir, docker_name))
         shutil.copy(toil_vcf, os.path.join(self.workdir, toil_name))
         if MarginPhaseTest.DEBUG:
-            shutil.copy(docker_vcf, os.path.join(TOIL_TEST_DIR, docker_name))
-            shutil.copy(toil_vcf, os.path.join(TOIL_TEST_DIR, toil_name))
-        self._compare_output(self.workdir, docker_name, toil_name)
+            shutil.copy(docker_vcf, os.path.join(TOIL_TEST_STORAGE_DIR, docker_name))
+            shutil.copy(toil_vcf, os.path.join(TOIL_TEST_STORAGE_DIR, toil_name))
+        self._compare_output(self.workdir, identifier, docker_name, toil_name)
 
     def _run_toil_marginPhase(self, identifier, partition_size, partition_margin):
         #prep
@@ -143,19 +148,83 @@ class MarginPhaseTest(TestCase):
         self.exec_output_vcf = output_vcf
         return output_vcf
 
-    def _compare_output(self, work_dir, reference_vcf_name, evaluated_vcf_name):
-        # run the vcfCompare executable
-        docker_command = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
-                          '--entrypoint', '/opt/marginPhase/vcfCompare', MarginPhaseTest.DOCKER_MARGIN_PHASE,
-                          '-r', "/data/{}".format(reference_vcf_name), '-e', "/data/{}".format(evaluated_vcf_name)]
-        log.info('Running %r', docker_command)
-        vcf_compare_output = subprocess.check_output(docker_command)
+    def _compare_output(self, work_dir, identifier, docker_vcf_name, toil_vcf_name):
+        # prep - get required files
+        shutil.copy(os.path.join(MARGIN_PHASE_TEST, MarginPhaseTest.IN_REF_VCF),
+                    os.path.join(work_dir, MarginPhaseTest.IN_REF_VCF))
+        shutil.copy(os.path.join(MARGIN_PHASE_TEST, MarginPhaseTest.IN_REF_FA),
+                    os.path.join(work_dir, MarginPhaseTest.IN_REF_FA))
+        reference_sdf_name = "SDF"
 
-        # log output
-        log.info("VCF Comparison Output:\n{}".format(vcf_compare_output))
-        
-        #todo validate
-        return vcf_compare_output
+        #bgzip
+        vcf_bgzip_command = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
+                            MarginPhaseTest.DOCKER_RTG_TOOLS, "bgzip",
+                            "/data/{}".format(docker_vcf_name),
+                             "/data/{}".format(toil_vcf_name),
+                            "/data/{}".format(MarginPhaseTest.IN_REF_VCF)]
+        log.info('Running %r', vcf_bgzip_command)
+        subprocess.check_call(vcf_bgzip_command)
+
+        #index
+        vcf_index_command = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
+                            MarginPhaseTest.DOCKER_RTG_TOOLS, "index",
+                            "/data/{}.gz".format(docker_vcf_name),
+                             "/data/{}.gz".format(toil_vcf_name),
+                             "/data/{}.gz".format(MarginPhaseTest.IN_REF_VCF)]
+        log.info('Running %r', vcf_index_command)
+        subprocess.check_call(vcf_index_command)
+
+        #sdf
+        ref_sdf_command = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
+                            MarginPhaseTest.DOCKER_RTG_TOOLS, "format",
+                            "-o", "/data/{}".format(reference_sdf_name), "/data/{}".format(MarginPhaseTest.IN_REF_FA)]
+        log.info('Running %r', ref_sdf_command)
+        subprocess.check_call(ref_sdf_command)
+
+        # vcf eval prep
+        toil_to_docker_eval_identifier = "{}-vcfeval_t2d".format(identifier)
+        toil_to_ref_eval_identifier = "{}-vcfeval_t2r".format(identifier)
+        docker_to_ref_eval_identifier = "{}-vcfeval_d2r".format(identifier)
+        vcf_eval_base = ['docker', 'run', '--rm', '-v', "{}:/data".format(work_dir),
+                         MarginPhaseTest.DOCKER_RTG_TOOLS, "vcfeval", "-t", os.path.join("/data", reference_sdf_name)]
+
+        # EVAL: toil to docker
+        vcf_eval_command = list(vcf_eval_base)
+        vcf_eval_command.extend(
+            ["-o", os.path.join("/data" if MarginPhaseTest.DEBUG else "/tmp", toil_to_docker_eval_identifier),
+             "-b", "/data/{}.gz".format(docker_vcf_name), "-c", "/data/{}.gz".format(toil_vcf_name)])
+        log.info('Running %r', vcf_eval_command)
+        t2d_vcf_eval_output = subprocess.check_output(vcf_eval_command)
+        if MarginPhaseTest.DEBUG:
+            shutil.copytree(os.path.join(work_dir, toil_to_docker_eval_identifier),
+                            os.path.join(TOIL_TEST_STORAGE_DIR, toil_to_docker_eval_identifier))
+
+        # EVAL: toil to reference
+        vcf_eval_command = list(vcf_eval_base)
+        vcf_eval_command.extend(
+            ["-o", os.path.join("/data" if MarginPhaseTest.DEBUG else "/tmp", toil_to_ref_eval_identifier),
+             "-b", "/data/{}.gz".format(MarginPhaseTest.IN_REF_VCF), "-c", "/data/{}.gz".format(toil_vcf_name)])
+        log.info('Running %r', vcf_eval_command)
+        t2r_vcf_eval_output = subprocess.check_output(vcf_eval_command)
+        if MarginPhaseTest.DEBUG:
+            shutil.copytree(os.path.join(work_dir, toil_to_ref_eval_identifier),
+                            os.path.join(TOIL_TEST_STORAGE_DIR, toil_to_ref_eval_identifier))
+
+        # EVAL: docker to reference
+        vcf_eval_command = list(vcf_eval_base)
+        vcf_eval_command.extend(
+            ["-o", os.path.join("/data" if MarginPhaseTest.DEBUG else "/tmp", docker_to_ref_eval_identifier),
+             "-b", "/data/{}.gz".format(MarginPhaseTest.IN_REF_VCF), "-c", "/data/{}.gz".format(docker_vcf_name)])
+        log.info('Running %r', vcf_eval_command)
+        d2r_vcf_eval_output = subprocess.check_output(vcf_eval_command)
+        if MarginPhaseTest.DEBUG:
+            shutil.copytree(os.path.join(work_dir, docker_to_ref_eval_identifier),
+                            os.path.join(TOIL_TEST_STORAGE_DIR, docker_to_ref_eval_identifier))
+
+        # TODO actually evaluate
+        return "\nTOIL to DOCKER:\n{}\nTOIL to REFERENCE:\n{}\nDOCKER to REFERENCE:\n{}".format(
+            t2d_vcf_eval_output, t2r_vcf_eval_output, d2r_vcf_eval_output)
+
 
     def _generate_config(self, partition_size, partition_margin):
         path = os.path.join(self.workdir, 'config-toil-rnaseq.yaml')

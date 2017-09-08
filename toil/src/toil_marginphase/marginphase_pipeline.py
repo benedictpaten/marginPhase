@@ -179,7 +179,8 @@ def prepare_input(job, sample, config):
     get_idx_cmd[1][0] = "tail"
     end_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
-    start_idx = int(start_idx_str) - 1
+    # start index starts one "margin width" ahead of the read's start position
+    start_idx = int(start_idx_str) - 1 + config.partition_margin
     end_idx = int(end_idx_str) + 1
 
     # get reads from positions
@@ -188,7 +189,7 @@ def prepare_input(job, sample, config):
     while idx < end_idx:
         ci = dict()
         ci[CI_CHUNK_BOUNDARY_START] = idx
-        chunk_start = idx - (config.partition_margin if idx != start_idx else 0)
+        chunk_start = idx - config.partition_margin
         ci[CI_CHUNK_START] = chunk_start
         idx += config.partition_size
         ci[CI_CHUNK_BOUNDARY_END] = idx
