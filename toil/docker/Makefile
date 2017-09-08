@@ -8,9 +8,9 @@ tag = ${git_commit}
 
 # Steps
 build:
-    # so that our docker tag and build match the current git hash and repo
-    -rm -rf ../../../tempMarginPhase
-    -rm -rf tempMarginPhase
+	# so that our docker tag and build match the current git hash and repo
+	-rm -rf ../../../tempMarginPhase
+	-rm -rf tempMarginPhase
 	cp -r ../../../marginPhase ../../../tempMarginPhase
 	-rm -rf ../../../tempMarginPhase/toil
 	-rm -rf ../../../tempMarginPhase/cmake-build-debug
