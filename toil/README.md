@@ -22,6 +22,13 @@ It is recommended that you only publish docker images which were created from an
 
 ### Toil ###
 
+#### Requirements ###
+
+* Python2.7
+    * pip
+    * virtualenv
+* Docker
+
 #### Quick Start ####
 
 ```
@@ -39,6 +46,8 @@ vim config-toil-marginphase.yaml
 
 # run toil-marginphase
 toil-marginphase run --workDir /your/work/directory /your/jobstore/directory
+# ..or:
+time toil-marginphase run --workDir /your/work/directory /your/jobstore/directory 2>&amp;1 | tee -a toil-marginPhase.log
 ```
 
 #### Configuration ###
@@ -59,7 +68,7 @@ The output tarball is named $UUID.tar.gz, the marginPhase output is named $UUID.
 
 ### Introduction ###
 
-The idea here is that it is prohibitively memory-intensive to run marginPhase on chromosome-scale BAMs.  So we break apart the BAMs into smaller (manageable) chunks and run marginPhase on thise in parallel.  Then the output of these is stitched back together to get an approximation of the true result.
+The idea here is that it is prohibitively memory-intensive to run marginPhase on chromosome-scale BAMs.  So we break apart the BAMs into smaller (manageable) chunks and run marginPhase on these in parallel.  Then the output of these is stitched back together to get an approximation of the true result.
 
 This process requires these parameters:
 1. CHUNK_SIZE: Size of the chunk
@@ -105,11 +114,13 @@ While merging chunks, our goal is to find which adjacent chunks should be merged
         * PREV2_CURR1_COUNT = | PREV_HAP2_READS intersection CURR_HAP1_READS |
         * ALL_READS_COUNT = | (PREV_HAP1_READS union PREV_HAP2_READS) intersection (CURR_HAP1_READS union CURR_HAP2_READS)
     1. Find ratio supporting overlap cases
+        * We're trying to determine whether the previous Haplotype1 merges with the current Haplotype1 (and prev Hap2 with curr Hap2), or the previous Haplotype1 merges with the current Haplotype2 (and prev Hap2 with curr Hap1).  So in this step we count the total number of read overlaps which back up one of these, then then find the ratio of these as compared to all reads.
         * SAME_ORDER_COUNT = PREV1_CURR1_COUNT + PREV2_CURR2_COUNT
         * DIFF_ORDER_COUNT = PREV1_CURR2_COUNT + PREV1_CURR2_COUNT
         * SAME_ORDER_RATIO = SAME_ORDER_COUNT / ALL_READS_COUNT
         * DIFF_ORDER_RATIO = DIFF_ORDER_COUNT / ALL_READS_COUNT
     1. Recommend a merging strategy
+        * Here we use the information from the previous step to recommend whether prev Hap1 merges with curr Hap1 (SAME_ORDERING), whether prev Hap1 merges with curr Hap2 (DIFF_ORDERING), or whether there is not enough evidence to support either (NO_MERGE).
         * if SAME_ORDER_RATIO >= MERGE_RATIO: recommend SAME_ORDERING
         * elif DIFF_ORDER_RATIO >= MERGE_RATIO: recommend DIFF_ORDERING
         * else: recommend NO_MERGE
