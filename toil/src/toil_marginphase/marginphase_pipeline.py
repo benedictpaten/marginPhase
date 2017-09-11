@@ -482,7 +482,7 @@ def merge_chunks(job, config, chunk_infos):
                         output.write(line)
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), chunk_reverse_phasing=False)
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=False)
 
 
             # increment merged chunk idx
