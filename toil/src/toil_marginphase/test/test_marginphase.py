@@ -33,6 +33,9 @@ class MarginPhaseTest(TestCase):
     DOCKER_MARGIN_PHASE = 'quay.io/ucsc_cgl/margin_phase:latest'
     DOCKER_RTG_TOOLS = 'quay.io/ucsc_cgl/rtg_tools:latest'
 
+    ACCEPTABLE_SENSITIVITY_DIFFERENCE = .01
+    ACCEPTABLE_PRECISION_DIFFERENCE = .01
+
     DEBUG = True
 
     @classmethod
@@ -65,11 +68,11 @@ class MarginPhaseTest(TestCase):
     def test_five_percent_margin(self):
         self._run("005", 100000, 5000)
 
-    def test_fifty_percent_margin(self):
-        self._run("050", 100000, 50000)
-
-    def test_hundred_percent_margin(self):
-        self._run("100", 100000, 50000)
+    # def test_fifty_percent_margin(self):
+    #     self._run("050", 100000, 50000)
+    #
+    # def test_hundred_percent_margin(self):
+    #     self._run("100", 100000, 50000)
 
     def _run(self, identifier, partition_size=100000, partition_margin=5000):
         identifier = "{}-{}".format(self.uuid, identifier)
@@ -221,7 +224,35 @@ class MarginPhaseTest(TestCase):
             shutil.copytree(os.path.join(work_dir, docker_to_ref_eval_identifier),
                             os.path.join(TOIL_TEST_STORAGE_DIR, docker_to_ref_eval_identifier))
 
-        # TODO actually evaluate
+        # now we analyze docker and toil as compared to the reference
+        t2r_vcf_eval = t2d_vcf_eval_output.split("\n")
+        d2r_vcf_eval = d2r_vcf_eval_output.split("\n")
+        if len(t2r_vcf_eval) != 3 or len(d2r_vcf_eval) != 3:
+            raise UserError("Incorrect format for vcf eval output: len {}/{} (expected 3)".format(
+                len(t2r_vcf_eval), len(d2r_vcf_eval)))
+        header = t2r_vcf_eval[0].split()
+        precision_idx = None
+        sensitivity_idx = None
+        idx = 0
+        while idx < len(header):
+            if header[idx] == "Precision":
+                precision_idx = idx
+            if header[idx] == "Sensitivity":
+                sensitivity_idx = idx
+        t2r_precision = float(t2r_vcf_eval[2].split(precision_idx))
+        t2r_sensitivity = float(t2r_vcf_eval[2].split(sensitivity_idx))
+        d2r_precision = float(d2r_vcf_eval[2].split(precision_idx))
+        d2r_sensitivity = float(d2r_vcf_eval[2].split(sensitivity_idx))
+
+        precision_diff = abs(t2r_precision - d2r_precision)
+        sensitivity_diff = abs(t2r_sensitivity - d2r_sensitivity)
+        if precision_diff > MarginPhaseTest.ACCEPTABLE_PRECISION_DIFFERENCE \
+                or sensitivity_diff > MarginPhaseTest.ACCEPTABLE_SENSITIVITY_DIFFERENCE:
+            self.fail(("Toil and Docker marginPhase runs have unacceptable difference when compared to the reference:\n"
+                      "\tPRECISION  \tToil:%5f\tDocker:%5f\n"
+                      "\tSENSITIVITY\tToil:%5f\tDocker:%5f") %
+                      (t2r_precision, d2r_precision, t2r_sensitivity, d2r_sensitivity))
+
         return "\nTOIL to DOCKER:\n{}\nTOIL to REFERENCE:\n{}\nDOCKER to REFERENCE:\n{}".format(
             t2d_vcf_eval_output, t2r_vcf_eval_output, d2r_vcf_eval_output)
 
