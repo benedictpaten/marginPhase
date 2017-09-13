@@ -353,6 +353,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
     fprintf(stderr, "-p --params          : Input params file\n");
     fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
+    fprintf(stderr, "-s --signalAlignDir  : Directory of signalAlign single nucleotide probabilities files\n");
     fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
 }
@@ -363,6 +364,7 @@ int main(int argc, char *argv[]) {
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
     char *referenceVCF = NULL;
+    char *signalAlignLocation = NULL;
 
     char *outputBase = "output";
     char *paramsFile = "params.json";
@@ -386,11 +388,12 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
+                { "signalAlignDir", optional_argument, 0, 's'},
                 { "verbose", optional_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v::p:r:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v::p:r:s:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -414,6 +417,13 @@ int main(int argc, char *argv[]) {
             break;
         case 'r':
             referenceVCF = stString_copy(optarg);
+            break;
+        case 's':
+            if (optarg[strlen(optarg) - 1] == '/') {
+                signalAlignLocation = stString_copy(optarg);
+            } else {
+                signalAlignLocation = stString_print("%s/", optarg);
+            }
             break;
         case 'v':
             if (optarg == NULL) verboseBitstring = (1 << 16) - 1;
@@ -448,7 +458,7 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
+    int64_t readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params, signalAlignLocation);
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences

@@ -3,7 +3,7 @@
  *
  * Released under the MIT license, see LICENSE.txt
  */
-
+#include <unistd.h>
 #include <htslib/sam.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
@@ -371,6 +371,10 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * signal level alignments).
  * */
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
+    return parseReadsWithSignalAlign(profileSequences, bamFile, baseMapper, params, NULL);
+}
+int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
+                                  stRPHmmParameters *params, char *signalAlignDirectory) {
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
@@ -381,8 +385,10 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
-
     int64_t filteredReads = 0;
+    int64_t missingSignalAlignReads = 0;
+    int64_t mismatchSignalAlignStartCount = 0;
+    int64_t mismatchSignalAlignEndCount = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
@@ -497,6 +503,90 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
             }
         }
         stList_append(profileSequences, pSeq);
+
+        // if we have a location where signalAlign reads are, use them instead of the profile sequences
+        //TODO instead of doing this AFTER parsing the read and cigar, do it INSTEAD of that
+        if (signalAlignDirectory != NULL) {
+            char *signalAlignReadLocation = stString_print("%s%s.tsv", signalAlignDirectory, readName);
+            if (access(signalAlignReadLocation, R_OK ) == -1 ) {
+                // could not find the read file
+                missingSignalAlignReads++;
+                continue;
+            }
+
+            FILE *fp = fopen(signalAlignReadLocation,"r");
+
+            int SIZE = 128;
+            char *chromStr = malloc(SIZE);
+            char *refPosStr = malloc(SIZE);
+            char *pAStr = malloc(SIZE);
+            char *pCStr = malloc(SIZE);
+            char *pGStr = malloc(SIZE);
+            char *pTStr = malloc(SIZE);
+            int64_t refPos;
+            uint8_t pA;
+            uint8_t pC;
+            uint8_t pG;
+            uint8_t pT;
+
+            // parse header
+            char *line = malloc(2048);
+            while (fgets(line, sizeof(line), fp)) {
+                if (line[0] == '#') {
+                    if (line[1] == '#') continue;
+                    if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT\n") != 0) {
+                        st_errAbort("SignalAlign output file %s has unexpected header format: %s",
+                                    signalAlignReadLocation, line);
+                    } else {
+                        break;
+                    }
+                }
+            }
+            free(line);
+
+            // get probabilities
+            //TODO check off by one
+            int64_t firstRefPos = pSeq->refStart;
+            int64_t lastRefPos = pSeq->refStart + pSeq->length - 1;
+            int64_t firstReadPos = NULL;
+            int64_t lastReadPos = NULL;
+            while(!feof(fp)) {
+                fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
+                        chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr);
+
+                //check reference position
+                refPos = atoi(refPosStr);
+                if (firstReadPos == NULL) firstReadPos = refPos;
+                lastReadPos = refPos;
+                if (pos < firstRefPos || pos > lastRefPos) {
+                    continue;
+                }
+
+                // get probabilities and save
+                pA = (uint8_t) (ALPHABET_MAX_PROB * atof(pAStr));
+                pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
+                pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
+                pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
+                pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'A')] =  pA;
+                pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'C')] =  pC;
+                pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'G')] =  pG;
+                pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'T')] =  pT;
+                //todo how to handle gap characters?
+                pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MIN_PROB;
+            }
+
+            if (firstReadPos != firstRefPos) mismatchSignalAlignStartCount++;
+            if (lastReadPos != lastRefPos) mismatchSignalAlignEndCount++;
+        }
+    }
+
+    if (signalAlignDirectory != NULL) {
+        if (missingSignalAlignReads > 0)
+            st_logInfo("\t%d/%d reads were missing signalAlign probability file", missingSignalAlignReads, readCount);
+        if (mismatchSignalAlignStartCount > 0) 
+            st_logInfo("\t%d/%d signalAlign files had a start position mismatch", mismatchSignalAlignStartCount, (readCount - missingSignalAlignReads));
+        if (mismatchSignalAlignEndCount > 0)
+            st_logInfo("\t%d/%d signalAlign files had an end position mismatch", mismatchSignalAlignEndCount, (readCount - missingSignalAlignReads));
     }
 
     if(st_getLogLevel() == debug) {
