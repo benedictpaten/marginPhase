@@ -531,10 +531,12 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
 
             // parse header
             char *line = malloc(2048);
-            while (fgets(line, sizeof(line), fp)) {
+
+            while(!feof(fp)) {
+                fscanf( fp, "%[^\n]\n", line);
                 if (line[0] == '#') {
                     if (line[1] == '#') continue;
-                    if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT\n") != 0) {
+                    if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT") != 0) {
                         st_errAbort("SignalAlign output file %s has unexpected header format: %s",
                                     signalAlignReadLocation, line);
                     } else {
@@ -577,16 +579,25 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
 
             if (firstReadPos != firstRefPos) mismatchSignalAlignStartCount++;
             if (lastReadPos != lastRefPos) mismatchSignalAlignEndCount++;
+
+
+            fclose(fp);
+            free(chromStr);
+            free(refPosStr);
+            free(pAStr);
+            free(pCStr);
+            free(pGStr);
+            free(pTStr);
         }
     }
 
     if (signalAlignDirectory != NULL) {
         if (missingSignalAlignReads > 0)
-            st_logInfo("\t%d/%d reads were missing signalAlign probability file", missingSignalAlignReads, readCount);
+            st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
         if (mismatchSignalAlignStartCount > 0) 
-            st_logInfo("\t%d/%d signalAlign files had a start position mismatch", mismatchSignalAlignStartCount, (readCount - missingSignalAlignReads));
+            st_logInfo("\t%d/%d signalAlign files had a start position mismatch\n", mismatchSignalAlignStartCount, (readCount - missingSignalAlignReads));
         if (mismatchSignalAlignEndCount > 0)
-            st_logInfo("\t%d/%d signalAlign files had an end position mismatch", mismatchSignalAlignEndCount, (readCount - missingSignalAlignReads));
+            st_logInfo("\t%d/%d signalAlign files had an end position mismatch\n", mismatchSignalAlignEndCount, (readCount - missingSignalAlignReads));
     }
 
     if(st_getLogLevel() == debug) {
