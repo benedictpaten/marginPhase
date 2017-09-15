@@ -419,10 +419,9 @@ int main(int argc, char *argv[]) {
             referenceVCF = stString_copy(optarg);
             break;
         case 's':
-            if (optarg[strlen(optarg) - 1] == '/') {
-                signalAlignLocation = stString_copy(optarg);
-            } else {
-                signalAlignLocation = stString_print("%s/", optarg);
+            signalAlignLocation = stString_copy(optarg);
+            if (signalAlignLocation[strlen(optarg) - 1] == '/') {
+                signalAlignLocation[strlen(optarg) - 1] = '\0';
             }
             break;
         case 'v':

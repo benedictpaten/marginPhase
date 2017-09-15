@@ -375,6 +375,9 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 }
 int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
                                   stRPHmmParameters *params, char *signalAlignDirectory) {
+    if (signalAlignDirectory != NULL) {
+        st_logInfo("\tModifying probabilities from signalAlign files in %s\n", signalAlignDirectory);
+    }
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
@@ -502,36 +505,44 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 currPosInOp = 0;
             }
         }
-        stList_append(profileSequences, pSeq);
 
         // if we have a location where signalAlign reads are, use them instead of the profile sequences
         //TODO instead of doing this AFTER parsing the read and cigar, do it INSTEAD of that
         if (signalAlignDirectory != NULL) {
-            char *signalAlignReadLocation = stString_print("%s%s.tsv", signalAlignDirectory, readName);
-            if (access(signalAlignReadLocation, R_OK ) == -1 ) {
+            // get signalAlign file (if exists)
+            char *signalAlignReadLocation = stString_print("%s/%s.tsv", signalAlignDirectory, readName);
+            if (access(signalAlignReadLocation, F_OK ) == -1 ) {
                 // could not find the read file
                 missingSignalAlignReads++;
+                free(signalAlignReadLocation);
                 continue;
             }
-
             FILE *fp = fopen(signalAlignReadLocation,"r");
 
-            int SIZE = 128;
-            char *chromStr = malloc(SIZE);
-            char *refPosStr = malloc(SIZE);
-            char *pAStr = malloc(SIZE);
-            char *pCStr = malloc(SIZE);
-            char *pGStr = malloc(SIZE);
-            char *pTStr = malloc(SIZE);
+            // prep for reading file
+            char line[2048];
+            char chromStr[255];
+            char refPosStr[255];
+            char pAStr[255];
+            char pCStr[255];
+            char pGStr[255];
+            char pTStr[255];
+            //todo why does this fail?
+//            char *line = calloc(2048, sizeof(char));
+//            char *chromStr = calloc(256, sizeof(char));
+//            char *refPosStr = calloc(256, sizeof(char));
+//            char *pAStr = calloc(256, sizeof(char));
+//            char *pCStr = calloc(256, sizeof(char));
+//            char *pGStr = calloc(256, sizeof(char));
+//            char *pTStr = calloc(256, sizeof(char));
             int64_t refPos;
             uint8_t pA;
             uint8_t pC;
             uint8_t pG;
             uint8_t pT;
+            uint8_t pTotal;
 
             // parse header
-            char *line = malloc(2048);
-
             while(!feof(fp)) {
                 fscanf( fp, "%[^\n]\n", line);
                 if (line[0] == '#') {
@@ -544,7 +555,6 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                     }
                 }
             }
-            free(line);
 
             // get probabilities
             //TODO check off by one
@@ -557,10 +567,10 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                         chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr);
 
                 //check reference position
-                refPos = atoi(refPosStr);
+                refPos = atoi(refPosStr) + 1;
                 if (firstReadPos == NULL) firstReadPos = refPos;
                 lastReadPos = refPos;
-                if (pos < firstRefPos || pos > lastRefPos) {
+                if (refPos < firstRefPos || refPos > lastRefPos) {
                     continue;
                 }
 
@@ -569,6 +579,23 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
                 pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
                 pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
+                //todo fix this ugly shit
+                while ((pTotal = pA + pC + pG + pT) > ALPHABET_MAX_PROB) {
+                    switch (pTotal % 4) {
+                        case 0: pA--; break;
+                        case 1: pC--; break;
+                        case 2: pG--; break;
+                        case 3: pT--; break;
+                    }
+                }
+                while ((pTotal = pA + pC + pG + pT) < ALPHABET_MAX_PROB) {
+                    switch (pTotal % 4) {
+                        case 0: pA++; break;
+                        case 1: pC++; break;
+                        case 2: pG++; break;
+                        case 3: pT++; break;
+                    }
+                }
                 pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'A')] =  pA;
                 pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'C')] =  pC;
                 pSeq->profileProbs[(refPos - firstRefPos) * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'G')] =  pG;
@@ -580,15 +607,19 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
             if (firstReadPos != firstRefPos) mismatchSignalAlignStartCount++;
             if (lastReadPos != lastRefPos) mismatchSignalAlignEndCount++;
 
-
             fclose(fp);
-            free(chromStr);
-            free(refPosStr);
-            free(pAStr);
-            free(pCStr);
-            free(pGStr);
-            free(pTStr);
+            free(signalAlignReadLocation);
+//            free(line);
+//            free(chromStr);
+//            free(refPosStr);
+//            free(pAStr);
+//            free(pCStr);
+//            free(pGStr);
+//            free(pTStr);
         }
+
+        stList_append(profileSequences, pSeq);
+//        stProfileSeq_print(pSeq, stdout, true);
     }
 
     if (signalAlignDirectory != NULL) {

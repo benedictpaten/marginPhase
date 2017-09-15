@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O3 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNDEBUG")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
 
 include(FindOpenMP)
 if(OPENMP_FOUND)
