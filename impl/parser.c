@@ -508,6 +508,9 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
                     stList_length(probabilityList) - 5 * position, readLength, signalAlignReadLocation);
     }
 
+    st_logDebug("\tNeeded average of %4f modifications to base probs to ensure proper total probability",
+                (1.0 * randomSeed / readLength));
+
     stList_destruct(probabilityList);
     free(line);
     free(chromStr);
