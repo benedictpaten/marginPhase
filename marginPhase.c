@@ -457,7 +457,12 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params, signalAlignLocation);
+    int64_t readCount = NULL;
+    if (signalAlignLocation == NULL) {
+        readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
+    } else {
+        readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params, signalAlignLocation);
+    }
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences

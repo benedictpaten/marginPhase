@@ -507,9 +507,11 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         st_errAbort("Probability list has %d extra elements, with read length %d for file %s",
                     stList_length(probabilityList) - 5 * position, readLength, signalAlignReadLocation);
     }
-
-    st_logDebug("\tNeeded average of %4f modifications to base probs to ensure proper total probability",
-                (1.0 * randomSeed / readLength));
+    // sanity check on the number of modifications to the probabilities
+    if (randomSeed > readLength) {
+        st_logInfo("\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
+                    (1.0 * randomSeed / readLength), readName);
+    }
 
     stList_destruct(probabilityList);
     free(line);
