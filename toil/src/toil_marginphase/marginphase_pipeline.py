@@ -47,6 +47,7 @@ MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 5.5 #input bam chunk, output (in sam fmt), vcf etc
 MP_DSK_REF_FACTOR = 2.5
+MP_DSK_UNITTEST_FACTOR = .2
 
 # for debugging
 DEBUG = True
@@ -236,6 +237,7 @@ def prepare_input(job, sample, config):
             mp_cores = int(min(MP_CPU, config.maxCores))
             mp_mem = int(min(int(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR), config.maxMemory))
             mp_disk = int(min(int(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR), config.maxDisk))
+            if config.unittest: mp_disk = mp_disk * MP_DSK_UNITTEST_FACTOR
             job.fileStore.logToMaster("{}:{} requesting {} cores, {}b ({}mb) disk, {}b ({}gb) mem"
                                       .format(config.uuid, idx, mp_cores, mp_disk, int(mp_disk / 1024 / 1024 ),
                                               mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
@@ -1049,6 +1051,8 @@ def main():
             config.intermediate_file_location = intermediate_location
         if "margin_phase_tag" not in config or len(config.margin_phase_tag) == 0:
             config.margin_phase_tag = DOCKER_MARGIN_PHASE_DEFAULT_TAG
+        if "unittest" not in config:
+            config.unittest = False
 
         # get samples
         samples = parse_samples(config, args.manifest)

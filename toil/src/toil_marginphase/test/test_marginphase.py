@@ -227,7 +227,7 @@ class MarginPhaseTest(TestCase):
         # now we analyze docker and toil as compared to the reference
         t2r_vcf_eval = t2d_vcf_eval_output.split("\n")
         d2r_vcf_eval = d2r_vcf_eval_output.split("\n")
-        if len(t2r_vcf_eval) != 3 or len(d2r_vcf_eval) != 3:
+        if len(t2r_vcf_eval) < 3 or len(d2r_vcf_eval) < 3:
             raise UserError("Incorrect format for vcf eval output: len {}/{} (expected 3)".format(
                 len(t2r_vcf_eval), len(d2r_vcf_eval)))
         header = t2r_vcf_eval[0].split()
@@ -271,6 +271,7 @@ class MarginPhaseTest(TestCase):
                     default-contig: chr3
                     default-params: file://{params}
                     save-intermediate-files: False
+                    unittest: True
 
                     """[1:]).format(
                 reference_vcf=os.path.join(MARGIN_PHASE_TEST, MarginPhaseTest.IN_REF_VCF),
