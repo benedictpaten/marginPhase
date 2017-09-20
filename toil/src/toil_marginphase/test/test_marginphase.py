@@ -250,9 +250,10 @@ class MarginPhaseTest(TestCase):
         if precision_diff > MarginPhaseTest.ACCEPTABLE_PRECISION_DIFFERENCE \
                 or sensitivity_diff > MarginPhaseTest.ACCEPTABLE_SENSITIVITY_DIFFERENCE:
             self.fail(("Toil and Docker marginPhase runs have unacceptable difference when compared to the reference:\n"
-                      "\tPRECISION  \tToil:%5f\tDocker:%5f\n"
-                      "\tSENSITIVITY\tToil:%5f\tDocker:%5f") %
-                      (t2r_precision, d2r_precision, t2r_sensitivity, d2r_sensitivity))
+                      "\tPRECISION  \tToil:%5f\tDocker:%5f\tDiff:%5f\n"
+                      "\tSENSITIVITY\tToil:%5f\tDocker:%5f\tDiff:%5f") %
+                      (t2r_precision, d2r_precision, precision_diff,
+                       t2r_sensitivity, d2r_sensitivity, sensitivity_diff))
 
         return "\nTOIL to DOCKER:\n{}\nTOIL to REFERENCE:\n{}\nDOCKER to REFERENCE:\n{}".format(
             t2d_vcf_eval_output, t2r_vcf_eval_output, d2r_vcf_eval_output)
