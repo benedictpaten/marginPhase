@@ -240,10 +240,10 @@ class MarginPhaseTest(TestCase):
             if header[idx] == "Sensitivity":
                 sensitivity_idx = idx
             idx += 1
-        t2r_precision = float(t2r_vcf_eval[2].split(precision_idx))
-        t2r_sensitivity = float(t2r_vcf_eval[2].split(sensitivity_idx))
-        d2r_precision = float(d2r_vcf_eval[2].split(precision_idx))
-        d2r_sensitivity = float(d2r_vcf_eval[2].split(sensitivity_idx))
+        t2r_precision = float(t2r_vcf_eval[2].split()[precision_idx])
+        t2r_sensitivity = float(t2r_vcf_eval[2].split()[sensitivity_idx])
+        d2r_precision = float(d2r_vcf_eval[2].split()[precision_idx])
+        d2r_sensitivity = float(d2r_vcf_eval[2].split()[sensitivity_idx])
 
         precision_diff = abs(t2r_precision - d2r_precision)
         sensitivity_diff = abs(t2r_sensitivity - d2r_sensitivity)
