@@ -354,8 +354,11 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-p --params          : Input params file\n");
     fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
     fprintf(stderr, "-s --signalAlignDir  : Directory of signalAlign single nucleotide probabilities files\n");
-    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
+    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
+    fprintf(stderr, "                     \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
+    fprintf(stderr, "                     \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+
 }
 
 int main(int argc, char *argv[]) {
@@ -388,12 +391,12 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
-                { "signalAlignDir", optional_argument, 0, 's'},
-                { "verbose", optional_argument, 0, 'v'},
+                { "signalAlignDir", required_argument, 0, 's'},
+                { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v::p:r:s:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:p:r:s:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -425,8 +428,7 @@ int main(int argc, char *argv[]) {
             }
             break;
         case 'v':
-            if (optarg == NULL) verboseBitstring = (1 << 16) - 1;
-            else verboseBitstring = atoi(optarg);
+            verboseBitstring = atoi(optarg);
             break;
         default:
             usage();
@@ -635,8 +637,6 @@ int main(int argc, char *argv[]) {
                outputBase);
 
     writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
-    writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
-
 
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
                (float) totalGFlength / stList_length(hmms));

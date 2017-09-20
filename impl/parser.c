@@ -348,9 +348,9 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 }
 
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
-    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
-    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) > 0;
-    params->verboseFalseNegatives = !((bitstring & LOG_FALSE_NEGATIVES) > 0);
+    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) != 0;
+    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) != 0;
+    params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
 }
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
@@ -480,7 +480,7 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
 
     // Create empty profile sequence
     uint64_t readLength = lastReadPos - firstReadPos + 1;
-    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chromStr, readName, firstReadPos, readLength);
+    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chromStr, readName, firstReadPos + 1, readLength);
 
     // copy probabilities over
     uint64_t position = 0;
@@ -551,6 +551,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
+    int64_t profileCount = 0;
     int64_t filteredReads = 0;
     int64_t missingSignalAlignReads = 0;
 
@@ -577,6 +578,9 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
             continue;
         }
 
+        // tracks how many reads there were
+        readCount++;
+
         // should we read from the signalAlign?
         if (signalAlignDirectory != NULL) {
             // get signalAlign file (if exists)
@@ -591,8 +595,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
 
         // we're reading from the bam
-        else {
-//        if (pSeq == NULL) {
+        else { //if (pSeq == NULL) {
 
             int64_t start_read = 0;
             int64_t end_read = 0;
@@ -683,7 +686,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
 
         if (pSeq != NULL) {
-            readCount++;
+            profileCount++;
             stList_append(profileSequences, pSeq);
         }
     }
@@ -705,6 +708,6 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     bam_destroy1(aln);
     sam_close(in);
 
-    return readCount;
+    return profileCount;
 }
 
