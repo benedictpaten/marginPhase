@@ -26,3 +26,4 @@ toil/docker/runtime-container.DONE
 toil/.cache/
 toil/docker/tempMarginPhase/
 toil/test-report.xml
+*.egg-info
