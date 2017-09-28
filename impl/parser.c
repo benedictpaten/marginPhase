@@ -534,10 +534,10 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
  * signal level alignments).
  * */
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
-    return parseReadsWithSignalAlign(profileSequences, bamFile, baseMapper, params, NULL);
+    return parseReadsWithSignalAlign(profileSequences, bamFile, baseMapper, params, NULL, false);
 }
 int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
-                                  stRPHmmParameters *params, char *signalAlignDirectory) {
+                                  stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign) {
     if (signalAlignDirectory != NULL) {
         st_logInfo("\tModifying probabilities from signalAlign files in %s\n", signalAlignDirectory);
     }
@@ -551,6 +551,8 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
+    int64_t signalAlignReadCount = 0;
+    int64_t bamReadCount = 0;
     int64_t profileCount = 0;
     int64_t filteredReads = 0;
     int64_t missingSignalAlignReads = 0;
@@ -590,13 +592,13 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 missingSignalAlignReads++;
             } else {
                 pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper);
+                signalAlignReadCount++;
             }
             free(signalAlignReadLocation);
         }
 
-        // we're reading from the bam
-        else { //if (pSeq == NULL) {
-
+        // should we use the bam's reads when signalAlign data is unavailable
+        if (pSeq == NULL && !onlySignalAlign) {
             int64_t start_read = 0;
             int64_t end_read = 0;
             int64_t start_ref = pos;
@@ -683,6 +685,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                     currPosInOp = 0;
                 }
             }
+            bamReadCount++;
         }
 
         if (pSeq != NULL) {
@@ -692,8 +695,11 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     }
 
     if (signalAlignDirectory != NULL) {
-        if (missingSignalAlignReads > 0)
+        if (missingSignalAlignReads > 0) {
             st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
+        }
+        st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
+                   profileCount, signalAlignReadCount, bamReadCount);
     }
 
     if(st_getLogLevel() == debug) {

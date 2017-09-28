@@ -259,7 +259,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     // Create the initial list of HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
-    st_logInfo("Got %" PRIi64 " hmms before splitting\n", stList_length(hmms));
+    st_logInfo("\tGot %" PRIi64 " hmms before splitting\n", stList_length(hmms));
 
     // Break up the hmms where the phasing is uncertain
     st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
@@ -354,6 +354,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
     fprintf(stderr, "-p --params          : Input params file\n");
     fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
     fprintf(stderr, "-s --signalAlignDir  : Directory of signalAlign single nucleotide probabilities files\n");
+    fprintf(stderr, "-S --onlySignalAlign : Use only signalAlign information (discard BAM reads which aren't in SA dir)\n");
     fprintf(stderr, "-v --verbose         : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
     fprintf(stderr, "                     \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
@@ -368,10 +369,10 @@ int main(int argc, char *argv[]) {
     char *referenceFastaFile = NULL;
     char *referenceVCF = NULL;
     char *signalAlignLocation = NULL;
-
     char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t verboseBitstring = -1;
+    bool onlySignalAlign = false;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -392,6 +393,7 @@ int main(int argc, char *argv[]) {
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "signalAlignDir", required_argument, 0, 's'},
+                { "onlySignalAlign", no_argument, 0, 'S'},
                 { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
@@ -426,6 +428,9 @@ int main(int argc, char *argv[]) {
             if (signalAlignLocation[strlen(optarg) - 1] == '/') {
                 signalAlignLocation[strlen(optarg) - 1] = '\0';
             }
+            break;
+        case 'S':
+            onlySignalAlign = true;
             break;
         case 'v':
             verboseBitstring = atoi(optarg);
@@ -463,7 +468,8 @@ int main(int argc, char *argv[]) {
     if (signalAlignLocation == NULL) {
         readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
     } else {
-        readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params, signalAlignLocation);
+        readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params,
+                                              signalAlignLocation, onlySignalAlign);
     }
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
