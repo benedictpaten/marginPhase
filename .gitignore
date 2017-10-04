@@ -1,4 +1,4 @@
-.idea
+.idea*
 cmake-build-debug/
 CMakeCache.txt
 CMakeFiles
@@ -13,6 +13,17 @@ vcfCompare
 marginPhase.cbp
 libjsmn.a
 *.bai
+venv
+s3am
+*.pyc
+config-toil-marginphase.yaml
+manifest-toil-marginphase.tsv
+toil/docker/runtime-container.DONE
+*.log
 *.gz
 *.tbi
 *.log
+toil/.cache/
+toil/docker/tempMarginPhase/
+toil/test-report.xml
+*.egg-info
