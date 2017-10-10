@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7)
+ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -226,6 +226,18 @@ find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
+
+#add_custom_command(
+#	OUTPUT ../externalTools/linear-haplotypes/obj/interface.o
+#	COMMAND make
+#	WORKING_DIRECTORY ../externalTools/linear-haplotypes/
+#	)
+
+add_custom_target(
+	linear-haplotypes ALL
+	COMMAND make
+	WORKING_DIRECTORY ../externalTools/linear-haplotypes/
+)
 
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
