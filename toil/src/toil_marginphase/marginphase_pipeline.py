@@ -96,23 +96,25 @@ def parse_samples(config, path_to_manifest):
             # validate structure
             if len(sample) < 2:
                 raise UserError('Bad manifest format! Required at least 2 tab-separated columns, got: {}'.format(sample))
-            if len(sample) > 5:
-                raise UserError('Bad manifest format! Required at most 5 tab-separated columns, got: {}'.format(sample))
+            if len(sample) > 6:
+                raise UserError('Bad manifest format! Required at most 6 tab-separated columns, got: {}'.format(sample))
 
             # extract sample parts
             uuid = sample[0]
             url = sample[1]
-            contig_name, reference_url, params_url = "", "", ""
+            contig_name, reference_url, params_url, vcf_url = "", "", "", ""
             if len(sample) > 2: contig_name = sample[2]
             if len(sample) > 3: reference_url = sample[3]
             if len(sample) > 4: params_url = sample[4]
+            if len(sample) > 5: vcf_url = sample[5]
 
             # fill defaults
             if len(contig_name) == 0: contig_name = config.default_contig
             if len(reference_url) == 0: reference_url = config.default_reference
             if len(params_url) == 0: params_url = config.default_params
+            if len(vcf_url) == 0: vcf_url = config.default_vcf
 
-            sample = [uuid, url, contig_name, reference_url, params_url]
+            sample = [uuid, url, contig_name, reference_url, params_url, vcf_url]
             samples.append(sample)
     return samples
 
@@ -121,7 +123,7 @@ def prepare_input(job, sample, config):
 
     # job prep
     config = argparse.Namespace(**vars(config))
-    uuid, url, contig_name, reference_url, params_url = sample
+    uuid, url, contig_name, reference_url, params_url, vcf_url = sample
     config.uuid = uuid
     config.contig_name = contig_name
     config.reference_url = reference_url
@@ -145,8 +147,8 @@ def prepare_input(job, sample, config):
     config.reference_genome_fileid = ref_genome_fileid
     ref_genome_size = os.stat(os.path.join(work_dir, ref_genome_filename)).st_size
     #ref vcf
-    download_url(job, url=config.reference_vcf, work_dir=work_dir)
-    ref_vcf_filename = os.path.basename(config.reference_vcf)
+    download_url(job, url=vcf_url, work_dir=work_dir)
+    ref_vcf_filename = os.path.basename(vcf_url)
     ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
     config.reference_vcf_fileid = ref_vcf_fileid
     #params
@@ -403,6 +405,10 @@ def merge_chunks(job, config, chunk_infos):
     work_dir = job.fileStore.getLocalTempDir()
     job.fileStore.logToMaster("{}:merging_chunks:{}".format(config.uuid, datetime.datetime.now()))
     job.fileStore.logToMaster("{}: Merging {} chunks".format(config.uuid, len(chunk_infos)))
+    if config.minimal_output:
+        job.fileStore.logToMaster("{}: Minimal output is configured, will only save full chromosome vcf"
+                                  .format(config.uuid))
+    
     # work directory for tar management
     tar_work_dir = os.path.join(work_dir, "tmp")
     # output files
@@ -437,6 +443,22 @@ def merge_chunks(job, config, chunk_infos):
             shutil.rmtree(tar_work_dir)
         sam_hap1_file, sam_hap2_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
         chunk_idx = chunk[CI_CHUNK_INDEX]
+
+        # fully merged vcf file
+        if full_merged_vcf_file is None:
+            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
+                for line in input:
+                    if line.startswith("#"):
+                        output.write(line)
+        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
+                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                  reverse_phasing=(not (same_haplotype_ordering is None or same_haplotype_ordering)))
+
+        # all chunk merging is skipped if we only want minimal output
+        if config.minimal_output:
+            continue
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
@@ -527,18 +549,6 @@ def merge_chunks(job, config, chunk_infos):
             _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
                                       mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=True)
-
-        # fully merged vcf file
-        if full_merged_vcf_file is None:
-            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
-            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
-                for line in input:
-                    if line.startswith("#"):
-                        output.write(line)
-        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
-                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
-                                  reverse_phasing=(not (same_haplotype_ordering is None or same_haplotype_ordering)))
 
         # prep for iteration / cleanup
         read_start_pos = chunk[CI_CHUNK_BOUNDARY_END] - config.partition_margin
@@ -848,6 +858,7 @@ def consolidate_output(job, config, chunk_infos):
 
     # build tarball
     out_tars = [out_tar]
+    output_file_count = 0
     with tarfile.open(out_tar, 'w:gz') as f_out:
         for ci in chunk_infos:
             file_id = ci[CI_OUTPUT_FILE_ID]
@@ -858,7 +869,9 @@ def consolidate_output(job, config, chunk_infos):
                 for tarinfo in f_in:
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
                         f_out.addfile(tarinfo, fileobj=f_in_file)
-    job.fileStore.logToMaster("{}: Consolidated {} tarballs".format(config.uuid, len(out_tars)))
+                        output_file_count += 1
+    job.fileStore.logToMaster("{}: Consolidated {} files in {} tarballs".format(
+        config.uuid, output_file_count, len(out_tars)))
 
     # Move to output location
     if urlparse(config.output_dir).scheme == 's3':
@@ -900,9 +913,6 @@ def generate_config():
         # Warning: Do not use "file://" syntax if output directory is local location
         output-dir: /tmp
 
-        # Required: URL {scheme} to reference VCF
-        reference-vcf: s3://your/reference/here.vcf
-
         # Required: Size of each bam partition
         partition-size: 2000000
 
@@ -924,6 +934,12 @@ def generate_config():
         # Optional: URL {scheme} for default parameters file
         default-params: file://path/to/reference.fa
 
+        # Optional: URL {scheme} for default reference vcf
+        default-vcf: file://path/to/reference.fa
+
+        # Optional: Only outputs the full vcf for each sample
+        minimal-output: False
+
         # Optional: for debugging, this will save intermediate files to the output directory (only works for file:// scheme)
         save-intermediate-files: False
 
@@ -934,22 +950,23 @@ def generate_manifest():
     return textwrap.dedent("""
         #   Edit this manifest to include information pertaining to each sample to be run.
         #
-        #   There are 5 tab-separated columns: UUID, URL, contig name, reference fasta URL, and parameters URL
+        #   There are 6 tab-separated columns: UUID, URL, contig name, reference fasta URL, parameters URL, reference vcf URL
         #
         #   UUID            Required    A unique identifier for the sample to be processed.
         #   URL             Required    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to the sample bam.  It must belong to a single contig
         #   CONTIG_NAME     Optional    Contig name (must match the contig in the URL and the reference)
         #   REFERENCE_URL   Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to reference fasta file
         #   PARAMS_URL      Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to parameters file for the run
+        #   VCF_URL         Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to reference vcf file for the run
         #
-        #   For the three optional values, there must be a value specified either in this manifest, or in the configuration
+        #   For the four optional values, there must be a value specified either in this manifest, or in the configuration
         #   file.  Any value specified in the manifest overrides whatever is specified in the config file
         #
         #   Examples of several combinations are provided below. Lines beginning with # are ignored.
         #
         #   UUID_1  file:///path/to/file.bam
-        #   UUID_2  s3://path/to/file.bam   chrX    s3://path/to/chrX.reference.fa
-        #   UUID_3  s3://path/to/file.bam   chr4    file:///path/to/chr4.reference.fa    file:///path/to/params.json
+        #   UUID_2  s3://path/to/file.bam   chrX    s3://path/to/chrX.reference.fa      file:///path/to/chrX.reference.vcf
+        #   UUID_3  s3://path/to/file.bam   chr4    file:///path/to/chr4.reference.fa   file:///path/to/params.json file:///path/to/chr4.reference.vcf
         #   UUID_4  file:///path/to/file.bam            file:///path/to/params.json
         #
         #   Place your samples below, one per line.
@@ -1053,6 +1070,8 @@ def main():
             config.margin_phase_tag = DOCKER_MARGIN_PHASE_DEFAULT_TAG
         if "unittest" not in config:
             config.unittest = False
+        if "minimal_output" not in config:
+            config.minimal_output = False
 
         # get samples
         samples = parse_samples(config, args.manifest)
