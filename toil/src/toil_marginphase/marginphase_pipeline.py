@@ -408,7 +408,7 @@ def merge_chunks(job, config, chunk_infos):
     if config.minimal_output:
         job.fileStore.logToMaster("{}: Minimal output is configured, will only save full chromosome vcf"
                                   .format(config.uuid))
-    
+
     # work directory for tar management
     tar_work_dir = os.path.join(work_dir, "tmp")
     # output files
@@ -1054,7 +1054,6 @@ def main():
             mkdir_p(config.output_dir)
         if not config.output_dir.endswith('/'):
             config.output_dir += '/'
-        require(config.reference_vcf, 'No reference vcf specified')
         require(config.partition_size, "Configuration parameter partition-size is required")
         require(config.partition_margin, "Configuration parameter partition-margin is required")
         require(config.min_merge_ratio, "Configuration parameter min-merge-ratio is required")
