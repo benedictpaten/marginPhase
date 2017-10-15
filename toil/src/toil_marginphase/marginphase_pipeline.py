@@ -454,7 +454,7 @@ def merge_chunks(job, config, chunk_infos):
         _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
                                   chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
                                   mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
-                                  reverse_phasing=(not (same_haplotype_ordering is None or same_haplotype_ordering)))
+                                  reverse_phasing=False)
 
         # all chunk merging is skipped if we only want minimal output
         if config.minimal_output:
