@@ -141,24 +141,24 @@ def prepare_input(job, sample, config):
 
     # download references
     #ref fasta
-    download_url(job, url=reference_url, work_dir=work_dir)
+    download_url(reference_url, work_dir=work_dir)
     ref_genome_filename = os.path.basename(reference_url)
     ref_genome_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_genome_filename))
     config.reference_genome_fileid = ref_genome_fileid
     ref_genome_size = os.stat(os.path.join(work_dir, ref_genome_filename)).st_size
     #ref vcf
-    download_url(job, url=vcf_url, work_dir=work_dir)
+    download_url(vcf_url, work_dir=work_dir)
     ref_vcf_filename = os.path.basename(vcf_url)
     ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
     config.reference_vcf_fileid = ref_vcf_fileid
     #params
-    download_url(job, url=params_url, work_dir=work_dir)
+    download_url(params_url, work_dir=work_dir)
     params_filename = os.path.basename(params_url)
     params_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, params_filename))
     config.params_fileid = params_fileid
 
     # download bam
-    download_url(job, url=url, work_dir=work_dir)
+    download_url(url, work_dir=work_dir)
     bam_filename = os.path.basename(url)
     data_bam_location = os.path.join("/data", bam_filename)
 
