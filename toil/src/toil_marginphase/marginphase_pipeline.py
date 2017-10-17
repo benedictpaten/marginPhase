@@ -1046,7 +1046,21 @@ def main():
         config = argparse.Namespace(**parsed_config)
         config.maxCores = int(args.maxCores) if args.maxCores else sys.maxsize
         config.maxDisk = int(args.maxDisk) if args.maxDisk else sys.maxint
-        config.maxMemory = args.maxMemory if args.maxMemory else str(sys.maxint)
+        config.maxMemory = sys.maxint
+        # fix parsing of GB to int
+        if args.maxMemory:
+            args.maxMemory = args.maxMemory.upper()
+            if args.maxMemory.endswith('B'):
+                args.maxMemory = args.maxMemory.rstrip('B')
+            # actual parsing
+            if args.maxMemory.endswith('G'):
+                config.maxMemory = int(args.maxMemory.rstrip('G')) * 1024 * 1024 * 1024
+            elif args.maxMemory.endswith('M'):
+                config.maxMemory = int(args.maxMemory.rstrip('M')) * 1024 * 1024
+            elif args.maxMemory.endswith('K'):
+                config.maxMemory = int(args.maxMemory.rstrip('K')) * 1024
+            else:
+                config.maxMemory = int(args.maxMemory)
 
         # Config sanity checks
         require(config.output_dir, 'No output location specified')
