@@ -876,7 +876,7 @@ def consolidate_output(job, config, chunk_infos):
     # Move to output location
     if urlparse(config.output_dir).scheme == 's3':
         job.fileStore.logToMaster('{}: Uploading {} to S3: {}'.format(config.uuid, out_tar, config.output_dir))
-        s3am_upload(fpath=out_tar, s3_dir=config.output_dir, num_cores=config.cores)
+        s3am_upload(fpath=out_tar, s3_dir=config.output_dir, num_cores=config.maxCores)
     else:
         job.fileStore.logToMaster('{}: Moving {} to output dir: {}'.format(config.uuid, out_tar, config.output_dir))
         mkdir_p(config.output_dir)
