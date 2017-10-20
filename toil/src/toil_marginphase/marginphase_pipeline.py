@@ -42,7 +42,7 @@ DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase"
 DOCKER_MARGIN_PHASE_DEFAULT_TAG = "latest"
 
 # resource
-MP_CPU = 2
+MP_CPU = 16
 MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 5.5 #input bam chunk, output (in sam fmt), vcf etc
@@ -355,7 +355,6 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     tarball_name = "{}.tar.gz".format(chunk_identifier)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
 
-    # todo why do we sometimes not get these files?
     # validate output, retry if not
     if not (found_hap1 and found_hap2 and found_vcf):
         if "retry_attempts" not in config:
@@ -363,8 +362,14 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
         else:
             config.retry_attempts += 1
             if config.retry_attempts > MAX_RETRIES:
-                raise UserError("{}: Failed to generate appropriate output files {} times"
-                                .format(chunk_identifier, MAX_RETRIES))
+                error = "{}: Failed to generate appropriate output files {} times".format(chunk_identifier, MAX_RETRIES)
+                job.fileStore.logToMaster(error)
+                # raise UserError(error)
+                #TODO - this is a hack!!
+                output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+                chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
+                return chunk_info
+                #TODO - figure out a better method!!
         job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}"
                                   .format(chunk_identifier, config.retry_attempts))
         job.fileStore.logToMaster("{}: failed job log file:".format(chunk_identifier))
@@ -445,20 +450,26 @@ def merge_chunks(job, config, chunk_infos):
         chunk_idx = chunk[CI_CHUNK_INDEX]
 
         # fully merged vcf file
-        if full_merged_vcf_file is None:
-            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
-            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
-                for line in input:
-                    if line.startswith("#"):
-                        output.write(line)
-        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
-                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
-                                  reverse_phasing=False)
+        if vcf_file is not None:
+            if full_merged_vcf_file is None:
+                full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+                with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
+                    for line in input:
+                        if line.startswith("#"):
+                            output.write(line)
+            _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                      reverse_phasing=False)
 
         # all chunk merging is skipped if we only want minimal output
         if config.minimal_output:
             continue
+
+        # error out if missing files
+        if sam_hap1_file is None or sam_hap2_file is None or vcf_file is None:
+            raise UserError("{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}"
+                            .format(config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk))
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
@@ -798,12 +809,9 @@ def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
         if name.endswith(VCF_SUFFIX): vcf = name
         elif name.endswith(SAM_HAP_1_SUFFIX): sam_hap1 = name
         elif name.endswith(SAM_HAP_2_SUFFIX): sam_hap2 = name
-    if sam_hap1 is None or sam_hap2 is None or vcf is None:
-        raise UserError("{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}"
-                        .format(config.uuid, sam_hap1, sam_hap2, vcf, chunk))
-    sam_hap1_file = os.path.join(tar_work_dir, sam_hap1)
-    sam_hap2_file = os.path.join(tar_work_dir, sam_hap2)
-    vcf_file = os.path.join(tar_work_dir, vcf)
+    sam_hap1_file = None if sam_hap1 is None else os.path.join(tar_work_dir, sam_hap1)
+    sam_hap2_file = None if sam_hap2 is None else os.path.join(tar_work_dir, sam_hap2)
+    vcf_file = None if vcf is None else os.path.join(tar_work_dir, vcf)
 
     # return file locations
     return sam_hap1_file, sam_hap2_file, vcf_file
@@ -1094,7 +1102,9 @@ def main():
             require(next(which(program), None), program + ' must be installed on every node.'.format(program))
 
         # Start the workflow
-        Job.Runner.startToil(Job.wrapJobFn(map_job, prepare_input, samples, config), args)
+        for sample in samples:
+            Job.Runner.startToil(Job.wrapJobFn(prepare_input, sample, config,
+                                           memory=args.maxMemory, cores=config.maxCores), args)
 
 
 if __name__ == '__main__':
