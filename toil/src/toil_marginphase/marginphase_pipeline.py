@@ -76,6 +76,7 @@ TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
 
 # todo move this to config?
 MAX_RETRIES = 3
+CONTINUE_AFTER_FAILURE = True
 
 def parse_samples(config, path_to_manifest):
     """
@@ -364,12 +365,14 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
             if config.retry_attempts > MAX_RETRIES:
                 error = "{}: Failed to generate appropriate output files {} times".format(chunk_identifier, MAX_RETRIES)
                 job.fileStore.logToMaster(error)
-                # raise UserError(error)
                 #TODO - this is a hack!!
-                output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
-                chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
-                return chunk_info
+                if CONTINUE_AFTER_FAILURE:
+                    output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+                    chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
+                    return chunk_info
                 #TODO - figure out a better method!!
+                raise UserError(error)
+
         job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}"
                                   .format(chunk_identifier, config.retry_attempts))
         job.fileStore.logToMaster("{}: failed job log file:".format(chunk_identifier))
@@ -449,27 +452,32 @@ def merge_chunks(job, config, chunk_infos):
         sam_hap1_file, sam_hap2_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
         chunk_idx = chunk[CI_CHUNK_INDEX]
 
+        # error out if missing files
+        if sam_hap1_file is None or sam_hap2_file is None or vcf_file is None:
+            error = "{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
+                config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk)
+            job.fileStore.logToMaster(error)
+            #TODO this is a hack!!
+            if CONTINUE_AFTER_FAILURE:
+                continue
+            #TODO fix this!!
+            raise UserError(error)
+
         # fully merged vcf file
-        if vcf_file is not None:
-            if full_merged_vcf_file is None:
-                full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
-                with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
-                    for line in input:
-                        if line.startswith("#"):
-                            output.write(line)
-            _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
-                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
-                                      reverse_phasing=False)
+        if full_merged_vcf_file is None:
+            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
+                for line in input:
+                    if line.startswith("#"):
+                        output.write(line)
+        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
+                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                  reverse_phasing=False)
 
         # all chunk merging is skipped if we only want minimal output
         if config.minimal_output:
             continue
-
-        # error out if missing files
-        if sam_hap1_file is None or sam_hap2_file is None or vcf_file is None:
-            raise UserError("{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}"
-                            .format(config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk))
 
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
