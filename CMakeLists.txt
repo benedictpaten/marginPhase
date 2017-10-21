@@ -28,6 +28,7 @@ include_directories(inc)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(externalTools/jsmn)
+include_directories(externalTools/linear-haplotypes/src)
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -200,6 +201,26 @@ set(SOURCE_FILES
         impl/vcfTools.c
         )
 
+set(LH_SOURCES
+	externalTools/linear-haplotypes/src/allele.cpp
+	externalTools/linear-haplotypes/src/delay_multiplier.cpp
+	externalTools/linear-haplotypes/src/DP_map.cpp
+	externalTools/linear-haplotypes/src/haplotype_manager.cpp
+	externalTools/linear-haplotypes/src/haplotype_state_node.cpp
+	externalTools/linear-haplotypes/src/haplotype_state_tree.cpp
+	externalTools/linear-haplotypes/src/input_haplotype.cpp
+	externalTools/linear-haplotypes/src/interface.cpp
+	externalTools/linear-haplotypes/src/math.cpp
+	externalTools/linear-haplotypes/src/penalty_set.cpp
+	externalTools/linear-haplotypes/src/probability.cpp
+	externalTools/linear-haplotypes/src/reference.cpp
+	externalTools/linear-haplotypes/src/reference_sequence.cpp
+	externalTools/linear-haplotypes/src/row_set.cpp
+	externalTools/linear-haplotypes/src/set_of_extensions.cpp
+	impl/vcftohapman.c
+	)
+	
+
 
 # Dependencies for htslib
 find_library(ZLIB NAMES z)
@@ -227,21 +248,16 @@ if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
 
-#add_custom_command(
-#	OUTPUT ../externalTools/linear-haplotypes/obj/interface.o
+#add_custom_target(
+#	linear-haplotypes ALL
 #	COMMAND make
 #	WORKING_DIRECTORY ../externalTools/linear-haplotypes/
-#	)
-
-add_custom_target(
-	linear-haplotypes ALL
-	COMMAND make
-	WORKING_DIRECTORY ../externalTools/linear-haplotypes/
-)
+#)
 
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
 add_library(jsmn externalTools/jsmn/jsmn.c)
+add_library(lh ${LH_SOURCES})
 
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
@@ -251,6 +267,8 @@ target_link_libraries(marginPhase son hts jsmn)
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare son hts jsmn)
 
+add_executable(linhapexample linhapexample.c)
+target_link_libraries(linhapexample hts lh)
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c ${SOURCE_FILES})
