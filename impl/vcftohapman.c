@@ -1,5 +1,5 @@
-#include <interface.h>
 #include <htslib/vcf.h>
+#include "interface.h"
 
 int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linearReferenceStructure** return_lr, haplotypeCohort** return_cohort) {
   vcfFile* cohort_vcf = vcf_open(vcf_path, "r");
@@ -15,26 +15,34 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   
   linearReferenceStructure* reference = linearReferenceStructure_init_empty(length);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
-  
+  int built_initial_span = 0;
+
   while(bcf_read(cohort_vcf, cohort_hdr, record) == 0) {
-    bcf_unpack(record, BCF_UN_ALL);
+    size_t site = record->pos;
+    if(site >= ref_start) {
     
-    //TODO handle non-SNPs
-    if (bcf_is_snp(record) != 0) {
-      size_t site = record->pos;
-      int64_t site_index = linearReferenceStructure_add_site(reference, site);
-      haplotypeCohort_add_record(cohort, site);
-      
-      int32_t *gt_arr = NULL, ngt_arr = 0;
-      int ngt = bcf_get_genotypes(cohort_hdr, record, &gt_arr, &ngt_arr);
-      // TODO: check that ngt is correct
-      if(site_index >= 0) {
-        for(size_t i = 0; i < ngt; i++) {
-          int allele_index = bcf_gt_allele(gt_arr[i]);
-          char allele_value = record->d.allele[allele_index][0];
-          haplotypeCohort_set_sample_allele(cohort, i, site_index, allele_value);
+      //TODO handle non-SNPs
+      if (bcf_is_snp(record) != 0) {
+        bcf_unpack(record, BCF_UN_ALL);
+        if(built_initial_span == 0) {
+          linearReferenceStructure_set_initial_span(reference, site - ref_start);
+          built_initial_span = 1;
         }
-      } 
+        
+        int64_t site_index = linearReferenceStructure_add_site(reference, site);
+        haplotypeCohort_add_record(cohort, site);
+        
+        int32_t *gt_arr = NULL, ngt_arr = 0;
+        int ngt = bcf_get_genotypes(cohort_hdr, record, &gt_arr, &ngt_arr);
+        // TODO: check that ngt is correct
+        if(site_index >= 0) {
+          for(size_t i = 0; i < ngt; i++) {
+            int allele_index = bcf_gt_allele(gt_arr[i]);
+            char allele_value = record->d.allele[allele_index][0];
+            haplotypeCohort_set_sample_allele(cohort, i, site_index, allele_value);
+          }
+        } 
+      }
     }
   }
   
@@ -46,4 +54,33 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   
   vcf_close(cohort_vcf);
   return 1;
+}
+
+void get_interval_bounds(const char* str, int32_t* beg, int32_t* end) {
+  // adapted from an htslib function
+  char *s, *ep;
+  size_t i, k, length, colon_pos, hyphen_pos;
+    
+  *beg = *end = -1;
+  length = strlen(str);
+  s = (char*)malloc(length+1);
+  // remove space
+  for (i = k = 0; i < length; ++i) if (str[i] == ' ') s[k++] = str[i];
+  s[k] = 0;
+    
+  colon_pos = length = k;
+  for (i = length; i > 0; --i) if (s[i - 1] == ':') break; // look for colon from the end
+  if (i > 0) colon_pos = i - 1;
+
+  if(colon_pos < length) {
+    if(s[colon_pos + 1] == '-') {
+      *beg = 0;
+      i = colon_pos + 2; 
+    } else {
+      *beg = strtol(s + colon_pos + 1, &ep, 10);
+      for (i = ep - s; i < k;) if (s[i++] == '-') break;
+    }
+    if(i < k) *end = strtol(s + i, &ep, 10);
+  }
+  free(s);
 }

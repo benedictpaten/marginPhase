@@ -199,6 +199,7 @@ set(SOURCE_FILES
         impl/parser.c
         impl/outputWriter.c
         impl/vcfTools.c
+
         )
 
 set(LH_SOURCES
@@ -217,7 +218,6 @@ set(LH_SOURCES
 	externalTools/linear-haplotypes/src/reference_sequence.cpp
 	externalTools/linear-haplotypes/src/row_set.cpp
 	externalTools/linear-haplotypes/src/set_of_extensions.cpp
-	impl/vcftohapman.c
 	)
 	
 
@@ -267,7 +267,7 @@ target_link_libraries(marginPhase son hts jsmn)
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare son hts jsmn)
 
-add_executable(linhapexample linhapexample.c)
+add_executable(linhapexample linhapexample.c impl/vcftohapman.c)
 target_link_libraries(linhapexample hts lh)
 
 enable_testing()
