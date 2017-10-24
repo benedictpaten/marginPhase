@@ -38,7 +38,7 @@ DEFAULT_MANIFEST_NAME = 'manifest-toil-marginphase.tsv'
 # docker images
 DOCKER_SAMTOOLS = "quay.io/ucsc_cgl/samtools"
 DOCKER_SAMTOOLS_TAG = "1.3--256539928ea162949d8a65ca5c79a72ef557ce7c"
-DOCKER_MARGIN_PHASE = "quay.io/ucsc_cgl/margin_phase"
+DOCKER_MARGIN_PHASE = "tpesout/margin_phase"
 DOCKER_MARGIN_PHASE_DEFAULT_TAG = "latest"
 
 # resource
@@ -76,7 +76,7 @@ TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
 
 # todo move this to config?
 MAX_RETRIES = 3
-CONTINUE_AFTER_FAILURE = True
+CONTINUE_AFTER_FAILURE = False
 
 def parse_samples(config, path_to_manifest):
     """
@@ -1110,9 +1110,7 @@ def main():
             require(next(which(program), None), program + ' must be installed on every node.'.format(program))
 
         # Start the workflow
-        for sample in samples:
-            Job.Runner.startToil(Job.wrapJobFn(prepare_input, sample, config,
-                                           memory=args.maxMemory, cores=config.maxCores), args)
+        Job.Runner.startToil(Job.wrapJobFn(map_job, prepare_input, samples, config), args)
 
 
 if __name__ == '__main__':
