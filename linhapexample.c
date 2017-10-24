@@ -26,23 +26,31 @@ int main(int argc, char* argv[]) {
 
   // Parse interval input to get start position, end position, ref sequence
   char* interval_str = argv[2];
+	fprintf(stderr, "loading reference interval %s from %s\n", argv[2], argv[1]);
   int32_t ref_start;
   int32_t ref_end;
-  get_interval_bounds(interval_str, &ref_start, &ref_end);  
+  get_interval_bounds(interval_str, &ref_start, &ref_end);
+	if(ref_end != -1) {
+		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+	}
 	faidx_t* ref_seq_fai = fai_load(argv[1]);
 	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &ref_end);
-  if(ref_end == -1) {
-    ref_end = strlen(reference_sequence);
-  }
+	fprintf(stderr, "loaded reference sequence of length %d\n", strlen(reference_sequence));
+	if(ref_end == -1) {
+		ref_end = strlen(reference_sequence);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+	}
   
   // build index  
 	linearReferenceStructure* reference = NULL;
 	haplotypeCohort* cohort = NULL;
-	int built_index = lh_indices_from_vcf(argv[2], ref_start, ref_end, &reference, &cohort);
-
+	int built_index = lh_indices_from_vcf(argv[3], ref_start, ref_end, &reference, &cohort);
+	
 	if(built_index == 0) {
-		printf("Input vcf is empty\n");
+		fprintf(stderr, "Input vcf is empty\n");
 		return 1;
+	} else {
+		fprintf(stderr, "built haplotypeCohort from vcf %s\n", argv[3]);
 	}
   
   // SIMULATE READ DP (for simplicity)

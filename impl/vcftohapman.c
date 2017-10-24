@@ -5,6 +5,8 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   vcfFile* cohort_vcf = vcf_open(vcf_path, "r");
   if (cohort_vcf == NULL) {
       return 0;
+  } else {
+    fprintf(stderr, "loading vcf %s\n", vcf_path);
   }
   
   bcf_hdr_t* cohort_hdr = bcf_hdr_read(cohort_vcf);
@@ -16,13 +18,21 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   linearReferenceStructure* reference = linearReferenceStructure_init_empty(length);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
   int built_initial_span = 0;
-
+  
+  // printf("progress: [");
+  // fflush(stdout);
+  int stepsize = (ref_end - ref_start)/25;
+  int progress;
+  int steps;
+  int laststep = 0;
+  int stepsmade;
   while(bcf_read(cohort_vcf, cohort_hdr, record) == 0) {
     size_t site = record->pos;
-    if(site >= ref_start) {
+    if(site >= ref_start && site <= ref_end) {
     
       //TODO handle non-SNPs
       if (bcf_is_snp(record) != 0) {
+        fprintf(stderr, "adding %d\n", site);
         bcf_unpack(record, BCF_UN_ALL);
         if(built_initial_span == 0) {
           linearReferenceStructure_set_initial_span(reference, site - ref_start);
@@ -41,10 +51,21 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
             char allele_value = record->d.allele[allele_index][0];
             haplotypeCohort_set_sample_allele(cohort, i, site_index, allele_value);
           }
-        } 
+        }
+        // progress = site - ref_start;
+        // steps = progress/stepsize;
+        // if(steps > laststep) {
+        //   stepsmade = steps - laststep;
+        //   laststep = steps;
+        //   for(size_t i = 0; i < stepsmade; i++) {
+        //     printf("=");
+        //     fflush(stdout);
+        //   }
+        // }
       }
     }
   }
+  printf("]\n");
   
   linearReferenceStructure_calc_spans(reference, ref_end - ref_start);
   haplotypeCohort_populate_counts(cohort);
@@ -64,8 +85,8 @@ void get_interval_bounds(const char* str, int32_t* beg, int32_t* end) {
   *beg = *end = -1;
   length = strlen(str);
   s = (char*)malloc(length+1);
-  // remove space
-  for (i = k = 0; i < length; ++i) if (str[i] == ' ') s[k++] = str[i];
+  // remove space and commas
+  for (i = k = 0; i < length; ++i) if (str[i] != ' ' && str[i] != ',') s[k++] = str[i];
   s[k] = 0;
     
   colon_pos = length = k;
