@@ -34,7 +34,8 @@ int main(int argc, char* argv[]) {
 		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
 	}
 	faidx_t* ref_seq_fai = fai_load(argv[1]);
-	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &ref_end);
+	int32_t length = ref_end;
+	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &length);
 	fprintf(stderr, "loaded reference sequence of length %d\n", strlen(reference_sequence));
 	if(ref_end == -1) {
 		ref_end = strlen(reference_sequence);

@@ -11,6 +11,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   
   bcf_hdr_t* cohort_hdr = bcf_hdr_read(cohort_vcf);
   bcf1_t* record = bcf_init1();
+  printf("made header\n");
   
   size_t number_of_haplotypes = bcf_hdr_nsamples(cohort_hdr) * 2;
   size_t length = ref_end - ref_start;
@@ -18,6 +19,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   linearReferenceStructure* reference = linearReferenceStructure_init_empty(length);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
   int built_initial_span = 0;
+  printf("initialized ref structures\n");
   
   // printf("progress: [");
   // fflush(stdout);
@@ -26,12 +28,12 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   int steps;
   int laststep = 0;
   int stepsmade;
+  int sites_added = 0;
   while(bcf_read(cohort_vcf, cohort_hdr, record) == 0) {
     size_t site = record->pos;
     if(site >= ref_start && site <= ref_end) {
-    
       //TODO handle non-SNPs
-      if (bcf_is_snp(record) != 0) {
+      if (bcf_is_snp(record) == 1) {
         fprintf(stderr, "adding %d\n", site);
         bcf_unpack(record, BCF_UN_ALL);
         if(built_initial_span == 0) {
@@ -52,6 +54,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
             haplotypeCohort_set_sample_allele(cohort, i, site_index, allele_value);
           }
         }
+        sites_added++;
         // progress = site - ref_start;
         // steps = progress/stepsize;
         // if(steps > laststep) {
@@ -65,10 +68,13 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
       }
     }
   }
-  printf("]\n");
+  
+  printf("number of sites %d\n", sites_added);
   
   linearReferenceStructure_calc_spans(reference, ref_end - ref_start);
+  printf("calculated reference spans\n");
   haplotypeCohort_populate_counts(cohort);
+  printf("build cohort\n");
 
   *return_lr = reference;
   *return_cohort = cohort;
