@@ -11,7 +11,6 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   
   bcf_hdr_t* cohort_hdr = bcf_hdr_read(cohort_vcf);
   bcf1_t* record = bcf_init1();
-  printf("made header\n");
   
   size_t number_of_haplotypes = bcf_hdr_nsamples(cohort_hdr) * 2;
   size_t length = ref_end - ref_start;
@@ -19,10 +18,9 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   linearReferenceStructure* reference = linearReferenceStructure_init_empty(length);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
   int built_initial_span = 0;
-  printf("initialized ref structures\n");
   
-  // printf("progress: [");
-  // fflush(stdout);
+  printf("building haplotype cohort matrix, progress: [");
+  fflush(stdout);
   int stepsize = (ref_end - ref_start)/25;
   int progress;
   int steps;
@@ -34,7 +32,6 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
     if(site >= ref_start && site <= ref_end) {
       //TODO handle non-SNPs
       if (bcf_is_snp(record) == 1) {
-        fprintf(stderr, "adding %d\n", site);
         bcf_unpack(record, BCF_UN_ALL);
         if(built_initial_span == 0) {
           linearReferenceStructure_set_initial_span(reference, site - ref_start);
@@ -42,39 +39,39 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
         }
         
         int64_t site_index = linearReferenceStructure_add_site(reference, site);
-        haplotypeCohort_add_record(cohort, site);
+        haplotypeCohort_add_record(cohort, site_index);
         
         int32_t *gt_arr = NULL, ngt_arr = 0;
         int ngt = bcf_get_genotypes(cohort_hdr, record, &gt_arr, &ngt_arr);
-        // TODO: check that ngt is correct
         if(site_index >= 0) {
           for(size_t i = 0; i < ngt; i++) {
             int allele_index = bcf_gt_allele(gt_arr[i]);
             char allele_value = record->d.allele[allele_index][0];
-            haplotypeCohort_set_sample_allele(cohort, i, site_index, allele_value);
+            haplotypeCohort_set_sample_allele(cohort, site_index, i, allele_value);
           }
         }
         sites_added++;
-        // progress = site - ref_start;
-        // steps = progress/stepsize;
-        // if(steps > laststep) {
-        //   stepsmade = steps - laststep;
-        //   laststep = steps;
-        //   for(size_t i = 0; i < stepsmade; i++) {
-        //     printf("=");
-        //     fflush(stdout);
-        //   }
-        // }
+        progress = site - ref_start;
+        steps = progress/stepsize;
+        if(steps > laststep) {
+          stepsmade = steps - laststep;
+          laststep = steps;
+          for(size_t i = 0; i < stepsmade; i++) {
+            printf("=");
+            fflush(stdout);
+          }
+        }
       }
     }
   }
+  fprintf(stderr, "]\n");
   
-  printf("number of sites %d\n", sites_added);
+  fprintf(stderr, "number of sites %d\n", sites_added);
   
   linearReferenceStructure_calc_spans(reference, ref_end - ref_start);
-  printf("calculated reference spans\n");
+  fprintf(stderr, "calculated reference spans\n");
   haplotypeCohort_populate_counts(cohort);
-  printf("build cohort\n");
+  fprintf(stderr, "expanded cohort matrix for fast queries\n");
 
   *return_lr = reference;
   *return_cohort = cohort;
