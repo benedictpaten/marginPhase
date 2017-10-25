@@ -18,9 +18,10 @@
 //      expects a log-scale value < 0
 // 6. trimming cutoff (log scale)
 //      expects a log-scale value <= 0; 0 symbolizes no cutoff
+// 7. share rate (what proportion of cohort sites are sites in the simulated read input)
 int main(int argc, char* argv[]) {
-	if(argc != 7) {
-		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] \n");
+	if(argc != 8) {
+		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] [share rate]\n");
 		return 1;
 	}
 
@@ -62,9 +63,11 @@ int main(int argc, char* argv[]) {
   //      4. the full sequence inferred for the read; can be unassigned at sites
   
   size_t read_DP_ref_start = ref_start;
-  size_t* read_DP_sites = NULL;
-  size_t n_read_DP_sites;
-  char* read_DP_seq = NULL;
+  size_t* read_DP_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference));
+  size_t n_read_DP_sites = linearReferenceStructure_n_sites(reference);
+	fprintf(stderr, "%d sites\n", n_read_DP_sites);
+  char* read_DP_seq = (char*)malloc(ref_end - ref_start + 1);
+	strcpy(read_DP_seq, reference_sequence);
   
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
@@ -78,10 +81,11 @@ int main(int argc, char* argv[]) {
                                  recombination_penalty,
                                  cohort_size,
                                  share_rate,
-                                 &read_DP_sites,
+                                 read_DP_sites,
                                  &n_read_DP_sites,
-                                 &read_DP_seq);
-
+                                 read_DP_seq);
+	fprintf(stderr, "made simulated read input\n");
+	// 
 	haplotypeManager* hap_manager = haplotypeManager_build_int_from_index(
             reference_sequence,
             ref_end - ref_start,
@@ -94,24 +98,31 @@ int main(int argc, char* argv[]) {
             read_DP_sites,
             read_DP_seq, 
             threshold);
-
-	haplotypeStateNode* n = haplotypeManager_get_root_node(hap_manager);
-	haplotypeStateNode* options[5];
-	// fills options-vector with children of n; options vector must be
-	// a minimum of number of children
-	haplotypeStateNode_get_next_options(n, options);
-
-	for(int i = 0; i < haplotypeStateNode_number_of_children(n); i++) {
-		n = options[i];
-		// what allele does this node have?		
-		char allele = haplotypeStateNode_allele(n);
-		printf("%c %lf\n", allele, haplotypeStateNode_local_probability(n, hap_manager));
-	}
 	
-	// print the whole thing
-	haplotypeManager_print_transition_likelihoods(hap_manager);
-	printf("\n");
-	haplotypeManager_print_prefix_likelihoods(hap_manager);
-		
+	fprintf(stderr, "initialized haplotype manager\n");
+	
+	haplotypeManager_delete(hap_manager);
+	free(read_DP_sites);
+	free(read_DP_seq);
+	free(reference_sequence);
+	
+	// haplotypeStateNode* n = haplotypeManager_get_root_node(hap_manager);
+	// haplotypeStateNode* options[5];
+	// // fills options-vector with children of n; options vector must be
+	// // a minimum of number of children
+	// haplotypeStateNode_get_next_options(n, options);
+	// 
+	// for(int i = 0; i < haplotypeStateNode_number_of_children(n); i++) {
+	// 	n = options[i];
+	// 	// what allele does this node have?		
+	// 	char allele = haplotypeStateNode_allele(n);
+	// 	printf("%c %lf\n", allele, haplotypeStateNode_local_probability(n, hap_manager));
+	// }
+	// 
+	// // print the whole thing
+	// haplotypeManager_print_transition_likelihoods(hap_manager);
+	// printf("\n");
+	// haplotypeManager_print_prefix_likelihoods(hap_manager);
+	// 	
 	return 0;
 }

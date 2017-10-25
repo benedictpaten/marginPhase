@@ -15,7 +15,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   size_t number_of_haplotypes = bcf_hdr_nsamples(cohort_hdr) * 2;
   size_t length = ref_end - ref_start;
   
-  linearReferenceStructure* reference = linearReferenceStructure_init_empty(length);
+  linearReferenceStructure* reference = linearReferenceStructure_init_empty(ref_start);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
   int built_initial_span = 0;
   
@@ -62,6 +62,8 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
           }
         }
       }
+    } else if(site > ref_end) {
+      break;
     }
   }
   fprintf(stderr, "]\n");
