@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 	faidx_t* ref_seq_fai = fai_load(argv[1]);
 	int32_t length = ref_end;
 	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &length);
-	fprintf(stderr, "loaded reference sequence of length %d\n", strlen(reference_sequence));
+	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(reference_sequence));
 	if(ref_end == -1) {
 		ref_end = strlen(reference_sequence);
 		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
@@ -62,12 +62,11 @@ int main(int argc, char* argv[]) {
   //      3. position of sites
   //      4. the full sequence inferred for the read; can be unassigned at sites
   
-  size_t read_DP_ref_start = ref_start;
-  size_t* read_DP_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference));
-  size_t n_read_DP_sites = linearReferenceStructure_n_sites(reference);
-	fprintf(stderr, "%d sites\n", n_read_DP_sites);
-  char* read_DP_seq = (char*)malloc(ref_end - ref_start + 1);
-	strcpy(read_DP_seq, reference_sequence);
+  size_t read_ref_start = ref_start;
+  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  char* read_seq = (char*)malloc(strlen(reference_sequence) + 1);
+	strcpy(read_seq, reference_sequence);
   
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
@@ -81,11 +80,9 @@ int main(int argc, char* argv[]) {
                                  recombination_penalty,
                                  cohort_size,
                                  share_rate,
-                                 read_DP_sites,
-                                 &n_read_DP_sites,
-                                 read_DP_seq);
-	fprintf(stderr, "made simulated read input\n");
-	// 
+                                 read_sites,
+                                 read_seq);
+	
 	haplotypeManager* hap_manager = haplotypeManager_build_int_from_index(
             reference_sequence,
             ref_end - ref_start,
@@ -93,36 +90,27 @@ int main(int argc, char* argv[]) {
             cohort,
             mutation_penalty, 
             recombination_penalty,
-            read_DP_ref_start,
-            n_read_DP_sites,
-            read_DP_sites,
-            read_DP_seq, 
+            read_ref_start,
+            n_read_sites,
+            read_sites,
+            read_seq, 
             threshold);
-	
-	fprintf(stderr, "initialized haplotype manager\n");
-	
-	haplotypeManager_delete(hap_manager);
-	free(read_DP_sites);
-	free(read_DP_seq);
-	free(reference_sequence);
-	
+
 	// haplotypeStateNode* n = haplotypeManager_get_root_node(hap_manager);
 	// haplotypeStateNode* options[5];
 	// // fills options-vector with children of n; options vector must be
 	// // a minimum of number of children
 	// haplotypeStateNode_get_next_options(n, options);
-	// 
-	// for(int i = 0; i < haplotypeStateNode_number_of_children(n); i++) {
-	// 	n = options[i];
-	// 	// what allele does this node have?		
-	// 	char allele = haplotypeStateNode_allele(n);
-	// 	printf("%c %lf\n", allele, haplotypeStateNode_local_probability(n, hap_manager));
-	// }
-	// 
-	// // print the whole thing
-	// haplotypeManager_print_transition_likelihoods(hap_manager);
-	// printf("\n");
+	
+	printf("\n");
+	haplotypeManager_print_terminal_nodes(hap_manager);
 	// haplotypeManager_print_prefix_likelihoods(hap_manager);
-	// 	
+	
+	haplotypeManager_delete(hap_manager);
+	free(read_sites);
+	free(read_seq);
+	free(reference_sequence);
+	free(ref_seq_fai);
+
 	return 0;
 }

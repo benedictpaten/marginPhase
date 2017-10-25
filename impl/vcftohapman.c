@@ -21,7 +21,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   
   printf("building haplotype cohort matrix, progress: [");
   fflush(stdout);
-  int stepsize = (ref_end - ref_start)/25;
+  int stepsize = (ref_end - ref_start)/50;
   int progress;
   int steps;
   int laststep = 0;
@@ -61,6 +61,7 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
             fflush(stdout);
           }
         }
+        free(gt_arr);
       }
     } else if(site > ref_end) {
       break;
@@ -71,13 +72,13 @@ int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linear
   fprintf(stderr, "number of sites %d\n", sites_added);
   
   linearReferenceStructure_calc_spans(reference, ref_end - ref_start);
-  fprintf(stderr, "calculated reference spans\n");
   haplotypeCohort_populate_counts(cohort);
-  fprintf(stderr, "expanded cohort matrix for fast queries\n");
 
   *return_lr = reference;
   *return_cohort = cohort;
   
+  free(cohort_hdr);
+  free(record);
   vcf_close(cohort_vcf);
   return 1;
 }
