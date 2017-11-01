@@ -458,6 +458,21 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
                     kputc(h2AlphChar, &str);
                     kputc(',', &str);
                     kputc(h1AlphChar, &str);
+                } else {
+                    if (firstVariantInPhaseBlock) {
+                        gt_info[0] = bcf_gt_unphased(1);
+                        gt_info[1] = bcf_gt_unphased(2);
+                        firstVariantInPhaseBlock = false;
+                        phaseSet = bcf_rec->pos+1;
+                    } else {
+                        gt_info[0] = bcf_gt_phased(1);
+                        gt_info[1] = bcf_gt_phased(2);
+                    }
+                    kputc(refChar, &str);
+                    kputc(',', &str);
+                    kputc(h1AlphChar, &str);
+                    kputc(',', &str);
+                    kputc(h2AlphChar, &str);
                 }
 
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
@@ -543,6 +558,21 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
                     kputc(h2AlphChar, &str);
                     kputc(',', &str);
                     kputc(h1AlphChar, &str);
+                } else {
+                    if (firstVariantInPhaseBlock) {
+                        gt_info[0] = bcf_gt_unphased(1);
+                        gt_info[1] = bcf_gt_unphased(2);
+                        firstVariantInPhaseBlock = false;
+                        phaseSet = bcf_rec->pos+1;
+                    } else {
+                        gt_info[0] = bcf_gt_phased(1);
+                        gt_info[1] = bcf_gt_phased(2);
+                    }
+                    kputc(refChar, &str);
+                    kputc(',', &str);
+                    kputc(h1AlphChar, &str);
+                    kputc(',', &str);
+                    kputc(h2AlphChar, &str);
                 }
 
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
@@ -578,8 +608,17 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
     int h2AlphVal = gF->haplotypeString2[gF->length - 1];
     char h1AlphChar = stBaseMapper_getCharForValue(baseMapper, h1AlphVal);
     char h2AlphChar = stBaseMapper_getCharForValue(baseMapper, h2AlphVal);
-    float genotypeProb = gF->genotypeProbs[gF->length - 1];
     char refChar = toupper(referenceSeq[gF->length - 1 + gF->refStart - 1]);
+
+    // prep
+    bcf_clear1(bcf_rec);
+    str.l = 0;
+    bcf_rec->rid = bcf_hdr_name2id(bcf_hdr, gF->referenceName);
+    bcf_rec->pos  = gF->length - 1 + gF->refStart - 1; // off by one?
+    gt_info[0] = bcf_gt_phased(0);
+    gt_info[1] = bcf_gt_phased(1);
+    dp_info[0] = gF->readDepth[gF->length-1];
+    bcf_update_format(bcf_hdr, bcf_rec, "DP", dp_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
 
     if (h1AlphChar != '-' && h2AlphChar != '-') {
         if (gvcf || (h1AlphChar != h2AlphChar || h1AlphChar != refChar || h2AlphChar != refChar)) {
@@ -597,7 +636,6 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
             bcf_write1(out, bcf_hdr, bcf_rec);
         }
     }
-
 
     // cleanup
     free(str.s);
