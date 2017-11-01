@@ -5,18 +5,23 @@
 #include "interface.h"
 #include "vcftohapman.h"
 
+// TODO for Benedict
 // placeholder for actual read-partitioning hmm state
 typedef struct hmmstate hmmstate;
+
 typedef haplotypeStateNode hsn_t;
 
 static size_t SIZEOF_PTR = sizeof(hmmstate*);
 static size_t MAX_ALLELE_PAIRS = 25;
+// TODO for Benedict: is there an upper bound on number of children a read
+// partitioning HMM state should have?
 static size_t MAX_HMM_CHILDREN = 50;
 // static size_t MAX_CHUNK_SIZE = 100000;
 
 static haplotypeManager* hap_manager = NULL;
 
-// TODO fill in how to extract probability from read partitioning state
+// TODO for Benedict
+// fill in how to extract probability from read partitioning state
 double combined_likelihood(hmmstate* x, hsn_t* y, hsn_t* z) {
   return haplotypeStateNode_total_probability(y)
          * haplotypeStateNode_total_probability(z)
@@ -24,10 +29,12 @@ double combined_likelihood(hmmstate* x, hsn_t* y, hsn_t* z) {
          ;
 }
 
+// TODO for Benedict
 void append_hmm_children(hmmstate* x, hmmstate** write_to, size_t* n_writing, size_t start) {
   
 }
 
+// TODO for Benedict
 void get_next_alleles(hmmstate* x, char* next_alleles, int* n_next_alleles) {
   
 }
@@ -210,8 +217,8 @@ void build_next_combined_column_non_ref(
 }
 
 int main(int argc, char* argv[]) {
-  if(argc != 8) {
-		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] [share rate]\n");
+  if(argc != 7) {
+		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff]\n");
 		return 1;
 	}
   
@@ -244,33 +251,35 @@ int main(int argc, char* argv[]) {
 		fprintf(stderr, "built haplotypeCohort from vcf %s\n", argv[3]);
 	}
   
-  // SIMULATE READ DP (for simplicity)
-  // in general, the information needed is:
-  //      1. reference start position
-  //      2. number of sites
-  //      3. position of sites
-  //      4. the full sequence inferred for the read; can be unassigned at sites
+  // TODO for Benedict
+  // build read partitioning HMM thing
   
-  size_t read_region_beg = region_beg;
-  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  // TODO for Benedict
+  // Need
+  // 1. number of sites
   size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  // TODO for Benedict: replace with
+  // size_t n_read_sites = ...
+  
+  // 2. position of sites
+  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  // TODO for Benedict: replace with
+  // size_t* read_sites = ...
+  
+  // 3. the full sequence inferred for the read; can be unassigned at sites
   char* read_seq = (char*)malloc(strlen(ref_seq) + 1);
-	strcpy(read_seq, ref_seq);
+  strcpy(read_seq, ref_seq);
+  // TODO for Benedict: replace with
+  // size_t* read_seq = ...
+  
+  // assume for now that beginning of read-evaluation area is same as the
+  // beginning position of the reference built
+  size_t read_region_beg = region_beg;
   
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
   double threshold = atof(argv[6]);
-  double share_rate = atof(argv[7]);
   size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
-  
-  haplotypeCohort_sim_read_query(cohort,
-                                 ref_seq,
-                                 mutation_penalty,
-                                 recombination_penalty,
-                                 cohort_size,
-                                 share_rate,
-                                 read_sites,
-                                 read_seq);
 	
 	hap_manager = haplotypeManager_build_from_idx_intrvl_bdd(
             ref_seq,
@@ -285,15 +294,20 @@ int main(int argc, char* argv[]) {
             read_seq, 
             threshold);
   
-  size_t n_columns;
+  size_t n_columns = n_read_sites;
   
-  hmmstate** x_first_column = NULL;
-  size_t n_x_first;
-  
+  // COMBINED MODEL FULL MATRIX, indexed by column then flattened (x, y, z)
+  // matrix
   hmmstate*** C_x = NULL;
   hsn_t*** C_y = NULL;
   hsn_t*** C_z = NULL;
   size_t* C_state_counts = NULL;
+  
+  // TODO for Benedict
+  // need to build all read partitioning hmm states for first column independent
+  // of haplotype model
+  hmmstate** x_first_column = NULL;
+  size_t n_x_first;
   
   build_first_combined_column(
             x_first_column,
