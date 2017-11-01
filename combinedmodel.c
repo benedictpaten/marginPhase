@@ -12,15 +12,32 @@ typedef haplotypeStateNode hsn_t;
 static size_t SIZEOF_PTR = sizeof(hmmstate*);
 static size_t MAX_ALLELE_PAIRS = 25;
 static size_t MAX_HMM_CHILDREN = 50;
-// static size_t MAX_CHUNK_SIZE = ;
-// static haplotypeManager* hap_manager;
+// static size_t MAX_CHUNK_SIZE = 100000;
+
+static haplotypeManager* hap_manager = NULL;
+
+// TODO fill in how to extract probability from read partitioning state
+double combined_likelihood(hmmstate* x, hsn_t* y, hsn_t* z) {
+  return haplotypeStateNode_total_probability(y)
+         * haplotypeStateNode_total_probability(z)
+         // hmmstate_probability(x)
+         ;
+}
+
+void append_hmm_children(hmmstate* x, hmmstate** write_to, size_t* n_writing, size_t start) {
+  
+}
+
+void get_next_alleles(hmmstate* x, char* next_alleles, int* n_next_alleles) {
+  
+}
 
 // void chunk() {
 //   // chunk procedure
 // 
 //   // ensure that this is ceil...
-//   size_t n_chunks = n_old * MAX_HMM_CHILDREN * MAX_ALLELE_PAIRS / MAX_CHUNK_SIZE;
-//   size_t chunk_prnt_size = ;
+//   size_t n_chunks = (n_old * MAX_HMM_CHILDREN * MAX_ALLELE_PAIRS) / MAX_CHUNK_SIZE + ;
+//   size_t chunk_prnt_size = (n_old * MAX_HMM_CHILDREN * MAX_ALLELE_PAIRS) / n_chunks;
 // 
 // 
 //   hmmstate*** new_x_chunks = malloc(n_chunks * SIZEOF_PTR);
@@ -52,78 +69,64 @@ static size_t MAX_HMM_CHILDREN = 50;
 //   return_y = malloc(n_states * SIZEOF_PTR);
 //   return_z = malloc(n_states * SIZEOF_PTR);
 // }
-// 
-// void build_first_combined_column(
-//           hmmstate** x_first_column,        // first column hmmstates only
-//           size_t n_x_first,
-//           hmmstate** return_x,              // will write to this, pass in NULL
-//           hsn_t** return_y,    // will write to this, pass in NULL
-//           hsn_t** return_z,    // will write to this, pass in NULL
-//           size_t* return_state_count,       // will overwrite this
-//           double threshold) {               // to trim cross product states
-//   hmmstate** new_x = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
-//   hsn_t** new_y = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
-//   hsn_t** new_z = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
-// 
-//   // hSN is first column iff child of root
-//   hsn_t* root = haplotypeManager_get_root_node(hap_manager);
-//   
-//   // temp storage for interleaved allele pairs
-//   char* next_alleles = malloc(MAX_ALLELE_PAIRS * 2);
-//   int n_next_alleles;
-// 
-//   j = i = 0;
-// 
-//   for(i < n_x_first; i++) {
-//   	get_next_alleles(x_opt[i], next_alleles, &n_next_alleles);
-//   	for(size_t k = 0; k < n_next_alleles; k++) {
-//   		new_x[j] = x_opt[i];
-//   		new_y[j] = hsn_t_get_child(root, next_alleles[k * 2]);
-//   		new_z[j] = hsn_t_get_child(root, next_alleles[k * 2 + 1]);
-//   		if(new_y[j] != NULL && new_z[j] != NULL) {
-//   			if(combined_likelihood(new_x[j], new_y[j], new_z[j]) > threshold) {
-//   				j++;
-//   			}
-//         // otherwise overwrite index j on next iteration
-//   		}
-//   	}
-//   }
-//   *return_state_count = j;
-//   return_x = malloc(return_state_count, SIZEOF_PTR);
-//   return_y = malloc(return_state_count, SIZEOF_PTR);
-//   return_z = malloc(return_state_count, SIZEOF_PTR);
-//   memcpy(return_x, new_x, return_state_count * SIZEOF_PTR);
-//   memcpy(return_y, new_y, return_state_count * SIZEOF_PTR);
-//   memcpy(return_z, new_z, return_state_count * SIZEOF_PTR);
-//   free(new_x);
-//   free(new_y);
-//   free(new_y);
-// }
 
-// TODO fill in how to extract probability from read partitioning state
-double combined_likelihood(hmmstate* x, hsn_t* y, hsn_t* z) {
-  return haplotypeStateNode_total_probability(y)
-         * haplotypeStateNode_total_probability(z)
-         // hmmstate_probability(x)
-         ;
-}
+void build_first_combined_column(
+          hmmstate** x_first_column,        // first column hmmstates only
+          size_t n_x_first,
+          hmmstate** return_x,              // will write to this, pass in NULL
+          hsn_t** return_y,                 // will write to this, pass in NULL
+          hsn_t** return_z,                 // will write to this, pass in NULL
+          size_t* return_state_count,       // will overwrite this
+          double threshold) {               // to trim cross product states
+  hmmstate** new_x = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
+  hsn_t** new_y = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
+  hsn_t** new_z = malloc(n_x_first * MAX_ALLELE_PAIRS * SIZEOF_PTR);
 
-void append_hmm_children(hmmstate* x, hmmstate** write_to, size_t* n_writing, size_t start) {
+  // hSN is first column iff child of root
+  hsn_t* root = haplotypeManager_get_root_node(hap_manager);
   
-}
+  // temp storage for interleaved allele pairs
+  char* next_alleles = malloc(MAX_ALLELE_PAIRS * 2);
+  int n_next_alleles;
 
-void get_next_alleles(hmmstate* x, char* next_alleles, int* n_next_alleles) {
+  size_t j, i;
+  j = i = 0;
+
+  for(i; i < n_x_first; i++) {
+  	get_next_alleles(x_first_column[i], next_alleles, &n_next_alleles);
+  	for(size_t k = 0; k < n_next_alleles; k++) {
+  		new_x[j] = x_first_column[i];
+  		new_y[j] = haplotypeStateNode_get_child(root, next_alleles[k * 2]);
+  		new_z[j] = haplotypeStateNode_get_child(root, next_alleles[k * 2 + 1]);
+  		if(new_y[j] != NULL && new_z[j] != NULL) {
+  			if(combined_likelihood(new_x[j], new_y[j], new_z[j]) > threshold) {
+  				j++;
+  			}
+        // otherwise overwrite index j on next iteration
+  		}
+  	}
+  }
   
+  *return_state_count = j + 1;
+  return_x = malloc(*return_state_count * SIZEOF_PTR);
+  return_y = malloc(*return_state_count * SIZEOF_PTR);
+  return_z = malloc(*return_state_count * SIZEOF_PTR);
+  memcpy(return_x, new_x, *return_state_count * SIZEOF_PTR);
+  memcpy(return_y, new_y, *return_state_count * SIZEOF_PTR);
+  memcpy(return_z, new_z, *return_state_count * SIZEOF_PTR);
+  free(new_x);
+  free(new_y);
+  free(new_y);
 }
 
 void build_next_combined_column(
           hmmstate** old_x,                 // last column, passed as 3 arrays; 
-          hsn_t** old_y,       //    entries with same read hmm
-          hsn_t** old_z,       //    state are contiguous entries
+          hsn_t** old_y,                    //    entries with same read hmm
+          hsn_t** old_z,                    //    state are contiguous entries
           size_t old_state_count,           
           hmmstate** return_x,              // will write to this, pass in NULL
-          hsn_t** return_y,    // will write to this, pass in NULL
-          hsn_t** return_z,    // will write to this, pass in NULL
+          hsn_t** return_y,                 // will write to this, pass in NULL
+          hsn_t** return_z,                 // will write to this, pass in NULL
           size_t* return_state_count,       // will overwrite this
           double threshold) {               // to trim cross product states
   
@@ -178,7 +181,7 @@ void build_next_combined_column(
   free(y_opt_prnt);
   free(z_opt_prnt);
   
-  *return_state_count = j;
+  *return_state_count = j + 1;
   // return_x = new_x;
   // return_y = new_y;
   // return_z = new_z;
@@ -193,6 +196,126 @@ void build_next_combined_column(
   free(new_y);
 }
 
+void build_next_combined_column_non_ref(
+          hmmstate** old_x,                 // last column, passed as 3 arrays; 
+          hsn_t** old_y,                    //    entries with same read hmm
+          hsn_t** old_z,                    //    state are contiguous entries
+          size_t old_state_count,           
+          hmmstate** return_x,              // will write to this, pass in NULL
+          hsn_t** return_y,                 // will write to this, pass in NULL
+          hsn_t** return_z,                 // will write to this, pass in NULL
+          size_t* return_state_count,       // will overwrite this
+          double threshold) {
+
+}
+
 int main(int argc, char* argv[]) {
+  if(argc != 8) {
+		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] [share rate]\n");
+		return 1;
+	}
+  
+  char* interval_str = argv[2];
+	fprintf(stderr, "loading reference interval %s from %s\n", argv[2], argv[1]);
+  int32_t region_beg;
+  int32_t region_end;
+  get_interval_bounds(interval_str, &region_beg, &region_end);
+	if(region_end != -1) {
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
+	}
+	faidx_t* ref_seq_fai = fai_load(argv[1]);
+	int32_t length = region_end;
+	char* ref_seq = fai_fetch(ref_seq_fai, interval_str, &length);
+	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(ref_seq));
+	if(region_end == -1) {
+		region_end = strlen(ref_seq);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
+	}
+  
+  // build index  
+	linearReferenceStructure* reference = NULL;
+	haplotypeCohort* cohort = NULL;
+	int built_index = lh_indices_from_vcf(argv[3], region_beg, region_end, &reference, &cohort);
+	
+	if(built_index == 0) {
+		fprintf(stderr, "Input vcf is empty\n");
+		return 1;
+	} else {
+		fprintf(stderr, "built haplotypeCohort from vcf %s\n", argv[3]);
+	}
+  
+  // SIMULATE READ DP (for simplicity)
+  // in general, the information needed is:
+  //      1. reference start position
+  //      2. number of sites
+  //      3. position of sites
+  //      4. the full sequence inferred for the read; can be unassigned at sites
+  
+  size_t read_region_beg = region_beg;
+  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  char* read_seq = (char*)malloc(strlen(ref_seq) + 1);
+	strcpy(read_seq, ref_seq);
+  
+  double recombination_penalty = atof(argv[4]);
+  double mutation_penalty = atof(argv[5]);
+  double threshold = atof(argv[6]);
+  double share_rate = atof(argv[7]);
+  size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
+  
+  haplotypeCohort_sim_read_query(cohort,
+                                 ref_seq,
+                                 mutation_penalty,
+                                 recombination_penalty,
+                                 cohort_size,
+                                 share_rate,
+                                 read_sites,
+                                 read_seq);
+	
+	hap_manager = haplotypeManager_build_from_idx_intrvl_bdd(
+            ref_seq,
+            region_end - region_beg,
+            reference,
+            cohort,
+            mutation_penalty, 
+            recombination_penalty,
+            read_region_beg,
+            n_read_sites,
+            read_sites,
+            read_seq, 
+            threshold);
+  
+  size_t n_columns;
+  
+  hmmstate** x_first_column = NULL;
+  size_t n_x_first;
+  
+  hmmstate*** C_x = NULL;
+  hsn_t*** C_y = NULL;
+  hsn_t*** C_z = NULL;
+  size_t* C_state_counts = NULL;
+  
+  build_first_combined_column(
+            x_first_column,
+            n_x_first,
+            C_x[0], 
+            C_y[0],
+            C_z[0],
+            &C_state_counts[0],
+            threshold);
+  
+  for(size_t i = 0; i < n_columns - 1; i++) {
+    build_next_combined_column(
+      C_x[i], 
+      C_y[i],
+      C_z[i],
+      C_state_counts[i],           
+      C_x[i + 1], 
+      C_y[i + 1],
+      C_z[i + 1],
+      &C_state_counts[i + 1], 
+      threshold);
+  }
+  
   return 0;
 }

@@ -26,27 +26,28 @@ int main(int argc, char* argv[]) {
 	}
 
   // Parse interval input to get start position, end position, ref sequence
-  char* interval_str = argv[2];
+  // Extract reference sequence from fasta
+	char* interval_str = argv[2];
 	fprintf(stderr, "loading reference interval %s from %s\n", argv[2], argv[1]);
-  int32_t ref_start;
-  int32_t ref_end;
-  get_interval_bounds(interval_str, &ref_start, &ref_end);
-	if(ref_end != -1) {
-		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+  int32_t region_beg;
+  int32_t region_end;
+  get_interval_bounds(interval_str, &region_beg, &region_end);
+	if(region_end != -1) {
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
 	}
 	faidx_t* ref_seq_fai = fai_load(argv[1]);
-	int32_t length = ref_end;
-	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &length);
-	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(reference_sequence));
-	if(ref_end == -1) {
-		ref_end = strlen(reference_sequence);
-		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+	int32_t length = region_end;
+	char* ref_seq = fai_fetch(ref_seq_fai, interval_str, &length);
+	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(ref_seq));
+	if(region_end == -1) {
+		region_end = strlen(ref_seq);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
 	}
   
   // build index  
 	linearReferenceStructure* reference = NULL;
 	haplotypeCohort* cohort = NULL;
-	int built_index = lh_indices_from_vcf(argv[3], ref_start, ref_end, &reference, &cohort);
+	int built_index = lh_indices_from_vcf(argv[3], region_beg, region_end, &reference, &cohort);
 	
 	if(built_index == 0) {
 		fprintf(stderr, "Input vcf is empty\n");
@@ -62,11 +63,11 @@ int main(int argc, char* argv[]) {
   //      3. position of sites
   //      4. the full sequence inferred for the read; can be unassigned at sites
   
-  size_t read_ref_start = ref_start;
+  size_t read_region_beg = region_beg;
   size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
   size_t n_read_sites = linearReferenceStructure_n_sites(reference);
-  char* read_seq = (char*)malloc(strlen(reference_sequence) + 1);
-	strcpy(read_seq, reference_sequence);
+  char* read_seq = (char*)malloc(strlen(ref_seq) + 1);
+	strcpy(read_seq, ref_seq);
   
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
@@ -75,7 +76,7 @@ int main(int argc, char* argv[]) {
   size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
   
   haplotypeCohort_sim_read_query(cohort,
-                                 reference_sequence,
+                                 ref_seq,
                                  mutation_penalty,
                                  recombination_penalty,
                                  cohort_size,
@@ -83,14 +84,14 @@ int main(int argc, char* argv[]) {
                                  read_sites,
                                  read_seq);
 	
-	haplotypeManager* hap_manager = haplotypeManager_build_int_from_index(
-            reference_sequence,
-            ref_end - ref_start,
+	haplotypeManager* hap_manager = haplotypeManager_build_from_idx_intrvl_bdd(
+            ref_seq,
+            region_end - region_beg,
             reference,
             cohort,
             mutation_penalty, 
             recombination_penalty,
-            read_ref_start,
+            read_region_beg,
             n_read_sites,
             read_sites,
             read_seq, 
@@ -109,7 +110,7 @@ int main(int argc, char* argv[]) {
 	haplotypeManager_delete(hap_manager);
 	free(read_sites);
 	free(read_seq);
-	free(reference_sequence);
+	free(ref_seq);
 	free(ref_seq_fai);
 
 	return 0;
