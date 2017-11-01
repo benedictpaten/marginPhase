@@ -1,0 +1,116 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <htslib/faidx.h>
+#include "interface.h"
+#include "vcftohapman.h"
+
+// arguments:
+// 1. reference sequence path
+//      expects a FASTA
+// 2. reference interval
+//      expects format "chr:start-end"
+// 3. vcf path
+//      expects a vcf
+// 4. recombination penalty
+//      expects a log-scale value < 0
+// 5. mutation penalty
+//      expects a log-scale value < 0
+// 6. trimming cutoff (log scale)
+//      expects a log-scale value <= 0; 0 symbolizes no cutoff
+// 7. share rate (what proportion of cohort sites are sites in the simulated read input)
+int main(int argc, char* argv[]) {
+	if(argc != 8) {
+		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] [share rate]\n");
+		return 1;
+	}
+
+  // Parse interval input to get start position, end position, ref sequence
+  char* interval_str = argv[2];
+	fprintf(stderr, "loading reference interval %s from %s\n", argv[2], argv[1]);
+  int32_t ref_start;
+  int32_t ref_end;
+  get_interval_bounds(interval_str, &ref_start, &ref_end);
+	if(ref_end != -1) {
+		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+	}
+	faidx_t* ref_seq_fai = fai_load(argv[1]);
+	int32_t length = ref_end;
+	char* reference_sequence = fai_fetch(ref_seq_fai, interval_str, &length);
+	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(reference_sequence));
+	if(ref_end == -1) {
+		ref_end = strlen(reference_sequence);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", ref_start, ref_end);
+	}
+  
+  // build index  
+	linearReferenceStructure* reference = NULL;
+	haplotypeCohort* cohort = NULL;
+	int built_index = lh_indices_from_vcf(argv[3], ref_start, ref_end, &reference, &cohort);
+	
+	if(built_index == 0) {
+		fprintf(stderr, "Input vcf is empty\n");
+		return 1;
+	} else {
+		fprintf(stderr, "built haplotypeCohort from vcf %s\n", argv[3]);
+	}
+  
+  // SIMULATE READ DP (for simplicity)
+  // in general, the information needed is:
+  //      1. reference start position
+  //      2. number of sites
+  //      3. position of sites
+  //      4. the full sequence inferred for the read; can be unassigned at sites
+  
+  size_t read_ref_start = ref_start;
+  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  char* read_seq = (char*)malloc(strlen(reference_sequence) + 1);
+	strcpy(read_seq, reference_sequence);
+  
+  double recombination_penalty = atof(argv[4]);
+  double mutation_penalty = atof(argv[5]);
+  double threshold = atof(argv[6]);
+  double share_rate = atof(argv[7]);
+  size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
+  
+  haplotypeCohort_sim_read_query(cohort,
+                                 reference_sequence,
+                                 mutation_penalty,
+                                 recombination_penalty,
+                                 cohort_size,
+                                 share_rate,
+                                 read_sites,
+                                 read_seq);
+	
+	haplotypeManager* hap_manager = haplotypeManager_build_int_from_index(
+            reference_sequence,
+            ref_end - ref_start,
+            reference,
+            cohort,
+            mutation_penalty, 
+            recombination_penalty,
+            read_ref_start,
+            n_read_sites,
+            read_sites,
+            read_seq, 
+            threshold);
+
+	// haplotypeStateNode* n = haplotypeManager_get_root_node(hap_manager);
+	// haplotypeStateNode* options[5];
+	// // fills options-vector with children of n; options vector must be
+	// // a minimum of number of children
+	// haplotypeStateNode_get_next_options(n, options);
+	
+	printf("\n");
+	haplotypeManager_print_terminal_nodes(hap_manager);
+	// haplotypeManager_print_prefix_likelihoods(hap_manager);
+	
+	haplotypeManager_delete(hap_manager);
+	free(read_sites);
+	free(read_seq);
+	free(reference_sequence);
+	free(ref_seq_fai);
+
+	return 0;
+}
