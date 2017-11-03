@@ -457,10 +457,8 @@ def merge_chunks(job, config, chunk_infos):
             error = "{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
                 config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk)
             job.fileStore.logToMaster(error)
-            #TODO this is a hack!!
             if CONTINUE_AFTER_FAILURE:
                 continue
-            #TODO fix this!!
             raise UserError(error)
 
         # fully merged vcf file
