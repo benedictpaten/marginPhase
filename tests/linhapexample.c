@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <htslib/faidx.h>
 #include "interface.h"
 #include "vcftohapman.h"
@@ -20,8 +21,8 @@
 //      expects a log-scale value <= 0; 0 symbolizes no cutoff
 // 7. share rate (what proportion of cohort sites are sites in the simulated read input)
 int main(int argc, char* argv[]) {
-	if(argc != 8) {
-		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff] [share rate]\n");
+	if(argc != 7) {
+		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [trimming cutoff]\n");
 		return 1;
 	}
 
@@ -64,27 +65,33 @@ int main(int argc, char* argv[]) {
   //      4. the full sequence inferred for the read; can be unassigned at sites
   
   size_t read_region_beg = region_beg;
-  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
-  size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  size_t* read_sites = NULL;
+  size_t n_read_sites = 0;
   char* read_seq = (char*)malloc(strlen(ref_seq) + 1);
 	strcpy(read_seq, ref_seq);
+	char* r_alleles_1 = NULL;
+  char* r_alleles_2 = NULL;
   
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
   double threshold = atof(argv[6]);
-  double share_rate = atof(argv[7]);
   size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
   
-  haplotypeCohort_sim_read_query(cohort,
+  haplotypeCohort_sim_read_query_2(cohort,
                                  ref_seq,
                                  mutation_penalty,
                                  recombination_penalty,
-                                 cohort_size,
-                                 share_rate,
-                                 read_sites,
-                                 read_seq);
+																 0,
+                                 &read_sites,
+																 &n_read_sites,
+                                 read_seq,
+																 &r_alleles_1,
+															 	 &r_alleles_2);
 	
-	haplotypeManager* hap_manager = haplotypeManager_build_from_idx_intrvl_bdd(
+	clock_t start, end;
+  double cpu_time_used;
+
+	haplotypeManager* hap_manager = haplotypeManager_build_from_idx(
             ref_seq,
             region_end - region_beg,
             reference,
@@ -94,16 +101,17 @@ int main(int argc, char* argv[]) {
             read_region_beg,
             n_read_sites,
             read_sites,
-            read_seq, 
-            threshold);
-
-	// haplotypeStateNode* n = haplotypeManager_get_root_node(hap_manager);
-	// haplotypeStateNode* options[5];
-	// // fills options-vector with children of n; options vector must be
-	// // a minimum of number of children
-	// haplotypeStateNode_get_next_options(n, options);
-	
-	printf("\n");
+            read_seq);
+						
+	haplotypeManager_init_opt_idx(hap_manager,
+														  	r_alleles_1,
+																r_alleles_2);
+		
+	start = clock();
+	haplotypeManager_build_tree_interval(hap_manager, threshold);
+	end = clock();
+	cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+	printf("%f\n", cpu_time_used);
 	haplotypeManager_print_terminal_nodes(hap_manager);
 	// haplotypeManager_print_prefix_likelihoods(hap_manager);
 	

@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) {
   double threshold = atof(argv[6]);
   size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
 	
-	hap_manager = haplotypeManager_build_from_idx_intrvl_bdd(
+	hap_manager = haplotypeManager_build_from_idx(
             ref_seq,
             region_end - region_beg,
             reference,
@@ -291,8 +291,9 @@ int main(int argc, char* argv[]) {
             read_region_beg,
             n_read_sites,
             read_sites,
-            read_seq, 
-            threshold);
+            read_seq);
+  
+	haplotypeManager_build_tree_interval(hap_manager, threshold);
   
   size_t n_columns = n_read_sites;
   
