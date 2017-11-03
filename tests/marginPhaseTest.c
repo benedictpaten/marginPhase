@@ -51,16 +51,16 @@ void test_5kbGenotyping(CuTest *testCase) {
 void test_100kbGenotyping(CuTest *testCase) {
 
 //    char *paramsFile = "../params_pacbio_gaps.json";
-//    char *paramsFile = "../params_pacbio_no_gaps.json";
-    char *paramsFile = "../params_nanopore.json";
+    char *paramsFile = "../params_pacbio_currentbest.json";
+//    char *paramsFile = "../params_nanopore_currentbest.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_100kb";
-    bool verbose = true;
+    bool verbose = false;
 
-//    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
-    char *bamFile = "../tests/NA12878.np.chr3.100kb.2.bam";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.0.bam";
+//    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
 //    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
-    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.2.vcf";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
 
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
@@ -75,7 +75,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     st_logInfo("Testing all PacBio regions\n");
 
-    char *paramsFile = "../params_pacbio_gaps.json";
+    char *paramsFile = "../params_pacbio_currentbest.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -130,7 +130,7 @@ void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
 
     st_logInfo("Testing all nanopore regions\n");
 
-    char *paramsFile = "../params_nanopore.json";
+    char *paramsFile = "../params_nanopore_currentbest.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 

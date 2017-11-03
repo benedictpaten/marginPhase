@@ -574,6 +574,10 @@ int main(int argc, char *argv[]) {
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
 
+        if (stSet_size(reads1) < 1 || stSet_size(reads2) < 1) {
+            continue;
+        }
+
         // Refine the genome fragment by repartitoning the reads iteratively
         if(params->roundsOfIterativeRefinement > 0) {
             stGenomeFragment_refineGenomeFragment(gF, reads1, reads2, hmm, path, params->roundsOfIterativeRefinement);

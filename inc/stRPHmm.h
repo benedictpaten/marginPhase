@@ -458,7 +458,14 @@ struct _stGenomeFragment {
     int64_t refStart;
     int64_t length;
     uint8_t *referenceSequence;
-    uint64_t *readDepth;
+
+    // Depth and allele counts
+    uint8_t *hap1Depth;
+    uint8_t *hap2Depth;
+    uint8_t *alleleCountsHap1;
+    uint8_t *alleleCountsHap2;
+    uint8_t *allele2CountsHap1;
+    uint8_t *allele2CountsHap2;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);

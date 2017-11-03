@@ -21,7 +21,14 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
     gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
     gF->referenceSequence = st_calloc(gF->length, sizeof(uint8_t));
-    gF->readDepth = st_calloc(gF->length, sizeof(uint64_t));
+
+    // Allocate depth and count arrays
+    gF->hap1Depth = st_calloc(gF->length, sizeof(uint8_t));
+    gF->hap2Depth = st_calloc(gF->length, sizeof(uint8_t));
+    gF->alleleCountsHap1 = st_calloc(gF->length, sizeof(uint8_t));
+    gF->alleleCountsHap2 = st_calloc(gF->length, sizeof(uint8_t));
+    gF->allele2CountsHap1 = st_calloc(gF->length, sizeof(uint8_t));
+    gF->allele2CountsHap2 = st_calloc(gF->length, sizeof(uint8_t));
 
     // Allocate haplotype arrays
     gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
@@ -175,7 +182,14 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Coordinates
     free(genomeFragment->referenceName);
     free(genomeFragment->referenceSequence);
-    free(genomeFragment->readDepth);
+
+    // Depth and allele counts
+    free(genomeFragment->hap1Depth);
+    free(genomeFragment->hap2Depth);
+    free(genomeFragment->alleleCountsHap1);
+    free(genomeFragment->alleleCountsHap2);
+    free(genomeFragment->allele2CountsHap1);
+    free(genomeFragment->allele2CountsHap2);
 
     // Genotypes
     free(genomeFragment->genotypeString);
