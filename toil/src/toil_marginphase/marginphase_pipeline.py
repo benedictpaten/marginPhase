@@ -470,7 +470,7 @@ def merge_chunks(job, config, chunk_infos):
                         output.write(line)
         _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
                                   chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                  mp_identifier="{}".format(chunk_idx),
                                   reverse_phasing=False)
 
         # all chunk merging is skipped if we only want minimal output
@@ -782,8 +782,8 @@ def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, star
 
             # update (if appropriate)
             if mp_identifier is not None:
-                info.append(TAG_MARGIN_PHASE_IDENTIFIER)
-                tags.append(mp_identifier)
+                info.append(mp_identifier)
+                tags.append(TAG_MARGIN_PHASE_IDENTIFIER)
                 line[-2] = ":".join(tags)
 
             # cleanup
