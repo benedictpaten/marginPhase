@@ -165,6 +165,9 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *reference
     str.l = 0;
     ksprintf(&str, "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set for GT\">");
     bcf_hdr_append(hdr, str.s);
+    str.l = 0;
+    ksprintf(&str, "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read depth\">");
+    bcf_hdr_append(hdr, str.s);
 
 
     // samples
@@ -392,6 +395,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
         gt_info[1] = bcf_gt_phased(1);
         dp_info[0] = gF->hap1Depth[i] + gF->hap2Depth[i];
         bcf_update_info(bcf_hdr, bcf_rec, "DP", dp_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
+        bcf_update_format(bcf_hdr, bcf_rec, "DP", dp_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
 
         char refChar = toupper(referenceSeq[i + gF->refStart - 1]);
         if (gvcf) {
@@ -610,6 +614,7 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
     gt_info[1] = bcf_gt_phased(1);
     dp_info[0] = gF->hap1Depth[gF->length - 1] + gF->hap2Depth[gF->length - 1];
     bcf_update_info(bcf_hdr, bcf_rec, "DP", dp_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
+    bcf_update_format(bcf_hdr, bcf_rec, "DP", dp_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
     // TODO: add phasing info, and allele counts, for last record
 
     if (h1AlphChar != '-' && h2AlphChar != '-') {
