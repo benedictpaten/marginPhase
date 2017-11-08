@@ -457,10 +457,8 @@ def merge_chunks(job, config, chunk_infos):
             error = "{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
                 config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk)
             job.fileStore.logToMaster(error)
-            #TODO this is a hack!!
             if CONTINUE_AFTER_FAILURE:
                 continue
-            #TODO fix this!!
             raise UserError(error)
 
         # fully merged vcf file
@@ -472,7 +470,7 @@ def merge_chunks(job, config, chunk_infos):
                         output.write(line)
         _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
                                   chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
-                                  mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                  mp_identifier="{}".format(chunk_idx),
                                   reverse_phasing=False)
 
         # all chunk merging is skipped if we only want minimal output
@@ -784,8 +782,8 @@ def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, star
 
             # update (if appropriate)
             if mp_identifier is not None:
-                info.append(TAG_MARGIN_PHASE_IDENTIFIER)
-                tags.append(mp_identifier)
+                info.append(mp_identifier)
+                tags.append(TAG_MARGIN_PHASE_IDENTIFIER)
                 line[-2] = ":".join(tags)
 
             # cleanup
