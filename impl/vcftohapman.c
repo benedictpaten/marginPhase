@@ -16,7 +16,7 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
   
   size_t number_of_haplotypes;
   size_t max_number = bcf_hdr_nsamples(cohort_hdr) * 2;
-  if(number > max_number) {
+  if(number > max_number || number == 0) {
     number_of_haplotypes = max_number;
   } else {
     number_of_haplotypes = number;
@@ -150,6 +150,6 @@ void get_interval_bounds(const char* str, int32_t* beg, int32_t* end) {
 }
 
 int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linearReferenceStructure** return_lr, haplotypeCohort** return_cohort) {
-  return lh_indices_from_vcf_2(vcf_path, ref_start, ref_end, return_lr, return_cohort, 10000);
+  return lh_indices_from_vcf_subset(vcf_path, ref_start, ref_end, return_lr, return_cohort, 0);
 }
 
