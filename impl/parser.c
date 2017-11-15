@@ -496,7 +496,10 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 currPosInOp = 0;
             }
         }
-        stList_append(profileSequences, pSeq);
+        if (pSeq->length > 0) {
+            stList_append(profileSequences, pSeq);
+        }
+
     }
 
     if(st_getLogLevel() == debug) {
