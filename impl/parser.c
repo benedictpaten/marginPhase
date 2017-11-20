@@ -381,19 +381,23 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
-
     int64_t filteredReads = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
-        int64_t pos = aln->core.pos+1; //left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
-        int64_t len = aln->core.l_qseq; //length of the read.
-        uint8_t *seq = bam_get_seq(aln);  // DNA sequence
+        int64_t pos = aln->core.pos+1;                      //left most position of alignment
+        char *chr = bamHdr->target_name[aln->core.tid] ;    //contig name (chromosome)
+        int64_t len = aln->core.l_qseq;                     //length of the read.
+        uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
         char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
 
-        // Filter out any reads we don't one.
+        if (aln->core.l_qseq <= 0) {
+            filteredReads++;
+            continue;
+        }
+
+        // Filter out any reads with specified flags
         if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
             filteredReads++;
             continue;
@@ -435,17 +439,24 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         }
 
         // Check for soft clipping at the end
-        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
-        if (lastCigarOp == BAM_CSOFT_CLIP) {
-            end_read += lastCigarNum;
+        if (aln->core.n_cigar > 1) {
+            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
+            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+            if (lastCigarOp == BAM_CSOFT_CLIP) {
+                end_read += lastCigarNum;
+            }
         }
 
         // Count number of insertions & deletions in sequence
         int64_t numInsertions = 0;
         int64_t numDeletions = 0;
         countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-        int64_t trueLength = len-start_read-end_read+numDeletions-numInsertions;
+        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+
+        if (trueLength <= 0) {
+            filteredReads++;
+            continue;
+        }
 
         // Create empty profile sequence
         stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
@@ -499,7 +510,6 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         if (pSeq->length > 0) {
             stList_append(profileSequences, pSeq);
         }
-
     }
 
     if(st_getLogLevel() == debug) {
