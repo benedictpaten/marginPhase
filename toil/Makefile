@@ -99,7 +99,7 @@ prepare: check_venv
 	virtualenv s3am && s3am/bin/pip install s3am==2.0
 	mkdir -p bin
 	ln -snf ${PWD}/s3am/bin/s3am bin/
-	$(pip) install pytest==2.8.3 toil[aws]==3.5.0
+	$(pip) install pytest==2.8.3 toil[aws]==3.11.0
 clean_prepare: check_venv
 	rm -rf bin s3am
 	- $(pip) uninstall -y pytest toil
