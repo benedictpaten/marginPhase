@@ -343,7 +343,7 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
  */
 
 void usage() {
-fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
+fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
     fprintf(stderr,
             "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n"
@@ -358,6 +358,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
 }
 
 int main(int argc, char *argv[]) {
+
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
@@ -613,11 +614,16 @@ int main(int argc, char *argv[]) {
     // Write out VCF
     st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
 
-    // Compare the output vcf with the reference vcf
-    stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+    st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
+               (float) totalGFlength / stList_length(hmms));
+
 
     if (params->compareVCFs) {
+        // Compare the output vcf with the reference vcf
+        stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
         compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+        printGenotypeResults(results);
+        free(results);
     }
 
     // Write out two BAMs, one for each read partition
@@ -626,13 +632,6 @@ int main(int argc, char *argv[]) {
 
     writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
     writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
-
-
-    st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
-               (float) totalGFlength / stList_length(hmms));
-
-    printGenotypeResults(results);
-    free(results);
 
     stList_destruct(profileSequences);
 
