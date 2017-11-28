@@ -932,7 +932,9 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
             free(gt_arr);
         }
     }
-    if (results->truePositives == 0) st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    if (results->truePositives == 0) {
+        st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    }
 
     // Remaining positions after the last variant in the reference are not currently being looked through
     // False positives in this region could therefore be missed
@@ -1345,7 +1347,9 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
             free(gt_arr);
         }
     }
-    if (results->truePositives == 0) st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    if (results->truePositives == 0) {
+        st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    }
 
     // Remaining positions after the last variant in the reference are not currently being looked through
     // False positives in this region could therefore be missed
@@ -1377,7 +1381,9 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
      * This version will do output debugging using the bam files output from marginPhase.
      *
      */
-void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params) {
+void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2,
+                               char *referenceFasta, stBaseMapper *baseMapper,
+                               stGenotypeResults *results, stRPHmmParameters *params) {
 
     st_logInfo("> Comparing vcf files \n");
     st_logInfo("VCF reference: %s \n", vcf_ref);
@@ -1718,7 +1724,9 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
             free(gt_arr);
         }
     }
-    if (results->truePositives == 0) st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    if (results->truePositives == 0) {
+        st_logInfo("No matches between vcfs found - did you compare against the correct vcf?\n");
+    }
 
     // Remaining positions after the last variant in the reference are not currently being looked through
     // False positives in this region could therefore be missed

@@ -261,6 +261,10 @@ struct _stRPHmmParameters {
 
     // Whether or not to write a gvcf as output
     bool writeGVCF;
+
+    // What types of file formats of split reads to output
+    bool writeSplitSams;
+    bool writeSplitBams;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
