@@ -30,6 +30,7 @@ D_MIN = "min_depth"
 D_AVG = "avg_depth"
 D_STD = "std_depth"
 D_ALL_DEPTHS = "all_depths"
+D_ALL_DEPTH_BINS = "all_depth_bins"
 D_SPACING = "depth_spacing"
 D_START_IDX = "depth_start_idx"
 D_RANGE = "depth_range"
@@ -165,6 +166,11 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
         start_idx = max(start_idx, range_start)
         assert len(depths) > 0
 
+    # get read depth log value
+    log_depth_bins = [0 for _ in range(16)]
+    for depth in depths:
+        log_depth_bins[int(math.log(depth, 2))] += 1
+
     # get depth summary
     summary = {
         D_MAX: max(depths),
@@ -172,6 +178,7 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
         D_AVG: np.mean(depths),
         D_STD: np.std(depths),
         D_ALL_DEPTHS: depths,
+        D_ALL_DEPTH_BINS: log_depth_bins,
         D_SPACING: spacing,
         D_START_IDX: start_idx,
         D_RANGE: included_range
@@ -196,6 +203,17 @@ def print_read_depth_summary(summary, verbose=False):
             pound_count = int(32.0 * depth / summary[D_MAX])
             print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
             idx += 1
+
+        log_depth_bins = summary[D_ALL_DEPTH_BINS]
+        print("\t\tread depth log_2 at above intervals:")
+        max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+        min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+        max_bucket_size = max(log_depth_bins)
+        for bucket in range(min_bucket, max_bucket + 1):
+            id = "%3d:" % bucket
+            count = log_depth_bins[bucket]
+            pound_count = int(32.0 * count / max_bucket_size)
+            print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
 
 
 def main():
