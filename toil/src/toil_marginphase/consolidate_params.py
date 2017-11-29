@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from __future__ import print_function
 import argparse
 import glob
@@ -56,7 +57,12 @@ def main():
     wrong_length = 0
     for in_param in in_params:
         with open(in_param) as input:
-            params = json.load(input)
+            param_str = ""
+            for line in input:
+                param_str += " ".join(line.strip().split())
+            if param_str.endswith(",}"):
+                param_str = param_str.replace(",}", " }")
+            params = json.loads(param_str)
             if LEARNED_PARAM_KEY not in params:
                 if missing_key == 0: log("Key '{}' not in {}".format(LEARNED_PARAM_KEY, in_param))
                 missing_key += 1
