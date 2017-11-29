@@ -25,13 +25,17 @@ PARAMS = "s3://margin-phase/params/averaged/params.{read1}.averaged.{sub}.{ptype
 VCF = "s3://margin-phase/vcf/NA12878.hg38.PG.{chr}.vcf"
 
 reads = [
-    ['np2', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
-    ['np1-2', 'np', 's3://margin-phase/bam/nanopore1-2/NA12878.hg38.np1-2.mm.{chr}.bam'],
+    # ['np2', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
+    # ['np1-2', 'np', 's3://margin-phase/bam/nanopore1-2/NA12878.hg38.np1-2.mm.{chr}.bam'],
     ['pb', 'pb', 's3://margin-phase/bam/realigned/NA12878.hg38.pb.mm.{chr}.bam']
 ]
-chrs = ['chr21']
-subs = ['998', '9995']
-ptypes = ['rp', 'rp-train1', 'plain']
+chrs = ["chr{}".format(x) for x in range(1,23)]
+chrs.append("chrX")
+chrs.append("chrY")
+# subs = ['998', '9995']
+subs = ['9995']
+# ptypes = ['rp', 'rp-train1', 'plain']
+ptypes = ['plain']
 
 
 have_everything = True
