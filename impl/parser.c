@@ -131,6 +131,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->filterBadReads = false;
     params->filterMatchThreshold = 0.90;
     params->filterLikelyHomozygousSites = false;
+    params->mapqFilter = 0;
 
     // Other marginPhase program options
     params->useReferencePrior = false;
@@ -377,6 +378,12 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             params->writeSplitBams = (strcmp(tokStr, "bam") == 0) || (strcmp(tokStr, "both") == 0);
             i++;
         }
+        else if (strcmp(keyString, "mapqFilter") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->mapqFilter = atoi(tokStr);
+            i++;
+        }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
         }
@@ -427,6 +434,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 
     int64_t readCount = 0;
     int64_t filteredReads = 0;
+    int64_t filteredReads_flag = 0;
+    int64_t filteredReads_mapq = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
 
@@ -445,6 +454,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         // Filter out any reads with specified flags
         if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
             filteredReads++;
+            filteredReads_flag++;
             continue;
         }
 
@@ -452,6 +462,13 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         // know how it aligns
         if (aln->core.n_cigar == 0) {
             filteredReads++;
+            continue;
+        }
+
+        // If the mapq score is less than the given threshold, filter it out
+        if (aln->core.qual <= params->mapqFilter) {
+            filteredReads++;
+            filteredReads_mapq++;
             continue;
         }
 
@@ -560,9 +577,9 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
         st_logDebug("Filtered %" PRIi64
-                " reads with either missing cigar lines or undesired sam flags "
-                            "(sam flags being filtered on: %s\n",
-                filteredReads, samFlagBitString);
+                " reads with either missing cigar lines, \nlow mapq scores (filtered %d reads with scores less than %d), \nand undesired sam flags "
+                            "(filtered %d reads with sam flags being filtered on: %s)\n",
+                filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
         free(samFlagBitString);
     }
 

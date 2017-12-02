@@ -194,7 +194,7 @@ uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, ui
 uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions);
 
 /*
- * Read partitioning hmm
+ * Hmm parameters
  */
 
 struct _stRPHmmParameters {
@@ -213,19 +213,21 @@ struct _stRPHmmParameters {
     int64_t maxPartitionsInAColumn;
     double minPosteriorProbabilityForPartition;
 
-    // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base. If the coverage depth is higher
-    // than this then some profile seqs are randomly discarded.
+    // MaxCoverageDepth is the maximum depth of profileSeqs to allow at any base.
+    // If the coverage depth is higher than this then some profile seqs are randomly discarded.
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
+
     // Training
 
+    // Number of iterations of training
+    int64_t trainingIterations;
     // Pseudo counts used to make training of substitution matrices a bit more robust
     double offDiagonalReadErrorPseudoCount;
     double onDiagonalReadErrorPseudoCount;
     // Before doing any training estimate the read error substitution parameters empirically
     bool estimateReadErrorProbsEmpirically;
-    // Number of iterations of training
-    int64_t trainingIterations;
+
     // Whether or not to filter out poorly matching reads after one round and try again
     bool filterBadReads;
     double filterMatchThreshold;
@@ -253,6 +255,9 @@ struct _stRPHmmParameters {
     // This allows the ability to optionally ignore, for example, secondary alignments.
     uint16_t filterAReadWithAnyOneOfTheseSamFlagsSet;
 
+    // Filter out any reads with a MAPQ score less than or equal to this.
+    int64_t mapqFilter;
+
     // Number of rounds of iterative refinement to attempt to improve the partition.
     int64_t roundsOfIterativeRefinement;
 
@@ -279,6 +284,10 @@ void stRPHmmParameters_setReadErrorSubstitutionParameters(stRPHmmParameters *par
 void normaliseSubstitutionMatrix(double *subMatrix);
 
 double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params);
+
+/*
+ * Read partitioning hmm
+ */
 
 struct _stRPHmm {
     char *referenceName;
