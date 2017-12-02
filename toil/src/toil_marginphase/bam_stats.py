@@ -14,8 +14,12 @@ R_ID = "id"
 R_START_POS = "start_pos"
 R_END_POS = "end_pos"
 R_LENGTH = "length"
+R_SECONDARY = "secondary_alignment"
+R_MAPPING_QUALITY = "mapping_quality"
 
 #length summary
+L_READ_COUNT = "read_count"
+L_FILTERED_READ_COUNT = "filtered_read_count"
 L_LOG_LENGTH_BUCKETS = "log_length_buckets"
 L_MIN = "min_length"
 L_MAX = "max_length"
@@ -23,6 +27,7 @@ L_AVG = "avg_length"
 L_STD = "std_lenght"
 L_LOG_BASE = "log_base"
 L_LOG_MAX = "log_max"
+L_ALL_LENGTHS = "all_lengths"
 
 # depth summary
 D_MAX = "max_depth"
@@ -36,22 +41,28 @@ D_START_IDX = "depth_start_idx"
 D_RANGE = "depth_range"
 
 
-def parse_args():
+def parse_args(args = None):
     parser = argparse.ArgumentParser("Provides statistics on a BAM/SAM file")
     parser.add_argument('--input_glob', '-i', dest='input_glob', default="*.bam", type=str,
-                       help='Glob matching SAM or BAM file(s)')
+                        help='Glob matching SAM or BAM file(s)')
     parser.add_argument('--read_length', '-l', dest='read_length', action='store_true', default=False,
-                       help='Print statistics on read length for all files')
+                        help='Print statistics on read length for all files')
     parser.add_argument('--read_depth', '-d', dest='read_depth', action='store_true', default=False,
-                       help='Print statistics on read depth for all files')
+                        help='Print statistics on read depth for all files')
     parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
-                       help='Print histograms for length and depth')
+                        help='Print histograms for length and depth')
+    parser.add_argument('--silent', '-V', dest='silent', action='store_true', default=False,
+                        help='Print nothing')
     parser.add_argument('--depth_spacing', '-s', dest='depth_spacing', action='store', default=1000, type=int,
-                       help='How far to sample read data')
+                        help='How far to sample read data')
     parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
-                       help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
+                        help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
+    parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
+                        help='Filter secondary alignments')
+    parser.add_argument('--min_alignment_threshold', '-a', dest='min_alignment_threshold', action='store', default=None,
+                        type=int, help='Minimum alignment threshold, below which reads are not included')
 
-    return parser.parse_args()
+    return parser.parse_args() if args is None else parser.parse_args(args)
 
 
 def get_read_summary(read):
@@ -59,9 +70,12 @@ def get_read_summary(read):
         R_START_POS: read.reference_start,
         R_END_POS: read.reference_end,
         R_LENGTH: read.reference_length,
-        R_ID: read.query_name
+        R_ID: read.query_name,
+        R_SECONDARY: read.is_secondary,
+        R_MAPPING_QUALITY: read.mapping_quality
     }
     return summary
+
 
 
 def get_read_length_summary(read_summaries, length_log_base=2, length_log_max=32):
@@ -80,7 +94,8 @@ def get_read_length_summary(read_summaries, length_log_base=2, length_log_max=32
         L_AVG: np.mean(all_lengths),
         L_STD: np.std(all_lengths),
         L_LOG_BASE: length_log_base,
-        L_LOG_MAX: length_log_max
+        L_LOG_MAX: length_log_max,
+        L_ALL_LENGTHS: all_lengths
     }
 
     return summary
@@ -169,7 +184,10 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
     # get read depth log value
     log_depth_bins = [0 for _ in range(16)]
     for depth in depths:
-        log_depth_bins[int(math.log(depth, 2))] += 1
+        if depth == 0:
+            log_depth_bins[0] += 1
+        else:
+            log_depth_bins[int(math.log(depth, 2))] += 1
 
     # get depth summary
     summary = {
@@ -193,6 +211,14 @@ def print_read_depth_summary(summary, verbose=False):
     print("\t\tmin: {}".format(summary[D_MIN]))
     print("\t\tavg: {}".format(summary[D_AVG]))
     print("\t\tstd: {}".format(summary[D_STD]))
+    log_depth_bins = summary[D_ALL_DEPTH_BINS]
+    total_depths = sum(log_depth_bins)
+    log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
+    log_depth_pairs.sort(key=lambda x: x[1], reverse=True)
+    print("\t\tmost frequent read depths [floor(log2(depth))]:")
+    for i in range(0,min(len(list(filter(lambda x: x[1] != 0, log_depth_pairs))), 3)):
+        print("\t\t\t#{}: depth:{} count:{} ({}%)".format(i + 1, log_depth_pairs[i][0], log_depth_pairs[i][1],
+                                                          int(100.0 * log_depth_pairs[i][1] / total_depths)))
 
     if verbose:
         print("\t\tdepths with spacing {}{}:".format(summary[D_SPACING],
@@ -204,7 +230,6 @@ def print_read_depth_summary(summary, verbose=False):
             print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
             idx += 1
 
-        log_depth_bins = summary[D_ALL_DEPTH_BINS]
         print("\t\tread depth log_2 at above intervals:")
         max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
         min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
@@ -216,9 +241,9 @@ def print_read_depth_summary(summary, verbose=False):
             print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
 
 
-def main():
+def main(args = None):
     # get our arguments
-    args = parse_args()
+    args = parse_args() if args is None else parse_args(args)
 
     # get filenames, sanity check
     in_alignments = glob.glob(args.input_glob)
@@ -226,7 +251,7 @@ def main():
         print("No files matching {}".format(args.input_glob))
         return 1
     else:
-        print("Analyzing {} files".format(len(in_alignments)))
+        if not args.silent: print("Analyzing {} files".format(len(in_alignments)))
 
     # data we care about
     length_summaries = dict()
@@ -244,29 +269,39 @@ def main():
 
         # get read data we care about
         samfile = None
+        read_count = -1
         try:
-            print("Read {}:\n\t".format(alignment_filename), end="")
+            if not args.silent: print("Read {}:".format(alignment_filename))
             samfile = pysam.AlignmentFile(alignment_filename, 'rb' if alignment_filename.endswith("bam") else 'r')
-            read_count = 0
             for read in samfile.fetch():
-                read_summaries.append(get_read_summary(read))
                 read_count += 1
-                if read_count % 1024 == 0:
-                    print(". ", end="")
-            print("{}read_count: {}".format("\n\t" if read_count > 1024 else "", read_count))
+                read_summaries.append(get_read_summary(read))
+            if not args.silent: print("read_count: {}".format(read_count))
         finally:
             if samfile is not None: samfile.close()
 
+        # filter if appropriate
+        if args.filter_secondary:
+            read_summaries = list(filter(lambda x: not x[R_SECONDARY], read_summaries))
+        if args.min_alignment_threshold is not None:
+            read_summaries = list(filter(lambda x: x[R_MAPPING_QUALITY] >= args.min_alignment_threshold, read_summaries))
+        if args.filter_secondary or args.min_alignment_threshold is not None:
+            if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
+
         # summarize
         length_summaries[alignment_filename] = get_read_length_summary(read_summaries)
+        length_summaries[alignment_filename][L_READ_COUNT] = read_count
+        length_summaries[alignment_filename][L_FILTERED_READ_COUNT] = len(read_summaries)
         depth_summaries[alignment_filename] = get_read_depth_summary(read_summaries,
                                                                      spacing=args.depth_spacing,
                                                                      included_range=args.depth_range)
         # print
         if args.read_length:
-            print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
+            if not args.silent: print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
         if args.read_depth:
-            print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
+            if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
+
+    return length_summaries, depth_summaries
 
 
 
