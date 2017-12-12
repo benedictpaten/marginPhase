@@ -18,6 +18,7 @@ TP_NAME = "tp.vcf"
 
 # misc
 MPI_TAG = "MPI"
+DEPTH_TAG = "DP"
 
 # chunk details
 START_POS_KEY = 'start_pos'
@@ -31,11 +32,13 @@ CALL_DETAILS_LIST_KEY = 'call_details_list'
 # chunk summaries
 SENSITIVITY_KEY = "sensitivity"
 PRECISION_KEY = "precision"
-HMEAN_KEY = "hmean"
+FMEASURE_KEY = "fmeasure"
 AVG_QUAL_KEY = "avg_qual"
 AVG_TP_QUAL_KEY = "avg_tp_qual"
 AVG_FP_QUAL_KEY = "avg_fp_qual"
-
+AVG_DEPTH_KEY = "avg_depth"
+AVG_TP_DEPTH_KEY = "avg_tp_depth"
+AVG_FP_DEPTH_KEY = "avg_fp_depth"
 
 # chunk analysis
 ORIGINAL_READ_COUNT_KEY = "original_read_count"
@@ -43,6 +46,7 @@ FILTERED_READ_COUNT_KEY = "filtered_read_count"
 AVG_READ_DEPTH_KEY = "avg_read_depth"
 STD_READ_DEPTH_KEY = "std_read_depth"
 ALL_READ_DEPTH_KEY = "all_read_depths"
+ALL_READ_DEPTH_POSITIONS_KEY = "all_read_depth_positions"
 MAX_READ_DEPTH_KEY = "max_read_depths"
 MIN_READ_DEPTH_KEY = "min_read_depths"
 
@@ -55,8 +59,9 @@ MIN_READ_LENGTH_KEY = "min_read_length"
 # call details indices
 C_POS_IDX = 0
 C_QUAL_IDX = 1
-C_TYPE_IDX = 2
-call_details = lambda pos, qual, type: [pos, qual, type]
+C_DEPTH_IDX = 2
+C_TYPE_IDX = 3
+call_details = lambda pos, qual, depth, type: [pos, qual, depth, type]
 
 # mpi lookup position
 M_START_POS_IDX = 0
@@ -73,7 +78,11 @@ plot_details = lambda data, key, label, color: [color, label, data, key]
 
 # short functions
 percent = lambda part, whole: int(100.0 * part / whole)
+calculate_fmeasure = lambda precision, sensitivity: 2 * (precision * sensitivity) / (precision + sensitivity)
 
+# config
+DEPTH_SAMPLE_SPACING = 500
+QUICK_REPORT = False
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and details of vcf output")
@@ -86,11 +95,18 @@ def parse_args():
     parser.add_argument('--plot', '-p', dest='plot', action='store_true', default=False,
                        help='Make plots of data')
     parser.add_argument('--qual_min', '-q', dest='qual_min', default=None, type=int,
-                       help='Filter qualities below threshold: TP->FN, FP->/dev/null')
+                       help='Filter VCF qualities below threshold: TP->FN, FP->/dev/null')
+    parser.add_argument('--vcf_read_depth_min', '-r', dest='vcf_read_depth_min', default=None, type=int,
+                       help='Filter VCF read depth below threshold: TP->FN, FP->/dev/null')
+    parser.add_argument('--bam_read_depth_min', '-R', dest='bam_read_depth_min', default=None, type=int,
+                       help='Filter calls where read depth below threshold in bam. '
+                            'Used in conjuction with --in_bam_format option. TP,FN,FP -> /dev/null')
     parser.add_argument('--chunks', '-c', dest='chunks', default=None, type=str,
                        help='Specify comma-separated MPIs of specific chunks to analyze')
+    parser.add_argument('--remove_chunks', '-C', dest='remove_chunks', default=None, type=str,
+                       help='Specify comma-separated MPIs (or ranges) of chunks to remove. ex: \'0-4,22\'')
     parser.add_argument('--in_bam_format', '-b', dest='in_bam_format', default=None, type=str,
-                       help='Python string.format() string for input bam, used (optionally) in '
+                       help='Python string.format() string for input bam, used in '
                             'conjunction with --chunks option. ex: "./SMPL1.{mpi}.in.bam"')
     parser.add_argument('--pickle_filename', '-s', dest='pickle_filename', default=None, type=str,
                         help="Filename for pickling specific_chunk read data.  No pickling will happen if unset.")
@@ -98,7 +114,6 @@ def parse_args():
                         help="If set, will unpickle specific_chunk data from 'pickle_filename' argument.")
 
     return parser.parse_args()
-
 
 
 def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
@@ -129,6 +144,7 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         assert False
 
     mpi_idx = 3
+    depth_idx = 1
     linenr = -1
     for line in input:
         # prep
@@ -141,10 +157,14 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         # data we care about
         chr = line[0]
         pos = int(line[1])
-        qual = int(line[5])
+        qual = None
+        depth = None
         tags = line[8].split(":")
         smpl = line[9].split(":")
         if has_mpi_tag:
+            # qual only  meaningful on our calls
+            qual = int(line[5])
+            # get mpi for call
             if len(tags) < mpi_idx or tags[mpi_idx] != MPI_TAG:
                 mpi_idx = None
                 for i in range(0, len(tags)):
@@ -152,13 +172,20 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
                 if mpi_idx is None: raise Exception("Line {} is missing MPI tag in {}:\n\t[{}]"
                                                     .format(linenr, increment_key, '\t'.join(line)))
             mpi = int(smpl[mpi_idx])
+            # get depth
+            if len(tags) < depth_idx or tags[depth_idx] != DEPTH_TAG:
+                depth_idx = None
+                for i in range(0, len(tags)):
+                    if tags[i] == DEPTH_TAG: mpi_idx = i
+                if depth_idx is None: raise Exception("Line {} is missing DP tag in {}:\n\t[{}]"
+                                                    .format(linenr, increment_key, '\t'.join(line)))
+            depth = int(smpl[depth_idx])
         else:
             if current_mpi is None or not is_in_mpi(current_mpi, pos):
                 current_mpi = lookup_mpi(pos)
             mpi = current_mpi[M_MPI_IDX]
             if mpi is None:
-                continue;
-
+                continue
 
         # init chunk (if necessary)
         if mpi not in chunk_map:
@@ -174,12 +201,30 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         chunk = chunk_map[mpi]
 
         # save information
-        chunk[END_POS_KEY] = pos
-        chunk[CALL_DETAILS_LIST_KEY].append(call_details(pos, qual, increment_key))
+        chunk[START_POS_KEY] = min(pos, chunk[START_POS_KEY])
+        chunk[END_POS_KEY] = max(pos, chunk[END_POS_KEY])
+        chunk[CALL_DETAILS_LIST_KEY].append(call_details(pos, qual, depth, increment_key))
         chunk[increment_key] += 1
 
 
-def analyze_specific_chunk(chunk, args):
+def summarize_chunk(chunk):
+    chunk[SENSITIVITY_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FN_COUNT_KEY])
+    chunk[PRECISION_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FP_COUNT_KEY])
+    chunk[FMEASURE_KEY] = calculate_fmeasure(max(.001, chunk[SENSITIVITY_KEY]), max(.001, chunk[PRECISION_KEY]))
+    tps = list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, chunk[CALL_DETAILS_LIST_KEY]))
+    chunk[AVG_TP_QUAL_KEY] = -1 if len(tps) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], tps)))
+    chunk[AVG_TP_DEPTH_KEY] = -1 if len(tps) == 0 else int(np.mean(map(lambda x: x[C_DEPTH_IDX], tps)))
+    fps = list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, chunk[CALL_DETAILS_LIST_KEY]))
+    chunk[AVG_FP_QUAL_KEY] = -1 if len(fps) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], fps)))
+    chunk[AVG_FP_DEPTH_KEY] = -1 if len(fps) == 0 else int(np.mean(map(lambda x: x[C_DEPTH_IDX], fps)))
+    our_calls = []
+    our_calls.extend(tps)
+    our_calls.extend(fps)
+    chunk[AVG_QUAL_KEY] = -1 if len(our_calls) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], our_calls)))
+    chunk[AVG_DEPTH_KEY] = -1 if len(our_calls) == 0 else int(np.mean(map(lambda x: x[C_DEPTH_IDX], our_calls)))
+
+
+def read_analysis_for_chunk(chunk, args):
     analysis = {MPI_KEY: chunk[MPI_KEY]}
     if args.in_bam_format is None:
         return analysis
@@ -194,25 +239,29 @@ def analyze_specific_chunk(chunk, args):
     length_summaries, depth_summaries = bam_stats.main([
         "--input_glob", bam_location,
         "--depth_range", "{}-{}".format(chunk[START_POS_KEY], chunk[END_POS_KEY]),
-        "--depth_spacing", str(int((chunk[END_POS_KEY] - chunk[START_POS_KEY]) / 32)),
+        # "--depth_spacing", str(int((chunk[END_POS_KEY] - chunk[START_POS_KEY]) / 32)),
+        "--depth_spacing", str(DEPTH_SAMPLE_SPACING),
         '--filter_secondary',
-        '--min_alignment_threshold', str(20),
+        # '--min_alignment_threshold', str(20),
         '--silent'
     ])
     read_lengths = list(length_summaries.values())[0][bam_stats.L_ALL_LENGTHS]
     read_depths = list(depth_summaries.values())[0][bam_stats.D_ALL_DEPTHS]
+    read_depth_positions = list(depth_summaries.values())[0][bam_stats.D_ALL_DEPTH_POSITIONS]
+    assert(len(read_depths) == len(read_depth_positions))
 
     analysis[AVG_READ_DEPTH_KEY] = np.mean(read_depths)
     analysis[STD_READ_DEPTH_KEY] = np.std(read_depths)
-    analysis[ALL_READ_DEPTH_KEY] = read_depths
     analysis[MAX_READ_DEPTH_KEY] = max(read_depths)
     analysis[MIN_READ_DEPTH_KEY] = min(read_depths)
+    analysis[ALL_READ_DEPTH_KEY] = read_depths
+    analysis[ALL_READ_DEPTH_POSITIONS_KEY] = read_depth_positions
 
     analysis[AVG_READ_LENGTH_KEY] = np.mean(read_lengths)
     analysis[STD_READ_LENGTH_KEY] = np.std(read_lengths)
-    analysis[ALL_READ_LENGTH_KEY] = read_lengths
     analysis[MAX_READ_LENGTH_KEY] = max(read_lengths)
     analysis[MIN_READ_LENGTH_KEY] = min(read_lengths)
+    analysis[ALL_READ_LENGTH_KEY] = read_lengths
 
     analysis[ORIGINAL_READ_COUNT_KEY] = list(length_summaries.values())[0][bam_stats.L_READ_COUNT]
     analysis[FILTERED_READ_COUNT_KEY] = list(length_summaries.values())[0][bam_stats.L_FILTERED_READ_COUNT]
@@ -220,10 +269,40 @@ def analyze_specific_chunk(chunk, args):
     return analysis
 
 
+def filter_calls_by_bam_read_depth(chunk, read_analysis, min_depth):
+    #prep
+    call_data = chunk[CALL_DETAILS_LIST_KEY]
+    depth_data = read_analysis[ALL_READ_DEPTH_KEY]
+    depth_positions = read_analysis[ALL_READ_DEPTH_POSITIONS_KEY]
+    depth_map = {pos:depth for pos,depth in zip(depth_positions, depth_data)}
+
+    # filter calls
+    new_calls = list()
+    for call in call_data:
+        call_pos = int(1.0 * call[C_POS_IDX] / DEPTH_SAMPLE_SPACING)
+        if depth_map[call_pos] >= min_depth:
+            new_calls.append(call)
+
+    # create new chunk
+    filtered_chunk = {
+        START_POS_KEY: chunk[START_POS_KEY],
+        END_POS_KEY: chunk[END_POS_KEY],
+        FP_COUNT_KEY: len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, new_calls))),
+        FN_COUNT_KEY: len(list(filter(lambda x: x[C_TYPE_IDX] == FN_COUNT_KEY, new_calls))),
+        TP_COUNT_KEY: len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, new_calls))),
+        MPI_KEY: chunk[MPI_KEY],
+        CALL_DETAILS_LIST_KEY: new_calls
+    }
+    summarize_chunk(filtered_chunk)
+
+    # return
+    return filtered_chunk
+
+
 def print_reports(reports):
     max_key_len = max(list(map(lambda x: len(x[0]), reports)))
     for report in reports:
-        print(("%-"+str(max_key_len)+"s\t") % report[0], "\t".join(report[1:]))
+        print(("%-"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
 
 def plot_sensitivity_x_precision(chunk_map):
@@ -240,11 +319,10 @@ def plot_sensitivity_x_precision(chunk_map):
     plt.show()
     return plt
 
-# {10:'r', 20:'g', 25:'c', 30:'b', 40:'m', 100:'k'}
-# {10:'r', 20:'g', 30:'b', 100:'k'}
-# {10:'r', 25:'g', 40:'b', 100:'k'}
-# {10:'r', 25:'g', 100:'b'}
-def plot_quality_filtered_sensitivity_x_precision(chunk_map, threshold_values={10:'r', 25:'g', 100:'b'}, save_name=None):
+
+def plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={10:'r', 25:'g', 100:'b'},
+                                                  call_filter_key=C_QUAL_IDX, call_filter_name="Quality",
+                                                  save_name=None):
     mpis = chunk_map.keys()
     base_tp, base_fp, base_fn = {},{},{}
 
@@ -265,9 +343,9 @@ def plot_quality_filtered_sensitivity_x_precision(chunk_map, threshold_values={1
             orig_tp = base_tp[mpi]
             orig_fp = base_fp[mpi]
             orig_fn = base_fn[mpi]
-            tp_below_thresh = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY and x[C_QUAL_IDX] < threshold,
+            tp_below_thresh = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY and x[call_filter_key] < threshold,
                                               chunk[CALL_DETAILS_LIST_KEY])))
-            fp_below_thresh = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY and x[C_QUAL_IDX] < threshold,
+            fp_below_thresh = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY and x[call_filter_key] < threshold,
                                               chunk[CALL_DETAILS_LIST_KEY])))
             new_tp = orig_tp - tp_below_thresh
             new_fp = orig_fp - fp_below_thresh
@@ -300,7 +378,7 @@ def plot_quality_filtered_sensitivity_x_precision(chunk_map, threshold_values={1
                                               ("%.2f" % total_precision).lstrip('0'))
         plt.scatter(x, y, alpha=.3, color=threshold_values[threshold], label=label)
 
-    plt.title("Per-Chunk Sensitivity and Precision for Quality Thresholds")
+    plt.title("Per-Chunk Sensitivity and Precision for {} Thresholds".format(call_filter_name))
     plt.xlabel("Sensitivity")
     plt.ylabel("Precision")
     plt.legend(loc=2)
@@ -311,7 +389,6 @@ def plot_quality_filtered_sensitivity_x_precision(chunk_map, threshold_values={1
 
 def multi_plot_chunks_by_parameter(x_plot_details, chunk_map_y, y_param, title=None, x_label=None, y_label=None,
                              save_name=None, show=True, legend_loc=1):
-
 
     for plot_detail in x_plot_details:
         data, key, color, label = plot_detail[P_DATA_IDX], plot_detail[P_KEY_IDX], \
@@ -394,6 +471,10 @@ def plot_all_call_qual(all_calls, bucket_size=10, logscale=True, title=None):
 
 def main():
     args = parse_args()
+    do_filtering = args.qual_min is not None or \
+                   args.vcf_read_depth_min is not None or \
+                   args.bam_read_depth_min is not None or \
+                   args.remove_chunks is not None
 
     # get files
     fp_file = os.path.join(args.vcf_directory, FP_NAME) + ("" if args.unzipped else ".gz")
@@ -416,12 +497,6 @@ def main():
     with open_fcn(fn_file, 'r') as fn_in:
         read_file(chunk_map, fn_in, FN_COUNT_KEY, args, has_mpi_tag=False)
 
-    # get all calls
-    all_calls = list()
-    for chunk in chunk_map.values():
-        for call in chunk[CALL_DETAILS_LIST_KEY]:
-            all_calls.append(call)
-
     # holistic analysis
     print("Analyzing all chunks")
     chunk_map_keys = list(chunk_map.keys())
@@ -434,67 +509,103 @@ def main():
     total_fn = sum(map(lambda x: x[FN_COUNT_KEY], chunk_map.values()))
     mean_calls_per_chunk = int(np.mean(map(lambda x: len(x[CALL_DETAILS_LIST_KEY]), chunk_map.values())))
 
-    # all calls analysis
-    print("Analyzing all calls")
-    filtered_fp = total_fp
-    filtered_tp = total_tp
-    filtered_fn = total_fn
-    if args.qual_min is not None:
-        tp_below_thresh = len(list(filter(
-            lambda x: x[C_QUAL_IDX] < args.qual_min and x[C_TYPE_IDX] == TP_COUNT_KEY, all_calls)))
-        fp_below_thresh = len(list(filter(
-            lambda x: x[C_QUAL_IDX] < args.qual_min and x[C_TYPE_IDX] == FP_COUNT_KEY, all_calls)))
-        filtered_tp -= tp_below_thresh
-        filtered_fn += tp_below_thresh
-        filtered_fp -= fp_below_thresh
-
     # per-chunk analysis
     print("Analyzing each chunk")
     for chunk in chunk_map.values():
-        chunk[SENSITIVITY_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FP_COUNT_KEY])
-        chunk[PRECISION_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FN_COUNT_KEY])
-        chunk[HMEAN_KEY] = stats.hmean([max(.001, chunk[SENSITIVITY_KEY]), max(.001, chunk[PRECISION_KEY])])
-        chunk[AVG_QUAL_KEY] = int(np.mean(map(lambda x: x[C_QUAL_IDX], chunk[CALL_DETAILS_LIST_KEY])))
-        tps = list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, chunk[CALL_DETAILS_LIST_KEY]))
-        chunk[AVG_TP_QUAL_KEY] = -1 if len(tps) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], tps)))
-        fps = list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, chunk[CALL_DETAILS_LIST_KEY]))
-        chunk[AVG_FP_QUAL_KEY] = -1 if len(fps) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], fps)))
+        summarize_chunk(chunk)
 
-    # all chunks analysis
+    # chunk ranking
     chunk_ranking = list(chunk_map.values())
-    chunk_ranking.sort(key=lambda x: x[HMEAN_KEY])
+    chunk_ranking.sort(key=lambda x: x[FMEASURE_KEY])
     chunk_ranking = list(map(lambda x: x[MPI_KEY], chunk_ranking))
     chunk_ranking_third = int(len(chunk_ranking) / 3.0)
     best_chunks = chunk_ranking[-1*min(3,len(chunk_ranking)):]
     worst_chunks = chunk_ranking[0:min(3,len(chunk_ranking))]
 
-    #specific chunk analysis
-    specific_chunks = {}
-    specific_chunk_ids = []
+    # read analysis
+    read_analysis_chunks = {}
+    read_analysis_chunk_ids = []
+    read_filtered_chunk_map = None
     if args.chunks is not None:
-        print("Analyzing specific chunks")
-        specific_chunk_ids = map(int, args.chunks.split(",")) if args.chunks != '*' else chunk_map_keys
+        print("Read analysis for chunks")
+        read_analysis_chunk_ids = map(int, args.chunks.split(",")) if args.chunks != '*' else chunk_map_keys
         # unpickle
         if args.unpickle and os.path.isfile(args.pickle_filename):
             print("\tUnpickling chunk data from file {}".format(args.pickle_filename))
-            specific_chunks = pickle.load(open(args.pickle_filename, "rb"))
-            print("\tUnpickled {} chunks".format(len(specific_chunks)))
-            unpickled_chunk_ids = list(map(lambda x: x[MPI_KEY], specific_chunks.values()))
-            for specific_chunk_id in specific_chunk_ids:
-                if specific_chunk_id not in unpickled_chunk_ids:
-                    print("\t\tUnpickled data does not include chunk {}".format(specific_chunk_id))
-                    specific_chunks[specific_chunk_id] = {MPI_KEY: specific_chunk_id}
+            read_analysis_chunks = pickle.load(open(args.pickle_filename, "rb"))
+            print("\tUnpickled {} chunks".format(len(read_analysis_chunks)))
+            unpickled_chunk_ids = list(map(lambda x: x[MPI_KEY], read_analysis_chunks.values()))
+            for read_analysis_chunk_id in read_analysis_chunk_ids:
+                if read_analysis_chunk_id not in unpickled_chunk_ids:
+                    print("\t\tUnpickled data does not include chunk {}".format(read_analysis_chunk_id))
+                    read_analysis_chunks[read_analysis_chunk_id] = {MPI_KEY: read_analysis_chunk_id}
+        # can't or shouldn't unpickle
         else:
-            if args.unpickle: #pickle_filname didn't exist
+            if args.unpickle:
                 print("\tPickle filename '{}' doesn't exist to unpickle from.  Importing data manually."
                       .format(args.pickle_filename))
-            for mpi in specific_chunk_ids:
-                specific_chunks[mpi] = analyze_specific_chunk(chunk_map[mpi], args)
+            for mpi in read_analysis_chunk_ids:
+                read_analysis_chunks[mpi] = read_analysis_for_chunk(chunk_map[mpi], args)
 
-        # pickle data if appropriate (pickle filename is set and we didn't just unpickle it)
+        # pickle data if appropriate (ie: if pickle filename is set and we didn't just unpickle it)
         if args.pickle_filename is not None and not (args.unpickle and os.path.isfile(args.pickle_filename)):
             print("\tPickling chunk data into file {}".format(args.pickle_filename))
-            pickle.dump(specific_chunks, open(args.pickle_filename, "wb"))
+            pickle.dump(read_analysis_chunks, open(args.pickle_filename, "wb"))
+
+        # get modified filter based on read depth (if appropriate)
+        if args.bam_read_depth_min is not None:
+            read_filtered_chunk_map = dict()
+            for chunk_id in read_analysis_chunk_ids:
+                read_filtered_chunk_map[chunk_id] = filter_calls_by_bam_read_depth(
+                    chunk_map[chunk_id], read_analysis_chunks[chunk_id], args.bam_read_depth_min)
+
+    # overall filtering analysis
+    true_positive_filter = lambda x: \
+        (x[C_TYPE_IDX] == TP_COUNT_KEY) and \
+        (x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else True) and \
+        (x[C_QUAL_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else True)
+    false_positive_filter = lambda x: \
+        (x[C_TYPE_IDX] == FP_COUNT_KEY) and \
+        (x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else True) and \
+        (x[C_QUAL_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else True)
+    if do_filtering:
+        print("Filtering calls")
+        # get chunks to not include (if appropriate)
+        chunks_to_remove = list()
+        if args.remove_chunks is not None:
+            remove_chunks = args.remove_chunks.split(",")
+            for remove_chunk in remove_chunks:
+                if '-' in remove_chunk:
+                    remove_chunk = remove_chunk.split("-")
+                    for i in range(int(remove_chunk[0]), int(remove_chunk[1])+1):
+                        if i in chunk_map_keys: chunks_to_remove.append(i)
+
+                else:
+                    if i in chunk_map_keys: chunks_to_remove.append(int(remove_chunk))
+            chunks_to_remove.sort()
+
+        # get all calls
+        all_calls = list()
+        for mpi in chunk_map.keys():
+            # some chunks are just skipped
+            if mpi in chunks_to_remove: continue
+            # get appropriate chunk (filtered by read depth in bam or not)
+            chunk = chunk_map[mpi]
+            if read_filtered_chunk_map is not None and mpi in read_analysis_chunk_ids:
+                chunk = read_filtered_chunk_map[mpi]
+            # get calls
+            for call in chunk[CALL_DETAILS_LIST_KEY]:
+                all_calls.append(call)
+        # get baselines
+        filtered_fp = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, all_calls)))
+        filtered_tp = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, all_calls)))
+        filtered_fn = len(list(filter(lambda x: x[C_TYPE_IDX] == FN_COUNT_KEY, all_calls)))
+        if args.qual_min is not None or args.vcf_read_depth_min is not None:
+            tp_below_thresh = len(list(filter(true_positive_filter, all_calls)))
+            fp_below_thresh = len(list(filter(false_positive_filter, all_calls)))
+            filtered_tp -= tp_below_thresh
+            filtered_fn += tp_below_thresh
+            filtered_fp -= fp_below_thresh
 
     # report
     print("\nReporting\n")
@@ -511,61 +622,87 @@ def main():
     reports.append(["Total TPs:", "{} ({}%)".format(total_tp, percent(total_tp, total_tp + total_fp + total_fn))])
     reports.append(["Total FPs:", "{} ({}%)".format(total_fp, percent(total_fp, total_tp + total_fp + total_fn))])
     reports.append(["Total FNs:", "{} ({}%)".format(total_fp, percent(total_fn, total_tp + total_fp + total_fn))])
-    reports.append(["Sensitivity:", "{}".format(1.0 * total_tp / (total_tp + total_fp))])
-    reports.append(["Precision:", "{}".format(1.0 * total_tp / (total_tp + total_fn))])
+    sensitivity = 1.0 * total_tp / (total_tp + total_fn)
+    precision = 1.0 * total_tp / (total_tp + total_fp)
+    fmeasure = calculate_fmeasure(sensitivity, precision)
+    reports.append(["Sensitivity:", "%.5f" % sensitivity])
+    reports.append(["Precision:", "%.5f" % precision])
+    reports.append(["FMeasure:", "%.5f" % fmeasure])
 
     # analysis with quality filtering
-    if args.qual_min is not None:
+    if do_filtering:
+        reports.append([""])
         reports.append(["--------------------"])
         reports.append(["- Filtered Summary -"])
         reports.append(["--------------------"])
-        reports.append(["Minimum Quality:", str(args.qual_min)])
-        reports.append(["Total TPs:", "{} ({}%)".format(filtered_tp, percent(filtered_tp, filtered_tp + filtered_fp + filtered_fn))])
-        reports.append(["Total FPs:", "{} ({}%)".format(total_fp, percent(total_fp, filtered_tp + filtered_fp + filtered_fn))])
-        reports.append(["Total FNs:", "{} ({}%)".format(total_fp, percent(filtered_fn, filtered_tp + filtered_fp + filtered_fn))])
-        reports.append(["Sensitivity:", "{}".format(1.0 * filtered_tp / (filtered_tp + filtered_fp))])
-        reports.append(["Precision:", "{}".format(1.0 * filtered_tp / (filtered_tp + filtered_fn))])
+        reports.append(["Minimum Quality (VCF):", str(args.qual_min)])
+        reports.append(["Minimum Depth (VCF):", str(args.vcf_read_depth_min)])
+        reports.append(["Minimum Depth (BAM):", str(args.bam_read_depth_min)])
+        reports.append(["Removed Chunks:", str(chunks_to_remove)])
+        total_calls = sum([total_fp,total_tp,total_fn])
+        filtered_calls = sum([filtered_tp,filtered_fp,filtered_fn])
+        reports.append(["Remaining Calls:", "{} ({}%)".format(filtered_calls, percent(filtered_calls, total_calls))])
+        reports.append(["Filtered TPs:", "{} ({}%)".format(filtered_tp, percent(filtered_tp, filtered_calls))])
+        reports.append(["Filtered FPs:", "{} ({}%)".format(filtered_fp, percent(filtered_fp, filtered_calls))])
+        reports.append(["Filtered FNs:", "{} ({}%)".format(filtered_fn, percent(filtered_fn, filtered_calls))])
+        filt_sensitivity = 1.0 * filtered_tp / (filtered_tp + filtered_fn)
+        filt_precision = 1.0 * filtered_tp / (filtered_tp + filtered_fp)
+        filt_fmeasure = calculate_fmeasure(filt_sensitivity, filt_precision)
+        reports.append(["Sensitivity:", "%.5f " % filt_sensitivity, "diff: %.5f" % (filt_sensitivity - sensitivity)])
+        reports.append(["Precision:", "%.5f " % filt_precision, "diff: %.5f" % (filt_precision - precision)])
+        reports.append(["FMeasure:", "%.5f " % filt_fmeasure, "diff: %.5f" % (filt_fmeasure - fmeasure)])
+
+    if QUICK_REPORT:
+        print_reports(reports)
+        sys.exit(0)
 
     # analysis on a per-chunk basis
+    reports.append([""])
     reports.append(["--------------------"])
     reports.append(["-  Chunk Summary   -"])
     reports.append(["--------------------"])
-    def get_chunk_report(chunk):
+    def get_chunk_report(chunk, extended=True):
         sensitivity = chunk[SENSITIVITY_KEY]
         precision = chunk[PRECISION_KEY]
-        hmean = chunk[HMEAN_KEY]
+        fmeasure = chunk[FMEASURE_KEY]
         report = ["%8d %s%s%s" % (mpi,
                                   "+" if mpi in best_chunks else " ",
                                   "-" if mpi in worst_chunks else " ",
-                                  "*" if mpi in specific_chunks.keys() else " ",),
-                  "hmean: %.3f %s " % (hmean,  "+  " if hmean > .85 else ( " = " if hmean > .7 else "  -")),
+                                  "*" if mpi in read_analysis_chunks.keys() and args.chunks != "*" else " ",),
+                  "fmeasure: %.3f %s " % (fmeasure,  "+  " if fmeasure > .85 else ( " = " if fmeasure > .7 else "  -")),
                   "sensitivity: %.3f %s " % (sensitivity,
                                              "+  " if sensitivity > .8 else (
                                                  " = " if sensitivity > .5 else "  -")),
                   "precision: %.3f %s " % (precision,
-                                           "+  " if precision > .85 else (" = " if precision > .7 else "  -")),
-                  "total_calls: %5d  " % len(chunk[CALL_DETAILS_LIST_KEY]),
-                  "avg_qual: %3d" % chunk[AVG_QUAL_KEY],
-                  "avg_tp_qual: %3d" % chunk[AVG_TP_QUAL_KEY],
-                  "avg_fp_qual: %3d" % chunk[AVG_FP_QUAL_KEY],
-                  "range: %9d-%-9d (%7d)" % (chunk[START_POS_KEY], chunk[END_POS_KEY],
-                                             chunk[END_POS_KEY] - chunk[START_POS_KEY])
-                  ]
+                                           "+  " if precision > .85 else (" = " if precision > .7 else "  -"))
+            ]
+        if extended:
+            report.extend([
+                      "total_calls: %5d  " % len(chunk[CALL_DETAILS_LIST_KEY]),
+                      "avg_qual: %3d" % chunk[AVG_QUAL_KEY],
+                      "avg_tp_qual: %3d" % chunk[AVG_TP_QUAL_KEY],
+                      "avg_fp_qual: %3d" % chunk[AVG_FP_QUAL_KEY],
+                      "avg_depth: %3d" % chunk[AVG_DEPTH_KEY],
+                      "avg_tp_depth: %3d" % chunk[AVG_TP_DEPTH_KEY],
+                      "avg_fp_depth: %3d" % chunk[AVG_FP_DEPTH_KEY],
+                      "range: %9d-%-9d (%7d)" % (chunk[START_POS_KEY], chunk[END_POS_KEY],
+                                                 chunk[END_POS_KEY] - chunk[START_POS_KEY])
+                  ])
         return report
     # get reports
     for mpi in chunk_map_keys:
         chunk = chunk_map[mpi]
-        if args.verbose or mpi in best_chunks or mpi in worst_chunks or mpi in specific_chunks.keys():
+        if args.verbose or mpi in best_chunks or mpi in worst_chunks or mpi in read_analysis_chunks.keys():
             reports.append(get_chunk_report(chunk))
 
     # specific chunks
-    def get_specific_chunk_report(chunk):
+    def get_read_analysis_chunk_report(chunk):
         report = [
             "%8d  %s%s%s %s" % (chunk[MPI_KEY],
                               "+" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third*2:] else " ",
                               "=" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third:chunk_ranking_third*2] else " ",
                               "-" if chunk[MPI_KEY] in chunk_ranking[0:chunk_ranking_third] else " ",
-                              "*" if chunk[MPI_KEY] in specific_chunks.keys() and args.chunks != '*' else " ")
+                              "*" if chunk[MPI_KEY] in read_analysis_chunks.keys() and args.chunks != '*' else " ")
         ]
         if len(chunk) > 1:
             report.extend( [
@@ -573,24 +710,41 @@ def main():
                 "filtered RC: %6d (%d%%)" % (chunk[FILTERED_READ_COUNT_KEY],
                                              percent(chunk[FILTERED_READ_COUNT_KEY],
                                                      chunk[ORIGINAL_READ_COUNT_KEY])),
-                "depth avg: {}".format(int(chunk[AVG_READ_DEPTH_KEY])),
-                "depth std: {}".format(int(chunk[STD_READ_DEPTH_KEY])),
-                "depth max: {}".format(int(chunk[MAX_READ_DEPTH_KEY])),
-                "depth min: {}".format(int(chunk[MIN_READ_DEPTH_KEY])),
+                "depth avg: %3d" % int(chunk[AVG_READ_DEPTH_KEY]),
+                "depth std: %3d" % int(chunk[STD_READ_DEPTH_KEY]),
+                "depth max: %4d" % int(chunk[MAX_READ_DEPTH_KEY]),
+                "depth min: %3d" % int(chunk[MIN_READ_DEPTH_KEY]),
 
-                "length avg: {}".format(int(chunk[AVG_READ_LENGTH_KEY])),
-                "length std: {}".format(int(chunk[STD_READ_LENGTH_KEY])),
-                "length max: {}".format(int(chunk[MAX_READ_LENGTH_KEY])),
-                "length min: {}".format(int(chunk[MIN_READ_LENGTH_KEY])),
+                "length avg: %5d" % int(chunk[AVG_READ_LENGTH_KEY]),
+                "length std: %5d" % int(chunk[STD_READ_LENGTH_KEY]),
+                "length max: %7d" % int(chunk[MAX_READ_LENGTH_KEY]),
+                "length min: %3d" % int(chunk[MIN_READ_LENGTH_KEY]),
                 ])
         return report
-    if len(specific_chunk_ids) > 0:
+    if len(read_analysis_chunk_ids) > 0:
+        reports.append([""])
         reports.append(["--------------------"])
-        reports.append(["- Specific  Chunk  -"])
+        reports.append(["-  Read  Analysis  -"])
         reports.append(["--------------------"])
-        for mpi in specific_chunk_ids:
-            chunk = specific_chunks[mpi]
-            reports.append(get_specific_chunk_report(chunk))
+        for mpi in read_analysis_chunk_ids:
+            chunk = read_analysis_chunks[mpi]
+            reports.append(get_read_analysis_chunk_report(chunk))
+
+    if do_filtering:
+        reports.append([""])
+        reports.append(["--------------------"])
+        reports.append(["- Filtered  Chunks -"])
+        reports.append(["--------------------"])
+        for mpi in chunk_map_keys:
+            if mpi in chunks_to_remove: continue
+            chunk = read_filtered_chunk_map[mpi]
+            tp_below_thresh = len(list(filter(true_positive_filter, chunk[CALL_DETAILS_LIST_KEY])))
+            fp_below_thresh = len(list(filter(false_positive_filter, chunk[CALL_DETAILS_LIST_KEY])))
+            chunk[TP_COUNT_KEY] -= tp_below_thresh
+            chunk[FN_COUNT_KEY] += tp_below_thresh
+            chunk[FP_COUNT_KEY] -= fp_below_thresh
+            reports.append(get_chunk_report(chunk, False))
+
 
     # print them
     print_reports(reports)
@@ -599,19 +753,25 @@ def main():
     if args.plot:
         print("Plotting")
 
+        # functions
         depth_count_below_threshold = lambda x, y: len(list(filter(lambda z: z < y, x[ALL_READ_DEPTH_KEY])))
         total_depth_below_threshold = lambda x, y: sum(list(map(lambda z: min(z, y), x[ALL_READ_DEPTH_KEY])))
 
-        # generic
+        ### generic
         # plot_all_call_qual(chunk_map, title="All Calls", logscale=True)
         # plot_sensitivity_x_precision(chunk_map)
-        plot_quality_filtered_sensitivity_x_precision(chunk_map, save_name="Chunk_Filtered_SensPrec")
+        # plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={10:'r', 25:'g', 100:'b'},
+        #                                       call_filter_key=C_QUAL_IDX, call_filter_name="Quality",
+        #                                       save_name="Chunk_QualFiltered_SensPrec")
+        # plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={0:'w', 5:'r', 20:'g', 25:'b'},
+        #                                       call_filter_key=C_DEPTH_IDX, call_filter_name="Read Depth",
+        #                                       save_name="Chunk_DepthFiltered_SensPrec")
 
-        # multi plot
+        ### multi plot
         # plot_information = [
         #     plot_details(color='r', data=chunk_map, key=PRECISION_KEY, label="Precision"),
         #     plot_details(color='b', data=chunk_map, key=SENSITIVITY_KEY, label="Sensitivity"),
-        #     plot_details(color='g', data=chunk_map, key=HMEAN_KEY, label="Mean")
+        # #    plot_details(color='g', data=chunk_map, key=HMEAN_KEY, label="Mean")
         # ]
         # multi_plot_chunks_by_parameter(plot_information, specific_chunks, STD_READ_DEPTH_KEY, legend_loc=1,
         #                          title="Depth StdDev", y_label= "Depth StdDev", save_name="All3_vs_DepthStd")
@@ -619,7 +779,7 @@ def main():
         #                          title="Depth Minimum", y_label="Depth Min", save_name="All3_vs_DepthMin")
         # multi_plot_chunks_by_parameter(plot_information, specific_chunks, lambda x: depth_count_below_threshold(x, 5),
         #                          title="Depths below 5", legend_loc=3,
-        #                          y_label="Depths below 5 (sampling 32 times)", save_name="All3_vs_DepthCntLt5")
+        #                          y_label="Depths below 5 ", save_name="All3_vs_DepthCntLt5")
         # multi_plot_chunks_by_parameter(plot_information, specific_chunks, lambda x: total_depth_below_threshold(x, 5)/33.0,
         #                          title="Avg Depths Below 5", legend_loc=4,
         #                          y_label="Avg depth below 5", save_name="All3_vs_DepthAvgLt5")
@@ -634,14 +794,14 @@ def main():
         #                          y_label="Avg depth", save_name="All3_vs_DepthAvg")
 
 
-        # # precision
+        ### precision
         # plot_chunks_by_parameter(chunk_map, PRECISION_KEY, specific_chunks, STD_READ_DEPTH_KEY,
         #                          title="Precision vs Depth StdDev", save_name="Prec_vs_DepthStd")
         # plot_chunks_by_parameter(chunk_map, PRECISION_KEY, specific_chunks, MIN_READ_DEPTH_KEY,
         #                          title="Precision vs Min Depth", save_name="Prec_vs_DepthMin", color='r')
         # plot_chunks_by_parameter(chunk_map, PRECISION_KEY, specific_chunks, lambda x: depth_count_below_threshold(x, 5),
         #                          title="Precision vs Depths below 5", x_label="Precision",
-        #                          y_label="Depths below 5 (sampling 32 times)", save_name="Prec_vs_DepthCntLt5", color='r')
+        #                          y_label="Depths below 5 ", save_name="Prec_vs_DepthCntLt5", color='r')
         # plot_chunks_by_parameter(chunk_map, PRECISION_KEY, specific_chunks, lambda x: total_depth_below_threshold(x, 5)/33.0,
         #                          title="Precision vs Avg Depths Below 5", x_label="Precision",
         #                          y_label="Avg depth below 5", save_name="Prec_vs_DepthAvgLt5", color='r')
@@ -655,14 +815,14 @@ def main():
         #                          title="Precision vs Avg Depths", x_label="Precision",
         #                          y_label="Avg depth", save_name="Prec_vs_DepthAvg", color='r')
         #
-        # # sensitivity
+        ### sensitivity
         # plot_chunks_by_parameter(chunk_map, SENSITIVITY_KEY, specific_chunks, STD_READ_DEPTH_KEY,
         #                          title="Sensitivity vs Depth StdDev", save_name="Sens_vs_DepthStd", color='b')
         # plot_chunks_by_parameter(chunk_map, SENSITIVITY_KEY, specific_chunks, MIN_READ_DEPTH_KEY,
         #                          title="Sensitivity vs Min Depth", save_name="Sens_vs_DepthMin", color='b')
         # plot_chunks_by_parameter(chunk_map, SENSITIVITY_KEY, specific_chunks, lambda x: depth_count_below_threshold(x, 5),
         #                          title="Sensitivity vs Depths below 5", x_label="Sensitivity",
-        #                          y_label="Depths below 5 (sampling 32 times)", save_name="Sens_vs_DepthCntLt5", color='b')
+        #                          y_label="Depths below 5 ", save_name="Sens_vs_DepthCntLt5", color='b')
         # plot_chunks_by_parameter(chunk_map, SENSITIVITY_KEY, specific_chunks, lambda x: total_depth_below_threshold(x, 5)/33.0,
         #                          title="Sensitivity vs Avg Depths Below 5", x_label="Sensitivity",
         #                          y_label="Avg depth below 5", save_name="Sens_vs_DepthAvgLt5", color='b')
@@ -676,14 +836,14 @@ def main():
         #                          title="Sensitivity vs Avg Depths", x_label="Sensitivity",
         #                          y_label="Avg depth", save_name="Sens_vs_DepthAvg", color='b')
         #
-        # # sensitivity and precision
+        ### sensitivity and precision
         # plot_chunks_by_parameter(chunk_map, HMEAN_KEY, specific_chunks, STD_READ_DEPTH_KEY,
         #                          title="Sensitivity&Precision vs Depth StdDev", save_name="SnP_vs_DepthStd", color='g')
         # plot_chunks_by_parameter(chunk_map, HMEAN_KEY, specific_chunks, MIN_READ_DEPTH_KEY,
         #                          title="Sensitivity&Precision vs Min Depth", save_name="SnP_vs_DepthMin", color='g')
         # plot_chunks_by_parameter(chunk_map, HMEAN_KEY, specific_chunks, lambda x: depth_count_below_threshold(x, 5),
         #                          title="Sensitivity&Precision vs Depths below 5", x_label="Harmonic Mean",
-        #                          y_label="Depths below 5 (sampling 32 times)", save_name="SnP_vs_DepthCntLt5", color='g')
+        #                          y_label="Depths below 5", save_name="SnP_vs_DepthCntLt5", color='g')
         # plot_chunks_by_parameter(chunk_map, HMEAN_KEY, specific_chunks, lambda x: total_depth_below_threshold(x, 5)/33.0,
         #                          title="Sensitivity&Precision vs Avg Depths Below 5", x_label="Harmonic Mean",
         #                          y_label="Avg depth below 5", save_name="SnP_vs_DepthAvgLt5", color='g')
@@ -697,8 +857,8 @@ def main():
         #                          title="Sensitivity&Precision vs Avg Depths", x_label="Harmonic Mean",
         #                          y_label="Avg depth", save_name="SnP_vs_DepthAvg", color='g')
 
-        if len(specific_chunk_ids) > 0:
-            for mpi in specific_chunk_ids:
+        if len(read_analysis_chunk_ids) > 0:
+            for mpi in read_analysis_chunk_ids:
                 # plot_all_call_qual(chunk_map[mpi][CALL_DETAILS_LIST_KEY], title="Chunk {}".format(mpi), logscale=False)
                 pass
 

@@ -35,6 +35,7 @@ D_MIN = "min_depth"
 D_AVG = "avg_depth"
 D_STD = "std_depth"
 D_ALL_DEPTHS = "all_depths"
+D_ALL_DEPTH_POSITIONS = "all_depth_positions"
 D_ALL_DEPTH_BINS = "all_depth_bins"
 D_SPACING = "depth_spacing"
 D_START_IDX = "depth_start_idx"
@@ -122,7 +123,7 @@ def print_read_length_summary(summary, verbose=False):
             print("\t\t\t{} {} {}".format(id, "#"*pound_count, count))
 
 
-def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
+def get_read_depth_summary(read_summaries, spacing, included_range=None):
     S, E = 's', 'e'
 
     # get reads which start or end on spacing interval
@@ -138,6 +139,7 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
 
     # data we care about
     depths = [0 for _ in range(end_idx - start_idx + 1)]
+    depth_positions = []
 
     # iterate over all read starts and ends
     depth = 0
@@ -152,11 +154,14 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
             else: curr = positions.pop()
         positions.append(curr)
         # save and iterate
-        depths[idx - start_idx] = depth
+        pos = idx - start_idx
+        depths[pos] = depth
+        depth_positions.append(idx)
         idx -= 1
 
     assert depth == 0
     assert len(positions) == 1
+    assert len(depths) == len(depth_positions)
 
     # check range before outputting summary
     if included_range is not None:
@@ -170,16 +175,23 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
         if range_start > end_idx or range_end < start_idx or range_start >= range_end:
             raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(included_range),
                                                                               "-".join([start_idx, end_idx])))
+        # reverse lists (because we record depths backwards)
+        depths.reverse()
+        depth_positions.reverse()
         # get appropriate depths
         new_depths = list()
+        new_depth_positions = list()
         for depth_idx in range(end_idx - start_idx + 1):
             if start_idx + depth_idx < range_start: continue
             if start_idx + depth_idx > range_end: break
             new_depths.append(depths[depth_idx])
+            new_depth_positions.append(depth_positions[depth_idx])
         # update values
         depths = new_depths
+        depth_positions = new_depth_positions
         start_idx = max(start_idx, range_start)
         assert len(depths) > 0
+        assert len(new_depths) == len(new_depth_positions)
 
     # get read depth log value
     log_depth_bins = [0 for _ in range(16)]
@@ -196,6 +208,7 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
         D_AVG: np.mean(depths),
         D_STD: np.std(depths),
         D_ALL_DEPTHS: depths,
+        D_ALL_DEPTH_POSITIONS: depth_positions,
         D_ALL_DEPTH_BINS: log_depth_bins,
         D_SPACING: spacing,
         D_START_IDX: start_idx,
