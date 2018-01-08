@@ -240,7 +240,7 @@ int main(int argc, char* argv[]) {
 	}
   
   // build index  
-	linearReferenceStructure* reference = NULL;
+	siteIndex* reference = NULL;
 	haplotypeCohort* cohort = NULL;
 	int built_index = lh_indices_from_vcf(argv[3], region_beg, region_end, &reference, &cohort);
 	
@@ -257,12 +257,12 @@ int main(int argc, char* argv[]) {
   // TODO for Benedict
   // Need
   // 1. number of sites
-  size_t n_read_sites = linearReferenceStructure_n_sites(reference);
+  size_t n_read_sites = siteIndex_n_sites(reference);
   // TODO for Benedict: replace with
   // size_t n_read_sites = ...
   
   // 2. position of sites
-  size_t* read_sites = (size_t*)malloc(linearReferenceStructure_n_sites(reference) * sizeof(size_t));
+  size_t* read_sites = (size_t*)malloc(siteIndex_n_sites(reference) * sizeof(size_t));
   // TODO for Benedict: replace with
   // size_t* read_sites = ...
   

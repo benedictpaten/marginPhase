@@ -1,101 +1,119 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <htslib/faidx.h>
 #include "interface.h"
 #include "vcftohapman.h"
 
 int main(int argc, char* argv[]) {
-	if(argc != 8) {
-		printf("arguments are [ref path] [interval] [vcf path] [recomb penalty] [mutation penalty] [cohort size]\n");
+	// -- input handling -------------------------------------------------------------------------------------------------
+  if(argc != 5) {
+		printf("arguments are [ref path] [interval] [vcf path] [cohort size] [number of trials]\n");
 		return 1;
 	}
-
+  
+  char* reference_path = argv[1];
+  char* interval_str = argv[2];
+  char* vcf_path = argv[3];
+  size_t cohort_size = atoi(argv[4]);
+  size_t n_trials = atoi(argv[5]);
+  
+  // static parameters
+  double MUT_PEN = 2.303 * -9;
+  double RECOMB_PEN = 2.303 * -6;
+  size_t LINEAR_MAX_SAMPLES = 10000;
+  size_t QUADRATIC_MAX_SAMPLES = 500;
+  size_t RANDOM_HAPLOTYPE_GENERATIONS = 3;
+  
   // Parse interval input to get start position, end position, ref sequence
-  // Extract reference sequence from fasta
-	char* interval_str = argv[2];
-	fprintf(stdout, "loading reference interval %s from %s\n", argv[2], argv[1]);
+	
+	fprintf(stderr, "loading reference interval %s from %s\n", interval_str, reference_path);
   int32_t region_beg;
   int32_t region_end;
   get_interval_bounds(interval_str, &region_beg, &region_end);
 	if(region_end != -1) {
-		fprintf(stdout, "ref start is %d, ref end is %d\n", region_beg, region_end);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
 	}
-	faidx_t* ref_seq_fai = fai_load(argv[1]);
+  
+  // Extract reference sequence from fasta
+	faidx_t* ref_seq_fai = fai_load(reference_path);
 	int32_t length = region_end;
 	char* ref_seq = fai_fetch(ref_seq_fai, interval_str, &length);
-	fprintf(stdout, "loaded reference sequence of length %lu\n", strlen(ref_seq));
+	fprintf(stderr, "loaded reference sequence of length %lu\n", strlen(ref_seq));
 	if(region_end == -1) {
 		region_end = strlen(ref_seq);
-		fprintf(stdout, "ref start is %d, ref end is %d\n", region_beg, region_end);
+		fprintf(stderr, "ref start is %d, ref end is %d\n", region_beg, region_end);
 	}
   
   // build index  
-	linearReferenceStructure* reference = NULL;
+	siteIndex* reference = NULL;
 	haplotypeCohort* cohort = NULL;
-	int built_index = lh_indices_from_vcf_subset(argv[3], region_beg, region_end, &reference, &cohort, atoi(argv[7]));
+	int built_index = lh_indices_from_vcf_subset(vcf_path, region_beg, region_end, &reference, &cohort, cohort_size);
 	
 	if(built_index == 0) {
-		fprintf(stdout, "Input vcf is empty\n");
+		fprintf(stderr, "Input vcf is empty\n");
 		return 1;
 	} else {
-		fprintf(stdout, "built haplotypeCohort from vcf %s\n", argv[3]);
+		fprintf(stderr, "built haplotypeCohort from vcf %s\n", vcf_path);
 	}
-
-  size_t read_region_beg = region_beg;
-  size_t* read_sites = NULL;
-  size_t n_read_sites = 0;
-  char* read_seq = (char*)malloc(strlen(ref_seq) + 1);
-  strcpy(read_seq, ref_seq);
-  char* r_alleles_1 = NULL;
-  char* r_alleles_2 = NULL;
-
+  
+  // build penalty container
   double recombination_penalty = atof(argv[4]);
   double mutation_penalty = atof(argv[5]);
-  double threshold = atof(argv[6]);
-  size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
-	fprintf(stdout, "%d cohort size\n", cohort_size);
+  penaltySet* penalties = penaltySet_build(recombination_penalty, mutation_penalty, cohort_size);
   
-  penaltySet* penalties = penaltySet_build(recombination_penalty,
-                               mutation_penalty,
-                               cohort_size);
+  for(size_t j = 0; j < n_trials; j++) {
+  	inputHaplotype* query_ih = haplotypeCohort_random_haplo(cohort, reference, RANDOM_HAPLOTYPE_GENERATIONS, penalties, length);
+    
+    fprintf(stderr, "simulated read query using %d generations \n", RANDOM_HAPLOTYPE_GENERATIONS);
+    
+    double time_used_fast;
+  	double time_used_quad;
+  	double time_used_linear;
+  	
+  	for(size_t i = 0; i < 10; i++) {
+      fastFwdAlgState* haplotype_matrix = fastFwdAlgState_initialize(reference, penalties, cohort);
+    	slowFwdSolver* linear_fwd = slowFwd_initialize(reference, penalties, cohort);
+    	slowFwdSolver* quadratic_fwd = slowFwd_initialize(reference, penalties, cohort);
 
-  haplotypeCohort_sim_read_query_2(cohort,
-                                 ref_seq,
-                                 mutation_penalty,
-                                 recombination_penalty,
-                                 0,
-                                 &read_sites,
-                                 &n_read_sites,
-                                 read_seq,
-                                 &r_alleles_1,
-                                 &r_alleles_2);
-  for(size_t i = 0; i < n_read_sites; i++) {
-    read_seq[read_sites[i]] = r_alleles_1[i];
+    	struct timeval tv1, tv2, tv3, tv4;
+    	gettimeofday(&tv1, NULL);
+    	double result = fastFwdAlgState_score(haplotype_matrix, query_ih);
+      gettimeofday(&tv2, NULL);
+      time_used_fast += (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+    	fprintf(stderr, "finished fast fwd alg replicate %d in %f sec\n", i, (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec));
+    	
+      if(cohort_size > QUADRATIC_MAX_SAMPLES) {
+        time_used_quad = 0;
+      } else {
+        gettimeofday(&tv2, NULL);
+        double result_slowq = slowFwd_solve_quadratic(quadratic_fwd, query_ih);
+        gettimeofday(&tv3, NULL);
+        fprintf(stderr, "finished quadratic fwd alg replicate %d in %f sec\n", i, (double) (tv3.tv_usec - tv2.tv_usec) / 1000000 + (double) (tv3.tv_sec - tv2.tv_sec));
+  	    time_used_quad += (double) (tv3.tv_usec - tv2.tv_usec) / 1000000 + (double) (tv3.tv_sec - tv2.tv_sec);
+      }
+      
+      if(cohort_size > LINEAR_MAX_SAMPLES) {
+        time_used_linear = 0;
+      } else {
+        gettimeofday(&tv3, NULL);
+      	double result_slowl = slowFwd_solve_linear(linear_fwd, query_ih);
+        gettimeofday(&tv4, NULL);
+        time_used_linear += (double) (tv4.tv_usec - tv3.tv_usec) / 1000000 + (double) (tv4.tv_sec - tv3.tv_sec);
+      	fprintf(stderr, "finished linear fwd alg replicate %d in %f sec\n", i, (double) (tv4.tv_usec - tv3.tv_usec) / 1000000 + (double) (tv4.tv_sec - tv3.tv_sec));
+      }
+      
+      fastFwdAlgState_delete(haplotype_matrix);
+    	slowFwdSolver_delete(quadratic_fwd);
+    	slowFwdSolver_delete(linear_fwd);
+    }
+
+  	fprintf(stdout, "%f\t%f\t%f\t%d\t%d\t%d\n", time_used_fast/3, time_used_linear/3, time_used_quad/3, haplotypeCohort_sum_MACs(cohort), haplotypeCohort_n_sites(cohort), atoi(argv[4]), region_end - region_beg);
+    
+    inputHaplotype_delete(query_ih);
   }
-  printf("%s\n", read_seq);
-  
-  inputHaplotype* input_haplotype = 
-              inputHaplotype_build(ref_seq, read_seq, reference, region_beg);
-  haplotypeMatrix* haplotype_matrix = 
-              haplotypeMatrix_initialize(reference, penalties, cohort);
-							
-								clock_t start, end;
-							  double cpu_time_used;
-									start = clock();
-
-  double result = haplotypeMatrix_score(haplotype_matrix, input_haplotype);
-  	end = clock();
-			cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-
-  printf("%f\n", result);
-	
-	fprintf(stderr, "%f %d %d\n", cpu_time_used, atoi(argv[7]), region_end - region_beg);
-  
-  inputHaplotype_delete(input_haplotype);
-  haplotypeMatrix_delete(haplotype_matrix);
-  penaltySet_delete(penalties);
+	haplotypeCohort_delete(cohort);
+	penaltySet_delete(penalties);
   return 0;
 }

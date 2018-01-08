@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end, linearReferenceStructure** return_lr, haplotypeCohort** return_cohort, size_t number) {
+int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end, siteIndex** return_lr, haplotypeCohort** return_cohort, size_t number) {
   vcfFile* cohort_vcf = vcf_open(vcf_path, "r");
   if (cohort_vcf == NULL) {
       return 0;
@@ -52,7 +52,7 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
     }
   } 
   
-  linearReferenceStructure* reference = linearReferenceStructure_init_empty(ref_start);
+  siteIndex* reference = siteIndex_init_empty(ref_start);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
   int built_initial_span = 0;
   
@@ -71,11 +71,11 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
       if (bcf_is_snp(record) == 1) {
         bcf_unpack(record, BCF_UN_ALL);
         if(built_initial_span == 0) {
-          linearReferenceStructure_set_initial_span(reference, site - ref_start);
+          siteIndex_set_initial_span(reference, site - ref_start);
           built_initial_span = 1;
         }
         
-        int64_t site_index = linearReferenceStructure_add_site(reference, site);
+        int64_t site_index = siteIndex_add_site(reference, site);
         haplotypeCohort_add_record(cohort, site_index);
         
         int32_t *gt_arr = NULL, ngt_arr = 0;
@@ -108,7 +108,7 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
   
   fprintf(stderr, "number of sites %d\n", sites_added);
   
-  linearReferenceStructure_calc_spans(reference, ref_end - ref_start);
+  siteIndex_calc_spans(reference, ref_end - ref_start);
   haplotypeCohort_populate_counts(cohort);
 
   *return_lr = reference;
@@ -149,7 +149,7 @@ void get_interval_bounds(const char* str, int32_t* beg, int32_t* end) {
   free(s);
 }
 
-int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, linearReferenceStructure** return_lr, haplotypeCohort** return_cohort) {
+int lh_indices_from_vcf(char* vcf_path, size_t ref_start, size_t ref_end, siteIndex** return_lr, haplotypeCohort** return_cohort) {
   return lh_indices_from_vcf_subset(vcf_path, ref_start, ref_end, return_lr, return_cohort, 0);
 }
 

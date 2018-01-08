@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
 	}
   
   // build index  
-	linearReferenceStructure* reference = NULL;
+	siteIndex* reference = NULL;
 	haplotypeCohort* cohort = NULL;
 	int built_index = lh_indices_from_vcf(argv[3], region_beg, region_end, &reference, &cohort);
 	
@@ -77,17 +77,6 @@ int main(int argc, char* argv[]) {
   double threshold = atof(argv[6]);
   size_t cohort_size = haplotypeCohort_n_haplotypes(cohort);
   
-  haplotypeCohort_sim_read_query_2(cohort,
-                                 ref_seq,
-                                 mutation_penalty,
-                                 recombination_penalty,
-																 0,
-                                 &read_sites,
-																 &n_read_sites,
-                                 read_seq,
-																 &r_alleles_1,
-															 	 &r_alleles_2);
-	
 	clock_t start, end;
   double cpu_time_used;
 
@@ -111,7 +100,7 @@ int main(int argc, char* argv[]) {
 	haplotypeManager_build_tree_interval(hap_manager, threshold);
 	end = clock();
 	cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-	printf("%f\n", cpu_time_used);
+	// printf("%f sec to build tree\n", cpu_time_used);
 	haplotypeManager_print_terminal_nodes(hap_manager);
 	// haplotypeManager_print_prefix_likelihoods(hap_manager);
 	
