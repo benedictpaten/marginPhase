@@ -16,10 +16,14 @@ R_END_POS = "end_pos"
 R_LENGTH = "length"
 R_SECONDARY = "secondary_alignment"
 R_MAPPING_QUALITY = "mapping_quality"
+R_CHROMOSOME = "chromosome"
+
+#bam summary
+B_READ_COUNT = "read_count"
+B_FILTERED_READ_COUNT = "filtered_read_count"
+B_CHROMOSOME = "chromosome"
 
 #length summary
-L_READ_COUNT = "read_count"
-L_FILTERED_READ_COUNT = "filtered_read_count"
 L_LOG_LENGTH_BUCKETS = "log_length_buckets"
 L_MIN = "min_length"
 L_MAX = "max_length"
@@ -73,7 +77,8 @@ def get_read_summary(read):
         R_LENGTH: read.reference_length,
         R_ID: read.query_name,
         R_SECONDARY: read.is_secondary,
-        R_MAPPING_QUALITY: read.mapping_quality
+        R_MAPPING_QUALITY: read.mapping_quality,
+        R_CHROMOSOME: read.reference_name
     }
     return summary
 
@@ -267,6 +272,7 @@ def main(args = None):
         if not args.silent: print("Analyzing {} files".format(len(in_alignments)))
 
     # data we care about
+    bam_summaries = dict()
     length_summaries = dict()
     depth_summaries = dict()
 
@@ -277,8 +283,14 @@ def main(args = None):
             print("Matched file {} has unexpected filetype".format(alignment_filename))
             continue
 
+        # prep
+        bam_summaries[alignment_filename] = {}
+        length_summaries[alignment_filename] = {}
+        depth_summaries[alignment_filename] = {}
+
         # data we're gathering
         read_summaries = list()
+        chromosomes =  set()
 
         # get read data we care about
         samfile = None
@@ -289,6 +301,7 @@ def main(args = None):
             for read in samfile.fetch():
                 read_count += 1
                 read_summaries.append(get_read_summary(read))
+                chromosomes.add(read.reference_name)
             if not args.silent: print("read_count: {}".format(read_count))
         finally:
             if samfile is not None: samfile.close()
@@ -302,19 +315,25 @@ def main(args = None):
             if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
 
         # summarize
-        length_summaries[alignment_filename] = get_read_length_summary(read_summaries)
-        length_summaries[alignment_filename][L_READ_COUNT] = read_count
-        length_summaries[alignment_filename][L_FILTERED_READ_COUNT] = len(read_summaries)
-        depth_summaries[alignment_filename] = get_read_depth_summary(read_summaries,
-                                                                     spacing=args.depth_spacing,
-                                                                     included_range=args.depth_range)
+        for chromosome in chromosomes:
+            chromosome_reads = list(filter(lambda x: x[R_CHROMOSOME] == chromosome, read_summaries))
+            bam_summaries[alignment_filename][chromosome] = {
+                B_READ_COUNT: read_count,
+                B_FILTERED_READ_COUNT:len(chromosome_reads),
+                B_CHROMOSOME: chromosome
+            }
+            length_summaries[alignment_filename][chromosome] = get_read_length_summary(chromosome_reads)
+            depth_summaries[alignment_filename][chromosome] = get_read_depth_summary(chromosome_reads,
+                                                                         spacing=args.depth_spacing,
+                                                                         included_range=args.depth_range)
+
         # print
         if args.read_length:
             if not args.silent: print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
         if args.read_depth:
             if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
 
-    return length_summaries, depth_summaries
+    return bam_summaries, length_summaries, depth_summaries
 
 
 
