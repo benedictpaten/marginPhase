@@ -11,6 +11,11 @@ import matplotlib.pyplot as plt
 import math
 import pickle
 
+#TODO get mpi to be string
+#TODO maybe classify fn's within an MPI?
+#TODO add chromosome to mpi
+#TODO chromosome level analysis
+
 # file names
 FP_NAME = "fp.vcf.gz"
 FN_NAME = "fn.vcf.gz"
@@ -95,21 +100,24 @@ QUICK_REPORT = False
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
-    parser.add_argument('--vcf_directory', '-d', dest='vcf_directory', default=".", type=str,
+    parser.add_argument('--input_vcf_directory', '-i', dest='vcf_directory', default=".", type=str,
                        help='Directory where VCF files will live')
     parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
                        help='Print extra information')
+    parser.add_argument('--quiet', '-V', dest='quiet', action='store_true', default=False,
+                       help='Print less information')
     parser.add_argument('--chunks', '-c', dest='chunks', default=None, type=str,
                        help='Specify comma-separated MPIs of specific chunks to analyze')
     parser.add_argument('--plot', '-p', dest='plot', action='store_true', default=False,
                        help='Make plots of data')
-    #todo enforce single chromosome option
+    parser.add_argument('--chromosome', '-o', dest='chromosome', default=None, type=str,
+                       help='Limit calls in VCF and BED files to specified contig')
 
     parser.add_argument('--qual_min', '-q', dest='qual_min', default=None, type=int,
                        help='FILTER: Filter VCF qualities below threshold: TP->FN, FP->/dev/null')
-    parser.add_argument('--vcf_read_depth_min', '-r', dest='vcf_read_depth_min', default=None, type=int,
+    parser.add_argument('--vcf_read_depth_min', '-d', dest='vcf_read_depth_min', default=None, type=int,
                        help='FILTER: Filter VCF read depth below threshold: TP->FN, FP->/dev/null')
-    parser.add_argument('--bam_read_depth_min', '-R', dest='bam_read_depth_min', default=None, type=int,
+    parser.add_argument('--bam_read_depth_min', '-D', dest='bam_read_depth_min', default=None, type=int,
                        help='FILTER: Filter calls where read depth below threshold in bam. '
                             'Used in conjuction with --chunk_bam_format option. TP,FN,FP -> /dev/null')
     parser.add_argument('--remove_chunks', '-C', dest='remove_chunks', default=None, type=str,
@@ -168,6 +176,7 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
 
         # data we care about
         chr = line[0]
+        if args.chromosome is not None and args.chromosome != chr: continue
         pos = int(line[1])
         qual = None
         depth = None
@@ -219,31 +228,36 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         chunk[increment_key] += 1
 
 
-def read_bed_file(bed_filename, invert=False):
+def read_bed_file(bed_filename, args, invert=False):
     #prep
     bed_contents = list()
     open_fcn = open if not bed_filename.endswith("gz") else gzip.open
 
     # read in bed
+    chromosomes = set()
     with open_fcn(bed_filename, 'r') as input:
         for line in input:
             line = line.strip().split()
             if len(line) < 3: raise Exception("BED file malformed: {}, line: {}".format(bed_filename, "\t".join(line)))
+            if args.chromosome is not None and line[0] != args.chromosome: continue
+            chromosomes.add(line[0])
             bed_contents.append(bed_details(line[0], line[1], line[2]))
     bed_contents.sort(key=lambda x: x[B_START_IDX])
 
-    #sanity check
+    #sanity checks
+    if len(chromosomes) > 1:
+        raise Exception("Got {} chromosomes in BED file: {}".format(len(chromosomes), bed_filename))
     last_bedframe = None
     for bedframe in bed_contents:
-        assert last_bedframe is None or last_bedframe[B_END_IDX] < bedframe[B_START_IDX]
+        assert last_bedframe is None or last_bedframe[B_END_IDX] <= bedframe[B_START_IDX]
 
     # maybe invert
     if invert:
         inverted_bed_contents = list()
         last_end_pos = 0
         for bedframe in bed_contents:
-            inverted_bed_contents.append(bed_details(bedframe[0], last_end_pos, bedframe[B_START_IDX] - 1))
-            last_end_pos = bedframe[B_END_IDX] + 1
+            inverted_bed_contents.append(bed_details(bedframe[0], last_end_pos, bedframe[B_START_IDX]))
+            last_end_pos = bedframe[B_END_IDX]
         inverted_bed_contents.append(bed_details(bedframe[0], last_end_pos, sys.maxint))
         bed_contents = inverted_bed_contents
 
@@ -369,12 +383,12 @@ def filter_calls_by_bed_inclusion(chunk, bed_information):
 
     # filter calls
     def call_in_bed_idx(call, idx):
-        return call[C_POS_IDX] >= bed_indices[idx][B_START_IDX] and call[C_POS_IDX] <= bed_indices[idx][B_END_IDX]
+        return call[C_POS_IDX] >= bed_indices[idx][B_START_IDX] and call[C_POS_IDX] < bed_indices[idx][B_END_IDX]
     new_calls = list()
     bed_idx = 0
     for call in call_data:
         # skip bed indices if need be
-        while call[C_POS_IDX] > bed_indices[bed_idx][B_END_IDX]:
+        while call[C_POS_IDX] >= bed_indices[bed_idx][B_END_IDX]:
             bed_idx += 1
             # in case we go past the last idx
             if bed_idx > max_bed_idx: break
@@ -483,8 +497,10 @@ def plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={10:'r', 2
         total_thresh_tp = sum(map(lambda mpi: all_tp[threshold][mpi], mpis))
         total_thresh_fp = sum(map(lambda mpi: all_fp[threshold][mpi], mpis))
         total_thresh_fn = sum(map(lambda mpi: all_fn[threshold][mpi], mpis))
-        total_sensitivity = 1.0 * total_thresh_tp / (total_thresh_tp + total_thresh_fn)
-        total_precision = 1.0 * total_thresh_tp / (total_thresh_tp + total_thresh_fp)
+        total_sensitivity = 1.0 * total_thresh_tp / (total_thresh_tp + total_thresh_fn) \
+            if (total_thresh_tp + total_thresh_fn) > 0 else 0
+        total_precision = 1.0 * total_thresh_tp / (total_thresh_tp + total_thresh_fp) \
+            if (total_thresh_tp + total_thresh_fp) > 0 else 0
 
         label = "%3d (overall: S %s, P %s)" % (threshold, ("%.2f" % total_sensitivity).lstrip('0'),
                                               ("%.2f" % total_precision).lstrip('0'))
@@ -682,7 +698,7 @@ def main():
             print("\tFiltering by BED inclusion")
 
             for bed_file in args.inclusion_beds.split(","):
-                bed_data = read_bed_file(bed_file, invert=False)
+                bed_data = read_bed_file(bed_file, args, invert=False)
                 bed_coverage = sum(map(lambda x: max(0, min(call_coverage_end, x[B_END_IDX]) -
                                                      max(x[B_START_IDX], call_coverage_start)), bed_data))
                 print("\t\tBED {} includes {}/{} ({}%) of called range".format(bed_file, bed_coverage, call_coverage,
@@ -696,7 +712,7 @@ def main():
             print("\tFiltering by BED exclusion")
 
             for bed_file in args.exclusion_beds.split(","):
-                bed_data = read_bed_file(bed_file, invert=True)
+                bed_data = read_bed_file(bed_file, args, invert=True)
                 bed_coverage = sum(map(lambda x: max(0, min(call_coverage_end, x[B_END_IDX]) -
                                                      max(x[B_START_IDX], call_coverage_start)), bed_data))
                 print("\t\tBED {} excludes {}/{} ({}%) of called range"
@@ -711,15 +727,13 @@ def main():
         # these functions are used to get TPs and FPs from a set of calls (from the arguments)
         true_positive_removal_filter = lambda x: \
             (x[C_TYPE_IDX] == TP_COUNT_KEY) and \
-            (x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else False) or \
-            (x[C_VCF_DEPTH_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else False)
+            ((x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else False) or \
+             (x[C_VCF_DEPTH_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else False))
         false_positive_removal_filter = lambda x: \
             (x[C_TYPE_IDX] == FP_COUNT_KEY) and \
-            (x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else False) or \
-            (x[C_VCF_DEPTH_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else False)
+            ((x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else False) or \
+             (x[C_VCF_DEPTH_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else False))
 
-        # prep (if necessary)
-        if filtered_chunk_map is None: filtered_chunk_map = dict()
         # get chunks to not include (if appropriate)
         chunks_to_remove = list()
         if args.remove_chunks is not None:
@@ -744,6 +758,7 @@ def main():
             # get calls
             for call in chunk[CALL_DETAILS_LIST_KEY]:
                 all_calls.append(call)
+
         # get baselines
         filtered_fp = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, all_calls)))
         filtered_tp = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, all_calls)))
@@ -803,8 +818,9 @@ def main():
         reports.append(["Precision:", "%.5f " % filt_precision, "diff: %.5f" % (filt_precision - precision)])
         reports.append(["FMeasure:", "%.5f " % filt_fmeasure, "diff: %.5f" % (filt_fmeasure - fmeasure)])
 
-    if QUICK_REPORT:
+    if args.quiet:
         print_reports(reports)
+        if args.plot: print("\nDue to programmer laziness, plotting is not compatible with the --quiet option")
         sys.exit(0)
 
     # analysis on a per-chunk basis

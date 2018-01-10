@@ -97,7 +97,7 @@ def write_to_bedfile(depth_map, chromosome, output, args):
 
     def write_bedline(block_start, block_end, block_sum):
         start_idx = block_start * spacing
-        end_idx = (block_end + 1) * spacing - 1
+        end_idx = (block_end + 1) * spacing
         avg_depth = int(1.0 * block_sum / (block_end - block_start + 1))
         output.write("{}\t{}\t{}\tavg_depth:{}\n".format(chromosome, start_idx, end_idx, avg_depth))
 
