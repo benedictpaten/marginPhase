@@ -21,9 +21,18 @@ FP_NAME = "fp.vcf.gz"
 FN_NAME = "fn.vcf.gz"
 TP_NAME = "tp.vcf.gz"
 
-# misc
+# vcf tags
 MPI_TAG = "MPI"
 DEPTH_TAG = "DP"
+
+# mpi mgmnt
+MPI_SEP = "-"
+MPI_SORT = lambda x: int(x.split(MPI_SEP)[0].replace("chr", "").replace("X","30").replace("Y","31"))*1000 + \
+                     int(x.split(MPI_SEP)[1])
+chrom_from_mpi = lambda x: x.split(MPI_SEP)[0]
+full_mpi_from_chrom_and_mpi = lambda chrom, mpi: "%s%s%03d" % (chrom, MPI_SEP, int(mpi))
+MIN_START_POS = 0
+MAX_END_POS = sys.maxint
 
 # chunk details
 START_POS_KEY = 'start_pos'
@@ -55,12 +64,6 @@ MIN_READ_DEPTH_KEY = "min_read_depths"
 ALL_READ_DEPTH_KEY = "all_read_depths"
 ALL_READ_DEPTH_POSITIONS_KEY = "all_read_depth_positions"
 READ_DEPTH_MAP_KEY = "read_depth_map"
-
-# AVG_READ_LENGTH_KEY = "avg_read_length"
-# STD_READ_LENGTH_KEY = "std_read_length"
-# ALL_READ_LENGTH_KEY = "all_read_length"
-# MAX_READ_LENGTH_KEY = "max_read_length"
-# MIN_READ_LENGTH_KEY = "min_read_length"
 
 # call details indices
 C_POS_IDX = 0
@@ -96,7 +99,7 @@ calculate_fmeasure = lambda precision, sensitivity: 2 * (precision * sensitivity
 
 # config
 DEPTH_SAMPLE_SPACING = 500
-QUICK_REPORT = False
+SAMPLE_SPACING_KEY = "sample_spacing"
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
@@ -127,11 +130,11 @@ def parse_args():
     parser.add_argument('--exclusion_beds', '-E', dest='exclusion_beds', default=None, type=str,
                        help='FILTER: exclude calls from within comma-separated bed files')
 
-    parser.add_argument('--genome_bam_file', '-b', dest='genome_bam_file', default=None, type=str,
-                       help='Filename of input bam (will only output depth statistics)')
+    parser.add_argument('--genome_bam_glob', '-b', dest='genome_bam_glob', default=None, type=str,
+                       help='Filename glob for input BAMs (will output depth statistics)')
     parser.add_argument('--pickle_filename', '-s', dest='pickle_filename', default=None, type=str,
                         help="Filename for pickling or unpickling read depth data.  Depth info will be unpickled from "
-                             "here if the file exists, otherwise data in 'genome_bam_file' parameter will be saved.")
+                             "here if the file exists, otherwise data in 'genome_bam_glob' parameter will be saved.")
 
     return parser.parse_args()
 
@@ -145,17 +148,17 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         mpi_lookup_list = list()
         for chunk in chunk_map.values():
             mpi_lookup_list.append(mpi_details(chunk))
-        mpi_lookup_list.sort(key=lambda x: x[M_START_POS_IDX])
-        # create mpis for what we're missing
-        missing_mpis = list()
-        idx = 0
-        for mpi in mpi_lookup_list:
-            missing_mpis.append([idx, mpi[M_START_POS_IDX] - 1, None])
-            idx = mpi[M_END_POS_IDX] + 1
-        missing_mpis.append([idx, sys.maxint, None])
-        # add missing mpis to list of mpis
-        for mpi in missing_mpis:
-            mpi_lookup_list.append(mpi)
+    #     mpi_lookup_list.sort(key=lambda x: x[M_START_POS_IDX])
+    #     # create mpis for what we're missing
+    #     missing_mpis = list()
+    #     idx = 0
+    #     for mpi in mpi_lookup_list:
+    #         missing_mpis.append([idx, mpi[M_START_POS_IDX] - 1, None])
+    #         idx = mpi[M_END_POS_IDX] + 1
+    #     missing_mpis.append([idx, sys.maxint, None])
+    #     # add missing mpis to list of mpis
+    #     for mpi in missing_mpis:
+    #         mpi_lookup_list.append(mpi)
     def is_in_mpi(curr, pos):
         return pos >= curr[M_START_POS_IDX] and pos <= curr[M_END_POS_IDX]
     def lookup_mpi(pos):
@@ -175,8 +178,8 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
             raise Exception("Line {} is malformed in {}:\n\t[{}]".format(linenr, increment_key, '\t'.join(line)))
 
         # data we care about
-        chr = line[0]
-        if args.chromosome is not None and args.chromosome != chr: continue
+        chrom = line[0]
+        if args.chromosome is not None and args.chromosome != chrom: continue
         pos = int(line[1])
         qual = None
         depth = None
@@ -192,7 +195,7 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
                     if tags[i] == MPI_TAG: mpi_idx = i
                 if mpi_idx is None: raise Exception("Line {} is missing MPI tag in {}:\n\t[{}]"
                                                     .format(linenr, increment_key, '\t'.join(line)))
-            mpi = int(smpl[mpi_idx])
+            mpi = full_mpi_from_chrom_and_mpi(chrom, smpl[mpi_idx])
             # get depth
             if len(tags) < depth_idx or tags[depth_idx] != DEPTH_TAG:
                 depth_idx = None
@@ -205,8 +208,7 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
             if current_mpi is None or not is_in_mpi(current_mpi, pos):
                 current_mpi = lookup_mpi(pos)
             mpi = current_mpi[M_MPI_IDX]
-            if mpi is None:
-                continue
+            assert mpi is not None
 
         # init chunk (if necessary)
         if mpi not in chunk_map:
@@ -226,6 +228,29 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         chunk[END_POS_KEY] = max(pos, chunk[END_POS_KEY])
         chunk[CALL_DETAILS_LIST_KEY].append(call_details(pos, qual, depth, increment_key))
         chunk[increment_key] += 1
+
+# this closes the gaps in mpis so that they are no missing positions
+def fill_mpi_holes(chunk_map):
+    chromosomes = set(map(chrom_from_mpi, chunk_map.keys()))
+    # for mpi in chunk_map.keys():
+    #     chromosomes.add(chrom_from_mpi(mpi))
+    for chrom in chromosomes:
+        chrom_mpis = list(filter(lambda x: chrom_from_mpi(x) == chrom, chunk_map.keys()))
+        chrom_mpis.sort(key = lambda x: chunk_map[x][START_POS_KEY])
+        next_start_pos = MIN_START_POS
+        for mpi in chrom_mpis:
+            chunk = chunk_map[mpi]
+            chunk[START_POS_KEY] = next_start_pos
+            next_start_pos = chunk[END_POS_KEY] + 1
+        chunk[END_POS_KEY] = MAX_END_POS
+
+# this updates start and end pos for the first and last mpis
+def close_mpi_bounds(chunk_map):
+    for chunk in chunk_map.values():
+        if chunk[START_POS_KEY] == MIN_START_POS:
+            chunk[START_POS_KEY] = min(list(map(lambda x: x[C_POS_IDX], chunk[CALL_DETAILS_LIST_KEY])))
+        if chunk[END_POS_KEY] == MAX_END_POS:
+            chunk[END_POS_KEY] = max(list(map(lambda x: x[C_POS_IDX], chunk[CALL_DETAILS_LIST_KEY])))
 
 
 def read_bed_file(bed_filename, args, invert=False):
@@ -283,44 +308,74 @@ def summarize_chunk(chunk):
 
 def get_genome_read_depths(args):
 
-    if not os.path.isfile(args.genome_bam_file):
-        raise Exception("Genome bam {} does not exist!".format(args.genome_bam_file))
+    bam_files = glob.glob(args.genome_bam_glob)
+    if len(bam_files) == 0:
+        raise Exception("Genome bam glob {} matched no files!".format(args.genome_bam_glob))
 
     # invoke bamstats
     import bam_stats
     bam_summaries, length_summaries, depth_summaries = bam_stats.main([
-        "--input_glob", args.genome_bam_file,
+        "--input_glob", args.genome_bam_glob,
         "--depth_spacing", str(DEPTH_SAMPLE_SPACING),
         '--filter_secondary',
         '--silent'
-    ])
+    ]) # returned is filename -> chromosome -> values
 
-    # returned is filename -> chromosome -> values
-    depth_summary = list(depth_summaries.values())[0]
-    if len(depth_summary) > 1:
-        raise Exception("BAM {} had {} chromosomes, expected 1: {}".format(
-            args.genome_bam_file, len(depth_summary), ",".join(list(depth_summary.keys()))))
-    depth_summary = list(depth_summary.values())[0]
+    # get all represented chromosomes
+    depth_chrom_map = dict()
+    for depth_filename in depth_summaries.keys():
+        depth_file = depth_summaries[depth_filename]
+        # depth file is map of chrom to value
+        for chrom in depth_file.keys():
+            # sanity check
+            if chrom in depth_chrom_map:
+                raise Exception("Chrom {} found for the second time in file {} (matched from glob {})"
+                                .format(chrom, depth_file, args.genome_bam_glob))
+            # get the data we want
+            chrom_depth_summary = depth_file[chrom]
+            read_depths = chrom_depth_summary[bam_stats.D_ALL_DEPTHS]
+            read_depth_positions = chrom_depth_summary[bam_stats.D_ALL_DEPTH_POSITIONS]
+            assert (len(read_depths) == len(read_depth_positions))
+            assert (len(read_depths) != 0)
+            depth_chrom_map[chrom] = {pos:depth for pos, depth in zip(read_depth_positions, read_depths)}
 
-    # get the data we want
-    read_depths = depth_summary[bam_stats.D_ALL_DEPTHS]
-    read_depth_positions = depth_summary[bam_stats.D_ALL_DEPTH_POSITIONS]
-    assert(len(read_depths) == len(read_depth_positions))
-    assert(len(read_depths) != 0)
-
-    return {pos:depth for pos, depth in zip(read_depth_positions, read_depths)}
+    # save sample spacing and return
+    depth_chrom_map[SAMPLE_SPACING_KEY] = DEPTH_SAMPLE_SPACING
+    return depth_chrom_map
 
 
 def fill_read_depth_summaries_for_chunks(chunk_map, genome_read_depths):
+    # sanity check
+    global DEPTH_SAMPLE_SPACING
+    if genome_read_depths[SAMPLE_SPACING_KEY] != DEPTH_SAMPLE_SPACING:
+        print("\tSaved DEPTH_SAMPLE_SPACING value {} does not match configured value {}. Using saved value.")
+        DEPTH_SAMPLE_SPACING = genome_read_depths[SAMPLE_SPACING_KEY]
 
-    for chunk in list(chunk_map.values()):
+    # only report missing chrom once
+    unrepresented_chroms = set()
+
+    # save depths in all chunks
+    for mpi in list(chunk_map.keys()):
+        # prep
+        chunk = chunk_map[mpi]
+        chrom = chrom_from_mpi(mpi)
+
+        # for missing chromosomes
+        if chrom not in genome_read_depths:
+            if chrom not in unrepresented_chroms:
+                print("\tChrom {} not represented in genome read depth data")
+            unrepresented_chroms.add(chrom)
+            continue
+
+        # build depth map in chunk
+        chrom_read_depths = genome_read_depths[chrom]
         chunk_depth_map = {}
         start_pos = int(1.0 * chunk[START_POS_KEY] / DEPTH_SAMPLE_SPACING)
         end_pos = int(1.0 * chunk[END_POS_KEY] / DEPTH_SAMPLE_SPACING)
         read_depths = list()
         read_depth_positions = list()
         for i in range(start_pos, end_pos + 1):
-            depth = genome_read_depths[i] if i in genome_read_depths else None
+            depth = chrom_read_depths[i] if i in chrom_read_depths else 0
             chunk_depth_map[i] = depth
             read_depth_positions.append(i)
             read_depths.append(depth)
@@ -328,7 +383,6 @@ def fill_read_depth_summaries_for_chunks(chunk_map, genome_read_depths):
         for call in chunk[CALL_DETAILS_LIST_KEY]:
             call_pos = int(1.0 * call[C_POS_IDX] / DEPTH_SAMPLE_SPACING)
             call[C_BAM_DEPTH_IDX] = chunk_depth_map[call_pos]
-
 
         chunk[AVG_READ_DEPTH_KEY] = np.mean(read_depths)
         chunk[STD_READ_DEPTH_KEY] = np.std(read_depths)
@@ -605,7 +659,7 @@ def main():
                    args.remove_chunks is not None or \
                    args.inclusion_beds is not None or \
                    args.exclusion_beds is not None
-    do_depth_analysis = (args.genome_bam_file is not None) or (args.pickle_filename is not None)
+    do_bam_depth_analysis = (args.genome_bam_glob is not None) or (args.pickle_filename is not None)
 
     # get files
     fp_file = os.path.join(args.vcf_directory, FP_NAME)
@@ -624,16 +678,15 @@ def main():
         read_file(chunk_map, fp_in, FP_COUNT_KEY, args)
     with gzip.open(tp_file, 'r') as tp_in:
         read_file(chunk_map, tp_in, TP_COUNT_KEY, args)
+    fill_mpi_holes(chunk_map)
     with gzip.open(fn_file, 'r') as fn_in:
         read_file(chunk_map, fn_in, FN_COUNT_KEY, args, has_mpi_tag=False)
+    close_mpi_bounds(chunk_map)
 
     # holistic analysis
     print("Analyzing all chunks")
     chunk_map_keys = list(chunk_map.keys())
-    chunk_map_keys.sort()
-    chunks_len = len(chunk_map_keys)
-    missing_chunks = list(filter(lambda x: x not in chunk_map, [i for i in range(min(chunk_map_keys), max(chunk_map_keys))]))
-    missing_chunks_len = len(missing_chunks)
+    chunk_map_keys.sort(key=MPI_SORT)
     total_fp = sum(map(lambda x: x[FP_COUNT_KEY], chunk_map.values()))
     total_tp = sum(map(lambda x: x[TP_COUNT_KEY], chunk_map.values()))
     total_fn = sum(map(lambda x: x[FN_COUNT_KEY], chunk_map.values()))
@@ -655,8 +708,8 @@ def main():
     worst_chunks = chunk_ranking[0:min(3,len(chunk_ranking))]
 
     # read depth analysis
-    if do_depth_analysis:
-        print("Read depth analysis")
+    if do_bam_depth_analysis:
+        print("BAM Read depth analysis")
 
         # get depths and sanity check
         genome_read_depths = None
@@ -666,8 +719,8 @@ def main():
                 genome_read_depths = pickle.load(pickle_input)
             if len(genome_read_depths) == 0: print("\tUnpickled empty data!")
             else: print("\tUnpickled successfully")
-        elif args.genome_bam_file is not None:
-            print("Getting read depths from {}".format(args.genome_bam_file))
+        elif args.genome_bam_glob is not None:
+            print("\tGetting read depths from {}".format(args.genome_bam_glob))
             genome_read_depths = get_genome_read_depths(args)
             if args.pickle_filename is not None:
                 print("\tPickling read depth data into file {}".format(args.pickle_filename))
@@ -778,9 +831,6 @@ def main():
     reports.append(["--------------------"])
     reports.append(["-      Summary     -"])
     reports.append(["--------------------"])
-    reports.append(["Missing chunks:", "{} ({}%)".format(missing_chunks_len, percent(missing_chunks_len, missing_chunks_len + chunks_len))])
-    if args.verbose:
-        reports.append(["", str(missing_chunks)])
     reports.append(['Average Chunk Calls:', str(mean_calls_per_chunk)])
     reports.append(['Total Calls:', str(total_tp + total_fp + total_fn)])
     reports.append(["Total TPs:", "{} ({}%)".format(total_tp, percent(total_tp, total_tp + total_fp + total_fn))])
@@ -832,7 +882,7 @@ def main():
         sensitivity = chunk[SENSITIVITY_KEY]
         precision = chunk[PRECISION_KEY]
         fmeasure = chunk[FMEASURE_KEY]
-        report = ["%8d %s%s" % (mpi,
+        report = ["%9s %s%s" % (mpi,
                                   "+" if mpi in best_chunks else " ",
                                   "-" if mpi in worst_chunks else " "),
                   "fmeasure: %.3f %s " % (fmeasure,  "+  " if fmeasure > .85 else ( " = " if fmeasure > .7 else "  -")),
@@ -875,7 +925,7 @@ def main():
     # specific chunks
     def get_read_analysis_chunk_report(chunk):
         report = [
-            "%8d  %s%s%s " % (chunk[MPI_KEY],
+            "%9s  %s%s%s " % (chunk[MPI_KEY],
                               "+" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third*2:] else " ",
                               "=" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third:chunk_ranking_third*2] else " ",
                               "-" if chunk[MPI_KEY] in chunk_ranking[0:chunk_ranking_third] else " ")
@@ -897,7 +947,7 @@ def main():
                 # "length min: %3d" % int(chunk[MIN_READ_LENGTH_KEY]),
                 ])
         return report
-    if do_depth_analysis:
+    if do_bam_depth_analysis:
         reports.append([""])
         reports.append(["--------------------"])
         reports.append(["-  Depth Analysis  -"])
@@ -945,9 +995,10 @@ def main():
         plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={0:'w', 5:'r', 20:'g', 25:'b'},
                                               call_filter_key=C_VCF_DEPTH_IDX, call_filter_name="VCF Read Depth",
                                               save_name="Chunk_VcfDepthFiltered_SensPrec")
-        plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={0:'w', 10:'r', 20:'g', 30:'b'},
-                                              call_filter_key=C_BAM_DEPTH_IDX, call_filter_name="BAM Read Depth",
-                                              save_name="Chunk_BamDepthFiltered_SensPrec")
+        if do_bam_depth_analysis:
+            plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={0:'w', 10:'r', 20:'g', 30:'b'},
+                                                  call_filter_key=C_BAM_DEPTH_IDX, call_filter_name="BAM Read Depth",
+                                                  save_name="Chunk_BamDepthFiltered_SensPrec")
 
         ### multi plot
         # plot_information = [
