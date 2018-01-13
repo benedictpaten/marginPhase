@@ -5,16 +5,11 @@ import glob
 import gzip
 import sys
 import numpy as np
-from scipy import stats
 import os
 import matplotlib.pyplot as plt
-import math
 import pickle
-
-#TODO get mpi to be string
-#TODO maybe classify fn's within an MPI?
-#TODO add chromosome to mpi
-#TODO chromosome level analysis
+import time
+import math
 
 # file names
 FP_NAME = "fp.vcf.gz"
@@ -28,7 +23,7 @@ DEPTH_TAG = "DP"
 # mpi mgmnt
 MPI_SEP = "-"
 MPI_SORT = lambda x: int(x.split(MPI_SEP)[0].replace("chr", "").replace("X","30").replace("Y","31"))*1000 + \
-                     int(x.split(MPI_SEP)[1])
+                     (int(x.split(MPI_SEP)[1] if len(x.split(MPI_SEP)) > 1 else 0))
 chrom_from_mpi = lambda x: x.split(MPI_SEP)[0]
 full_mpi_from_chrom_and_mpi = lambda chrom, mpi: "%s%s%03d" % (chrom, MPI_SEP, int(mpi))
 MIN_START_POS = 0
@@ -98,7 +93,7 @@ calculate_fmeasure = lambda precision, sensitivity: 2 * (precision * sensitivity
     if precision + sensitivity != 0 else 0
 
 # config
-DEPTH_SAMPLE_SPACING = 500
+DEPTH_SAMPLE_SPACING = 100
 SAMPLE_SPACING_KEY = "sample_spacing"
 
 def parse_args():
@@ -113,8 +108,8 @@ def parse_args():
                        help='Specify comma-separated MPIs of specific chunks to analyze')
     parser.add_argument('--plot', '-p', dest='plot', action='store_true', default=False,
                        help='Make plots of data')
-    parser.add_argument('--chromosome', '-o', dest='chromosome', default=None, type=str,
-                       help='Limit calls in VCF and BED files to specified contig')
+    parser.add_argument('--chromosomes', '-o', dest='chromosomes', default=None, type=str,
+                       help='Limit calls in VCF and BED files to specified comma-separated chromosomes')
 
     parser.add_argument('--qual_min', '-q', dest='qual_min', default=None, type=int,
                        help='FILTER: Filter VCF qualities below threshold: TP->FN, FP->/dev/null')
@@ -148,17 +143,6 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         mpi_lookup_list = list()
         for chunk in chunk_map.values():
             mpi_lookup_list.append(mpi_details(chunk))
-    #     mpi_lookup_list.sort(key=lambda x: x[M_START_POS_IDX])
-    #     # create mpis for what we're missing
-    #     missing_mpis = list()
-    #     idx = 0
-    #     for mpi in mpi_lookup_list:
-    #         missing_mpis.append([idx, mpi[M_START_POS_IDX] - 1, None])
-    #         idx = mpi[M_END_POS_IDX] + 1
-    #     missing_mpis.append([idx, sys.maxint, None])
-    #     # add missing mpis to list of mpis
-    #     for mpi in missing_mpis:
-    #         mpi_lookup_list.append(mpi)
     def is_in_mpi(curr, pos):
         return pos >= curr[M_START_POS_IDX] and pos <= curr[M_END_POS_IDX]
     def lookup_mpi(pos):
@@ -179,7 +163,7 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
 
         # data we care about
         chrom = line[0]
-        if args.chromosome is not None and args.chromosome != chrom: continue
+        if args.chromosomes is not None and chrom not in args.chromosomes: continue
         pos = int(line[1])
         qual = None
         depth = None
@@ -255,44 +239,78 @@ def close_mpi_bounds(chunk_map):
 
 def read_bed_file(bed_filename, args, invert=False):
     #prep
-    bed_contents = list()
+    bed_contents = dict()
     open_fcn = open if not bed_filename.endswith("gz") else gzip.open
 
     # read in bed
-    chromosomes = set()
     with open_fcn(bed_filename, 'r') as input:
         for line in input:
             line = line.strip().split()
             if len(line) < 3: raise Exception("BED file malformed: {}, line: {}".format(bed_filename, "\t".join(line)))
-            if args.chromosome is not None and line[0] != args.chromosome: continue
-            chromosomes.add(line[0])
-            bed_contents.append(bed_details(line[0], line[1], line[2]))
-    bed_contents.sort(key=lambda x: x[B_START_IDX])
+            chrom = line[0]
+            if args.chromosomes is not None and chrom not in args.chromosomes: continue
+            if chrom in bed_contents:
+                chrom_bed = bed_contents[chrom]
+            else:
+                chrom_bed = list()
+                bed_contents[chrom] = chrom_bed
+            chrom_bed.append(bed_details(chrom, int(line[1]), int(line[2])))
 
-    #sanity checks
-    if len(chromosomes) > 1:
-        raise Exception("Got {} chromosomes in BED file: {}".format(len(chromosomes), bed_filename))
-    last_bedframe = None
-    for bedframe in bed_contents:
-        assert last_bedframe is None or last_bedframe[B_END_IDX] <= bedframe[B_START_IDX]
+    # sort and sanity
+    for chrom_bed in bed_contents.values():
+        chrom_bed.sort(key=lambda x: x[B_START_IDX])
+        last_bedframe = None
+        for bedframe in chrom_bed:
+            assert last_bedframe is None or last_bedframe[B_END_IDX] <= bedframe[B_START_IDX]
 
     # maybe invert
     if invert:
-        inverted_bed_contents = list()
-        last_end_pos = 0
-        for bedframe in bed_contents:
-            inverted_bed_contents.append(bed_details(bedframe[0], last_end_pos, bedframe[B_START_IDX]))
-            last_end_pos = bedframe[B_END_IDX]
-        inverted_bed_contents.append(bed_details(bedframe[0], last_end_pos, sys.maxint))
-        bed_contents = inverted_bed_contents
+        for chrom in bed_contents.keys():
+            chrom_bed = bed_contents[chrom]
+            inverted_chrom_bed = list()
+            last_end_pos = MIN_START_POS
+            for bedframe in chrom_bed:
+                inverted_chrom_bed.append(bed_details(bedframe[0], last_end_pos, bedframe[B_START_IDX]))
+                last_end_pos = bedframe[B_END_IDX]
+            inverted_chrom_bed.append(bed_details(bedframe[0], last_end_pos, MAX_END_POS))
+            bed_contents[chrom] = inverted_chrom_bed
 
     return bed_contents
 
 
-def summarize_chunk(chunk):
+def get_empty_chunk(mpi):
+    chunk = {
+        START_POS_KEY: None,
+        END_POS_KEY: None,
+        FP_COUNT_KEY: 0,
+        FN_COUNT_KEY: 0,
+        TP_COUNT_KEY: 0,
+        MPI_KEY: mpi,
+        CALL_DETAILS_LIST_KEY: []
+    }
+    summarize_chunk(chunk)
+    return chunk
+
+
+def copy_chunk(chunk):
+    chunk = {
+        START_POS_KEY: chunk[START_POS_KEY],
+        END_POS_KEY: chunk[END_POS_KEY],
+        FP_COUNT_KEY: chunk[FP_COUNT_KEY],
+        FN_COUNT_KEY: chunk[FN_COUNT_KEY],
+        TP_COUNT_KEY: chunk[TP_COUNT_KEY],
+        MPI_KEY: chunk[MPI_KEY],
+        CALL_DETAILS_LIST_KEY: [x for x in chunk[CALL_DETAILS_LIST_KEY]]
+    }
+    summarize_chunk(chunk)
+    return chunk
+
+
+def summarize_chunk(chunk, include_call_metrics=True):
     chunk[SENSITIVITY_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FN_COUNT_KEY])
     chunk[PRECISION_KEY] = 1.0 * chunk[TP_COUNT_KEY] / max(1, chunk[TP_COUNT_KEY] + chunk[FP_COUNT_KEY])
-    chunk[FMEASURE_KEY] = calculate_fmeasure(max(.001, chunk[SENSITIVITY_KEY]), max(.001, chunk[PRECISION_KEY]))
+    chunk[FMEASURE_KEY] = calculate_fmeasure(chunk[SENSITIVITY_KEY], chunk[PRECISION_KEY])
+    if not include_call_metrics: return
     tps = list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, chunk[CALL_DETAILS_LIST_KEY]))
     chunk[AVG_TP_QUAL_KEY] = -1 if len(tps) == 0 else int(np.mean(map(lambda x: x[C_QUAL_IDX], tps)))
     chunk[AVG_TP_DEPTH_KEY] = -1 if len(tps) == 0 else int(np.mean(map(lambda x: x[C_VCF_DEPTH_IDX], tps)))
@@ -344,11 +362,41 @@ def get_genome_read_depths(args):
     return depth_chrom_map
 
 
+def get_chrom_map_from_chunk_map(chunk_map):
+    chromosome_map = dict()
+    # get calls from each chromosome
+    for mpi in chunk_map.keys():
+        # get chromosome
+        chrom = chrom_from_mpi(mpi)
+        if chrom not in chromosome_map:
+            chrom_chunk = {
+                MPI_KEY: chrom,
+                CALL_DETAILS_LIST_KEY: []
+            }
+            chromosome_map[chrom] = chrom_chunk
+        else:
+            chrom_chunk = chromosome_map[chrom]
+        # get all calls per chrom
+        chrom_chunk[CALL_DETAILS_LIST_KEY].extend(chunk_map[mpi][CALL_DETAILS_LIST_KEY])
+    # fill extra data
+    for chrom_chunk in chromosome_map.values():
+        chrom_calls = chrom_chunk[CALL_DETAILS_LIST_KEY]
+        chrom_chunk[TP_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, chrom_calls)))
+        chrom_chunk[FP_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, chrom_calls)))
+        chrom_chunk[FN_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == FN_COUNT_KEY, chrom_calls)))
+        chrom_chunk[START_POS_KEY] = min(list(map(lambda x: x[C_POS_IDX], chrom_calls))) if len(chrom_calls)>0 else None
+        chrom_chunk[END_POS_KEY] = max(list(map(lambda x: x[C_POS_IDX], chrom_calls))) if len(chrom_calls)>0 else None
+        summarize_chunk(chrom_chunk)
+    # return it
+    return chromosome_map
+
+
 def fill_read_depth_summaries_for_chunks(chunk_map, genome_read_depths):
     # sanity check
     global DEPTH_SAMPLE_SPACING
     if genome_read_depths[SAMPLE_SPACING_KEY] != DEPTH_SAMPLE_SPACING:
-        print("\tSaved DEPTH_SAMPLE_SPACING value {} does not match configured value {}. Using saved value.")
+        print("\tSaved DEPTH_SAMPLE_SPACING value {} does not match configured value {}. Using saved value."
+              .format(genome_read_depths[SAMPLE_SPACING_KEY], DEPTH_SAMPLE_SPACING))
         DEPTH_SAMPLE_SPACING = genome_read_depths[SAMPLE_SPACING_KEY]
 
     # only report missing chrom once
@@ -452,7 +500,6 @@ def filter_calls_by_bed_inclusion(chunk, bed_information):
         if call_in_bed_idx(call, bed_idx):
             new_calls.append(call)
 
-
     # create new chunk
     filtered_chunk = {
         START_POS_KEY: chunk[START_POS_KEY],
@@ -475,6 +522,10 @@ def print_reports(reports):
         print(("%-"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
 
+def get_alpha(chunk_map):
+    return 1.0 / math.log(len(chunk_map))
+
+
 def plot_sensitivity_x_precision(chunk_map):
 
     sensitivity, precision = [], []
@@ -483,7 +534,7 @@ def plot_sensitivity_x_precision(chunk_map):
         sensitivity.append(chunk[SENSITIVITY_KEY])
         precision.append(chunk[PRECISION_KEY])
 
-    plt.scatter(sensitivity, precision, c="g", alpha=0.5)
+    plt.scatter(sensitivity, precision, c="g", alpha=get_alpha(chunk_map))
     plt.xlabel("Sensitivity")
     plt.ylabel("Precision")
     plt.show()
@@ -558,7 +609,7 @@ def plot_filtered_sensitivity_x_precision(chunk_map, threshold_values={10:'r', 2
 
         label = "%3d (overall: S %s, P %s)" % (threshold, ("%.2f" % total_sensitivity).lstrip('0'),
                                               ("%.2f" % total_precision).lstrip('0'))
-        plt.scatter(x, y, alpha=.3, color=threshold_values[threshold], label=label)
+        plt.scatter(x, y, alpha=get_alpha(chunk_map), color=threshold_values[threshold], label=label)
 
     plt.title("Per-Chunk Sensitivity and Precision for {} Thresholds".format(call_filter_name))
     plt.xlabel("Sensitivity")
@@ -580,7 +631,7 @@ def multi_plot_chunks_by_parameter(x_plot_details, chunk_map_y, y_param, title=N
             if mpi not in chunk_map_y: continue
             x.append(data[mpi][key] if type(key) == str else key(data[mpi]) )
             y.append(chunk_map_y[mpi][y_param] if type(y_param) == str else y_param(chunk_map_y[mpi]) )
-        plt.scatter(x, y, c=color, alpha=0.5, label=label)
+        plt.scatter(x, y, c=color, alpha=get_alpha(chunk_map_y), label=label)
 
     plt.legend(loc=legend_loc)
     plt.ylabel(y_param if y_label is None else y_label)
@@ -599,7 +650,7 @@ def plot_chunks_by_parameter(chunk_map_x, x_param, chunk_map_y, y_param, title=N
         x.append(chunk_map_x[mpi][x_param] if type(x_param) == str else x_param(chunk_map_x[mpi]) )
         y.append(chunk_map_y[mpi][y_param] if type(y_param) == str else y_param(chunk_map_y[mpi]) )
 
-    plt.scatter(x, y, c=color, alpha=0.5)
+    plt.scatter(x, y, c=color, alpha=get_alpha(chunk_map_y))
     plt.xlabel(x_param if x_label is None else x_label)
     plt.ylabel(y_param if y_label is None else y_label)
     plt.title("{} by {}".format(x_param, y_param) if title is None else title)
@@ -651,8 +702,107 @@ def plot_all_call_qual(all_calls, bucket_size=10, logscale=True, title=None):
     return plt
 
 
+def get_genome_report(args, mean_calls_per_chunk, total_tp, total_fp, total_fn):
+    reports = list()
+    #analysis on whole dataset
+    reports.append(['Average Chunk Calls:', str(mean_calls_per_chunk)])
+    reports.append(['Total Calls:', str(total_tp + total_fp + total_fn)])
+    reports.append(["Total TPs:", "{} ({}%)".format(total_tp, percent(total_tp, total_tp + total_fp + total_fn))])
+    reports.append(["Total FPs:", "{} ({}%)".format(total_fp, percent(total_fp, total_tp + total_fp + total_fn))])
+    reports.append(["Total FNs:", "{} ({}%)".format(total_fn, percent(total_fn, total_tp + total_fp + total_fn))])
+    sensitivity = 1.0 * total_tp / (total_tp + total_fn)
+    precision = 1.0 * total_tp / (total_tp + total_fp)
+    fmeasure = calculate_fmeasure(sensitivity, precision)
+    reports.append(["Sensitivity:", "%.5f" % sensitivity])
+    reports.append(["Precision:", "%.5f" % precision])
+    reports.append(["FMeasure:", "%.5f" % fmeasure])
+    return reports
+
+
+def get_genome_filtered_report(args, total_tp, total_fp, total_fn, filtered_tp, filtered_fp, filtered_fn):
+    reports = list()
+    reports.append(["Minimum Quality (VCF):", str(args.qual_min)])
+    reports.append(["Minimum Depth (VCF):", str(args.vcf_read_depth_min)])
+    reports.append(["Minimum Depth (BAM):", str(args.bam_read_depth_min)])
+    reports.append(["Included BED Files:", str(args.inclusion_beds)])
+    reports.append(["Excluded BED Files:", str(args.exclusion_beds)])
+    total_calls = sum([total_fp,total_tp,total_fn])
+    sensitivity = 1.0 * total_tp / (total_tp + total_fn)
+    precision = 1.0 * total_tp / (total_tp + total_fp)
+    fmeasure = calculate_fmeasure(sensitivity, precision)
+    filtered_calls = sum([filtered_tp,filtered_fp,filtered_fn])
+    reports.append(["Remaining Calls:", "{} ({}%)".format(filtered_calls, percent(filtered_calls, total_calls))])
+    reports.append(["Filtered TPs:", "{} ({}%)".format(filtered_tp, percent(filtered_tp, filtered_calls))])
+    reports.append(["Filtered FPs:", "{} ({}%)".format(filtered_fp, percent(filtered_fp, filtered_calls))])
+    reports.append(["Filtered FNs:", "{} ({}%)".format(filtered_fn, percent(filtered_fn, filtered_calls))])
+    filt_sensitivity = 1.0 * filtered_tp / (filtered_tp + filtered_fn) if filtered_tp + filtered_fn != 0 else 0
+    filt_precision = 1.0 * filtered_tp / (filtered_tp + filtered_fp) if filtered_tp + filtered_fp != 0 else 0
+    filt_fmeasure = calculate_fmeasure(filt_sensitivity, filt_precision)
+    reports.append(["Sensitivity:", "%.5f " % filt_sensitivity, "diff: %.5f" % (filt_sensitivity - sensitivity)])
+    reports.append(["Precision:", "%.5f " % filt_precision, "diff: %.5f" % (filt_precision - precision)])
+    reports.append(["FMeasure:", "%.5f " % filt_fmeasure, "diff: %.5f" % (filt_fmeasure - fmeasure)])
+    return reports
+
+
+def get_chunk_report(chunk, best_chunks=[], worst_chunks=[], qual_and_depth=True, tp_fp_fn=True, misc=True):
+    mpi = chunk[MPI_KEY]
+    sensitivity = chunk[SENSITIVITY_KEY]
+    precision = chunk[PRECISION_KEY]
+    fmeasure = chunk[FMEASURE_KEY]
+    report = ["%9s %s%s" % (mpi,
+                            "+" if mpi in best_chunks else " ",
+                            "-" if mpi in worst_chunks else " "),
+              "fmeasure: %.3f %s " % (fmeasure, "+  " if fmeasure > .85 else (" = " if fmeasure > .7 else "  -")),
+              "sensitivity: %.3f %s " % (sensitivity,
+                                         "+  " if sensitivity > .8 else (
+                                             " = " if sensitivity > .5 else "  -")),
+              "precision: %.3f %s " % (precision,
+                                       "+  " if precision > .85 else (" = " if precision > .7 else "  -"))
+              ]
+    if tp_fp_fn:
+        report.extend([
+            "tp: %6s " % chunk[TP_COUNT_KEY] if chunk[TP_COUNT_KEY] is not None else "",
+            "fp: %6s " % chunk[FP_COUNT_KEY] if chunk[FP_COUNT_KEY] is not None else "",
+            "fn: %6s " % chunk[FN_COUNT_KEY] if chunk[FN_COUNT_KEY] is not None else "",
+        ])
+    if misc:
+        report.extend([
+            "total_calls: %6d  " % len(chunk[CALL_DETAILS_LIST_KEY]),
+            "range: %9s-%-9s (%9s)" % (chunk[START_POS_KEY] if chunk[START_POS_KEY] is not None else "",
+                                       chunk[END_POS_KEY] if chunk[END_POS_KEY] is not None else "",
+                                       chunk[END_POS_KEY] - chunk[START_POS_KEY] if chunk[START_POS_KEY] is not None else "")
+        ])
+    if qual_and_depth and AVG_QUAL_KEY in chunk:
+        report.extend([
+            "avg_qual: %3d" % chunk[AVG_QUAL_KEY],
+            "avg_tp_qual: %3d" % chunk[AVG_TP_QUAL_KEY],
+            "avg_fp_qual: %3d" % chunk[AVG_FP_QUAL_KEY],
+            "avg_depth: %3d" % chunk[AVG_DEPTH_KEY],
+            "avg_tp_depth: %3d" % chunk[AVG_TP_DEPTH_KEY],
+            "avg_fp_depth: %3d" % chunk[AVG_FP_DEPTH_KEY],
+        ])
+    return report
+
+
+def get_read_analysis_chunk_report(chunk):
+    report = [
+        "%9s  " % (chunk[MPI_KEY])
+    ]
+    if len(chunk) > 1:
+        report.extend([
+            "depth avg: %3d" % int(chunk[AVG_READ_DEPTH_KEY]),
+            "depth std: %3d" % int(chunk[STD_READ_DEPTH_KEY]),
+            "depth max: %4d" % int(chunk[MAX_READ_DEPTH_KEY]),
+            "depth min: %3d" % int(chunk[MIN_READ_DEPTH_KEY]),
+        ])
+    return report
+
+
+
 def main():
+    overall_start = time.clock()
     args = parse_args()
+    if args.chromosomes is not None: args.chromosomes = args.chromosomes.split(",")
     do_filtering = args.qual_min is not None or \
                    args.vcf_read_depth_min is not None or \
                    args.bam_read_depth_min is not None or \
@@ -674,6 +824,7 @@ def main():
 
     # document true positives
     print("Reading vcfeval files")
+    start = time.clock()
     with gzip.open(fp_file, 'r') as fp_in:
         read_file(chunk_map, fp_in, FP_COUNT_KEY, args)
     with gzip.open(tp_file, 'r') as tp_in:
@@ -682,9 +833,11 @@ def main():
     with gzip.open(fn_file, 'r') as fn_in:
         read_file(chunk_map, fn_in, FN_COUNT_KEY, args, has_mpi_tag=False)
     close_mpi_bounds(chunk_map)
+    print("\t{}s".format(int(time.clock() - start)))
 
     # holistic analysis
-    print("Analyzing all chunks")
+    print("Analyzing all calls")
+    start = time.clock()
     chunk_map_keys = list(chunk_map.keys())
     chunk_map_keys.sort(key=MPI_SORT)
     total_fp = sum(map(lambda x: x[FP_COUNT_KEY], chunk_map.values()))
@@ -693,23 +846,26 @@ def main():
     mean_calls_per_chunk = int(np.mean(map(lambda x: len(x[CALL_DETAILS_LIST_KEY]), chunk_map.values())))
     specific_chunks = [] if args.chunks is None else \
         list(map(int, args.chunks.split(","))) if args.chunks != "*" else chunk_map_keys
+    print("\t{}s".format(int(time.clock() - start)))
+
+    print("Analyzing chromosomes")
+    start = time.clock()
+    chromosome_map = get_chrom_map_from_chunk_map(chunk_map)
+    all_chromosomes = list(chromosome_map.keys())
+    all_chromosomes.sort(key=MPI_SORT)
+    print("\t{}s".format(int(time.clock() - start)))
 
     # per-chunk analysis
     print("Analyzing each chunk")
+    start = time.clock()
     for chunk in chunk_map.values():
         summarize_chunk(chunk)
-
-    # chunk ranking
-    chunk_ranking = list(chunk_map.values())
-    chunk_ranking.sort(key=lambda x: x[FMEASURE_KEY])
-    chunk_ranking = list(map(lambda x: x[MPI_KEY], chunk_ranking))
-    chunk_ranking_third = int(len(chunk_ranking) / 3.0)
-    best_chunks = chunk_ranking[-1*min(3,len(chunk_ranking)):]
-    worst_chunks = chunk_ranking[0:min(3,len(chunk_ranking))]
+    print("\t{}s".format(int(time.clock() - start)))
 
     # read depth analysis
     if do_bam_depth_analysis:
         print("BAM Read depth analysis")
+        start = time.clock()
 
         # get depths and sanity check
         genome_read_depths = None
@@ -731,50 +887,97 @@ def main():
 
         # populate chunks with depth information
         fill_read_depth_summaries_for_chunks(chunk_map, genome_read_depths)
+        print("\t{}s".format(int(time.clock() - start)))
 
-    # filter based on read depth (if appropriate)
+    # filter by removing calls from call list
     filtered_chunk_map = dict()
+    filtered_chrom_map = dict()
     if do_filtering:
         print("Filtering calls")
-        call_coverage_start = chunk_map[chunk_map_keys[0]][START_POS_KEY]
-        call_coverage_end = chunk_map[chunk_map_keys[-1]][END_POS_KEY]
-        call_coverage = call_coverage_end - call_coverage_start
+        start = time.clock()
 
+        # filter by bam read depth
         if args.bam_read_depth_min is not None:
             print("\tFiltering by BAM read depth")
-            for chunk_id in chunk_map_keys:
-                filtered_chunk_map[chunk_id] = filter_calls_by_bam_read_depth(chunk_map[chunk_id],
+            inner_start = time.clock()
+            for mpi in chunk_map_keys:
+                filtered_chunk_map[mpi] = filter_calls_by_bam_read_depth(chunk_map[mpi],
                                                                               args.bam_read_depth_min)
+            print("\t\t{}s".format(int(time.clock() - inner_start)))
 
         # filter based on bed file (if appropriate)
         if args.inclusion_beds is not None:
             print("\tFiltering by BED inclusion")
-
+            inner_start = time.clock()
             for bed_file in args.inclusion_beds.split(","):
+                print("\t\tBED {}:".format(bed_file))
                 bed_data = read_bed_file(bed_file, args, invert=False)
-                bed_coverage = sum(map(lambda x: max(0, min(call_coverage_end, x[B_END_IDX]) -
-                                                     max(x[B_START_IDX], call_coverage_start)), bed_data))
-                print("\t\tBED {} includes {}/{} ({}%) of called range".format(bed_file, bed_coverage, call_coverage,
-                                                                          percent(bed_coverage, call_coverage)))
-                for chunk_id in chunk_map_keys:
-                    chunk = filtered_chunk_map[chunk_id] if chunk_id in filtered_chunk_map else chunk_map[chunk_id]
-                    filtered_chunk_map[chunk_id] = filter_calls_by_bed_inclusion(chunk, bed_data)
+                total_call_coverage = 0
+                total_bed_coverage = 0
+                for chrom in all_chromosomes:
+                    # calculate coverage over chrom
+                    chrom_coverage_start = chromosome_map[chrom][START_POS_KEY]
+                    chrom_coverage_end = chromosome_map[chrom][END_POS_KEY]
+                    chrom_call_coverage = chrom_coverage_end - chrom_coverage_start
+                    if chrom in bed_data:
+                        chrom_bed_data = bed_data[chrom]
+                        chrom_bed_coverage = sum(map(lambda x: max(0, min(chrom_coverage_end, x[B_END_IDX]) -
+                                                         max(x[B_START_IDX], chrom_coverage_start)), chrom_bed_data))
+                    else:
+                        chrom_bed_coverage = 0
+                    total_call_coverage += chrom_call_coverage
+                    total_bed_coverage += chrom_bed_coverage
+                    if args.verbose:
+                        print("\t\t\t{} includes {}/{} ({}%) of called range"
+                              .format(chrom, chrom_bed_coverage, chrom_call_coverage,
+                                      percent(chrom_bed_coverage, chrom_call_coverage)))
+                # print genome coverage
+                print("\t\t\tIncludes {}/{} ({}%) of called range"
+                      .format(total_bed_coverage, total_call_coverage, percent(total_bed_coverage, total_call_coverage)))
+                # filter out by mpi
+                for mpi in chunk_map_keys:
+                    chunk = filtered_chunk_map[mpi] if mpi in filtered_chunk_map else chunk_map[mpi]
+                    chrom = chrom_from_mpi(mpi)
+                    filtered_chunk_map[mpi] = get_empty_chunk(mpi) if chrom not in bed_data else \
+                        filter_calls_by_bed_inclusion(chunk, bed_data[chrom])
+            print("\t\t{}s".format(int(time.clock() - inner_start)))
 
         # filter based on bed file (if appropriate)
         if args.exclusion_beds is not None:
             print("\tFiltering by BED exclusion")
-
+            inner_start = time.clock()
             for bed_file in args.exclusion_beds.split(","):
+                print("\t\tBED {}:".format(bed_file))
                 bed_data = read_bed_file(bed_file, args, invert=True)
-                bed_coverage = sum(map(lambda x: max(0, min(call_coverage_end, x[B_END_IDX]) -
-                                                     max(x[B_START_IDX], call_coverage_start)), bed_data))
-                print("\t\tBED {} excludes {}/{} ({}%) of called range"
-                      .format(bed_file, call_coverage - bed_coverage, call_coverage,
-                              percent(call_coverage - bed_coverage, call_coverage)))
+                total_call_coverage = 0
+                total_bed_coverage = 0
+                for chrom in all_chromosomes:
+                    # calculate coverage over chrom
+                    chrom_coverage_start = chromosome_map[chrom][START_POS_KEY]
+                    chrom_coverage_end = chromosome_map[chrom][END_POS_KEY]
+                    chrom_call_coverage = chrom_coverage_end - chrom_coverage_start
+                    chrom_bed_data = bed_data[chrom] if chrom in bed_data else []
+                    chrom_bed_coverage = sum(map(lambda x: max(0, min(chrom_coverage_end, x[B_END_IDX]) -
+                                                     max(x[B_START_IDX], chrom_coverage_start)), chrom_bed_data))
+                    total_call_coverage += chrom_call_coverage
+                    total_bed_coverage += chrom_bed_coverage
+                    if args.verbose:
+                        print("\t\t\t{} excludes {}/{} ({}%) of called range"
+                              .format(chrom, chrom_bed_coverage, chrom_call_coverage,
+                                      percent(chrom_bed_coverage, chrom_call_coverage)))
+                # print genome coverage
+                print("\t\t\tExcludes {}/{} ({}%) of called range"
+                      .format(total_bed_coverage, total_call_coverage, percent(total_bed_coverage, total_call_coverage)))
+                # filter out by mpi
+                for mpi in chunk_map_keys:
+                    chunk = filtered_chunk_map[mpi] if mpi in filtered_chunk_map else chunk_map[mpi]
+                    chrom = chrom_from_mpi(mpi)
+                    filtered_chunk_map[mpi] = copy_chunk(chunk) if chrom not in bed_data else \
+                        filter_calls_by_bed_inclusion(chunk, bed_data[chrom])
+            print("\t\t{}s".format(int(time.clock() - inner_start)))
 
-                for chunk_id in chunk_map_keys:
-                    chunk = filtered_chunk_map[chunk_id] if chunk_id in filtered_chunk_map else chunk_map[chunk_id]
-                    filtered_chunk_map[chunk_id] = filter_calls_by_bed_inclusion(chunk, bed_data)
+        # get chrom filtered values
+        filtered_chrom_map = get_chrom_map_from_chunk_map(filtered_chunk_map)
 
         # overall filtering analysis
         # these functions are used to get TPs and FPs from a set of calls (from the arguments)
@@ -787,19 +990,20 @@ def main():
             ((x[C_QUAL_IDX] < args.qual_min if args.qual_min is not None else False) or \
              (x[C_VCF_DEPTH_IDX] < args.vcf_read_depth_min if args.vcf_read_depth_min is not None else False))
 
+        # todo: this needs to be refactored with new MPI api
         # get chunks to not include (if appropriate)
         chunks_to_remove = list()
-        if args.remove_chunks is not None:
-            remove_chunks = args.remove_chunks.split(",")
-            for remove_chunk in remove_chunks:
-                if '-' in remove_chunk:
-                    remove_chunk = remove_chunk.split("-")
-                    for i in range(int(remove_chunk[0]), int(remove_chunk[1])+1):
-                        if i in chunk_map_keys: chunks_to_remove.append(i)
-
-                else:
-                    if i in chunk_map_keys: chunks_to_remove.append(int(remove_chunk))
-            chunks_to_remove.sort()
+        # if args.remove_chunks is not None:
+        #     remove_chunks = args.remove_chunks.split(",")
+        #     for remove_chunk in remove_chunks:
+        #         if '-' in remove_chunk:
+        #             remove_chunk = remove_chunk.split("-")
+        #             for i in range(int(remove_chunk[0]), int(remove_chunk[1])+1):
+        #                 if i in chunk_map_keys: chunks_to_remove.append(i)
+        #
+        #         else:
+        #             if i in chunk_map_keys: chunks_to_remove.append(int(remove_chunk))
+        #     chunks_to_remove.sort()
 
         # get all calls
         all_calls = list()
@@ -822,157 +1026,91 @@ def main():
             filtered_tp -= tp_below_thresh
             filtered_fn += tp_below_thresh
             filtered_fp -= fp_below_thresh
+        print("\t{}s".format(int(time.clock() - start)))
 
     # report
     print("\nReporting\n")
     reports = list()
 
-    #analysis on whole dataset
+    # genome
     reports.append(["--------------------"])
     reports.append(["-      Summary     -"])
     reports.append(["--------------------"])
-    reports.append(['Average Chunk Calls:', str(mean_calls_per_chunk)])
-    reports.append(['Total Calls:', str(total_tp + total_fp + total_fn)])
-    reports.append(["Total TPs:", "{} ({}%)".format(total_tp, percent(total_tp, total_tp + total_fp + total_fn))])
-    reports.append(["Total FPs:", "{} ({}%)".format(total_fp, percent(total_fp, total_tp + total_fp + total_fn))])
-    reports.append(["Total FNs:", "{} ({}%)".format(total_fn, percent(total_fn, total_tp + total_fp + total_fn))])
-    sensitivity = 1.0 * total_tp / (total_tp + total_fn)
-    precision = 1.0 * total_tp / (total_tp + total_fp)
-    fmeasure = calculate_fmeasure(sensitivity, precision)
-    reports.append(["Sensitivity:", "%.5f" % sensitivity])
-    reports.append(["Precision:", "%.5f" % precision])
-    reports.append(["FMeasure:", "%.5f" % fmeasure])
-
-    # analysis with quality filtering
+    reports.extend(get_genome_report(args, mean_calls_per_chunk, total_tp, total_fp, total_fn))
     if do_filtering:
         reports.append([""])
         reports.append(["--------------------"])
         reports.append(["- Filtered Summary -"])
         reports.append(["--------------------"])
-        reports.append(["Minimum Quality (VCF):", str(args.qual_min)])
-        reports.append(["Minimum Depth (VCF):", str(args.vcf_read_depth_min)])
-        reports.append(["Minimum Depth (BAM):", str(args.bam_read_depth_min)])
-        reports.append(["Included BED Files:", str(args.inclusion_beds)])
-        reports.append(["Excluded BED Files:", str(args.exclusion_beds)])
-        reports.append(["Removed Chunks:", str(chunks_to_remove)])
-        total_calls = sum([total_fp,total_tp,total_fn])
-        filtered_calls = sum([filtered_tp,filtered_fp,filtered_fn])
-        reports.append(["Remaining Calls:", "{} ({}%)".format(filtered_calls, percent(filtered_calls, total_calls))])
-        reports.append(["Filtered TPs:", "{} ({}%)".format(filtered_tp, percent(filtered_tp, filtered_calls))])
-        reports.append(["Filtered FPs:", "{} ({}%)".format(filtered_fp, percent(filtered_fp, filtered_calls))])
-        reports.append(["Filtered FNs:", "{} ({}%)".format(filtered_fn, percent(filtered_fn, filtered_calls))])
-        filt_sensitivity = 1.0 * filtered_tp / (filtered_tp + filtered_fn) if filtered_tp + filtered_fn != 0 else 0
-        filt_precision = 1.0 * filtered_tp / (filtered_tp + filtered_fp) if filtered_tp + filtered_fp != 0 else 0
-        filt_fmeasure = calculate_fmeasure(filt_sensitivity, filt_precision)
-        reports.append(["Sensitivity:", "%.5f " % filt_sensitivity, "diff: %.5f" % (filt_sensitivity - sensitivity)])
-        reports.append(["Precision:", "%.5f " % filt_precision, "diff: %.5f" % (filt_precision - precision)])
-        reports.append(["FMeasure:", "%.5f " % filt_fmeasure, "diff: %.5f" % (filt_fmeasure - fmeasure)])
+        reports.extend(get_genome_filtered_report(args, total_tp, total_fp, total_fn,
+                                                  filtered_tp, filtered_fp, filtered_fn))
 
+    # early termination check
     if args.quiet:
         print_reports(reports)
         if args.plot: print("\nDue to programmer laziness, plotting is not compatible with the --quiet option")
+        print("\nFin ({}).".format(int(time.clock() - overall_start)))
         sys.exit(0)
 
+    # chromosome reporting
+    if len(all_chromosomes) > 1:
+        reports.append([""])
+        reports.append(["--------------------"])
+        reports.append(["-  Chrom  Summary  -"])
+        reports.append(["--------------------"])
+        for chrom in all_chromosomes:
+            reports.append(get_chunk_report(chromosome_map[chrom]))
+        if do_filtering:
+            reports.append([""])
+            reports.append(["--------------------"])
+            reports.append(["- Filtered  Chroms -"])
+            reports.append(["--------------------"])
+            for chrom in all_chromosomes:
+                reports.append(get_chunk_report(filtered_chrom_map[chrom]))
+
+
     # analysis on a per-chunk basis
-    reports.append([""])
-    reports.append(["--------------------"])
-    reports.append(["-  Chunk Summary   -"])
-    reports.append(["--------------------"])
-    def get_chunk_report(chunk, qual_and_depth=args.verbose, tp_fp_fn=True, misc=True):
-        sensitivity = chunk[SENSITIVITY_KEY]
-        precision = chunk[PRECISION_KEY]
-        fmeasure = chunk[FMEASURE_KEY]
-        report = ["%9s %s%s" % (mpi,
-                                  "+" if mpi in best_chunks else " ",
-                                  "-" if mpi in worst_chunks else " "),
-                  "fmeasure: %.3f %s " % (fmeasure,  "+  " if fmeasure > .85 else ( " = " if fmeasure > .7 else "  -")),
-                  "sensitivity: %.3f %s " % (sensitivity,
-                                             "+  " if sensitivity > .8 else (
-                                             " = " if sensitivity > .5 else "  -")),
-                  "precision: %.3f %s " % (precision,
-                                           "+  " if precision > .85 else (" = " if precision > .7 else "  -"))
-            ]
-        if tp_fp_fn:
-            report.extend([
-                      "tp: %5d " % chunk[TP_COUNT_KEY],
-                      "fp: %5d " % chunk[FP_COUNT_KEY],
-                      "fn: %5d " % chunk[FN_COUNT_KEY],
-            ])
-        if misc:
-            report.extend([
-                      "total_calls: %5d  " % len(chunk[CALL_DETAILS_LIST_KEY]),
-                      "range: %9d-%-9d (%7d)" % (chunk[START_POS_KEY], chunk[END_POS_KEY],
-                                                 chunk[END_POS_KEY] - chunk[START_POS_KEY])
-                    ])
-        if qual_and_depth:
-            report.extend([
-                      "avg_qual: %3d" % chunk[AVG_QUAL_KEY],
-                      "avg_tp_qual: %3d" % chunk[AVG_TP_QUAL_KEY],
-                      "avg_fp_qual: %3d" % chunk[AVG_FP_QUAL_KEY],
-                      "avg_depth: %3d" % chunk[AVG_DEPTH_KEY],
-                      "avg_tp_depth: %3d" % chunk[AVG_TP_DEPTH_KEY],
-                      "avg_fp_depth: %3d" % chunk[AVG_FP_DEPTH_KEY],
-                  ])
-
-
-        return report
-    # get reports
-    for mpi in chunk_map_keys:
-        chunk = chunk_map[mpi]
-        if args.verbose or mpi in best_chunks or mpi in worst_chunks or mpi in specific_chunks:
-            reports.append(get_chunk_report(chunk))
-
-    # specific chunks
-    def get_read_analysis_chunk_report(chunk):
-        report = [
-            "%9s  %s%s%s " % (chunk[MPI_KEY],
-                              "+" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third*2:] else " ",
-                              "=" if chunk[MPI_KEY] in chunk_ranking[chunk_ranking_third:chunk_ranking_third*2] else " ",
-                              "-" if chunk[MPI_KEY] in chunk_ranking[0:chunk_ranking_third] else " ")
-        ]
-        if len(chunk) > 1:
-            report.extend( [
-                # "read count: %6d" % chunk[ORIGINAL_READ_COUNT_KEY],
-                # "filtered RC: %6d (%d%%)" % (chunk[FILTERED_READ_COUNT_KEY],
-                #                              percent(chunk[FILTERED_READ_COUNT_KEY],
-                #                                      chunk[ORIGINAL_READ_COUNT_KEY])),
-                "depth avg: %3d" % int(chunk[AVG_READ_DEPTH_KEY]),
-                "depth std: %3d" % int(chunk[STD_READ_DEPTH_KEY]),
-                "depth max: %4d" % int(chunk[MAX_READ_DEPTH_KEY]),
-                "depth min: %3d" % int(chunk[MIN_READ_DEPTH_KEY]),
-
-                # "length avg: %5d" % int(chunk[AVG_READ_LENGTH_KEY]),
-                # "length std: %5d" % int(chunk[STD_READ_LENGTH_KEY]),
-                # "length max: %7d" % int(chunk[MAX_READ_LENGTH_KEY]),
-                # "length min: %3d" % int(chunk[MIN_READ_LENGTH_KEY]),
-                ])
-        return report
-    if do_bam_depth_analysis:
+    if len(all_chromosomes) == 1 or args.chromosomes is not None:
+        def show_chunk_report(mpi):
+            return len(all_chromosomes) == 1 or \
+                   (args.chromosomes is not None and chrom_from_mpi(mpi) in args.chromosomes) or \
+                   args.verbose or \
+                   mpi in specific_chunks
         reports.append([""])
         reports.append(["--------------------"])
-        reports.append(["-  Depth Analysis  -"])
+        reports.append(["-  Chunk Summary   -"])
         reports.append(["--------------------"])
         for mpi in chunk_map_keys:
-            if args.verbose or mpi in best_chunks or mpi in worst_chunks or mpi in specific_chunks:
-                chunk = chunk_map[mpi]
-                reports.append(get_read_analysis_chunk_report(chunk))
+            chunk = chunk_map[mpi]
+            if show_chunk_report(mpi):
+                reports.append(get_chunk_report(chunk))
 
-    if do_filtering:
-        reports.append([""])
-        reports.append(["--------------------"])
-        reports.append(["- Filtered  Chunks -"])
-        reports.append(["--------------------"])
-        for mpi in chunk_map_keys:
-            if mpi in chunks_to_remove: continue
-            if args.verbose or mpi in best_chunks or mpi in worst_chunks or mpi in specific_chunks:
-                chunk = chunk_map[mpi] if mpi not in filtered_chunk_map else filtered_chunk_map[mpi]
-                tp_below_thresh = len(list(filter(true_positive_removal_filter, chunk[CALL_DETAILS_LIST_KEY])))
-                fp_below_thresh = len(list(filter(false_positive_removal_filter, chunk[CALL_DETAILS_LIST_KEY])))
-                chunk[TP_COUNT_KEY] -= tp_below_thresh
-                chunk[FN_COUNT_KEY] += tp_below_thresh
-                chunk[FP_COUNT_KEY] -= fp_below_thresh
-                summarize_chunk(chunk)
-                reports.append(get_chunk_report(chunk, qual_and_depth=False, tp_fp_fn=True, misc=False))
+        if do_bam_depth_analysis:
+            reports.append([""])
+            reports.append(["--------------------"])
+            reports.append(["-  Depth Analysis  -"])
+            reports.append(["--------------------"])
+            for mpi in chunk_map_keys:
+                if show_chunk_report(mpi):
+                    chunk = chunk_map[mpi]
+                    reports.append(get_read_analysis_chunk_report(chunk))
+
+        if do_filtering:
+            reports.append([""])
+            reports.append(["--------------------"])
+            reports.append(["- Filtered  Chunks -"])
+            reports.append(["--------------------"])
+            for mpi in chunk_map_keys:
+                if mpi in chunks_to_remove: continue
+                if show_chunk_report(mpi):
+                    chunk = chunk_map[mpi] if mpi not in filtered_chunk_map else filtered_chunk_map[mpi]
+                    tp_below_thresh = len(list(filter(true_positive_removal_filter, chunk[CALL_DETAILS_LIST_KEY])))
+                    fp_below_thresh = len(list(filter(false_positive_removal_filter, chunk[CALL_DETAILS_LIST_KEY])))
+                    chunk[TP_COUNT_KEY] -= tp_below_thresh
+                    chunk[FN_COUNT_KEY] += tp_below_thresh
+                    chunk[FP_COUNT_KEY] -= fp_below_thresh
+                    summarize_chunk(chunk)
+                    reports.append(get_chunk_report(chunk, qual_and_depth=False, tp_fp_fn=True, misc=False))
 
 
     # print them
@@ -981,6 +1119,7 @@ def main():
     # make plots
     if args.plot:
         print("\nPlotting")
+        start = time.clock()
 
         # functions
         depth_count_below_threshold = lambda x, y: len(list(filter(lambda z: z < y, x[ALL_READ_DEPTH_KEY])))
@@ -1093,10 +1232,9 @@ def main():
         # if len(read_analysis_chunk_ids) > 0:
         #     for mpi in read_analysis_chunk_ids:
         #         plot_all_call_qual(chunk_map[mpi][CALL_DETAILS_LIST_KEY], title="Chunk {}".format(mpi), logscale=False)
+        print("\t{}s".format(int(time.clock() - start)))
 
-
-
-    print("\nFin.")
+    print("\nFin ({}).".format(int(time.clock() - overall_start)))
 
 
 
