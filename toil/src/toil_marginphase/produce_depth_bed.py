@@ -15,6 +15,8 @@ import bam_stats
 chrom_sort = lambda x: int(x.replace("chr", ""))
 xor = lambda a, b: (a and not b) or (not a and b)
 
+AVG_DEPTH_PARAM = "avg_depth"
+MIN_DEPTH_PARAM = "min_depth"
 
 def parse_args():
     parser = argparse.ArgumentParser("Produces BED file of bam where read depth is at or above a threshold")
@@ -25,21 +27,32 @@ def parse_args():
     parser.add_argument('--output', '-o', dest='output', default="-", type=str,
                        help="If set, output will be written to this file, otherwise stdout. "
                             "Can use python formatting with parameters:\n"
-                            "file:    input filename (less extension), "
-                            "chr:     chromosome, "
-                            "depth:   'read_depth' parameter, "
+                            "file: input filename (less extension), "
+                            "chr: chromosome, "
+                            "depth_threshold: 'depth_threshold' parameter, "
+                            "depth_increment: 'depth_increment' parameter, "
                             "spacing: 'sampling_spacing' parameter "
                         )
     parser.add_argument('--sampling_spacing', '-s', dest='sampling_spacing', default=500, type=int,
                        help='Sampling spacing for read depth')
-    parser.add_argument('--read_depth', '-d', dest='read_depth', required=True, type=int,
-                       help='Minimum depth for file to be included in bed file')
+    parser.add_argument('--depth_increment', '-d', dest='depth_increment', default=None, type=int,
+                       help='If set, will report min depth per \'sampling_spacing\' bases rounded down to '
+                            'a multiple of \'depth_increment\' ')
+    parser.add_argument('--depth_threshold', '-t', dest='depth_threshold', type=int, default=0,
+                       help='Depth threshold for region ffffffto be included in bed file')
     parser.add_argument('--bam_file', '-b', dest='bam_file', default=None, type=str,
                        help='Filename of input bam')
     parser.add_argument('--invert_bed', '-n', dest='invert_bed', default=False, action='store_true',
-                       help='Produce BED file where read depth is BELOW \'read_depth\' parameter')
+                       help='Produce BED file where read depth is BELOW \'depth_threshold\' parameter')
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.depth_increment is None and args.depth_threshold == 0:
+        raise Exception("Either 'depth_increment' or 'depth_threshold' must be specified.")
+    if args.depth_increment is not None and args.depth_threshold != 0:
+        raise Exception("Only one of 'depth_increment' or 'depth_threshold' may be specified.")
+
+    return args
 
 
 def log(msg):
@@ -71,20 +84,19 @@ def get_genome_read_depths(bam_file, spacing, verbose=False):
             log("{}: \t{}: \tmin_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_MIN]))
             log("{}: \t{}: \tavg_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_AVG]))
             log("{}: \t{}: \tstd_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_STD]))
-        read_depths = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTHS]
-        read_depth_positions = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTH_POSITIONS]
-        assert(len(read_depths) == len(read_depth_positions))
-        assert(len(read_depths) != 0)
-        positions[chromosome] = {pos:depth for pos, depth in zip(read_depth_positions, read_depths)}
+        depth_thresholds = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTHS]
+        depth_threshold_positions = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTH_POSITIONS]
+        assert(len(depth_thresholds) == len(depth_threshold_positions))
+        assert(len(depth_thresholds) != 0)
+        positions[chromosome] = {pos:depth for pos, depth in zip(depth_threshold_positions, depth_thresholds)}
 
     return positions
 
 
-def write_to_bedfile(depth_map, chromosome, output, args):
+def write_to_depth_threshold_bedfile(depth_map, chromosome, output, args):
     # args
-    verbose = args.verbose
     spacing = args.sampling_spacing
-    min_depth = args.read_depth
+    depth_threshold = args.depth_threshold
     write_blocks_above_threshold = not args.invert_bed
 
     # prep
@@ -99,12 +111,12 @@ def write_to_bedfile(depth_map, chromosome, output, args):
         start_idx = block_start * spacing
         end_idx = (block_end + 1) * spacing
         avg_depth = int(1.0 * block_sum / (block_end - block_start + 1))
-        output.write("{}\t{}\t{}\tavg_depth:{}\n".format(chromosome, start_idx, end_idx, avg_depth))
+        output.write("{}\t{}\t{}\t{}:{}\n".format(chromosome, start_idx, end_idx, AVG_DEPTH_PARAM, avg_depth))
 
     # iterate over blocks
     for idx in range(min_idx, max_idx + 1):
         depth = depth_map[idx]
-        below_thresh = depth < min_depth
+        below_thresh = depth < depth_threshold
 
         # are these different? (ie, have we gone from a string of belows to an above, or string of aboves to a below)
         if xor(block_below_thresh, below_thresh):
@@ -129,13 +141,56 @@ def write_to_bedfile(depth_map, chromosome, output, args):
     return lines_written
 
 
+def write_to_depth_summary_bedfile(depth_map, chromosome, output, args):
+    # args
+    spacing = args.sampling_spacing
+    depth_increment = args.depth_increment
+
+    # prep
+    max_idx = max(depth_map.keys())
+    min_idx = min(depth_map.keys())
+    block_start = 0
+    block_depth = 0
+    lines_written = 0
+
+    def get_depth_by_increment(depth):
+        return depth_increment * int(1.0 * depth / depth_increment)
+
+    def write_bedline(block_start, block_end, block_min):
+        start_idx = block_start * spacing
+        end_idx = (block_end + 1) * spacing
+        output.write("{}\t{}\t{}\t{}:{}\n".format(chromosome, start_idx, end_idx, MIN_DEPTH_PARAM,block_min))
+
+    # iterate over blocks
+    for idx in range(min_idx, max_idx + 1):
+        current_depth = get_depth_by_increment(depth_map[idx])
+
+        # is curret pos depth different than current block depth
+        if block_depth != current_depth:
+            write_bedline(block_start, idx - 1, block_depth)
+            lines_written += 1
+
+            # update block
+            block_start = idx
+            block_depth = current_depth
+
+
+    # write the last block
+    write_bedline(block_start, idx, block_depth)
+    lines_written += 1
+
+    # finish
+    return lines_written
+
+
 def main():
     # prep
     args = parse_args()
     stdout_output = args.output == '-'
     def get_output_filename(file=None, chr=None):
         assert(args.output is not None)
-        return args.output.format(file=file, chr=chr, depth=args.read_depth, spacing=args.sampling_spacing)
+        return args.output.format(file=file, chr=chr, depth_threshold=args.depth_threshold,
+                                  spacing=args.sampling_spacing, depth_increment=args.depth_increment)
     all_output_files = list()
 
     # get files
@@ -169,7 +224,12 @@ def main():
 
                 # write beds
                 depth_map = all_file_depths[alignment_file][chromosome]
-                lines_written = write_to_bedfile(depth_map, chromosome, output_file, args)
+                if args.depth_threshold is not None:
+                    lines_written = write_to_depth_threshold_bedfile(depth_map, chromosome, output_file, args)
+                elif args.depth_increment is not None:
+                    lines_written = write_to_depth_summary_bedfile(depth_map, chromosome, output_file, args)
+                else:
+                    raise Exception("PROGRAMMER ERROR: argument sanity checks failed: {}".format(args))
                 if args.verbose:
                     log("{}: wrote {} lines".format(output_filename, lines_written))
 

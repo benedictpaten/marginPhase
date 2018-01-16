@@ -27,7 +27,7 @@ MPI_SORT = lambda x: int(x.split(MPI_SEP)[0].replace("chr", "").replace("X","30"
 chrom_from_mpi = lambda x: x.split(MPI_SEP)[0]
 full_mpi_from_chrom_and_mpi = lambda chrom, mpi: "%s%s%03d" % (chrom, MPI_SEP, int(mpi))
 MIN_START_POS = 0
-MAX_END_POS = sys.maxint
+MAX_END_POS = sys.maxsize
 
 # chunk details
 START_POS_KEY = 'start_pos'
@@ -143,11 +143,11 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
         mpi_lookup_list = list()
         for chunk in chunk_map.values():
             mpi_lookup_list.append(mpi_details(chunk))
-    def is_in_mpi(curr, pos):
-        return pos >= curr[M_START_POS_IDX] and pos <= curr[M_END_POS_IDX]
-    def lookup_mpi(pos):
+    def is_in_mpi(curr, chrom, pos):
+        return chrom == chrom_from_mpi(curr[M_MPI_IDX]) and pos >= curr[M_START_POS_IDX] and pos <= curr[M_END_POS_IDX]
+    def lookup_mpi(chrom, pos):
         for mpi in mpi_lookup_list:
-            if is_in_mpi(mpi, pos): return mpi
+            if is_in_mpi(mpi, chrom, pos): return mpi
         assert False
 
     mpi_idx = 3
@@ -189,8 +189,8 @@ def read_file(chunk_map, input, increment_key, args, has_mpi_tag=True):
                                                     .format(linenr, increment_key, '\t'.join(line)))
             depth = int(smpl[depth_idx])
         else:
-            if current_mpi is None or not is_in_mpi(current_mpi, pos):
-                current_mpi = lookup_mpi(pos)
+            if current_mpi is None or not is_in_mpi(current_mpi, chrom, pos):
+                current_mpi = lookup_mpi(chrom, pos)
             mpi = current_mpi[M_MPI_IDX]
             assert mpi is not None
 
@@ -293,7 +293,7 @@ def get_empty_chunk(mpi):
 
 
 def copy_chunk(chunk):
-    chunk = {
+    new_chunk = {
         START_POS_KEY: chunk[START_POS_KEY],
         END_POS_KEY: chunk[END_POS_KEY],
         FP_COUNT_KEY: chunk[FP_COUNT_KEY],
@@ -302,8 +302,8 @@ def copy_chunk(chunk):
         MPI_KEY: chunk[MPI_KEY],
         CALL_DETAILS_LIST_KEY: [x for x in chunk[CALL_DETAILS_LIST_KEY]]
     }
-    summarize_chunk(chunk)
-    return chunk
+    summarize_chunk(new_chunk)
+    return new_chunk
 
 
 def summarize_chunk(chunk, include_call_metrics=True):
@@ -377,15 +377,26 @@ def get_chrom_map_from_chunk_map(chunk_map):
         else:
             chrom_chunk = chromosome_map[chrom]
         # get all calls per chrom
-        chrom_chunk[CALL_DETAILS_LIST_KEY].extend(chunk_map[mpi][CALL_DETAILS_LIST_KEY])
+        for call in chunk_map[mpi][CALL_DETAILS_LIST_KEY]:
+            chrom_chunk[CALL_DETAILS_LIST_KEY].append(call)
+
     # fill extra data
     for chrom_chunk in chromosome_map.values():
+        chrom_chunk[TP_COUNT_KEY] = 0
+        chrom_chunk[FP_COUNT_KEY] = 0
+        chrom_chunk[FN_COUNT_KEY] = 0
+        chrom_chunk[START_POS_KEY] = None
+        chrom_chunk[END_POS_KEY] = None
         chrom_calls = chrom_chunk[CALL_DETAILS_LIST_KEY]
-        chrom_chunk[TP_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == TP_COUNT_KEY, chrom_calls)))
-        chrom_chunk[FP_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == FP_COUNT_KEY, chrom_calls)))
-        chrom_chunk[FN_COUNT_KEY] = len(list(filter(lambda x: x[C_TYPE_IDX] == FN_COUNT_KEY, chrom_calls)))
-        chrom_chunk[START_POS_KEY] = min(list(map(lambda x: x[C_POS_IDX], chrom_calls))) if len(chrom_calls)>0 else None
-        chrom_chunk[END_POS_KEY] = max(list(map(lambda x: x[C_POS_IDX], chrom_calls))) if len(chrom_calls)>0 else None
+        for call in chrom_calls:
+            if call[C_TYPE_IDX] == TP_COUNT_KEY: chrom_chunk[TP_COUNT_KEY] += 1
+            if call[C_TYPE_IDX] == FP_COUNT_KEY: chrom_chunk[FP_COUNT_KEY] += 1
+            if call[C_TYPE_IDX] == FN_COUNT_KEY: chrom_chunk[FN_COUNT_KEY] += 1
+            if chrom_chunk[START_POS_KEY] is None or chrom_chunk[START_POS_KEY] > call[C_POS_IDX]:
+                chrom_chunk[START_POS_KEY] = call[C_POS_IDX]
+            if chrom_chunk[END_POS_KEY] is None or chrom_chunk[END_POS_KEY] < call[C_POS_IDX]:
+                chrom_chunk[END_POS_KEY] = call[C_POS_IDX]
+
         summarize_chunk(chrom_chunk)
     # return it
     return chromosome_map
@@ -927,7 +938,7 @@ def main():
                         chrom_bed_coverage = 0
                     total_call_coverage += chrom_call_coverage
                     total_bed_coverage += chrom_bed_coverage
-                    if args.verbose:
+                    if not args.quiet:
                         print("\t\t\t{} includes {}/{} ({}%) of called range"
                               .format(chrom, chrom_bed_coverage, chrom_call_coverage,
                                       percent(chrom_bed_coverage, chrom_call_coverage)))
@@ -959,9 +970,10 @@ def main():
                     chrom_bed_data = bed_data[chrom] if chrom in bed_data else []
                     chrom_bed_coverage = sum(map(lambda x: max(0, min(chrom_coverage_end, x[B_END_IDX]) -
                                                      max(x[B_START_IDX], chrom_coverage_start)), chrom_bed_data))
+                    chrom_bed_coverage = chrom_call_coverage - chrom_bed_coverage
                     total_call_coverage += chrom_call_coverage
                     total_bed_coverage += chrom_bed_coverage
-                    if args.verbose:
+                    if not args.quiet:
                         print("\t\t\t{} excludes {}/{} ({}%) of called range"
                               .format(chrom, chrom_bed_coverage, chrom_call_coverage,
                                       percent(chrom_bed_coverage, chrom_call_coverage)))
@@ -1070,7 +1082,7 @@ def main():
 
 
     # analysis on a per-chunk basis
-    if len(all_chromosomes) == 1 or args.chromosomes is not None:
+    if len(all_chromosomes) == 1 or args.chromosomes is not None or args.verbose:
         def show_chunk_report(mpi):
             return len(all_chromosomes) == 1 or \
                    (args.chromosomes is not None and chrom_from_mpi(mpi) in args.chromosomes) or \
