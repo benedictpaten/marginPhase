@@ -2,14 +2,8 @@
 from __future__ import print_function
 import argparse
 import glob
-import gzip
 import sys
-import numpy as np
-from scipy import stats
 import os
-import matplotlib.pyplot as plt
-import math
-import pickle
 import bam_stats
 
 chrom_sort = lambda x: int(x.replace("chr", ""))
