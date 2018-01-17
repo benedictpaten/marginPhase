@@ -351,11 +351,15 @@ def get_genome_read_depths(args):
                                 .format(chrom, depth_file, args.genome_bam_glob))
             # get the data we want
             chrom_depth_summary = depth_file[chrom]
-            read_depths = chrom_depth_summary[bam_stats.D_ALL_DEPTHS]
-            read_depth_positions = chrom_depth_summary[bam_stats.D_ALL_DEPTH_POSITIONS]
-            assert (len(read_depths) == len(read_depth_positions))
-            assert (len(read_depths) != 0)
-            depth_chrom_map[chrom] = {pos:depth for pos, depth in zip(read_depth_positions, read_depths)}
+            #todo - remove me
+            # read_depths = chrom_depth_summary[bam_stats.D_ALL_DEPTHS]
+            # read_depth_positions = chrom_depth_summary[bam_stats.D_ALL_DEPTH_POSITIONS]
+            # assert (len(read_depths) == len(read_depth_positions))
+            # assert (len(read_depths) != 0)
+            # depth_chrom_map[chrom] = {pos:depth for pos, depth in zip(read_depth_positions, read_depths)}
+            # todo - test me and verify on a bam!
+            depth_chrom_map[chrom] = chrom_depth_summary[bam_stats.D_ALL_DEPTH_MAP]
+
 
     # save sample spacing and return
     depth_chrom_map[SAMPLE_SPACING_KEY] = DEPTH_SAMPLE_SPACING

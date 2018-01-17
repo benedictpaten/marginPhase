@@ -38,18 +38,16 @@ def parse_args():
     parser.add_argument('--depth_increment', '-d', dest='depth_increment', default=None, type=int,
                        help='If set, will report min depth per \'sampling_spacing\' bases rounded down to '
                             'a multiple of \'depth_increment\' ')
-    parser.add_argument('--depth_threshold', '-t', dest='depth_threshold', type=int, default=0,
+    parser.add_argument('--depth_threshold', '-t', dest='depth_threshold', type=int, default=None,
                        help='Depth threshold for region ffffffto be included in bed file')
-    parser.add_argument('--bam_file', '-b', dest='bam_file', default=None, type=str,
-                       help='Filename of input bam')
     parser.add_argument('--invert_bed', '-n', dest='invert_bed', default=False, action='store_true',
                        help='Produce BED file where read depth is BELOW \'depth_threshold\' parameter')
 
     args = parser.parse_args()
 
-    if args.depth_increment is None and args.depth_threshold == 0:
+    if args.depth_increment is None and args.depth_threshold is None:
         raise Exception("Either 'depth_increment' or 'depth_threshold' must be specified.")
-    if args.depth_increment is not None and args.depth_threshold != 0:
+    if args.depth_increment is not None and args.depth_threshold is not None:
         raise Exception("Only one of 'depth_increment' or 'depth_threshold' may be specified.")
 
     return args
@@ -84,11 +82,9 @@ def get_genome_read_depths(bam_file, spacing, verbose=False):
             log("{}: \t{}: \tmin_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_MIN]))
             log("{}: \t{}: \tavg_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_AVG]))
             log("{}: \t{}: \tstd_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_STD]))
-        depth_thresholds = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTHS]
-        depth_threshold_positions = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTH_POSITIONS]
-        assert(len(depth_thresholds) == len(depth_threshold_positions))
-        assert(len(depth_thresholds) != 0)
-        positions[chromosome] = {pos:depth for pos, depth in zip(depth_threshold_positions, depth_thresholds)}
+
+        positions[chromosome] = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTH_MAP]
+        pass
 
     return positions
 

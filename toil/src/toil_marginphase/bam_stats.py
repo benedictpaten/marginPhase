@@ -40,6 +40,7 @@ D_AVG = "avg_depth"
 D_STD = "std_depth"
 D_ALL_DEPTHS = "all_depths"
 D_ALL_DEPTH_POSITIONS = "all_depth_positions"
+D_ALL_DEPTH_MAP = "all_depth_map"
 D_ALL_DEPTH_BINS = "all_depth_bins"
 D_SPACING = "depth_spacing"
 D_START_IDX = "depth_start_idx"
@@ -171,36 +172,53 @@ def get_read_depth_summary(read_summaries, spacing, included_range=None):
         depth_positions.append(idx)
         idx -= 1
 
+    #todo I don't like that I don't know why I need to do this
+    depth_positions.reverse()
+
     assert depth == 0
     assert len(positions) == 1
     assert len(depths) == len(depth_positions)
+
+    depth_map = {pos: depth for pos, depth in zip(depth_positions, depths)}
 
     # check range before outputting summary
     if included_range is not None:
         # get range
         included_range = list(map(int, included_range.split("-")))
         if len(included_range) != 2:
-            raise Exception("Malformed depth range: '{}'".format("-".join(included_range)))
+            raise Exception("Malformed depth range: '{}'".format("-".join(map(str, included_range))))
         range_start = int(included_range[0]/spacing)
         range_end = int(included_range[1]/spacing)
         # sanity check
         if range_start > end_idx or range_end < start_idx or range_start >= range_end:
-            raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(included_range),
-                                                                              "-".join([start_idx, end_idx])))
-        # reverse lists (because we record depths backwards)
-        depths.reverse()
-        depth_positions.reverse()
-        # get appropriate depths
+            raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(map(str, included_range)),
+                                                                              "-".join(map(str, [start_idx*spacing, end_idx*spacing]))))
+
+        #todo
+        # # reverse lists (because we record depths backwards)
+        # depths.reverse()
+        # depth_positions.reverse()
+        # # get appropriate depths
+        # new_depths = list()
+        # new_depth_positions = list()
+        # for depth_idx in range(end_idx - start_idx + 1):
+        #     if start_idx + depth_idx < range_start: continue
+        #     if start_idx + depth_idx > range_end: break
+        #     new_depths.append(depths[depth_idx])
+        #     new_depth_positions.append(depth_positions[depth_idx])
+
         new_depths = list()
         new_depth_positions = list()
-        for depth_idx in range(end_idx - start_idx + 1):
-            if start_idx + depth_idx < range_start: continue
-            if start_idx + depth_idx > range_end: break
-            new_depths.append(depths[depth_idx])
-            new_depth_positions.append(depth_positions[depth_idx])
+        new_depth_map = dict()
+        for i in range(range_start, range_end):
+            new_depth_positions.append(i)
+            new_depths.append(depth_map[i])
+            new_depth_map[i] = depth_map[i]
+
         # update values
         depths = new_depths
         depth_positions = new_depth_positions
+        depth_map = new_depth_map
         start_idx = max(start_idx, range_start)
         assert len(depths) > 0
         assert len(new_depths) == len(new_depth_positions)
@@ -221,6 +239,7 @@ def get_read_depth_summary(read_summaries, spacing, included_range=None):
         D_STD: np.std(depths),
         D_ALL_DEPTHS: depths,
         D_ALL_DEPTH_POSITIONS: depth_positions,
+        D_ALL_DEPTH_MAP: depth_map,
         D_ALL_DEPTH_BINS: log_depth_bins,
         D_SPACING: spacing,
         D_START_IDX: start_idx,
@@ -248,13 +267,13 @@ def print_read_depth_summary(summary, verbose=False):
 
         if verbose:
             print("\t\tdepths with spacing {}{}:".format(summary[chrom][D_SPACING],
-                                               "" if summary[chrom][D_RANGE] is None else ", and range {}".format(summary[D_RANGE])))
-            idx = summary[chrom][D_START_IDX]
-            for depth in summary[chrom][D_ALL_DEPTHS]:
+                                               "" if summary[chrom][D_RANGE] is None else
+                                               ", and range {}".format(summary[chrom][D_RANGE])))
+            for idx in summary[chrom][D_ALL_DEPTH_POSITIONS]:
+                depth = summary[chrom][D_ALL_DEPTH_MAP][idx]
                 id = "%4d:" % idx
                 pound_count = int(32.0 * depth / summary[chrom][D_MAX])
                 print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
-                idx += 1
 
             print("\t\tread depth log_2 at above intervals:")
             max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
