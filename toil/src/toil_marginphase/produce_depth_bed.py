@@ -6,7 +6,7 @@ import sys
 import os
 import bam_stats
 
-chrom_sort = lambda x: int(x.replace("chr", ""))
+chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
 xor = lambda a, b: (a and not b) or (not a and b)
 
 AVG_DEPTH_PARAM = "avg_depth"
