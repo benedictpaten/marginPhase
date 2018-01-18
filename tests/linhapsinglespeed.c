@@ -8,8 +8,8 @@
 
 int main(int argc, char* argv[]) {
 	// -- input handling -------------------------------------------------------------------------------------------------
-  if(argc != 5) {
-		printf("arguments are [ref path] [interval] [vcf path] [cohort size] [number of trials]\n");
+  if(argc != 7) {
+		fprintf(stderr, "arguments are [ref path] [interval] [vcf path] [cohort size] [subsequence length] [number of trials]\n");
 		return 1;
 	}
   
@@ -17,7 +17,8 @@ int main(int argc, char* argv[]) {
   char* interval_str = argv[2];
   char* vcf_path = argv[3];
   size_t cohort_size = atoi(argv[4]);
-  size_t n_trials = atoi(argv[5]);
+  size_t subsequence_length = atoi(argv[5]);
+  size_t n_trials = atoi(argv[6]);
   
   // static parameters
   double MUT_PEN = 2.303 * -9;
@@ -25,7 +26,7 @@ int main(int argc, char* argv[]) {
   size_t LINEAR_MAX_SAMPLES = 10000;
   size_t QUADRATIC_MAX_SAMPLES = 500;
   size_t RANDOM_HAPLOTYPE_GENERATIONS = 3;
-  
+  size_t REPLICATES_PER_TRIAL = 10;
   // Parse interval input to get start position, end position, ref sequence
 	
 	fprintf(stderr, "loading reference interval %s from %s\n", interval_str, reference_path);
@@ -59,12 +60,10 @@ int main(int argc, char* argv[]) {
 	}
   
   // build penalty container
-  double recombination_penalty = atof(argv[4]);
-  double mutation_penalty = atof(argv[5]);
-  penaltySet* penalties = penaltySet_build(recombination_penalty, mutation_penalty, cohort_size);
+  penaltySet* penalties = penaltySet_build(RECOMB_PEN, MUT_PEN, cohort_size);
   
   for(size_t j = 0; j < n_trials; j++) {
-  	inputHaplotype* query_ih = haplotypeCohort_random_haplo(cohort, reference, RANDOM_HAPLOTYPE_GENERATIONS, penalties, length);
+  	inputHaplotype* query_ih = haplotypeCohort_random_haplo(cohort, reference, RANDOM_HAPLOTYPE_GENERATIONS, penalties, subsequence_length);
     
     fprintf(stderr, "simulated read query using %d generations \n", RANDOM_HAPLOTYPE_GENERATIONS);
     
@@ -72,7 +71,7 @@ int main(int argc, char* argv[]) {
   	double time_used_quad;
   	double time_used_linear;
   	
-  	for(size_t i = 0; i < 10; i++) {
+  	for(size_t i = 0; i < REPLICATES_PER_TRIAL; i++) {
       fastFwdAlgState* haplotype_matrix = fastFwdAlgState_initialize(reference, penalties, cohort);
     	slowFwdSolver* linear_fwd = slowFwd_initialize(reference, penalties, cohort);
     	slowFwdSolver* quadratic_fwd = slowFwd_initialize(reference, penalties, cohort);
@@ -109,7 +108,7 @@ int main(int argc, char* argv[]) {
     	slowFwdSolver_delete(linear_fwd);
     }
 
-  	fprintf(stdout, "%f\t%f\t%f\t%d\t%d\t%d\n", time_used_fast/3, time_used_linear/3, time_used_quad/3, haplotypeCohort_sum_MACs(cohort), haplotypeCohort_n_sites(cohort), atoi(argv[4]), region_end - region_beg);
+  	fprintf(stdout, "%f\t%f\t%f\t%d\t%d\t%d\n", time_used_fast/REPLICATES_PER_TRIAL, time_used_linear/REPLICATES_PER_TRIAL, time_used_quad/REPLICATES_PER_TRIAL, haplotypeCohort_sum_MACs(cohort), inputHaplotype_n_sites(query_ih), cohort_size, region_end - region_beg);
     
     inputHaplotype_delete(query_ih);
   }

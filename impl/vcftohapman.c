@@ -1,12 +1,11 @@
 #include <htslib/vcf.h>
 #include "interface.h"
 #include <stdlib.h>
-#include <time.h>
 
 int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end, siteIndex** return_lr, haplotypeCohort** return_cohort, size_t number) {
   vcfFile* cohort_vcf = vcf_open(vcf_path, "r");
   if (cohort_vcf == NULL) {
-      return 0;
+    return 0;
   } else {
     fprintf(stderr, "loading vcf %s\n", vcf_path);
   }
@@ -17,40 +16,15 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
   size_t number_of_haplotypes;
   size_t max_number = bcf_hdr_nsamples(cohort_hdr) * 2;
   if(number > max_number || number == 0) {
+    fprintf(stderr, "requested invalid number of haplotypes from cohort: wanted %d; exist %d\n", number, max_number);
     number_of_haplotypes = max_number;
   } else {
     number_of_haplotypes = number;
   }
   size_t length = ref_end - ref_start;
   
-  size_t* indices = malloc(number_of_haplotypes * sizeof(size_t));
-  
-  time_t t;
-  srand((unsigned) time(&t));
-  
-  size_t n = 0;
-  if(number_of_haplotypes != max_number) {
-    while(n < number_of_haplotypes) {
-      size_t candidate = rand() % max_number;
-      
-      int not_found = 1;
-      if(n != 0) {
-        for(size_t i = 0; i < n; i++) {
-          if(candidate == indices[i]) {
-            not_found = 0;
-          }
-        }
-      }
-      if(not_found == 1) {
-        indices[n] = candidate;
-        n++;
-      }
-    }
-  } else {
-    for(size_t i = 0; i < max_number; i ++) {
-      indices[i] = i;
-    }
-  } 
+  size_t* sample_ids = malloc(number_of_haplotypes * sizeof(size_t));
+  n_random_uints(sample_ids, number_of_haplotypes, max_number);
   
   siteIndex* reference = siteIndex_init_empty(ref_start);
   haplotypeCohort* cohort = haplotypeCohort_init_empty(number_of_haplotypes, reference);
@@ -65,30 +39,30 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
   int stepsmade;
   int sites_added = 0;
   while(bcf_read(cohort_vcf, cohort_hdr, record) == 0) {
-    size_t site = record->pos;
-    if(site >= ref_start && site <= ref_end) {
+    size_t site_position = record->pos;
+    if(site_position >= ref_start && site_position <= ref_end) {
       //TODO handle non-SNPs
       if (bcf_is_snp(record) == 1) {
         bcf_unpack(record, BCF_UN_ALL);
         if(built_initial_span == 0) {
-          siteIndex_set_initial_span(reference, site - ref_start);
+          siteIndex_set_initial_span(reference, site_position - ref_start);
           built_initial_span = 1;
         }
         
-        int64_t site_index = siteIndex_add_site(reference, site);
-        haplotypeCohort_add_record(cohort, site_index);
+        int64_t site_index = siteIndex_add_site(reference, site_position);
+        haplotypeCohort_add_record(cohort);
         
         int32_t *gt_arr = NULL, ngt_arr = 0;
         int ngt = bcf_get_genotypes(cohort_hdr, record, &gt_arr, &ngt_arr);
         if(site_index >= 0) {
           for(size_t i = 0; i < number_of_haplotypes; i++) {
-            int allele_index = bcf_gt_allele(gt_arr[indices[i]]);
+            int allele_index = bcf_gt_allele(gt_arr[sample_ids[i]]);
             char allele_value = record->d.allele[allele_index][0];
             haplotypeCohort_set_sample_allele(cohort, site_index, i, allele_value);
           }
         }
         sites_added++;
-        progress = site - ref_start;
+        progress = site_position - ref_start;
         steps = progress/stepsize;
         if(steps > laststep) {
           stepsmade = steps - laststep;
@@ -100,7 +74,7 @@ int lh_indices_from_vcf_subset(char* vcf_path, size_t ref_start, size_t ref_end,
         }
         free(gt_arr);
       }
-    } else if(site > ref_end) {
+    } else if(site_position > ref_end) {
       break;
     }
   }
