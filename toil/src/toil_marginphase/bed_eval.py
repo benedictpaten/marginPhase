@@ -7,10 +7,10 @@ import sys
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-import pickle
-import time
-import math
 
+
+from matplotlib import rcParams
+rcParams.update({'figure.autolayout': True})
 
 # bed detail indices
 START_POS = "start"
@@ -22,13 +22,17 @@ DIST_TO_CENT = "cent_dist"
 DIST_TO_CENT_RATIO = "centromere_dist_ratio"
 DIST_TO_CHROM_END = "chrom_end_dist"
 DIST_TO_CHROM_END_RATIO = "chrom_end_dist_ratio"
+ARM_LENGTH = "arm_length"
 
 bed_details = lambda start, end: {START_POS:int(start), END_POS:int(end)}
-
 
 chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
 percent = lambda part, whole: int(100.0 * part / whole) if whole != 0 else "--"
 log = print
+
+BUCKET_COUNT_DEFAULT = 100
+
+IMG_DIR = "test_img"
 
 
 def parse_args():
@@ -86,6 +90,7 @@ def convert_bed_to_centromere_map(bed_contents):
             START_POS: min(map(lambda x: x[START_POS], chrom_cent_data)),
             END_POS: min(map(lambda x: x[END_POS], chrom_cent_data)),
         }
+        centromere_map[chrom][CENTER_POS] = int((centromere_map[chrom][END_POS] + centromere_map[chrom][START_POS]) / 2)
     return centromere_map
 
 
@@ -103,34 +108,29 @@ def convert_bed_to_chrom_size_map(bed_contents):
 
 
 def add_bed_information(bed_contents, centromeres, chrom_sizes):
-    for chrom in bed_contents.keys():
+    for chrom in list(bed_contents.keys()):
         chrom_cent = centromeres[chrom]
         chrom_size = chrom_sizes[chrom]
-        chrom_calls = bed_contents[chrom]
-        for call in chrom_calls:
-            call[LENGTH] = call[END_POS] - call[START_POS]
-            call[CENTER_POS] = call[START_POS] + int(call[LENGTH] / 2)
-            if call[CENTER_POS] < chrom_cent[START_POS]:
-                call[ABOVE_CENT] = False
-                call[DIST_TO_CENT] = chrom_cent[START_POS] - call[CENTER_POS]
-                call[DIST_TO_CHROM_END] = call[CENTER_POS] - chrom_size[START_POS]
-                arm_length = chrom_cent[START_POS] - chrom_size[START_POS]
-                call[DIST_TO_CENT_RATIO] = 1.0 * call[DIST_TO_CENT] / arm_length
-                call[DIST_TO_CHROM_END_RATIO] = 1.0 * call[DIST_TO_CHROM_END] / arm_length
-            elif call[CENTER_POS] > chrom_cent[END_POS]:
-                call[ABOVE_CENT] = True
-                call[DIST_TO_CENT] = call[CENTER_POS] - chrom_cent[END_POS]
-                call[DIST_TO_CHROM_END] = chrom_size[END_POS] - call[CENTER_POS]
-                arm_length = chrom_size[END_POS] - chrom_cent[END_POS]
-                call[DIST_TO_CENT_RATIO] = 1.0 * call[DIST_TO_CENT] / arm_length
-                call[DIST_TO_CHROM_END_RATIO] = 1.0 * call[DIST_TO_CHROM_END] / arm_length
+        chrom_areas = bed_contents[chrom]
+        for area in chrom_areas:
+            area[LENGTH] = area[END_POS] - area[START_POS]
+            area[CENTER_POS] = area[START_POS] + int(area[LENGTH] / 2)
+            if area[CENTER_POS] < chrom_cent[CENTER_POS]:
+                area[ABOVE_CENT] = False
+                area[DIST_TO_CENT] = max(0, chrom_cent[START_POS] - area[CENTER_POS])
+                area[DIST_TO_CHROM_END] = area[CENTER_POS] - chrom_size[START_POS]
+                area[ARM_LENGTH] = chrom_cent[START_POS] - chrom_size[START_POS]
+                area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
+                area[DIST_TO_CHROM_END_RATIO] = 1.0 * area[DIST_TO_CHROM_END] / area[ARM_LENGTH]
+            elif area[CENTER_POS] > chrom_cent[CENTER_POS]:
+                area[ABOVE_CENT] = True
+                area[DIST_TO_CENT] = max(0, area[CENTER_POS] - chrom_cent[END_POS])
+                area[DIST_TO_CHROM_END] = chrom_size[END_POS] - area[CENTER_POS]
+                area[ARM_LENGTH] = chrom_size[END_POS] - chrom_cent[END_POS]
+                area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
+                area[DIST_TO_CHROM_END_RATIO] = 1.0 * area[DIST_TO_CHROM_END] / area[ARM_LENGTH]
             else:
-                call[ABOVE_CENT] = None
-                call[DIST_TO_CENT] = 0
-                call[DIST_TO_CHROM_END] = min(chrom_cent[START_POS] - chrom_size[START_POS],
-                                              chrom_size[END_POS] - chrom_cent[END_POS])
-                call[DIST_TO_CENT_RATIO] = 0.0
-                call[DIST_TO_CHROM_END_RATIO] = 1.0
+                raise Exception("Got call centered at centromere: {} ({})".format(area, chrom_cent))
 
 
 def print_reports(reports):
@@ -139,48 +139,50 @@ def print_reports(reports):
         log(("%"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
 
-def plot_dist_ratios(all_data, key, bucket_count=20, title=None, save_name=None):
+def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=BUCKET_COUNT_DEFAULT, ticks=10,
+                                  title=None, save_name=None):
+    assert ticks <= BUCKET_COUNT_DEFAULT
 
     raw_buckets = [0 for _ in range(bucket_count)]
+    bucket_sizes = list()
     for data in all_data:
         datum = data[key]
         assert datum >= 0 and datum <= 1
-        raw_buckets[int(datum * bucket_count)] += 1
+        bucket = int(datum * bucket_count)
+
+        # simple and naive
+        # raw_buckets[bucket] += data[sum_key]
+
+        # complicated and accurate
+        bucket_size = int(1.0 * data[ARM_LENGTH] / bucket_count)
+        bucket_sizes.append(bucket_size)
+        sum_data = data[sum_key]
+        center_distance = 0
+        while sum_data > 0:
+            if center_distance == 0:
+                raw_buckets[bucket] += min(sum_data, bucket_size)
+                sum_data -= bucket_size
+            else:
+                # if (bucket+center_distance) >= bucket_size or (bucket-center_distance) < 0:
+                #     raise Exception("Strange BED! bucket {}/{} (bucket size {}) has bed of length {}"
+                #                     .format(bucket, bucket_count, bucket_size, data[sum_key]))
+                raw_buckets[max(bucket - center_distance, 0)] \
+                    += bucket_size if sum_data > bucket_size * 2 else sum_data / 2
+                raw_buckets[min(bucket + center_distance, bucket_count - 1)] \
+                    += bucket_size if sum_data > bucket_size * 2 else sum_data / 2
+                sum_data -= bucket_size * 2
+            center_distance += 1
+
+    mean_bucket_size = np.mean(bucket_sizes)
+    print("bucket size: mean {} (std {})".format(mean_bucket_size, np.std(bucket_sizes)))
+    oversize_buckets = len(list(filter(lambda x: x > mean_bucket_size, raw_buckets)))
+    print("buckets over their size: {}/{} ({})".format(oversize_buckets, bucket_count, 1.0 * oversize_buckets / bucket_count))
+
 
     total_count = sum(raw_buckets)
     expected_count = int(total_count / bucket_count)
-    count_buckets = list(map(lambda x: x - expected_count, raw_buckets))
-
-    expected_ratio = 1.0 / bucket_count
-    # ratio_buckets = list(map(lambda x: (1.0 * x / total_count) - expected_ratio, raw_buckets))
-    ratio_buckets = list(map(lambda x: (1.0 * x / total_count) , raw_buckets))
-
-
-    f, axarr = plt.subplots(2, sharex=True)
-    axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='blue')
-    if title is not None: axarr[0].set_title(title)
-    axarr[0].set_xticks([i for i in range(bucket_count)])
-    axarr[0].set_ylabel('Count (Expected {})'.format(expected_count))
-    axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='red')
-    axarr[1].set_xticks([i for i in range(bucket_count)])
-    axarr[1].set_xticklabels(list(map(str, [1.0*i/bucket_count for i in range(bucket_count)])))
-    axarr[1].set_ylabel('Ratio')
-    axarr[1].set_xlabel('Buckets')
-
-    if save_name is not None: plt.savefig(save_name)
-    plt.show()
-
-
-def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=20, title=None, save_name=None):
-
-    raw_buckets = [0 for _ in range(bucket_count)]
-    for data in all_data:
-        datum = data[key]
-        assert datum >= 0 and datum <= 1
-        raw_buckets[int(datum * bucket_count)] += data[sum_key]
-
-    total_count = sum(raw_buckets)
-    expected_count = int(total_count / bucket_count)
+    #TODO
+    expected_count = mean_bucket_size
     count_buckets = list(map(lambda x: x - expected_count, raw_buckets))
 
     ratio_buckets = list(map(lambda x: (1.0 * x / total_count) if total_count != 0 else 0 , raw_buckets))
@@ -190,10 +192,10 @@ def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=20, title
     axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='green')
     if title is not None: axarr[0].set_title(title)
     axarr[0].set_xticks([i for i in range(bucket_count)])
-    axarr[0].set_ylabel('Position Count x Length (Expected {})'.format(expected_count))
+    axarr[0].set_ylabel('Count x Length (Expected {})'.format(expected_count))
     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
-    axarr[1].set_xticks([i for i in range(bucket_count)])
-    axarr[1].set_xticklabels(list(map(str, [1.0*i/bucket_count for i in range(bucket_count)])))
+    axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
+    axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
     axarr[1].set_ylabel('Ratio')
     axarr[1].set_xlabel('Buckets')
 
@@ -235,6 +237,15 @@ def summarize_call_data(identifier, call_list, verbose):
         return report
 
 
+def get_file_identifier(filename):
+    file_name = ".".join(os.path.basename(filename).split(".")[:-1])
+    file_identifier = file_name
+    if len(file_name) > 36:
+        file_identifier = "{}..{}".format(file_name[:16],file_name[-16:])
+    return file_identifier
+
+
+
 def main():
     args = parse_args()
     args.chrom_to_remove = args.chrom_to_remove.split(",")
@@ -256,12 +267,12 @@ def main():
 
     # make image dir
     if args.plot:
-        if not os.path.isdir("img"):
-            os.mkdir("img")
-
+        if not os.path.isdir(IMG_DIR):
+            os.mkdir(IMG_DIR)
 
     for file in files:
-        file_name = ".".join(os.path.basename(file).split(".")[:-1])
+        print("Analyzing {}".format(file))
+        file_identifier = get_file_identifier(file)
         bed_contents = read_bed_file(file, args)
         add_bed_information(bed_contents, centromeres, chrom_sizes)
         reports.append([file])
@@ -271,15 +282,22 @@ def main():
         for chrom in all_chroms:
             reports.append(summarize_call_data(chrom, bed_contents[chrom], args.verbose))
             all_areas.extend(bed_contents[chrom])
+            # plot chromosomes
             if args.plot:
-                if not os.path.isdir("img/{}".format(file_name)):
-                    os.mkdir("img/{}".format(file_name))
-                plot_dist_ratios_with_sum_key(list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
-                                              title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})".format(file_name, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
-                                              save_name="img/{}/CENT_ARM_LOC.BY_LENGTH.{}.{}.UPPER.png".format(file_name, file_name, chrom))
-                plot_dist_ratios_with_sum_key(list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
-                                 title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})" .format(file_name, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
-                                              save_name="img/{}/CENT_ARM_LOC.BY_LENGTH.{}.{}.LOWER.png".format(file_name, file_name, chrom))
+                if not os.path.isdir("{}/{}".format(IMG_DIR, file_identifier)):
+                    os.mkdir("{}/{}".format(IMG_DIR, file_identifier))
+                plot_dist_ratios_with_sum_key(
+                    list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
+                    title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                        .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                    save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.UPPER.png"
+                        .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
+                plot_dist_ratios_with_sum_key(
+                    list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
+                    title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                        .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
+                    save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
+                        .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
 
         reports.append(summarize_call_data("GENOME", all_areas, True))
         file_areas[file] = all_areas
@@ -288,18 +306,15 @@ def main():
     log("\nReporting:\n")
     print_reports(reports)
 
-
     if args.plot:
         log("\nPlotting\n")
         for file in files:
             areas = file_areas[file]
-            file_name = ".".join(os.path.basename(file).split(".")[:-1])
-            # plot_dist_ratios(areas, DIST_TO_CENT_RATIO,
-            #                  title="{}\nPosition along chrom arm (0 is centromere, 1 is telomere)"
-            #                  .format(file_name), save_name="CENT_ARM_LOC.{}.png".format(file_name))
-            plot_dist_ratios_with_sum_key(areas, DIST_TO_CENT_RATIO, LENGTH,
-                             title="{}\n(0.0 - centromere, 1.0 - telomere)"
-                             .format(file_name), save_name="img/CENT_ARM_LOC.BY_LENGTH.{}.png".format(file_name))
+            file_identifier = get_file_identifier(file)
+            plot_dist_ratios_with_sum_key(
+                areas, DIST_TO_CENT_RATIO, LENGTH,
+                title="{}\n(0.0 - centromere, 1.0 - telomere)".format(file_identifier),
+                save_name="{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
 
     log("\nFin.")
 
