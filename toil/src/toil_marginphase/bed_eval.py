@@ -13,16 +13,25 @@ from matplotlib import rcParams
 rcParams.update({'figure.autolayout': True})
 
 # bed detail indices
-START_POS = "start"
-END_POS = "end"
-CENTER_POS = "center"
-LENGTH = "length"
-ABOVE_CENT = "above_cent"
-DIST_TO_CENT = "cent_dist"
-DIST_TO_CENT_RATIO = "centromere_dist_ratio"
-DIST_TO_CHROM_END = "chrom_end_dist"
-DIST_TO_CHROM_END_RATIO = "chrom_end_dist_ratio"
-ARM_LENGTH = "arm_length"
+# START_POS = "start"
+# END_POS = "end"
+# CENTER_POS = "center"
+# LENGTH = "length"
+# ABOVE_CENT = "above_cent"
+# DIST_TO_CENT = "cent_dist"
+# DIST_TO_CENT_RATIO = "centromere_dist_ratio"
+# DIST_TO_CHROM_END = "chrom_end_dist"
+# DIST_TO_CHROM_END_RATIO = "chrom_end_dist_ratio"
+# ARM_LENGTH = "arm_length"
+START_POS = "s"
+END_POS = "e"
+CENTER_POS = "c"
+LENGTH = "l"
+ABOVE_CENT = "a"
+DIST_TO_CENT = "d"
+DIST_TO_CHROM_END = "n"
+DIST_TO_CENT_RATIO = "r"
+ARM_LENGTH = "m"
 
 bed_details = lambda start, end: {START_POS:int(start), END_POS:int(end)}
 
@@ -32,10 +41,12 @@ log = print
 
 BUCKET_COUNT_DEFAULT = 100
 
-IMG_DIR = "test_img"
 
-DEBUG = True
+DEBUG = False
 DEBUG_VERBOSE = DEBUG and False
+
+IMG_DIR = "img"
+if DEBUG: IMG_DIR = "test_" + IMG_DIR
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
@@ -123,14 +134,12 @@ def add_bed_information(bed_contents, centromeres, chrom_sizes):
                 area[DIST_TO_CHROM_END] = area[CENTER_POS] - chrom_size[START_POS]
                 area[ARM_LENGTH] = chrom_cent[START_POS] - chrom_size[START_POS]
                 area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
-                area[DIST_TO_CHROM_END_RATIO] = 1.0 * area[DIST_TO_CHROM_END] / area[ARM_LENGTH]
             elif area[CENTER_POS] > chrom_cent[CENTER_POS]:
                 area[ABOVE_CENT] = True
                 area[DIST_TO_CENT] = max(0, area[CENTER_POS] - chrom_cent[END_POS])
                 area[DIST_TO_CHROM_END] = chrom_size[END_POS] - area[CENTER_POS]
                 area[ARM_LENGTH] = chrom_size[END_POS] - chrom_cent[END_POS]
                 area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
-                area[DIST_TO_CHROM_END_RATIO] = 1.0 * area[DIST_TO_CHROM_END] / area[ARM_LENGTH]
             else:
                 raise Exception("Got call centered at centromere: {} ({})".format(area, chrom_cent))
 
@@ -242,8 +251,6 @@ def summarize_call_data(identifier, call_list, verbose):
             "len_std: %4.3f" % np.std(map(lambda x: x[LENGTH], call_list)),
             "cent_dist_ratio: %.4f" % np.mean(map(lambda x: x[DIST_TO_CENT_RATIO], call_list)),
             "cent_dist_lt_10: %.3f" % ratio_within_threshold(DIST_TO_CENT_RATIO, .1, call_list),
-            "chrom_dist_ratio: %.4f" % np.mean(map(lambda x: x[DIST_TO_CHROM_END_RATIO], call_list)),
-            "chrom_dist_lt_10: %.3f" % ratio_within_threshold(DIST_TO_CHROM_END_RATIO, .1, call_list),
         ])
 
         if verbose:
@@ -275,14 +282,11 @@ def main():
     if args.centromere_bed in files:
         files.remove(args.centromere_bed)
     if len(files) == 0:
-        raise Exception("No files matching {}".format(files))
+        raise Exception("No files matching {}".format(args.input_bed_glob))
     log("Found {} files".format(len(files)))
 
     chrom_sizes = convert_bed_to_chrom_size_map(read_bed_file(args.chrom_bed, args))
     centromeres = convert_bed_to_centromere_map(read_bed_file(args.centromere_bed, args))
-
-    reports = list()
-    file_areas = dict()
 
     # make image dir
     if args.plot:
@@ -294,10 +298,12 @@ def main():
         file_identifier = get_file_identifier(file)
         bed_contents = read_bed_file(file, args)
         add_bed_information(bed_contents, centromeres, chrom_sizes)
+        reports = list()
         reports.append([file])
         all_areas = list()
         all_chroms = bed_contents.keys()
         all_chroms.sort(key=chrom_sort)
+        print("\tAnalyzing chroms")
         for chrom in all_chroms:
             reports.append(summarize_call_data(chrom, bed_contents[chrom], args.verbose))
             all_areas.extend(bed_contents[chrom])
@@ -317,29 +323,19 @@ def main():
                         .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
                     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
                         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
-
+        print("\tAnalyzing genome")
         reports.append(summarize_call_data("GENOME", all_areas, True))
-        file_areas[file] = all_areas
-
-
-    log("\nReporting:\n")
-    print_reports(reports)
-
-    if args.plot:
-        log("\nPlotting\n")
-        for file in files:
-            areas = file_areas[file]
-            file_identifier = get_file_identifier(file)
+        if args.plot:
             plot_dist_ratios_with_sum_key(
-                areas, DIST_TO_CENT_RATIO, LENGTH,
+                all_areas, DIST_TO_CENT_RATIO, LENGTH,
                 title="{}\n(0.0 - centromere, 1.0 - telomere)".format(file_identifier),
                 save_name="{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
+        log("\n\tReporting:\n")
+        print_reports(reports)
+
+
 
     log("\nFin.")
-
-
-
-
 
 
 
