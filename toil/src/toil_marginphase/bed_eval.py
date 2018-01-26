@@ -3,7 +3,7 @@ from __future__ import print_function
 import argparse
 import glob
 import gzip
-import sys
+import math
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -34,6 +34,8 @@ BUCKET_COUNT_DEFAULT = 100
 
 IMG_DIR = "test_img"
 
+DEBUG = True
+DEBUG_VERBOSE = DEBUG and False
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
@@ -143,7 +145,8 @@ def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=BUCKET_CO
                                   title=None, save_name=None):
     assert ticks <= BUCKET_COUNT_DEFAULT
 
-    raw_buckets = [0 for _ in range(bucket_count)]
+    raw_buckets = [[] for _ in range(bucket_count)]
+    raw_bucket_data = [[] for _ in range(bucket_count)]
     bucket_sizes = list()
     for data in all_data:
         datum = data[key]
@@ -158,41 +161,57 @@ def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=BUCKET_CO
         bucket_sizes.append(bucket_size)
         sum_data = data[sum_key]
         center_distance = 0
+        max_bucket_dist = 0 if sum_data <= bucket_size else math.ceil(1.0 * (data[sum_key] - bucket_size) / (bucket_size*2))
         while sum_data > 0:
             if center_distance == 0:
-                raw_buckets[bucket] += min(sum_data, bucket_size)
+                add_to_bucket = min(sum_data, bucket_size)
+                raw_buckets[bucket].append(add_to_bucket)
+                raw_bucket_data[bucket].append([0, max_bucket_dist, add_to_bucket, data])
                 sum_data -= bucket_size
             else:
-                # if (bucket+center_distance) >= bucket_size or (bucket-center_distance) < 0:
-                #     raise Exception("Strange BED! bucket {}/{} (bucket size {}) has bed of length {}"
-                #                     .format(bucket, bucket_count, bucket_size, data[sum_key]))
-                raw_buckets[max(bucket - center_distance, 0)] \
-                    += bucket_size if sum_data > bucket_size * 2 else sum_data / 2
-                raw_buckets[min(bucket + center_distance, bucket_count - 1)] \
-                    += bucket_size if sum_data > bucket_size * 2 else sum_data / 2
+                add_to_bucket = bucket_size if sum_data > bucket_size * 2 else sum_data / 2
+                raw_buckets[max(bucket - center_distance, 0)].append(add_to_bucket)
+                raw_buckets[min(bucket + center_distance, bucket_count - 1)].append(add_to_bucket)
+                raw_bucket_data[max(bucket - center_distance, 0)]\
+                    .append([-1 * center_distance, max_bucket_dist, add_to_bucket, data])
+                raw_bucket_data[min(bucket + center_distance, bucket_count - 1)]\
+                    .append([center_distance, max_bucket_dist, add_to_bucket, data])
                 sum_data -= bucket_size * 2
             center_distance += 1
+        assert center_distance - 1 == max_bucket_dist
 
+    bucket_sums = list(map(lambda x: sum(x), raw_buckets))
     mean_bucket_size = np.mean(bucket_sizes)
-    print("bucket size: mean {} (std {})".format(mean_bucket_size, np.std(bucket_sizes)))
-    oversize_buckets = len(list(filter(lambda x: x > mean_bucket_size, raw_buckets)))
-    print("buckets over their size: {}/{} ({})".format(oversize_buckets, bucket_count, 1.0 * oversize_buckets / bucket_count))
+    oversize_buckets = list(filter(lambda x: bucket_sums[x] > mean_bucket_size, [i for i in range(bucket_count)]))
+    if DEBUG:
+        print(title)
+        print("\tbucket size: mean {} (std {})".format(mean_bucket_size, np.std(bucket_sizes)))
+        print("\tbuckets over their size: {}/{}".format(len(oversize_buckets), bucket_count))
+        for idx in oversize_buckets:
+            print("\t\t{}: {}/{} (+{}, {})".format(idx, bucket_sums[idx], int(mean_bucket_size),
+                                                   int(bucket_sums[idx] - mean_bucket_size),
+                                                   1.0 * bucket_sums[idx] / mean_bucket_size ))
+            if DEBUG_VERBOSE:
+                for b in raw_bucket_data[idx]:
+                    dpos = 3
+                    print("\t\t\t%d (%d)\t%9d (%1.4f)\t%s" % (b[0], b[1], b[2], 1.0 * b[2] / mean_bucket_size,
+                                                              {START_POS:b[dpos][START_POS],END_POS:b[dpos][END_POS],
+                                                              DIST_TO_CENT_RATIO:("%.4f" % b[dpos][DIST_TO_CENT_RATIO]),
+                                                              CENTER_POS:b[dpos][CENTER_POS],LENGTH:b[dpos][LENGTH]}))
 
 
-    total_count = sum(raw_buckets)
-    expected_count = int(total_count / bucket_count)
-    #TODO
-    expected_count = mean_bucket_size
-    count_buckets = list(map(lambda x: x - expected_count, raw_buckets))
+    total_count = sum(bucket_sums)
+    average_count = int(total_count / bucket_count)
+    count_buckets = list(map(lambda x: x - average_count, bucket_sums))
 
-    ratio_buckets = list(map(lambda x: (1.0 * x / total_count) if total_count != 0 else 0 , raw_buckets))
+    ratio_buckets = list(map(lambda x: (1.0 * x / total_count) if total_count != 0 else 0 , bucket_sums))
 
 
     f, axarr = plt.subplots(2, sharex=True)
     axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='green')
     if title is not None: axarr[0].set_title(title)
     axarr[0].set_xticks([i for i in range(bucket_count)])
-    axarr[0].set_ylabel('Count x Length (Expected {})'.format(expected_count))
+    axarr[0].set_ylabel('Count x Length (Average {})'.format(average_count))
     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
     axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
