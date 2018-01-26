@@ -10,7 +10,7 @@ BEDS = [
     # 'np_pb_int_gte5.bed',
     # 'np_pb_int_gte15.bed',
     'gatk_gvcf_callable.bed',
-    # 'cloci_call_exces.bed',
+    'cloci_call_exces.bed',
     'giab_high_conf.bed'
 ]
 

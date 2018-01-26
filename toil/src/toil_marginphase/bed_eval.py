@@ -60,6 +60,8 @@ def parse_args():
                        help='Comma-separated list of chromosomes to remove')
     parser.add_argument('--plot', '-p', dest='plot', action='store_true', default=False,
                        help='Make plots of data')
+    parser.add_argument('--reduced_memory', '-m', dest='reduced_memory', action='store_true', default=False,
+                       help='Reduce memory usage')
     parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
                        help='Print extra information')
 
@@ -120,26 +122,26 @@ def convert_bed_to_chrom_size_map(bed_contents):
     return chrom_size_map
 
 
-def add_bed_information(bed_contents, centromeres, chrom_sizes):
+def add_bed_information(bed_contents, centromeres, chrom_sizes, args):
     for chrom in list(bed_contents.keys()):
         chrom_cent = centromeres[chrom]
         chrom_size = chrom_sizes[chrom]
         chrom_areas = bed_contents[chrom]
         for area in chrom_areas:
-            area[LENGTH] = area[END_POS] - area[START_POS]
-            area[CENTER_POS] = area[START_POS] + int(area[LENGTH] / 2)
+            if not args.reduced_memory: area[LENGTH] = area[END_POS] - area[START_POS]
+            area[CENTER_POS] = area[START_POS] + int((area[END_POS] - area[START_POS]) / 2)
             if area[CENTER_POS] < chrom_cent[CENTER_POS]:
                 area[ABOVE_CENT] = False
-                area[DIST_TO_CENT] = max(0, chrom_cent[START_POS] - area[CENTER_POS])
-                area[DIST_TO_CHROM_END] = area[CENTER_POS] - chrom_size[START_POS]
+                if not args.reduced_memory: area[DIST_TO_CENT] = max(0, chrom_cent[START_POS] - area[CENTER_POS])
+                if not args.reduced_memory: area[DIST_TO_CHROM_END] = area[CENTER_POS] - chrom_size[START_POS]
                 area[ARM_LENGTH] = chrom_cent[START_POS] - chrom_size[START_POS]
-                area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
+                area[DIST_TO_CENT_RATIO] = 1.0 * max(0, chrom_cent[START_POS] - area[CENTER_POS]) / area[ARM_LENGTH]
             elif area[CENTER_POS] > chrom_cent[CENTER_POS]:
                 area[ABOVE_CENT] = True
-                area[DIST_TO_CENT] = max(0, area[CENTER_POS] - chrom_cent[END_POS])
-                area[DIST_TO_CHROM_END] = chrom_size[END_POS] - area[CENTER_POS]
+                if not args.reduced_memory: area[DIST_TO_CENT] = max(0, area[CENTER_POS] - chrom_cent[END_POS])
+                if not args.reduced_memory: area[DIST_TO_CHROM_END] = chrom_size[END_POS] - area[CENTER_POS]
                 area[ARM_LENGTH] = chrom_size[END_POS] - chrom_cent[END_POS]
-                area[DIST_TO_CENT_RATIO] = 1.0 * area[DIST_TO_CENT] / area[ARM_LENGTH]
+                area[DIST_TO_CENT_RATIO] = 1.0 * max(0, area[CENTER_POS] - chrom_cent[END_POS]) / area[ARM_LENGTH]
             else:
                 raise Exception("Got call centered at centromere: {} ({})".format(area, chrom_cent))
 
@@ -150,8 +152,8 @@ def print_reports(reports):
         log(("%"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
 
-def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=BUCKET_COUNT_DEFAULT, ticks=10,
-                                  title=None, save_name=None):
+def plot_dist_ratios_by_length(all_data, key, bucket_count=BUCKET_COUNT_DEFAULT, ticks=10,
+                               title=None, save_name=None):
     assert ticks <= BUCKET_COUNT_DEFAULT
 
     raw_buckets = [[] for _ in range(bucket_count)]
@@ -168,9 +170,9 @@ def plot_dist_ratios_with_sum_key(all_data, key, sum_key, bucket_count=BUCKET_CO
         # complicated and accurate
         bucket_size = int(1.0 * data[ARM_LENGTH] / bucket_count)
         bucket_sizes.append(bucket_size)
-        sum_data = data[sum_key]
+        sum_data = data[END_POS] - data[START_POS]
         center_distance = 0
-        max_bucket_dist = 0 if sum_data <= bucket_size else math.ceil(1.0 * (data[sum_key] - bucket_size) / (bucket_size*2))
+        max_bucket_dist = 0 if sum_data <= bucket_size else math.ceil(1.0 * (sum_data - bucket_size) / (bucket_size*2))
         while sum_data > 0:
             if center_distance == 0:
                 add_to_bucket = min(sum_data, bucket_size)
@@ -297,7 +299,8 @@ def main():
         print("Analyzing {}".format(file))
         file_identifier = get_file_identifier(file)
         bed_contents = read_bed_file(file, args)
-        add_bed_information(bed_contents, centromeres, chrom_sizes)
+        print("\tFound {} records".format(sum([len(x) for x in bed_contents.values()])))
+        add_bed_information(bed_contents, centromeres, chrom_sizes, args)
         reports = list()
         reports.append([file])
         all_areas = list()
@@ -305,33 +308,33 @@ def main():
         all_chroms.sort(key=chrom_sort)
         print("\tAnalyzing chroms")
         for chrom in all_chroms:
-            reports.append(summarize_call_data(chrom, bed_contents[chrom], args.verbose))
+            if not args.reduced_memory: reports.append(summarize_call_data(chrom, bed_contents[chrom], args.verbose))
             all_areas.extend(bed_contents[chrom])
             # plot chromosomes
             if args.plot:
                 if not os.path.isdir("{}/{}".format(IMG_DIR, file_identifier)):
                     os.mkdir("{}/{}".format(IMG_DIR, file_identifier))
-                plot_dist_ratios_with_sum_key(
-                    list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
+                plot_dist_ratios_by_length(
+                    list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO,
                     title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
                         .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
                     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.UPPER.png"
                         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
-                plot_dist_ratios_with_sum_key(
-                    list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO, LENGTH,
+                plot_dist_ratios_by_length(
+                    list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO,
                     title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
                         .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
                     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
                         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
         print("\tAnalyzing genome")
-        reports.append(summarize_call_data("GENOME", all_areas, True))
+        if not args.reduced_memory: reports.append(summarize_call_data("GENOME", all_areas, True))
         if args.plot:
-            plot_dist_ratios_with_sum_key(
-                all_areas, DIST_TO_CENT_RATIO, LENGTH,
+            plot_dist_ratios_by_length(
+                all_areas, DIST_TO_CENT_RATIO,
                 title="{}\n(0.0 - centromere, 1.0 - telomere)".format(file_identifier),
                 save_name="{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
-        log("\n\tReporting:\n")
-        print_reports(reports)
+        if not args.reduced_memory: log("\n\tReporting:\n")
+        if not args.reduced_memory: print_reports(reports)
 
 
 
