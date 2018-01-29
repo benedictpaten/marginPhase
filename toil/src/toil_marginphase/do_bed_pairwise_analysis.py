@@ -6,12 +6,12 @@ import os
 
 BEDS = [
     # 'np_pb_intersect.bed',
-    'np_pb_int_gte10.bed',
-    # 'np_pb_int_gte5.bed',
+    # 'np_pb_int_gte10.bed',
+    'np_pb_int_gte5.bed',
     # 'np_pb_int_gte15.bed',
-    'gatk_gvcf_callable.bed',
+    # 'gatk_gvcf_callable.bed',
     'cloci_call_exces.bed',
-    'giab_high_conf.bed'
+    # 'giab_high_conf.bed'
 ]
 
 GENOME = 'hg38.genome'
