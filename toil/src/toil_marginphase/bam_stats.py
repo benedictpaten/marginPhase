@@ -62,7 +62,9 @@ def parse_args(args = None):
     parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
                         help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
     parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
-                        help='Filter secondary alignments')
+                        help='Filter secondary alignments out (only include primary)')
+    parser.add_argument('--filter_primary', '-F', dest='filter_primary', action='store_true', default=False,
+                        help='Filter primary alignments out (only include secondary)')
     parser.add_argument('--min_alignment_threshold', '-a', dest='min_alignment_threshold', action='store', default=None,
                         type=int, help='Minimum alignment threshold, below which reads are not included')
 
@@ -341,9 +343,11 @@ def main(args = None):
         # filter if appropriate
         if args.filter_secondary:
             read_summaries = list(filter(lambda x: not x[R_SECONDARY], read_summaries))
+        if args.filter_primary:
+            read_summaries = list(filter(lambda x: x[R_SECONDARY], read_summaries))
         if args.min_alignment_threshold is not None:
             read_summaries = list(filter(lambda x: x[R_MAPPING_QUALITY] >= args.min_alignment_threshold, read_summaries))
-        if args.filter_secondary or args.min_alignment_threshold is not None:
+        if args.filter_secondary or args.filter_primary or args.min_alignment_threshold is not None:
             if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
 
         # summarize

@@ -7,8 +7,11 @@ import os
 BEDS = [
     # 'np_pb_intersect.bed',
     # 'np_pb_int_gte10.bed',
-    'np_pb_int_gte5.bed',
+    # 'np_pb_int_gte5.bed',
     # 'np_pb_int_gte15.bed',
+    'int_gte5_2xmed.bed',
+    'pb_gte5_2xmed.bed',
+    'np_gte5_2xmed.bed',
     # 'gatk_gvcf_callable.bed',
     'cloci_call_exces.bed',
     # 'giab_high_conf.bed'

@@ -49,6 +49,8 @@ def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
     parser.add_argument('--input_bed_glob', '-i', dest='input_bed_glob', default="*.bed", type=str,
                        help='Glob matching bed files for analysis')
+    parser.add_argument('--compare_beds_to', '-c', dest='compare_beds_to', default=None, type=str,
+                       help='Compare matched BEDs to this file for coverage')
     parser.add_argument('--chrom_bed', '-r', dest='chrom_bed', default="hg38.chrom.bed", type=str,
                        help='Chromosome bed file (describing size of chromosomes)')
     parser.add_argument('--centromere_bed', '-e', dest='centromere_bed', default="hg38.cen.bed", type=str,
@@ -165,89 +167,6 @@ def print_reports(reports):
     for report in reports:
         log(("%"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
-
-# def plot_dist_ratios_by_length(all_data, key, bucket_count=BUCKET_COUNT_DEFAULT, ticks=10,
-#                                title=None, save_name=None):
-#     assert ticks <= BUCKET_COUNT_DEFAULT
-#
-#     raw_buckets = [[] for _ in range(bucket_count)]
-#     raw_bucket_data = [[] for _ in range(bucket_count)]
-#     bucket_sizes = list()
-#     for data in all_data:
-#         datum = data[key]
-#         assert datum >= 0 and datum <= 1
-#         bucket = int(datum * bucket_count)
-#
-#         # simple and naive
-#         # raw_buckets[bucket] += data[sum_key]
-#
-#         # complicated and accurate
-#         bucket_size = int(1.0 * data[ARM_LENGTH] / bucket_count)
-#         bucket_sizes.append(bucket_size)
-#         sum_data = data[END_POS] - data[START_POS]
-#         center_distance = 0
-#         max_bucket_dist = 0 if sum_data <= bucket_size else math.ceil(1.0 * (sum_data - bucket_size) / (bucket_size*2))
-#         while sum_data > 0:
-#             if center_distance == 0:
-#                 add_to_bucket = min(sum_data, bucket_size)
-#                 raw_buckets[bucket].append(add_to_bucket)
-#                 raw_bucket_data[bucket].append([0, max_bucket_dist, add_to_bucket, data])
-#                 sum_data -= bucket_size
-#             else:
-#                 add_to_bucket = bucket_size if sum_data > bucket_size * 2 else sum_data / 2
-#                 raw_buckets[max(bucket - center_distance, 0)].append(add_to_bucket)
-#                 raw_buckets[min(bucket + center_distance, bucket_count - 1)].append(add_to_bucket)
-#                 raw_bucket_data[max(bucket - center_distance, 0)]\
-#                     .append([-1 * center_distance, max_bucket_dist, add_to_bucket, data])
-#                 raw_bucket_data[min(bucket + center_distance, bucket_count - 1)]\
-#                     .append([center_distance, max_bucket_dist, add_to_bucket, data])
-#                 sum_data -= bucket_size * 2
-#             center_distance += 1
-#         assert center_distance - 1 == max_bucket_dist
-#
-#     bucket_sums = list(map(lambda x: sum(x), raw_buckets))
-#     mean_bucket_size = np.mean(bucket_sizes)
-#     oversize_buckets = list(filter(lambda x: bucket_sums[x] > mean_bucket_size, [i for i in range(bucket_count)]))
-#     if DEBUG:
-#         print(title)
-#         print("\tbucket size: mean {} (std {})".format(mean_bucket_size, np.std(bucket_sizes)))
-#         print("\tbuckets over their size: {}/{}".format(len(oversize_buckets), bucket_count))
-#         for idx in oversize_buckets:
-#             print("\t\t{}: {}/{} (+{}, {})".format(idx, bucket_sums[idx], int(mean_bucket_size),
-#                                                    int(bucket_sums[idx] - mean_bucket_size),
-#                                                    1.0 * bucket_sums[idx] / mean_bucket_size ))
-#             if DEBUG_VERBOSE:
-#                 for b in raw_bucket_data[idx]:
-#                     dpos = 3
-#                     print("\t\t\t%d (%d)\t%9d (%1.4f)\t%s" % (b[0], b[1], b[2], 1.0 * b[2] / mean_bucket_size,
-#                                                               {START_POS:b[dpos][START_POS], END_POS:b[dpos][END_POS],
-#                                                                RATIO_CENTER_TO_CENTROMERE:("%.4f" % b[dpos][RATIO_CENTER_TO_CENTROMERE]),
-#                                                                CENTER_POS:b[dpos][CENTER_POS], LENGTH:b[dpos][LENGTH]}))
-#
-#
-#     total_count = sum(bucket_sums)
-#     average_count = int(total_count / bucket_count)
-#     count_buckets = list(map(lambda x: x - average_count, bucket_sums))
-#
-#     ratio_buckets = list(map(lambda x: (1.0 * x / total_count) if total_count != 0 else 0 , bucket_sums))
-#
-#
-#     f, axarr = plt.subplots(2, sharex=True)
-#     axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='green')
-#     if title is not None: axarr[0].set_title(title)
-#     axarr[0].set_xticks([i for i in range(bucket_count)])
-#     axarr[0].set_ylabel('Count x Length (Average {})'.format(average_count))
-#     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
-#     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-#     axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
-#     axarr[1].set_ylabel('Ratio')
-#     axarr[1].set_xlabel('Buckets')
-#
-#     if save_name is not None: plt.savefig(save_name)
-#     # plt.show()
-#     plt.close()
-
-
 # def create_bins_from_start_and_end_pos(start_pos, end_pos, bin_count):
 #     forward = start_pos < end_pos
 #     coverage_length = abs(end_pos - start_pos)
@@ -343,6 +262,11 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
         name = bucket[NAME]
         value = all_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
         bucket_value_by_size.append(value)
+    oversize_buckets = len(list(filter(lambda x: x > 1.0, bucket_value_by_size)))
+    if oversize_buckets > 0:
+        print("\t\tWARN: got {}/{} ({}%) oversize buckets in {}".format(oversize_buckets, len(buckets),
+                                                                  percent(oversize_buckets, len(buckets)),
+                                                                        save_name))
 
     total_count = sum(bucket_value_by_size)
     average_count = total_count / len(buckets)
@@ -351,20 +275,86 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
     ratio_buckets = list(map(lambda x: (1.0 * x / total_count) if total_count != 0 else 0 , bucket_value_by_size))
 
     f, axarr = plt.subplots(2, sharex=True)
-    axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='green')
     if title is not None: axarr[0].set_title(title)
+    axarr[0].bar([i for i in range(bucket_count)], count_buckets, color='green')
+    axarr[0].set_ylabel('Bucket Coverage\n(Average %.3f)' % average_count)
     axarr[0].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-    axarr[0].set_ylabel('Count x Length (Average %.3f)' % average_count)
     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
     axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
-    axarr[1].set_ylabel('Ratio')
+    axarr[1].set_ylabel('Ratio\n(of total coverage)')
     axarr[1].set_xlabel('Buckets')
 
     if save_name is not None: plt.savefig(save_name)
     # plt.show()
     plt.close()
 
+
+def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None,
+                                      non_canonical_bucket_fcn = lambda x: x[START_POS] >= 0.0 and x[END_POS <= 1.0]):
+    bucket_count = len(buckets)
+
+    #which bins does this fit in
+    def find_buckets(data):
+        return list(filter(lambda x: start_fcn(data) < x[END_POS] and end_fcn(data) > x[START_POS], buckets))
+
+    top_output_buckets = {x:0 for x in map(lambda x: x[NAME], buckets)}
+    for data in top_bucket:
+        buckets_for_data = find_buckets(data)
+        for bucket in buckets_for_data:
+            bucket_addition = min(bucket[END_POS], end_fcn(data)) - max(bucket[START_POS], start_fcn(data))
+            top_output_buckets[bucket[NAME]] += bucket_addition
+    bottom_output_buckets = {x:0 for x in map(lambda x: x[NAME], buckets)}
+    for data in bottom_bucket:
+        buckets_for_data = find_buckets(data)
+        for bucket in buckets_for_data:
+            bucket_addition = min(bucket[END_POS], end_fcn(data)) - max(bucket[START_POS], start_fcn(data))
+            bottom_output_buckets[bucket[NAME]] += bucket_addition
+
+    top_bucket_value_by_size = list()
+    bottom_bucket_value_by_size = list()
+    for bucket in buckets:
+        name = bucket[NAME]
+        top = top_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
+        bottom = bottom_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
+        top_bucket_value_by_size.append(top)
+        bottom_bucket_value_by_size.append(bottom)
+    oversize_top_buckets = len(list(filter(lambda x: x > 1.0, top_bucket_value_by_size)))
+    if oversize_top_buckets > 0:
+        print("\t\tWARN: got {}/{} ({}%) oversize TOP buckets in {}".format(oversize_top_buckets, len(buckets),
+                                                                        percent(oversize_top_buckets, len(buckets)),
+                                                                        save_name))
+    oversize_bottom_buckets = len(list(filter(lambda x: x > 1.0, bottom_bucket_value_by_size)))
+    if oversize_bottom_buckets > 0:
+        print("\t\tWARN: got {}/{} ({}%) oversize BOTTOM buckets in {}".format(oversize_bottom_buckets, len(buckets),
+                                                                        percent(oversize_bottom_buckets, len(buckets)),
+                                                                        save_name))
+
+    top_average = 1.0 * sum(top_bucket_value_by_size) / len(buckets)
+    if top_average == 0: top_average = 1.0
+    bottom_average = 1.0 * sum(bottom_bucket_value_by_size) / len(buckets)
+    if bottom_average == 0: bottom_average = 1.0
+    count_buckets = map(lambda x: x[0] - x[1], zip(top_bucket_value_by_size, bottom_bucket_value_by_size))
+    ratio_buckets = map(lambda x: (x[0]/top_average) - (x[1]/bottom_average),
+                        zip(top_bucket_value_by_size, bottom_bucket_value_by_size))
+
+
+    f, axarr = plt.subplots(2, sharex=True)
+    axarr[0].bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, count_buckets), color='blue')
+    axarr[0].bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, count_buckets), color='red')
+    if title is not None: axarr[0].set_title(title)
+    axarr[0].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
+    axarr[0].set_ylabel('Coverage Difference\n(ratio of bucket coverage)')
+    axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, ratio_buckets), color='blue')
+    axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, ratio_buckets), color='red')
+    axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
+    axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
+    axarr[1].set_ylabel('Normalized Difference\n(by mean coverage)')
+    axarr[1].set_xlabel('Buckets')
+
+    if save_name is not None: plt.savefig(save_name)
+    # plt.show()
+    plt.close()
 
 
 def summarize_call_data(identifier, call_list, verbose):
@@ -410,6 +400,8 @@ def main():
     args = parse_args()
     args.chrom_to_remove = args.chrom_to_remove.split(",")
 
+    if args.compare_beds_to is not None and not os.path.isfile(args.compare_beds_to):
+        raise Exception("Compared BED not found: {}".format(args.compare_beds_to))
     files = glob.glob(args.input_bed_glob)
     if args.chrom_bed in files:
         files.remove(args.chrom_bed)
@@ -427,8 +419,18 @@ def main():
         if not os.path.isdir(IMG_DIR):
             os.mkdir(IMG_DIR)
 
+    if args.compare_beds_to is not None:
+        tmp = [args.compare_beds_to]
+        tmp.extend(files)
+        files = tmp
+
+    compare_bed_identifier = None
+    compare_bed_chroms = None
+    compare_bed_all_areas = None
     for file in files:
         print("\nAnalyzing {}".format(file))
+        if args.compare_beds_to is not None and compare_bed_identifier is None:
+            print("\tCOMPARE BED")
         file_identifier = get_file_identifier(file)
         bed_contents = read_bed_file(file, args)
         print("\tFound {} records".format(sum([len(x) for x in bed_contents.values()])))
@@ -438,6 +440,14 @@ def main():
         all_areas = list()
         all_chroms = bed_contents.keys()
         all_chroms.sort(key=chrom_sort)
+
+        #plot prep
+        bucket_ranges = create_bins_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT)
+        above_cent_filter = lambda x: list(filter(lambda y: y[ABOVE_CENT], x))
+        below_cent_filter = lambda x: list(filter(lambda y: not y[ABOVE_CENT], x))
+        ratio_start_fcn = lambda x: x[RATIO_CLOSEST_TO_CENTROMERE]
+        ratio_end_fcn = lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE]
+
         print("\tAnalyzing chroms")
         for chrom in all_chroms:
             reports.append(summarize_call_data(chrom, bed_contents[chrom], args.verbose))
@@ -446,44 +456,63 @@ def main():
             if args.plot:
                 if not os.path.isdir("{}/{}".format(IMG_DIR, file_identifier)):
                     os.mkdir("{}/{}".format(IMG_DIR, file_identifier))
+
+                # coverage by chrom arm
                 plot_coverage_in_bins(
-                    list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])),
-                    create_bins_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT),
-                    lambda x: x[RATIO_CLOSEST_TO_CENTROMERE], lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE],
+                    above_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
                     title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
                         .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
                     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.UPPER.png"
                         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
                 plot_coverage_in_bins(
-                    list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])),
-                    create_bins_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT),
-                    lambda x: x[RATIO_CLOSEST_TO_CENTROMERE], lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE],
+                    below_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
                     title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
                         .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
                     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
                         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
-                # plot_dist_ratios_by_length(
-                #     list(filter(lambda x: x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO,
-                #     title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                #         .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
-                #     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.UPPER.png"
-                #         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
-                # plot_dist_ratios_by_length(
-                #     list(filter(lambda x: not x[ABOVE_CENT], bed_contents[chrom])), DIST_TO_CENT_RATIO,
-                #     title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                #         .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
-                #     save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
-                #         .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
+
+                # comparative coverage by chrom arm
+                if compare_bed_identifier is not None:
+                    plot_compare_coverage_information(
+                        above_cent_filter(bed_contents[chrom]), above_cent_filter(compare_bed_chroms[chrom]),
+                        bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                        title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                            .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                        save_name="{}/{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.{}.UPPER.png"
+                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
+                    plot_compare_coverage_information(
+                        below_cent_filter(bed_contents[chrom]), below_cent_filter(compare_bed_chroms[chrom]),
+                        bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                        title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                            .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                        save_name="{}/{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.{}.LOWER.png"
+                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
+
+
         print("\tAnalyzing genome")
         reports.append(summarize_call_data("GENOME", all_areas, True))
+        log("\tReporting")
+        print_reports(reports)
+
         if args.plot:
             plot_coverage_in_bins(
-                    all_areas, create_bins_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT),
-                    lambda x: x[RATIO_CLOSEST_TO_CENTROMERE], lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE],
+                    all_areas, bucket_ranges, ratio_start_fcn, ratio_end_fcn,
                 title="{}\n(0.0 - centromere, 1.0 - telomere)".format(file_identifier),
                 save_name="{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
-        log("\n\tReporting:\n")
-        print_reports(reports)
+            if compare_bed_identifier is not None:
+                plot_compare_coverage_information(
+                    all_areas, compare_bed_all_areas,
+                    bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                    title="{} (Top/Blue)\n{} (Bottom/Red)\n(0.0 - centromere, 1.0 - telomere)"
+                        .format(file_identifier, compare_bed_identifier),
+                    save_name="{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.genome.png"
+                        .format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier))
+
+        # set the compare bed options if appropriate
+        if args.compare_beds_to is not None and compare_bed_identifier is None:
+            compare_bed_identifier = file_identifier
+            compare_bed_chroms = bed_contents
+            compare_bed_all_areas = all_areas
 
 
 

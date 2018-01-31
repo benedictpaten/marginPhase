@@ -27,6 +27,11 @@ def parse_args():
                             "depth_increment: 'depth_increment' parameter, "
                             "spacing: 'sampling_spacing' parameter "
                         )
+
+    parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
+                        help='Filter secondary alignments out (only include primary)')
+    parser.add_argument('--filter_primary', '-F', dest='filter_primary', action='store_true', default=False,
+                        help='Filter primary alignments out (only include secondary)')
     parser.add_argument('--sampling_spacing', '-s', dest='sampling_spacing', default=500, type=int,
                        help='Sampling spacing for read depth')
     parser.add_argument('--depth_increment', '-d', dest='depth_increment', default=None, type=int,
@@ -51,19 +56,23 @@ def log(msg):
     print(msg, file=sys.stderr)
 
 
-def get_genome_read_depths(bam_file, spacing, verbose=False):
+def get_genome_read_depths(bam_file, args):
+    spacing = args.sampling_spacing
+    verbose = args.verbose
 
     if not os.path.isfile(bam_file):
         raise Exception("Genome bam {} does not exist!".format(bam_file))
     log(bam_file)
 
-    args = [
+    bs_args = [
         "--input_glob", bam_file,
         "--depth_spacing", str(spacing),
-        '--filter_secondary',
         '--silent'
     ]
-    bam_summaries, length_summaries, depth_summaries = bam_stats.main(args)
+    if args.filter_secondary: bs_args.append( '--filter_secondary')
+    if args.filter_primary: bs_args.append( '--filter_primary')
+
+    bam_summaries, length_summaries, depth_summaries = bam_stats.main(bs_args)
 
     positions = dict()
     chromosomes = list(depth_summaries[bam_file].keys())
@@ -194,7 +203,7 @@ def main():
     # get depths
     all_file_depths = dict()
     for alignment_file in in_alignments:
-        chrom_depths = get_genome_read_depths(alignment_file, args.sampling_spacing, args.verbose)
+        chrom_depths = get_genome_read_depths(alignment_file, args)
         all_file_depths[alignment_file] = chrom_depths
 
     # output beds
