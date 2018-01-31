@@ -6,31 +6,15 @@ import gzip
 import math
 import numpy as np
 import os
-import matplotlib.pyplot as plt
+import random
 
-
-from matplotlib import rcParams
-
-
-bed_details = lambda start, end: {START_POS:int(start), END_POS:int(end)}
-
-chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
-percent = lambda part, whole: int(100.0 * part / whole) if whole != 0 else "--"
-log = print
-
-BUCKET_COUNT_DEFAULT = 100
-
-
-DEBUG = False
-DEBUG_VERBOSE = DEBUG and False
-
-IMG_DIR = "img"
-if DEBUG: IMG_DIR = "test_" + IMG_DIR
 
 def parse_args():
     parser = argparse.ArgumentParser("Makes plots and reports details of vcfeval output")
     parser.add_argument('--input_qual_file', '-i', dest='input_qual_file', required=True, type=str,
                        help='Glob matching bed files for analysis')
+    parser.add_argument('--sample_ratio', '-s', dest='sample_ratio', type=float, default=None,
+                        help="Sample only this ratio of lines (for reduced memory usage on a real big BAM)")
 
     return parser.parse_args()
 
@@ -39,14 +23,40 @@ def main():
     args = parse_args()
 
     quals = list()
+    qual_buckets = dict()
+    total = 0
     with open(args.input_qual_file) as input:
         for line in input:
-            quals.append(int(line))
+            total += 1
+            qual = int(line)
+            if qual not in qual_buckets: qual_buckets[qual] = 0
+            qual_buckets[qual] += 1
+            if args.sample_ratio is None or random.uniform(0, 1) < args.sample_ratio:
+                quals.append(qual)
+
 
     print("Count:  {}".format(len(quals)))
+    if args.sample_ratio is not None:
+        print("Total:  {}".format(total))
     print("Median: {}".format(np.median(quals)))
     print("Mean:   {}".format(np.mean(quals)))
     print("StdDev: {}".format(np.std(quals)))
+
+    print("\nHistogram:")
+    qual_keys = list(qual_buckets.keys())
+    qual_keys.sort()
+    max_qual_value = max(qual_buckets.values())
+    qual_hash_size = max_qual_value / 32.0
+    for qual in qual_keys:
+        value = qual_buckets[qual]
+        print("%3d: %s (%9d)" % (qual, ("#" * int(value / qual_hash_size)), value))
+
+    print("\nLog Histogram:")
+    max_qual_value = math.log10(max_qual_value)
+    qual_hash_size = max_qual_value / 32.0
+    for qual in qual_keys:
+        value = math.log10(qual_buckets[qual])
+        print("%3d: %s (%2.3f)" % (qual, ("#" * int(value / qual_hash_size)), value))
 
 
 
