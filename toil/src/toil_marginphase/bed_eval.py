@@ -30,13 +30,14 @@ NAME = "name"
 
 
 
-bed_details = lambda start, end: {START_POS:int(start), END_POS:int(end)}
+bed_details = lambda start, end, name: {START_POS:int(start), END_POS:int(end), NAME:name}
 
 chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
 percent = lambda part, whole: int(100.0 * part / whole) if whole != 0 else "--"
 log = print
 
-BUCKET_COUNT_DEFAULT = 100
+BUCKET_COUNT_DEFAULT = 100.0
+TICK_DEFAULT = 10
 
 
 DEBUG = False
@@ -59,6 +60,8 @@ def parse_args():
                        help='Comma-separated list of chromosomes to remove')
     parser.add_argument('--plot', '-p', dest='plot', action='store_true', default=False,
                        help='Make plots of data')
+    parser.add_argument('--custom_buckets', '-u', dest='custom_buckets', default=None, type=str,
+                        help="Custom BED file defining buckets to track")
     parser.add_argument('--reduced_memory', '-m', dest='reduced_memory', action='store_true', default=False,
                        help='Reduce memory usage')
     parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
@@ -84,7 +87,7 @@ def read_bed_file(bed_filename, args):
             else:
                 chrom_bed = list()
                 bed_contents[chrom] = chrom_bed
-            chrom_bed.append(bed_details(int(line[1]), int(line[2])))
+            chrom_bed.append(bed_details(int(line[1]), int(line[2]), None if len(line) < 4 else line[3]))
 
     # sort and sanity
     for chrom_bed in bed_contents.values():
@@ -121,6 +124,13 @@ def convert_bed_to_chrom_size_map(bed_contents):
     return chrom_size_map
 
 
+def convert_bed_to_custom_buckets(bed_contents):
+    # currently, all we need is START, END, NAME and to be ordered
+    for value in bed_contents.values():
+        value.sort(key=lambda x: x[START_POS])
+    return bed_contents
+
+
 def position_as_chrom_arm_ratio(chrom_size, chrom_cent, pos):
     if pos > chrom_cent[CENTER_POS]:
         arm_length = chrom_size[END_POS] - chrom_cent[END_POS]
@@ -128,6 +138,7 @@ def position_as_chrom_arm_ratio(chrom_size, chrom_cent, pos):
     else:
         arm_length = chrom_cent[START_POS] - chrom_size[START_POS]
         return 1.0 * (chrom_cent[START_POS] - pos) / arm_length
+
 
 def add_bed_information(bed_contents, centromeres, chrom_sizes, args):
     for chrom in list(bed_contents.keys()):
@@ -161,90 +172,65 @@ def add_bed_information(bed_contents, centromeres, chrom_sizes, args):
                     and area[RATIO_FARTHEST_FROM_CENTROMERE] < 0)
 
 
-
 def print_reports(reports):
     max_key_len = max(list(map(lambda x: len(x[0]), reports)))
     for report in reports:
         log(("%"+str(max_key_len)+"s \t") % report[0], " \t".join(report[1:]))
 
-# def create_bins_from_start_and_end_pos(start_pos, end_pos, bin_count):
-#     forward = start_pos < end_pos
-#     coverage_length = abs(end_pos - start_pos)
-#     bin_size = coverage_length / bin_count
-#
-#     bins = list()
-#     prev_bin_end = None
-#     bin_idx = 0
-#     while bin_idx < bin_count:
-#         bin_start = start_pos if prev_bin_end is None else prev_bin_end
-#         bin_end = (bin_start + bin_size) if forward else (bin_start - bin_size)
-#         bins.append({
-#             START_POS: bin_start,
-#             END_POS: bin_end,
-#             FORWARD: forward,
-#             NAME: bin_idx
-#         })
-#         prev_bin_end = bin_end
-#         bin_idx += 1
-#
-#     if forward:
-#         assert (end_pos - bin_count) <= prev_bin_end and (end_pos + bin_count) >= prev_bin_end
-#     else:
-#         assert (end_pos - bin_count) >= prev_bin_end and (end_pos + bin_count) <= prev_bin_end
-#
-#     return bins
 
-def create_bins_from_start_and_end_pos(start_pos, end_pos, bin_count, prepended_bins = 0, appended_bins=0):
+def create_buckets_from_start_and_end_pos(start_pos, end_pos, bucket_count, prepended_buckets = 0, appended_buckets=0):
     coverage_length = end_pos - start_pos
-    bin_size = coverage_length / bin_count
+    bin_size = coverage_length / bucket_count
 
-    bins = list()
-    prev_bin_end = None
-    bin_idx = 0
-    while bin_idx < bin_count:
-        bin_start = start_pos if prev_bin_end is None else prev_bin_end
-        bin_end = bin_start + bin_size
-        bins.append({
-            START_POS: bin_start,
-            END_POS: bin_end,
-            NAME: str(bin_idx)
+    buckets = list()
+    prev_bucket_end = None
+    bucket_idx = 0
+    while bucket_idx < bucket_count:
+        bucket_start = start_pos if prev_bucket_end is None else prev_bucket_end
+        bucket_end = bucket_start + bin_size
+        buckets.append({
+            START_POS: bucket_start,
+            END_POS: bucket_end,
+            NAME: str(bucket_idx/bucket_count)
         })
-        prev_bin_end = bin_end
-        bin_idx += 1
+        prev_bucket_end = bucket_end
+        bucket_idx += 1
 
-    assert (end_pos - bin_count) < prev_bin_end and (end_pos + bin_count) > prev_bin_end
-    assert (end_pos - bin_count) < prev_bin_end < (end_pos + bin_count)
-    assert (end_pos + bin_count) > prev_bin_end > (end_pos - bin_count)
+    assert (end_pos - bucket_count) < prev_bucket_end and (end_pos + bucket_count) > prev_bucket_end
+    assert (end_pos - bucket_count) < prev_bucket_end < (end_pos + bucket_count)
+    assert (end_pos + bucket_count) > prev_bucket_end > (end_pos - bucket_count)
 
-    if prepended_bins > 0:
-        new_bins = []
-        while prepended_bins > 0:
-            bins.append({
-                START_POS:-1 * bin_size * (prepended_bins + 1) + start_pos,
-                END_POS: -1 * bin_size * (prepended_bins) + start_pos,
-                NAME: str(-1 * prepended_bins)
+    if prepended_buckets > 0:
+        new_buckets = []
+        while prepended_buckets > 0:
+            buckets.append({
+                START_POS:-1 * bin_size * (prepended_buckets + 1) + start_pos,
+                END_POS: -1 * bin_size * (prepended_buckets) + start_pos,
+                NAME: str(-1 * prepended_buckets/bucket_count)
             })
-            prepended_bins -= 1
-        bins = new_bins.extend(bins)
+            prepended_buckets -= 1
+        buckets = new_buckets.extend(buckets)
 
-    if appended_bins > 0:
-        new_bins = []
-        bin_idx = bin_count
-        while bin_idx < bin_count + appended_bins:
-            bins.append({
-                START_POS: bin_size * (bin_idx) + start_pos,
-                END_POS: bin_size * (bin_idx + 1) + start_pos,
-                NAME: str(bin_idx)
+    if appended_buckets > 0:
+        new_buckets = []
+        bucket_idx = bucket_count
+        while bucket_idx < bucket_count + appended_buckets:
+            buckets.append({
+                START_POS: bin_size * (bucket_idx) + start_pos,
+                END_POS: bin_size * (bucket_idx + 1) + start_pos,
+                NAME: str(bucket_idx/bucket_count)
             })
-            bin_idx += 1
-        bins.extend(new_bins)
+            bucket_idx += 1
+        buckets.extend(new_buckets)
 
-    return bins
+    return buckets
 
 
-def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None,
-                          non_canonical_bucket_fcn = lambda x: x[START_POS] >= 0.0 and x[END_POS <= 1.0]):
+def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None):
     bucket_count = len(buckets)
+    if ticks is None: ticks = bucket_count
+    if bucket_count % ticks != 0:
+        print("\t\tWARN: mismatched tick count: {} ticks for {} buckets".format(ticks, bucket_count))
 
     #which bins does this fit in
     def find_buckets(data):
@@ -260,7 +246,7 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
     bucket_value_by_size = list()
     for bucket in buckets:
         name = bucket[NAME]
-        value = all_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
+        value = 1.0 * all_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
         bucket_value_by_size.append(value)
     oversize_buckets = len(list(filter(lambda x: x > 1.0, bucket_value_by_size)))
     if oversize_buckets > 0:
@@ -281,7 +267,8 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
     axarr[0].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-    axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
+    # axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
+    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)])
     axarr[1].set_ylabel('Ratio\n(of total coverage)')
     axarr[1].set_xlabel('Buckets')
 
@@ -293,6 +280,9 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
 def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None,
                                       non_canonical_bucket_fcn = lambda x: x[START_POS] >= 0.0 and x[END_POS <= 1.0]):
     bucket_count = len(buckets)
+    if ticks is None: ticks = bucket_count
+    if bucket_count % ticks != 0:
+        print("\t\tWARN: mismatched tick count: {} ticks for {} buckets".format(ticks, bucket_count))
 
     #which bins does this fit in
     def find_buckets(data):
@@ -315,8 +305,8 @@ def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_
     bottom_bucket_value_by_size = list()
     for bucket in buckets:
         name = bucket[NAME]
-        top = top_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
-        bottom = bottom_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
+        top = 1.0 * top_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
+        bottom = 1.0 * bottom_output_buckets[name] / (bucket[END_POS] - bucket[START_POS])
         top_bucket_value_by_size.append(top)
         bottom_bucket_value_by_size.append(bottom)
     oversize_top_buckets = len(list(filter(lambda x: x > 1.0, top_bucket_value_by_size)))
@@ -348,7 +338,8 @@ def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_
     axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, ratio_buckets), color='blue')
     axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, ratio_buckets), color='red')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-    axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
+    # axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
+    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)])
     axarr[1].set_ylabel('Normalized Difference\n(by mean coverage)')
     axarr[1].set_xlabel('Buckets')
 
@@ -442,11 +433,16 @@ def main():
         all_chroms.sort(key=chrom_sort)
 
         #plot prep
-        bucket_ranges = create_bins_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT)
+        if args.custom_buckets is not None:
+            bucket_ranges = convert_bed_to_custom_buckets(read_bed_file(args.custom_buckets, args))
+            ratio_start_fcn = lambda x: x[START_POS]
+            ratio_end_fcn = lambda x: x[END_POS]
+        else:
+            bucket_ranges = create_buckets_from_start_and_end_pos(0.0, 1.0, BUCKET_COUNT_DEFAULT)
+            ratio_start_fcn = lambda x: x[RATIO_CLOSEST_TO_CENTROMERE]
+            ratio_end_fcn = lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE]
         above_cent_filter = lambda x: list(filter(lambda y: y[ABOVE_CENT], x))
         below_cent_filter = lambda x: list(filter(lambda y: not y[ABOVE_CENT], x))
-        ratio_start_fcn = lambda x: x[RATIO_CLOSEST_TO_CENTROMERE]
-        ratio_end_fcn = lambda x: x[RATIO_FARTHEST_FROM_CENTROMERE]
 
         print("\tAnalyzing chroms")
         for chrom in all_chroms:
@@ -458,35 +454,54 @@ def main():
                     os.mkdir("{}/{}".format(IMG_DIR, file_identifier))
 
                 # coverage by chrom arm
-                plot_coverage_in_bins(
-                    above_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
-                    title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                        .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
-                    save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.UPPER.png"
-                        .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
-                plot_coverage_in_bins(
-                    below_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
-                    title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                        .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
-                    save_name="{}/{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.{}.LOWER.png"
-                        .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
+                if args.custom_buckets is not None:
+                    plot_coverage_in_bins(
+                        bed_contents[chrom], bucket_ranges[chrom], ratio_start_fcn, ratio_end_fcn, ticks=None,
+                        title="{}: {} {}".format(file_identifier, chrom, get_file_identifier(args.custom_buckets)),
+                        save_name="{}/{}/{}.{}.{}.png"
+                            .format(IMG_DIR, file_identifier, get_file_identifier(args.custom_buckets),
+                                    file_identifier, chrom))
+                else:
+                    plot_coverage_in_bins(
+                        above_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                        title="{}: {} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                            .format(file_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                        save_name="{}/{}/CENT_ARM.b{}.{}.{}.UPPER.png"
+                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
+                    plot_coverage_in_bins(
+                        below_cent_filter(bed_contents[chrom]), bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                        title="{}: {} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                            .format(file_identifier, chrom, chrom, centromeres[chrom][START_POS], chrom, chrom_sizes[chrom][START_POS]),
+                        save_name="{}/{}/CENT_ARM.b{}.{}.{}.LOWER.png"
+                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, chrom))
 
                 # comparative coverage by chrom arm
                 if compare_bed_identifier is not None:
-                    plot_compare_coverage_information(
-                        above_cent_filter(bed_contents[chrom]), above_cent_filter(compare_bed_chroms[chrom]),
-                        bucket_ranges, ratio_start_fcn, ratio_end_fcn,
-                        title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                            .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
-                        save_name="{}/{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.{}.UPPER.png"
-                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
-                    plot_compare_coverage_information(
-                        below_cent_filter(bed_contents[chrom]), below_cent_filter(compare_bed_chroms[chrom]),
-                        bucket_ranges, ratio_start_fcn, ratio_end_fcn,
-                        title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
-                            .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
-                        save_name="{}/{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.{}.LOWER.png"
-                            .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
+                    if args.custom_buckets is not None:
+                        plot_compare_coverage_information(
+                            bed_contents[chrom], compare_bed_chroms[chrom], bucket_ranges[chrom],
+                            ratio_start_fcn, ratio_end_fcn, ticks=None,
+                            title="{} (Top/Blue)\n{} (Bottom/Red)\n{} {}"
+                                .format(file_identifier, compare_bed_identifier, chrom,
+                                        get_file_identifier(args.custom_buckets)),
+                            save_name="{}/{}/COMPARE-{}.T-{}.B-{}.{}.png"
+                                .format(IMG_DIR, file_identifier, get_file_identifier(args.custom_buckets),
+                                        file_identifier, compare_bed_identifier, chrom))
+                    else:
+                        plot_compare_coverage_information(
+                            above_cent_filter(bed_contents[chrom]), above_cent_filter(compare_bed_chroms[chrom]),
+                            bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                            title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Upper Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                                .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                            save_name="{}/{}/COMPARE-CENT_ARM.b{}.T-{}.B-{}.{}.UPPER.png"
+                                .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
+                        plot_compare_coverage_information(
+                            below_cent_filter(bed_contents[chrom]), below_cent_filter(compare_bed_chroms[chrom]),
+                            bucket_ranges, ratio_start_fcn, ratio_end_fcn,
+                            title="{} (Top/Blue)\n{} (Bottom/Red)\n{} Lower Arm\n(0.0 - {}:{}, 1.0 - {}:{})"
+                                .format(file_identifier, compare_bed_identifier, chrom, chrom, centromeres[chrom][END_POS], chrom, chrom_sizes[chrom][END_POS]),
+                            save_name="{}/{}/COMPARE-CENT_ARM.b{}.T-{}.B-{}.{}.LOWER.png"
+                                .format(IMG_DIR, file_identifier, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier, chrom))
 
 
         print("\tAnalyzing genome")
@@ -494,18 +509,18 @@ def main():
         log("\tReporting")
         print_reports(reports)
 
-        if args.plot:
+        if args.plot and args.custom_buckets is None:
             plot_coverage_in_bins(
                     all_areas, bucket_ranges, ratio_start_fcn, ratio_end_fcn,
                 title="{}\n(0.0 - centromere, 1.0 - telomere)".format(file_identifier),
-                save_name="{}/CENT_ARM_LOC_BY_LENGTH.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
+                save_name="{}/CENT_ARM.b{}.{}.png".format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier))
             if compare_bed_identifier is not None:
                 plot_compare_coverage_information(
                     all_areas, compare_bed_all_areas,
                     bucket_ranges, ratio_start_fcn, ratio_end_fcn,
                     title="{} (Top/Blue)\n{} (Bottom/Red)\n(0.0 - centromere, 1.0 - telomere)"
                         .format(file_identifier, compare_bed_identifier),
-                    save_name="{}/COMPARE_CENT_ARM.b{}.T-{}.B-{}.genome.png"
+                    save_name="{}/COMPARE-CENT_ARM.b{}.T-{}.B-{}.genome.png"
                         .format(IMG_DIR, BUCKET_COUNT_DEFAULT, file_identifier, compare_bed_identifier))
 
         # set the compare bed options if appropriate
