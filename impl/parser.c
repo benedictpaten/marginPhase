@@ -544,12 +544,10 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 idxInSeq++;
             }
             else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                // Only add a gap character when that param is on
                 if (params->gapCharactersForDeletions) {
                     // This assumes gap character is the last character in the alphabet given
                     pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
-                }
-                else {
-                    // If ignoring gaps then nothing to be done
                 }
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
@@ -577,7 +575,9 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
         st_logDebug("Filtered %" PRIi64
-                " reads with either missing cigar lines, \nlow mapq scores (filtered %d reads with scores less than %d), \nand undesired sam flags "
+                " reads with either missing cigar lines, \n"
+                            "low mapq scores (filtered %d reads with scores less than %d), \n"
+                            "and undesired sam flags "
                             "(filtered %d reads with sam flags being filtered on: %s)\n",
                 filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
         free(samFlagBitString);
