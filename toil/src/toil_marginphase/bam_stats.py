@@ -2,10 +2,8 @@
 from __future__ import print_function
 import argparse
 import glob
-import json
 import sys
 import numpy as np
-import os
 import pysam
 import math
 
@@ -16,10 +14,14 @@ R_END_POS = "end_pos"
 R_LENGTH = "length"
 R_SECONDARY = "secondary_alignment"
 R_MAPPING_QUALITY = "mapping_quality"
+R_CHROMOSOME = "chromosome"
+
+#bam summary
+B_READ_COUNT = "read_count"
+B_FILTERED_READ_COUNT = "filtered_read_count"
+B_CHROMOSOME = "chromosome"
 
 #length summary
-L_READ_COUNT = "read_count"
-L_FILTERED_READ_COUNT = "filtered_read_count"
 L_LOG_LENGTH_BUCKETS = "log_length_buckets"
 L_MIN = "min_length"
 L_MAX = "max_length"
@@ -35,6 +37,8 @@ D_MIN = "min_depth"
 D_AVG = "avg_depth"
 D_STD = "std_depth"
 D_ALL_DEPTHS = "all_depths"
+D_ALL_DEPTH_POSITIONS = "all_depth_positions"
+D_ALL_DEPTH_MAP = "all_depth_map"
 D_ALL_DEPTH_BINS = "all_depth_bins"
 D_SPACING = "depth_spacing"
 D_START_IDX = "depth_start_idx"
@@ -58,7 +62,9 @@ def parse_args(args = None):
     parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
                         help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
     parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
-                        help='Filter secondary alignments')
+                        help='Filter secondary alignments out (only include primary)')
+    parser.add_argument('--filter_primary', '-F', dest='filter_primary', action='store_true', default=False,
+                        help='Filter primary alignments out (only include secondary)')
     parser.add_argument('--min_alignment_threshold', '-a', dest='min_alignment_threshold', action='store', default=None,
                         type=int, help='Minimum alignment threshold, below which reads are not included')
 
@@ -72,7 +78,8 @@ def get_read_summary(read):
         R_LENGTH: read.reference_length,
         R_ID: read.query_name,
         R_SECONDARY: read.is_secondary,
-        R_MAPPING_QUALITY: read.mapping_quality
+        R_MAPPING_QUALITY: read.mapping_quality,
+        R_CHROMOSOME: read.reference_name
     }
     return summary
 
@@ -84,7 +91,10 @@ def get_read_length_summary(read_summaries, length_log_base=2, length_log_max=32
     all_lengths = []
 
     for read_summary in read_summaries:
-        log_length_bins[int(math.log(read_summary[R_LENGTH], length_log_base))] += 1
+        if read_summary[R_LENGTH] is None:
+            #todo
+            continue
+        log_length_bins[int(math.log(read_summary[R_LENGTH], length_log_base))] += 1.0
         all_lengths.append(read_summary[R_LENGTH])
 
     summary = {
@@ -102,32 +112,36 @@ def get_read_length_summary(read_summaries, length_log_base=2, length_log_max=32
 
 
 def print_read_length_summary(summary, verbose=False):
-    print("\tREAD LENGTHS")
-    print("\t\tmin: {}".format(summary[L_MIN]))
-    print("\t\tmax: {}".format(summary[L_MAX]))
-    print("\t\tavg: {}".format(int(summary[L_AVG])))
-    print("\t\tstd: {}".format(int(summary[L_STD])))
+    for chrom in summary.keys():
+        print("\tREAD LENGTHS: {}".format(chrom))
+        print("\t\tmin: {}".format(summary[chrom][L_MIN]))
+        print("\t\tmax: {}".format(summary[chrom][L_MAX]))
+        print("\t\tavg: {}".format(int(summary[chrom][L_AVG])))
+        print("\t\tstd: {}".format(int(summary[chrom][L_STD])))
 
-    if verbose:
-        length_log_max = summary[L_LOG_MAX]
-        log_length_bins = summary[L_LOG_LENGTH_BUCKETS]
-        print("\t\tread length log_{}:".format(summary[L_LOG_BASE]))
-        max_bucket = max(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
-        min_bucket = min(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
-        max_bucket_size = max(log_length_bins)
-        for bucket in range(min_bucket, max_bucket + 1):
-            id = "%3d:" % bucket
-            count = log_length_bins[bucket]
-            pound_count = int(32.0 * count / max_bucket_size)
-            print("\t\t\t{} {} {}".format(id, "#"*pound_count, count))
+        if verbose:
+            length_log_max = summary[chrom][L_LOG_MAX]
+            log_length_bins = summary[chrom][L_LOG_LENGTH_BUCKETS]
+            print("\t\tread length log_{}:".format(summary[chrom][L_LOG_BASE]))
+            max_bucket = max(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
+            min_bucket = min(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
+            max_bucket_size = max(log_length_bins)
+            for bucket in range(min_bucket, max_bucket + 1):
+                id = "%3d:" % bucket
+                count = log_length_bins[bucket]
+                pound_count = int(32.0 * count / max_bucket_size)
+                print("\t\t\t{} {} {}".format(id, "#"*pound_count, count))
 
 
-def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
+def get_read_depth_summary(read_summaries, spacing, included_range=None):
     S, E = 's', 'e'
 
     # get reads which start or end on spacing interval
     positions = []
     for summary in read_summaries:
+        if summary[R_LENGTH] is None:
+            #todo
+            continue
         positions.append((S, int(summary[R_START_POS]/spacing)))
         positions.append((E, int(summary[R_END_POS]/spacing)))
 
@@ -138,6 +152,7 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
 
     # data we care about
     depths = [0 for _ in range(end_idx - start_idx + 1)]
+    depth_positions = []
 
     # iterate over all read starts and ends
     depth = 0
@@ -152,34 +167,61 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
             else: curr = positions.pop()
         positions.append(curr)
         # save and iterate
-        depths[idx - start_idx] = depth
+        pos = idx - start_idx
+        depths[pos] = depth
+        depth_positions.append(idx)
         idx -= 1
+
+    #todo I don't like that I don't know why I need to do this
+    depth_positions.reverse()
 
     assert depth == 0
     assert len(positions) == 1
+    assert len(depths) == len(depth_positions)
+
+    depth_map = {pos: depth for pos, depth in zip(depth_positions, depths)}
 
     # check range before outputting summary
     if included_range is not None:
         # get range
         included_range = list(map(int, included_range.split("-")))
         if len(included_range) != 2:
-            raise Exception("Malformed depth range: '{}'".format("-".join(included_range)))
+            raise Exception("Malformed depth range: '{}'".format("-".join(map(str, included_range))))
         range_start = int(included_range[0]/spacing)
         range_end = int(included_range[1]/spacing)
         # sanity check
         if range_start > end_idx or range_end < start_idx or range_start >= range_end:
-            raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(included_range),
-                                                                              "-".join([start_idx, end_idx])))
-        # get appropriate depths
+            raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(map(str, included_range)),
+                                                                              "-".join(map(str, [start_idx*spacing, end_idx*spacing]))))
+
+        #todo
+        # # reverse lists (because we record depths backwards)
+        # depths.reverse()
+        # depth_positions.reverse()
+        # # get appropriate depths
+        # new_depths = list()
+        # new_depth_positions = list()
+        # for depth_idx in range(end_idx - start_idx + 1):
+        #     if start_idx + depth_idx < range_start: continue
+        #     if start_idx + depth_idx > range_end: break
+        #     new_depths.append(depths[depth_idx])
+        #     new_depth_positions.append(depth_positions[depth_idx])
+
         new_depths = list()
-        for depth_idx in range(end_idx - start_idx + 1):
-            if start_idx + depth_idx < range_start: continue
-            if start_idx + depth_idx > range_end: break
-            new_depths.append(depths[depth_idx])
+        new_depth_positions = list()
+        new_depth_map = dict()
+        for i in range(range_start, range_end):
+            new_depth_positions.append(i)
+            new_depths.append(depth_map[i])
+            new_depth_map[i] = depth_map[i]
+
         # update values
         depths = new_depths
+        depth_positions = new_depth_positions
+        depth_map = new_depth_map
         start_idx = max(start_idx, range_start)
         assert len(depths) > 0
+        assert len(new_depths) == len(new_depth_positions)
 
     # get read depth log value
     log_depth_bins = [0 for _ in range(16)]
@@ -196,6 +238,8 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
         D_AVG: np.mean(depths),
         D_STD: np.std(depths),
         D_ALL_DEPTHS: depths,
+        D_ALL_DEPTH_POSITIONS: depth_positions,
+        D_ALL_DEPTH_MAP: depth_map,
         D_ALL_DEPTH_BINS: log_depth_bins,
         D_SPACING: spacing,
         D_START_IDX: start_idx,
@@ -206,39 +250,40 @@ def get_read_depth_summary(read_summaries, spacing=1000, included_range=None):
 
 
 def print_read_depth_summary(summary, verbose=False):
-    print("\tREAD DEPTHS")
-    print("\t\tmax: {}".format(summary[D_MAX]))
-    print("\t\tmin: {}".format(summary[D_MIN]))
-    print("\t\tavg: {}".format(summary[D_AVG]))
-    print("\t\tstd: {}".format(summary[D_STD]))
-    log_depth_bins = summary[D_ALL_DEPTH_BINS]
-    total_depths = sum(log_depth_bins)
-    log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
-    log_depth_pairs.sort(key=lambda x: x[1], reverse=True)
-    print("\t\tmost frequent read depths [floor(log2(depth))]:")
-    for i in range(0,min(len(list(filter(lambda x: x[1] != 0, log_depth_pairs))), 3)):
-        print("\t\t\t#{}: depth:{} count:{} ({}%)".format(i + 1, log_depth_pairs[i][0], log_depth_pairs[i][1],
-                                                          int(100.0 * log_depth_pairs[i][1] / total_depths)))
+    for chrom in summary.keys():
+        print("\tREAD DEPTHS: {}".format(chrom))
+        print("\t\tmax: {}".format(summary[chrom][D_MAX]))
+        print("\t\tmin: {}".format(summary[chrom][D_MIN]))
+        print("\t\tavg: {}".format(summary[chrom][D_AVG]))
+        print("\t\tstd: {}".format(summary[chrom][D_STD]))
+        log_depth_bins = summary[chrom][D_ALL_DEPTH_BINS]
+        total_depths = sum(log_depth_bins)
+        log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
+        log_depth_pairs.sort(key=lambda x: x[1], reverse=True)
+        print("\t\tmost frequent read depths [floor(log2(depth))]:")
+        for i in range(0,min(len(list(filter(lambda x: x[1] != 0, log_depth_pairs))), 3)):
+            print("\t\t\t#{}: depth:{} count:{} ({}%)".format(i + 1, log_depth_pairs[i][0], log_depth_pairs[i][1],
+                                                              int(100.0 * log_depth_pairs[i][1] / total_depths)))
 
-    if verbose:
-        print("\t\tdepths with spacing {}{}:".format(summary[D_SPACING],
-                                           "" if summary[D_RANGE] is None else ", and range {}".format(summary[D_RANGE])))
-        idx = summary[D_START_IDX]
-        for depth in summary[D_ALL_DEPTHS]:
-            id = "%4d:" % idx
-            pound_count = int(32.0 * depth / summary[D_MAX])
-            print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
-            idx += 1
+        if verbose:
+            print("\t\tdepths with spacing {}{}:".format(summary[chrom][D_SPACING],
+                                               "" if summary[chrom][D_RANGE] is None else
+                                               ", and range {}".format(summary[chrom][D_RANGE])))
+            for idx in summary[chrom][D_ALL_DEPTH_POSITIONS]:
+                depth = summary[chrom][D_ALL_DEPTH_MAP][idx]
+                id = "%4d:" % idx
+                pound_count = int(32.0 * depth / summary[chrom][D_MAX])
+                print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
 
-        print("\t\tread depth log_2 at above intervals:")
-        max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
-        min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
-        max_bucket_size = max(log_depth_bins)
-        for bucket in range(min_bucket, max_bucket + 1):
-            id = "%3d:" % bucket
-            count = log_depth_bins[bucket]
-            pound_count = int(32.0 * count / max_bucket_size)
-            print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
+            print("\t\tread depth log_2 at above intervals:")
+            max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+            min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+            max_bucket_size = max(log_depth_bins)
+            for bucket in range(min_bucket, max_bucket + 1):
+                id = "%3d:" % bucket
+                count = log_depth_bins[bucket]
+                pound_count = int(32.0 * count / max_bucket_size)
+                print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
 
 
 def main(args = None):
@@ -254,6 +299,7 @@ def main(args = None):
         if not args.silent: print("Analyzing {} files".format(len(in_alignments)))
 
     # data we care about
+    bam_summaries = dict()
     length_summaries = dict()
     depth_summaries = dict()
 
@@ -264,8 +310,14 @@ def main(args = None):
             print("Matched file {} has unexpected filetype".format(alignment_filename))
             continue
 
+        # prep
+        bam_summaries[alignment_filename] = {}
+        length_summaries[alignment_filename] = {}
+        depth_summaries[alignment_filename] = {}
+
         # data we're gathering
         read_summaries = list()
+        chromosomes =  set()
 
         # get read data we care about
         samfile = None
@@ -276,32 +328,48 @@ def main(args = None):
             for read in samfile.fetch():
                 read_count += 1
                 read_summaries.append(get_read_summary(read))
+                chromosomes.add(read.reference_name)
             if not args.silent: print("read_count: {}".format(read_count))
         finally:
             if samfile is not None: samfile.close()
 
+        bad_read_count = len(list(filter(lambda x: x[R_LENGTH] is None, read_summaries)))
+        if bad_read_count > 0:
+            print("Got {}/{} ({}%) bad reads in {}. Filtering out."
+                  .format(bad_read_count, len(read_summaries), int(100.0 * bad_read_count / len(read_summaries)),
+                          alignment_filename), file=sys.stderr)
+        read_summaries = list(filter(lambda x: x[R_LENGTH] is not None, read_summaries))
+
         # filter if appropriate
         if args.filter_secondary:
             read_summaries = list(filter(lambda x: not x[R_SECONDARY], read_summaries))
+        if args.filter_primary:
+            read_summaries = list(filter(lambda x: x[R_SECONDARY], read_summaries))
         if args.min_alignment_threshold is not None:
             read_summaries = list(filter(lambda x: x[R_MAPPING_QUALITY] >= args.min_alignment_threshold, read_summaries))
-        if args.filter_secondary or args.min_alignment_threshold is not None:
+        if args.filter_secondary or args.filter_primary or args.min_alignment_threshold is not None:
             if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
 
         # summarize
-        length_summaries[alignment_filename] = get_read_length_summary(read_summaries)
-        length_summaries[alignment_filename][L_READ_COUNT] = read_count
-        length_summaries[alignment_filename][L_FILTERED_READ_COUNT] = len(read_summaries)
-        depth_summaries[alignment_filename] = get_read_depth_summary(read_summaries,
-                                                                     spacing=args.depth_spacing,
-                                                                     included_range=args.depth_range)
+        for chromosome in chromosomes:
+            chromosome_reads = list(filter(lambda x: x[R_CHROMOSOME] == chromosome , read_summaries))
+            bam_summaries[alignment_filename][chromosome] = {
+                B_READ_COUNT: read_count,
+                B_FILTERED_READ_COUNT:len(chromosome_reads),
+                B_CHROMOSOME: chromosome
+            }
+            length_summaries[alignment_filename][chromosome] = get_read_length_summary(chromosome_reads)
+            depth_summaries[alignment_filename][chromosome] = get_read_depth_summary(chromosome_reads,
+                                                                                     spacing=args.depth_spacing,
+                                                                                     included_range=args.depth_range)
+
         # print
         if args.read_length:
             if not args.silent: print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
         if args.read_depth:
             if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
 
-    return length_summaries, depth_summaries
+    return bam_summaries, length_summaries, depth_summaries
 
 
 
