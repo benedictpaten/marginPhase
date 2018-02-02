@@ -142,6 +142,7 @@ def position_as_chrom_arm_ratio(chrom_size, chrom_cent, pos):
 
 def add_bed_information(bed_contents, centromeres, chrom_sizes, args):
     for chrom in list(bed_contents.keys()):
+        if chrom not in centromeres: continue
         chrom_cent = centromeres[chrom]
         chrom_size = chrom_sizes[chrom]
         chrom_areas = bed_contents[chrom]
@@ -226,7 +227,35 @@ def create_buckets_from_start_and_end_pos(start_pos, end_pos, bucket_count, prep
     return buckets
 
 
+def get_tick_label_sizing(ticks, bucket_count):
+    alignment = 'center'
+    if ticks == bucket_count:  # custom bucket
+        if bucket_count < 16:
+            fontsize, rotation = 12, 30
+            alignment = 'right'
+        elif bucket_count < 24:
+            fontsize, rotation = 10, 45
+            alignment = 'right'
+        elif bucket_count < 32:
+            fontsize, rotation = 8, 60
+            alignment = 'right'
+        elif bucket_count < 46:
+            fontsize, rotation = 7, 75
+            alignment = 'center'
+        elif bucket_count < 58:
+            fontsize, rotation = 6, 90
+            alignment = 'center'
+        else:
+            fontsize, rotation = 5, 90
+            alignment = 'center'
+    else:
+        fontsize, rotation = 12, 0
+    return fontsize, rotation, alignment
+
+
+
 def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None):
+
     bucket_count = len(buckets)
     if ticks is None: ticks = bucket_count
     if bucket_count % ticks != 0:
@@ -268,14 +297,16 @@ def plot_coverage_in_bins(all_data, buckets, start_fcn, end_fcn, ticks=10, title
     axarr[1].bar([i for i in range(bucket_count)], ratio_buckets, color='orange')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
     # axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
-    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)])
+    fontsize, rotation, alignment = get_tick_label_sizing(ticks, bucket_count)
+    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)],
+                             fontsize=fontsize, rotation=rotation,
+                             horizontalalignment=alignment)
     axarr[1].set_ylabel('Ratio\n(of total coverage)')
     axarr[1].set_xlabel('Buckets')
 
     if save_name is not None: plt.savefig(save_name)
     # plt.show()
     plt.close()
-
 
 def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_fcn, end_fcn, ticks=10, title=None, save_name=None,
                                       non_canonical_bucket_fcn = lambda x: x[START_POS] >= 0.0 and x[END_POS <= 1.0]):
@@ -325,23 +356,41 @@ def plot_compare_coverage_information(top_bucket, bottom_bucket, buckets, start_
     bottom_average = 1.0 * sum(bottom_bucket_value_by_size) / len(buckets)
     if bottom_average == 0: bottom_average = 1.0
     count_buckets = map(lambda x: x[0] - x[1], zip(top_bucket_value_by_size, bottom_bucket_value_by_size))
-    ratio_buckets = map(lambda x: (x[0]/top_average) - (x[1]/bottom_average),
-                        zip(top_bucket_value_by_size, bottom_bucket_value_by_size))
-
 
     f, axarr = plt.subplots(2, sharex=True)
     axarr[0].bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, count_buckets), color='blue')
     axarr[0].bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, count_buckets), color='red')
     if title is not None: axarr[0].set_title(title)
     axarr[0].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-    axarr[0].set_ylabel('Coverage Difference\n(ratio of bucket coverage)')
-    axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, ratio_buckets), color='blue')
-    axarr[1].bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, ratio_buckets), color='red')
+    axarr[0].set_ylabel('Bucket Coverage Difference')
+    axarr[1].bar([i for i in range(bucket_count)],  map(
+        lambda x:  top_bucket_value_by_size[x] if top_bucket_value_by_size[x] > bottom_bucket_value_by_size[x] else 0,
+        [i for i in range(bucket_count)]), color='blue')
+    axarr[1].bar([i for i in range(bucket_count)],  map(
+        lambda x: bottom_bucket_value_by_size[x] if bottom_bucket_value_by_size[x] > top_bucket_value_by_size[x] else 0,
+        [i for i in range(bucket_count)]), color='red')
+    axarr[1].bar([i for i in range(bucket_count)],  map(
+        lambda x: 0 if top_bucket_value_by_size[x] > bottom_bucket_value_by_size[x] else top_bucket_value_by_size[x],
+        [i for i in range(bucket_count)]), color='blue')
+    axarr[1].bar([i for i in range(bucket_count)],  map(
+        lambda x: 0 if bottom_bucket_value_by_size[x] > top_bucket_value_by_size[x] else bottom_bucket_value_by_size[x],
+        [i for i in range(bucket_count)]), color='red')
     axarr[1].set_xticks([i*(bucket_count/ticks) for i in range(ticks)])
-    # axarr[1].set_xticklabels(list(map(str, [1.0*i/ticks for i in range(ticks)])))
-    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)])
-    axarr[1].set_ylabel('Normalized Difference\n(by mean coverage)')
+    fontsize, rotation, alignment = get_tick_label_sizing(ticks, bucket_count)
+    axarr[1].set_xticklabels([buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)],
+                             fontsize=fontsize, rotation=rotation,
+                             horizontalalignment=alignment)
+    axarr[1].set_ylabel('Total Bucket Coverage')
     axarr[1].set_xlabel('Buckets')
+    # plt.setp(axarr[1].get_xticklabels(), rotation=30, horizontalalignment='right')
+
+    # plt.bar([i for i in range(bucket_count)], map(lambda x: 0 if x < 0 else x, count_buckets), color='blue')
+    # plt.bar([i for i in range(bucket_count)], map(lambda x: 0 if x > 0 else x, count_buckets), color='red')
+    # if title is not None: plt.title(title)
+    # plt.xticks([i*(bucket_count/ticks) for i in range(ticks)],
+    #            [buckets[int(bucket_count*i/ticks)][NAME] for i in range(ticks)])
+    # plt.ylabel('Coverage Difference\n(ratio of bucket coverage)')
+    # plt.xlabel('Buckets')
 
     if save_name is not None: plt.savefig(save_name)
     # plt.show()

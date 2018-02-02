@@ -881,6 +881,9 @@ def consolidate_output(job, config, chunk_infos):
             out_tars.append(tar_file)
             with tarfile.open(tar_file, 'r') as f_in:
                 for tarinfo in f_in:
+                    if config.minimal_output and (tarinfo.name.endswith("bam") or tarinfo.name.endswith("sam")):
+                            job.fileStore.logToMaster("{}: (Minimal Output) Skipping output file: {}".format(
+                                config.uuid, tarinfo.name))
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
                         f_out.addfile(tarinfo, fileobj=f_in_file)
                         output_file_count += 1
