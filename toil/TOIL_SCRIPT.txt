@@ -1,0 +1,49 @@
+##########################
+### from the local box ###
+
+# prep 
+sudo pip install awscli --upgrade
+sudo pip install toil aws --upgrade
+
+# launch cluster
+ssh-add ~/.ssh/$KEY_NAME.pem 
+toil launch-cluster $CLUSTER_NAME --leaderNodeType t2.medium --zone us-west-2a --keyPairName $KEY_NAME
+	# this command timed out once, then I ran it again with a different name and it worked almost immediately
+toil ssh-cluster --zone us-west-2a $CLUSTER_NAME
+
+########################
+### from the cluster ###
+
+# prep
+cd /opt
+apt-get update
+apt-get install -y git s3cmd vim
+s3cmd --configure
+
+# get marginPhase and config
+git clone https://github.com/benedictpaten/marginPhase.git
+cd marginPhase/toil
+s3cmd ls s3://margin-phase/toil_config/
+s3cmd get s3://margin-phase/toil_config/$CONFIG.yaml && mv $CONFIG.yaml config-toil-marginphase.yaml
+s3cmd get s3://margin-phase/toil_config/$MANIFEST.tsv && mv $MANIFEST.tsv manifest-toil-marginphase.tsv
+
+# setup environment (/opt/marginPhase/toil)
+virtualenv --system-site-packages venv
+. venv/bin/activate
+pip install --upgrade mesos.cli
+pip install --upgrade s3am
+pip install --upgrade .
+deactivate # I don't know if you actually need to deactivate the venv
+
+# run the workflow
+script
+screen
+cd /opt/marginPhase/toil
+. venv/bin/activate
+
+toil-marginphase run --defaultCores 4 --maxMemory 60G --maxCores 8 --defaultPreemptable --batchSystem mesos --provisioner aws --nodeTypes m4.4xlarge --nodeStorage 500 --maxNodes 2 --minNodes 1 aws:us-west-2:$JOBSTORE 2>&1 | tee -a toil-marginphase.$JOBSTORE.log
+
+# watch it run
+Ctrl-A d #detach from screen
+exit #leave the script
+export LOG=/opt/marginPhase/toil/toil-marginphase.$JOBSTORE.log && watch "cat $LOG | grep leader | sed 's/^.*leader://' | grep 'Job ended successfully' | grep --invert-match INFO | wc -l && echo '----' && cat $LOG | grep leader | sed 's/^.*leader://' | grep 'Issued job' | grep --invert-match INFO | wc -l && echo '\n' && wc -l $LOG && echo '\n' && cat $LOG | grep leader | sed 's/^.*leader://' | grep --invert-match leader | tail -42"
