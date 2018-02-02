@@ -51,14 +51,16 @@ void test_5kbGenotyping(CuTest *testCase) {
 void test_100kbGenotyping(CuTest *testCase) {
 
 //    char *paramsFile = "../params_pacbio_gaps.json";
-    char *paramsFile = "../params_pacbio_currentbest.json";
+//    char *paramsFile = "../params_pacbio_currentbest.json";
 //    char *paramsFile = "../params_nanopore_currentbest.json";
+//    char *paramsFile = "../../params/params.np.averaged.9995.rp.json";
+    char *paramsFile = "../../params/params.np.transitions.9995.rp.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_100kb";
-    bool verbose = true;
+    bool verbose = false;
 
-    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
-//    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
+//    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
+    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
 //    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
 //    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
@@ -75,6 +77,8 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     st_logInfo("Testing all PacBio regions\n");
 
+//    char *paramsFile = "../../params/params.pb.transitions.998.plain.json";
+//    char *paramsFile = "../../params/params.pb.averaged.9995.plain.testing.json";
     char *paramsFile = "../params_pacbio_currentbest.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
@@ -130,7 +134,9 @@ void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
 
     st_logInfo("Testing all nanopore regions\n");
 
-    char *paramsFile = "../params_nanopore_currentbest.json";
+//    char *paramsFile = "../params_nanopore_currentbest.json";
+//        char *paramsFile = "../../params/params.np.averaged.9995.rp.json";
+    char *paramsFile = "../../params/params.np.transitions.9995.rp.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -240,7 +246,7 @@ CuSuite *marginPhaseTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
 //    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);

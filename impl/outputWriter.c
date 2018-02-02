@@ -186,7 +186,8 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *reference
 void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, stGenomeFragment *gF,
                        stBaseMapper *baseMapper, char *referenceSeq, int refChar,
                        int h1AlphChar, int h2AlphChar, vcfFile *out, int64_t *index,
-                       int32_t  *phaseSet, int32_t  *ps_info, int32_t *ac_info, bool *firstVariantInPhaseBlock, bool gvcf) {
+                       int32_t  *phaseSet, int32_t  *ps_info, int32_t *ac_info,
+                       bool *firstVariantInPhaseBlock, bool gvcf) {
     /*
      * Write a vcf record for a variant involving an insertion or deletion.
      */
@@ -329,6 +330,68 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
     free(hap2str.s);
 }
 
+void writeHetSite(char h1AlphChar, char h2AlphChar, char refChar,
+                  int32_t *phaseSet, bool *firstVariantInPhaseBlock,
+                  int32_t *gt_info, bcf1_t *bcf_rec, kstring_t *str,
+                  int32_t *ac_info, stGenomeFragment *gF, int64_t i) {
+    /*
+     * Write out a het site record.
+     */
+    if (h1AlphChar == refChar) {
+        // 0|1
+        if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(0);
+            gt_info[1] = bcf_gt_unphased(1);
+            *firstVariantInPhaseBlock = false;
+            *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(0);
+            gt_info[1] = bcf_gt_phased(1);
+        }
+        kputc(h1AlphChar, str);
+        kputc(',', str);
+        kputc(h2AlphChar, str);
+        // Allele counts - hap1
+        ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
+    } else if (h2AlphChar == refChar) {
+        // 1|0
+        if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(1);
+            gt_info[1] = bcf_gt_unphased(0);
+            *firstVariantInPhaseBlock = false;
+            *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(1);
+            gt_info[1] = bcf_gt_phased(0);
+        }
+        kputc(h2AlphChar, str);
+        kputc(',', str);
+        kputc(h1AlphChar, str);
+        // Allele counts - hap2
+        ac_info[0] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];
+    } else {
+        // 1|2
+        if (*firstVariantInPhaseBlock) {
+            gt_info[0] = bcf_gt_unphased(1);
+            gt_info[1] = bcf_gt_unphased(2);
+            *firstVariantInPhaseBlock = false;
+            *phaseSet = bcf_rec->pos+1;
+        } else {
+            gt_info[0] = bcf_gt_phased(1);
+            gt_info[1] = bcf_gt_phased(2);
+        }
+        kputc(refChar, str);
+        kputc(',', str);
+        kputc(h1AlphChar, str);
+        kputc(',', str);
+        kputc(h2AlphChar, str);
+        // Allele counts - both hap1 and hap2
+        ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
+        ac_info[1] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];
+    }
+
+}
+
 // This function writes out a vcf for the two haplotypes
 // It optionally writes it relative to a reference fasta file or
 // writes it for one of the haplotypes relative to the other
@@ -399,58 +462,18 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
 
         char refChar = toupper(referenceSeq[i + gF->refStart - 1]);
         if (gvcf) {
-
-            if (next_h1AlphChar == '-' || next_h2AlphChar == '-') {
+            if (next_h1AlphChar == '-' || next_h2AlphChar == '-'
+                    || h1AlphChar == '-' || h2AlphChar == '-') {
                 // Insertion or deletion happening here
                 writeIndelVariant(gt_info, bcf_hdr, bcf_rec, gF, baseMapper, referenceSeq, refChar,
                                   h1AlphChar, h2AlphChar, out, &i, &phaseSet, ps_info, ac_info,
                                   &firstVariantInPhaseBlock, gvcf);
             }
             else if (h1AlphChar != h2AlphChar) {
-                // Normal het site, determine phasing
-                if (h1AlphChar == refChar) {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(0);
-                        gt_info[1] = bcf_gt_unphased(1);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(0);
-                        gt_info[1] = bcf_gt_phased(1);
-                    }
-                    kputc(h1AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h2AlphChar, &str);
-                } else if (h2AlphChar == refChar) {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(1);
-                        gt_info[1] = bcf_gt_unphased(0);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(1);
-                        gt_info[1] = bcf_gt_phased(0);
-                    }
-                    kputc(h2AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h1AlphChar, &str);
-                } else {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(1);
-                        gt_info[1] = bcf_gt_unphased(2);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(1);
-                        gt_info[1] = bcf_gt_phased(2);
-                    }
-                    kputc(refChar, &str);
-                    kputc(',', &str);
-                    kputc(h1AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h2AlphChar, &str);
-                }
-
+                writeHetSite(h1AlphChar, h2AlphChar, refChar,
+                &phaseSet, &firstVariantInPhaseBlock,
+                gt_info, bcf_rec, &str, ac_info, gF, i);
+                // Update genotypes
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
                 ps_info[0] = phaseSet;
@@ -493,72 +516,22 @@ void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF,
                 bcf_update_format(bcf_hdr, bcf_rec, "PS", ps_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
                 bcf_write1(out, bcf_hdr, bcf_rec);
             }
-
         }
         // Regular vcf
         else {
             if (i + 1 >= gF->length) break;
 
-            // This should have been dealt with in a previous record
-            assert(h1AlphChar != '-' && h2AlphChar != '-');
-
-            if (next_h1AlphChar == '-' || next_h2AlphChar == '-') {
+            if (next_h1AlphChar == '-' || next_h2AlphChar == '-'
+                    || h1AlphChar == '-' || h2AlphChar == '-') {
                 // Insertion or deletion happening here
                 writeIndelVariant(gt_info, bcf_hdr, bcf_rec, gF, baseMapper, referenceSeq, refChar,
                                   h1AlphChar, h2AlphChar, out, &i, &phaseSet, ps_info, ac_info,
                                   &firstVariantInPhaseBlock, gvcf);
             }
             else if (h1AlphChar != h2AlphChar) {
-                // Normal het site, determine phasing
-                if (h1AlphChar == refChar) {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(0);
-                        gt_info[1] = bcf_gt_unphased(1);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(0);
-                        gt_info[1] = bcf_gt_phased(1);
-                    }
-                    kputc(h1AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h2AlphChar, &str);
-                    // Allele counts - hap1
-                    ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
-                } else if (h2AlphChar == refChar) {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(1);
-                        gt_info[1] = bcf_gt_unphased(0);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(1);
-                        gt_info[1] = bcf_gt_phased(0);
-                    }
-                    kputc(h2AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h1AlphChar, &str);
-                    // Allele counts - hap2
-                    ac_info[0] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];
-                } else {
-                    if (firstVariantInPhaseBlock) {
-                        gt_info[0] = bcf_gt_unphased(1);
-                        gt_info[1] = bcf_gt_unphased(2);
-                        firstVariantInPhaseBlock = false;
-                        phaseSet = bcf_rec->pos+1;
-                    } else {
-                        gt_info[0] = bcf_gt_phased(1);
-                        gt_info[1] = bcf_gt_phased(2);
-                    }
-                    kputc(refChar, &str);
-                    kputc(',', &str);
-                    kputc(h1AlphChar, &str);
-                    kputc(',', &str);
-                    kputc(h2AlphChar, &str);
-                    // Allele counts - both hap1 and hap2
-                    ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
-                    ac_info[1] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];
-                }
+                writeHetSite(h1AlphChar, h2AlphChar, refChar,
+                             &phaseSet, &firstVariantInPhaseBlock,
+                             gt_info, bcf_rec, &str, ac_info, gF, i);
                 // Update genotypes
                 bcf_update_alleles_str(bcf_hdr, bcf_rec, str.s);
                 bcf_update_genotypes(bcf_hdr, bcf_rec, gt_info, bcf_hdr_nsamples(bcf_hdr)*2);
