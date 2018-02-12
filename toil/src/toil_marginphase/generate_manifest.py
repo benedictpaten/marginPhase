@@ -25,22 +25,26 @@ PARAMS = "s3://margin-phase/params/q30-test/params.{read1}.{sub}.{ptype}.json"
 VCF = "s3://margin-phase/vcf/NA12878.hg38.PG.{chr}.vcf"
 
 reads = [
-    ['np2', 'np', 's3://margin-phase/bam/nanopore2.q30/NA12878.hg38.np2.q30.{chr}.bam'],
-    ['pb', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam']
+    # ['np2-q0', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
+    # ['pb-q0', 'pb', 's3://margin-phase/bam/realigned/NA12878.hg38.pb.mm.{chr}.bam'],
+    # ['np2-q30', 'np', 's3://margin-phase/bam/nanopore2.q30/NA12878.hg38.np2.q30.{chr}.bam'],
+    ['pb-q30', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam'],
 ]
 
-# chrs = ["chr{}".format(x) for x in range(1,23)]
-# chrs.append("chrX")
+chrs = ["chr{}".format(x) for x in range(1,23)]
+chrs.append("chrX")
 # chrs.append("chrY")
-chrs = ['chr18']
+# chrs = ['chr18']
 
 # subs = ['998', '9995']
 # subs = ['9995']
 subs = ['hs9993']
+# subs = ['hs9993', '9995']
 
-ptypes = ['rp', 'plain']
+# ptypes = ['rp', 'plain']
+# ptypes = ['rp-train1', 'nofilt']
 # ptypes = ['rp', 'rp-train1', 'plain']
-# ptypes = ['rp']
+ptypes = ['rp-nofilt']
 # ptypes = ['plain']
 
 have_everything = True

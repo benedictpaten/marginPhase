@@ -36,10 +36,20 @@ def main():
             depths[depth] += end - start
 
     max_distance = max(depths.values())
+    distance_increment = max_distance / 32
+    depth_keys = list(depths.keys())
+    depth_keys.sort()
+    print("\nHistogram:", file=sys.stderr)
+    for depth in depth_keys:
+        distance = depths[depth]
+        print("%6d: (%1.2f)\t%s (%d)" % (depth, distance, "#"*int(1.0*distance/distance_increment),
+                                         distance), file=sys.stderr)
+
     max_log_distance = math.log10(max_distance)
     log_distance_increment = max_log_distance / 32
     depth_keys = list(depths.keys())
     depth_keys.sort()
+    print("\nLog Histogram:", file=sys.stderr)
     for depth in depth_keys:
         distance = depths[depth]
         log_distance = math.log10(distance)
@@ -82,6 +92,7 @@ def main():
                 median_depth = (upper_depth + lower_depth) / 2.0
                 break
 
+    print("\nMedian Depth: {}\n".format(median_depth), file=sys.stderr)
     print(median_depth)
 
 
