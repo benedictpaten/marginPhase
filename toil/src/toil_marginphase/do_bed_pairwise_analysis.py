@@ -20,11 +20,12 @@ import os
 BEDS = [
     'int_q30_gte5_2xm.bed',
     'int_q30_gte10_2xm.bed',
-    'pb_q30_gte10_2xm.bed',
-    'np_q30_gte10_2xm.bed',
+    # 'pb_q30_gte10_2xm.bed',
+    # 'np_q30_gte10_2xm.bed',
     'gatk_gvcf_callable.bed',
-    'cloci_callable.bed',
-    'giab_high_conf.bed'
+    # 'cloci_callable.bed',
+    # 'giab_high_conf.bed',
+    # 'pg_confident.bed'
 ]
 
 

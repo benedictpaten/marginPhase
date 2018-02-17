@@ -26,6 +26,7 @@ L_LOG_LENGTH_BUCKETS = "log_length_buckets"
 L_MIN = "min_length"
 L_MAX = "max_length"
 L_AVG = "avg_length"
+L_MED = 'median_len'
 L_STD = "std_lenght"
 L_LOG_BASE = "log_base"
 L_LOG_MAX = "log_max"
@@ -107,6 +108,7 @@ def get_read_length_summary(read_summaries,
         L_MAX: max(all_lengths),
         L_MIN: min(all_lengths),
         L_AVG: np.mean(all_lengths),
+        L_MED: np.median(all_lengths),
         L_STD: np.std(all_lengths),
         L_LOG_BASE: length_log_base,
         L_LOG_MAX: length_log_max,
@@ -116,8 +118,22 @@ def get_read_length_summary(read_summaries,
     return summary
 
 
-def graph_read_length_summary(summary, filename):
-    pass
+def graph_read_length_summary(summary, title, save_name=None):
+    log_lengths = list(summary.keys())
+    log_lengths.sort()
+
+    x = log_lengths
+    y = [summary[l] for l in log_lengths]
+
+    import matplotlib.pyplot as plt
+    plt.bar(x, y, color='g')
+    plt.xlabel("Read Length (Log {})".format(LENGTH_LOG_BASE_DEFAULT))
+    plt.ylabel("Count")
+    plt.title(title)
+    if save_name is not None:
+        plt.savefig(save_name)
+    else:
+        plt.show()
 
 
 def print_read_length_summary(summary, verbose=False):
@@ -132,6 +148,7 @@ def print_read_length_summary(summary, verbose=False):
         print("\tREAD LENGTHS: {}".format(chrom))
         print("\t\tmin: {}".format(summary[chrom][L_MIN]))
         print("\t\tmax: {}".format(summary[chrom][L_MAX]))
+        print("\t\tmed: {}".format(summary[chrom][L_MED]))
         print("\t\tavg: {}".format(int(summary[chrom][L_AVG])))
         print("\t\tstd: {}".format(int(summary[chrom][L_STD])))
 
@@ -318,6 +335,7 @@ def main(args = None):
     bam_summaries = dict()
     length_summaries = dict()
     depth_summaries = dict()
+    all_read_summaries = list()
 
     # iterate over all alignments
     for alignment_filename in in_alignments:
@@ -395,7 +413,12 @@ def main(args = None):
         if args.read_depth:
             if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
 
+        # save
+        all_read_summaries.extend(read_summaries)
 
+    # do whole run analysis
+    if args.read_length and not args.silent:
+        print_read_length_summary({'ALL_FILES':get_read_length_summary(all_read_summaries)}, verbose=args.verbose)
 
     return bam_summaries, length_summaries, depth_summaries
 
@@ -403,4 +426,22 @@ def main(args = None):
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    graph_read_length_summary(
+        {
+            6: 4.0,
+            7: 158.0,
+            8: 1734.0,
+            9: 6376.0,
+            10:  15686.0,
+            11:  30620.0,
+            12:  69520.0,
+            13:  131802.0,
+            14:  80428.0,
+            15:  26430.0,
+            16:  21064.0,
+            17:  15700.0,
+            18:  6150.0,
+            19:  608.0,
+        }
+    , "Nanopore Read Lengths at Low Depths")
