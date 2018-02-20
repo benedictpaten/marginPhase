@@ -602,96 +602,93 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
             free(signalAlignReadLocation);
         }
 
-        // should we use the bam's reads when signalAlign data is unavailable
-        if (pSeq == NULL && !onlySignalAlign) {
-            int64_t start_read = 0;
-            int64_t end_read = 0;
-            int64_t start_ref = pos;
-            int64_t cig_idx = 0;
+        int64_t start_read = 0;
+        int64_t end_read = 0;
+        int64_t start_ref = pos;
+        int64_t cig_idx = 0;
 
-            // Find the correct starting locations on the read and reference sequence,
-            // to deal with things like inserts / deletions / soft clipping
-            while (cig_idx < aln->core.n_cigar) {
-                int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-                int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+        // Find the correct starting locations on the read and reference sequence,
+        // to deal with things like inserts / deletions / soft clipping
+        while (cig_idx < aln->core.n_cigar) {
+            int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+            int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 
-                if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                    break;
-                } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                    start_ref += cigarNum;
-                    cig_idx++;
-                } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
-                    start_read += cigarNum;
-                    cig_idx++;
-                } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                    cig_idx++;
-                } else {
-                    st_errAbort("Unidentifiable cigar operation\n");
-                }
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+                break;
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                start_ref += cigarNum;
+                cig_idx++;
+            } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+                start_read += cigarNum;
+                cig_idx++;
+            } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                cig_idx++;
+            } else {
+                st_errAbort("Unidentifiable cigar operation\n");
             }
-
-            // Check for soft clipping at the end
-            int lastCigarOp = cigar[aln->core.n_cigar - 1] & BAM_CIGAR_MASK;
-            int lastCigarNum = cigar[aln->core.n_cigar - 1] >> BAM_CIGAR_SHIFT;
-            if (lastCigarOp == BAM_CSOFT_CLIP) {
-                end_read += lastCigarNum;
-            }
-
-            // Count number of insertions & deletions in sequence
-            int64_t numInsertions = 0;
-            int64_t numDeletions = 0;
-            countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-            int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
-
-            // Create empty profile sequence
-            pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
-
-            // Variables to keep track of position in sequence / cigar operations
-            cig_idx = 0;
-            int64_t currPosInOp = 0;
-            int64_t cigarOp = -1;
-            int64_t cigarNum = -1;
-            int64_t idxInSeq = start_read;
-
-            // For each position turn character into profile probability
-            // As is, this makes the probability 1 for the base read in, and 0 otherwise
-            for (uint32_t i = 0; i < trueLength; i++) {
-
-                if (currPosInOp == 0) {
-                    cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-                    cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
-                }
-                if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                    int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
-                    pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-                    idxInSeq++;
-                } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                    if (params->gapCharactersForDeletions) {
-                        // This assumes gap character is the last character in the alphabet given
-                        pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
-                    } else {
-                        // If ignoring gaps then nothing to be done
-                    }
-                } else if (cigarOp == BAM_CINS) {
-                    // Currently, ignore insertions
-                    idxInSeq++;
-                    i--;
-                } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                    // nothing really to do here. skip to next cigar operation
-                    currPosInOp = cigarNum - 1;
-                    i--;
-                } else {
-                    st_logCritical("Unidentifiable cigar operation\n");
-                }
-
-                currPosInOp++;
-                if (currPosInOp == cigarNum) {
-                    cig_idx++;
-                    currPosInOp = 0;
-                }
-            }
-            bamReadCount++;
         }
+
+        // Check for soft clipping at the end
+        int lastCigarOp = cigar[aln->core.n_cigar - 1] & BAM_CIGAR_MASK;
+        int lastCigarNum = cigar[aln->core.n_cigar - 1] >> BAM_CIGAR_SHIFT;
+        if (lastCigarOp == BAM_CSOFT_CLIP) {
+            end_read += lastCigarNum;
+        }
+
+        // Count number of insertions & deletions in sequence
+        int64_t numInsertions = 0;
+        int64_t numDeletions = 0;
+        countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
+        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+
+        // Create empty profile sequence
+        pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
+
+        // Variables to keep track of position in sequence / cigar operations
+        cig_idx = 0;
+        int64_t currPosInOp = 0;
+        int64_t cigarOp = -1;
+        int64_t cigarNum = -1;
+        int64_t idxInSeq = start_read;
+
+        // For each position turn character into profile probability
+        // As is, this makes the probability 1 for the base read in, and 0 otherwise
+        for (uint32_t i = 0; i < trueLength; i++) {
+
+            if (currPosInOp == 0) {
+                cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+                cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+            }
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+                int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+                idxInSeq++;
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                if (params->gapCharactersForDeletions) {
+                    // This assumes gap character is the last character in the alphabet given
+                    pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
+                } else {
+                    // If ignoring gaps then nothing to be done
+                }
+            } else if (cigarOp == BAM_CINS) {
+                // Currently, ignore insertions
+                idxInSeq++;
+                i--;
+            } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+                // nothing really to do here. skip to next cigar operation
+                currPosInOp = cigarNum - 1;
+                i--;
+            } else {
+                st_logCritical("Unidentifiable cigar operation\n");
+            }
+
+            currPosInOp++;
+            if (currPosInOp == cigarNum) {
+                cig_idx++;
+                currPosInOp = 0;
+            }
+        }
+        bamReadCount++;
 
         if (pSeq != NULL) {
             profileCount++;
