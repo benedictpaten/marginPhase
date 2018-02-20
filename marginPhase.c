@@ -100,7 +100,6 @@ void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSe
     /*
      * Calculates the number of base overlaps and expected base matches between two profile sequences.
      */
-
     for(int64_t i=0; i<pSeq1->length; i++) {
         // Establish if the coordinate is in both sequences
         int64_t j = i + pSeq1->refStart - pSeq2->refStart;
@@ -122,7 +121,6 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
     /*
      * Prints the average base identity between pairwise base overlaps between the given profile sequences
      */
-
     double totalExpectedMatches = 0.0;
     int64_t totalAlignedPositions = 0;
 
@@ -329,7 +327,6 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
         st_logDebug("hap1 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-
         st_logDebug("hap2 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
         st_logDebug("hap2 vs. reads1 identity: %f\n",
@@ -343,7 +340,7 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
  */
 
 void usage() {
-fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
+fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
     fprintf(stderr,
             "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n"
@@ -363,6 +360,7 @@ fprintf(stderr, "marginPhase BAM_FILE REFERENCE_FASTA [options]\n");
 }
 
 int main(int argc, char *argv[]) {
+
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
@@ -403,8 +401,6 @@ int main(int argc, char *argv[]) {
         if (key == -1) {
             break;
         }
-
-        int i;
 
         switch (key) {
         case 'a':
@@ -531,15 +527,14 @@ int main(int argc, char *argv[]) {
     // substitution probs
     if(params->estimateReadErrorProbsEmpirically) {
         st_logInfo("> Estimating read errors from alignment (quick and dirty)\n");
+
         // Make read error substitution matrix
         double *readErrorSubModel = stReferencePriorProbs_estimateReadErrorProbs(referenceNamesToReferencePriors, params);
-
         // Set substitution probabilities
         stRPHmmParameters_setReadErrorSubstitutionParameters(params, readErrorSubModel);
 
         // Cleanup
         free(readErrorSubModel);
-
         if(st_getLogLevel() == debug) {
             stRPHmmParameters_printParameters(params, stderr);
         }
@@ -574,6 +569,7 @@ int main(int argc, char *argv[]) {
     vcfFile *vcfOutFP_all;
     bcf_hdr_t *hdr2;
     if (params->writeGVCF) {
+        // Write gVCF if specified to
         vcfOutFP_all = vcf_open(vcfOutFile_all, "w");
         hdr2 = writeVcfHeader(vcfOutFP_all, hmms, referenceFastaFile);
     }
@@ -595,6 +591,10 @@ int main(int argc, char *argv[]) {
         // Get the reads which mapped to each path
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
+
+        if (stSet_size(reads1) < 1 || stSet_size(reads2) < 1) {
+            continue;
+        }
 
         // Refine the genome fragment by repartitoning the reads iteratively
         if(params->roundsOfIterativeRefinement > 0) {
@@ -631,27 +631,30 @@ int main(int argc, char *argv[]) {
     // Write out VCF
     st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
 
-    // Compare the output vcf with the reference vcf
-    stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
-
-    if (params->compareVCFs) {
-        compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
-    }
-
-    // Write out two BAMs, one for each read partition
-    st_logInfo("\n> Writing out BAM files for each partition into files: %s.0.bam and %s.1.bam\n", outputBase,
-               outputBase);
-
-    writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
-
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
                (float) totalGFlength / stList_length(hmms));
 
-    printGenotypeResults(results);
-    free(results);
+    if (params->compareVCFs) {
+        // Compare the output vcf with the reference vcf
+        stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+        compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+        printGenotypeResults(results);
+        free(results);
+    }
+
+    // Write out two BAMs, one for each read partition
+    if (params->writeSplitSams) {
+        st_logInfo("\n> Writing out SAM files for each partition into files: %s.0.sam and %s.1.sam\n", outputBase,
+                   outputBase);
+        writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+    }
+    if (params->writeSplitBams) {
+        st_logInfo("\n> Writing out BAM files for each partition into files: %s.0.bam and %s.1.bam\n", outputBase,
+                   outputBase);
+        writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
+    }
 
     stList_destruct(profileSequences);
-
     stSet_destruct(read1Ids);
     stSet_destruct(read2Ids);
     stList_destruct(hmms);

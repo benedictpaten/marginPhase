@@ -11,7 +11,15 @@ Installation:
 
 Running the program:
 
-- to run marginPhase: ./marginPhase -b <PATH/TO/BAM> -p <PATH/TO/JSON> -r <PATH/TO/REFERENCE>
+- to run marginPhase: ./marginPhase <PATH/TO/BAM> <PATH/TO/REFERENCE> [OPTIONS]
+
+- program OPTIONS:
+    -p --params <PATH/TO/JSON>
+    -r --referenceVCF <PATH/TO/REFERENCE/VCF>
+    -a --logLevel <critical, info, debug [default = info]>
+    -o --outputBase <\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n">
+    -v --verbose <verbosity bitmask>
+
 
 - to run tests: ./allTests
 (This runs every test. You can comment out ones you don't want to run in allTests.c)
@@ -28,4 +36,3 @@ Organization:
 Optimization:
 - investigate more effective pruning in the cross product function using the probabilities
     DO PRUNING IN CROSS PRODUCT FUNCTION?
-- add iterative refinement step

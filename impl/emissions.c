@@ -405,20 +405,21 @@ double getHaplotypeProb(double characterReadProb,
     double logHapProb = ST_MATH_LOG_ZERO;
 
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        logHapProb = stMath_logAdd(logHapProb, characterReadProb +
-                                               *getSubstitutionProbSlow(params->hetSubModelSlow,
-                                                                        i, hapChar) + rootCharacterProbsOtherHap[i] + invertScaleToLogIntegerSubMatrix(referencePriorProbs[i]));
+        logHapProb = stMath_logAdd(logHapProb, characterReadProb
+                                               + *getSubstitutionProbSlow(params->hetSubModelSlow, i, hapChar)
+                                               + rootCharacterProbsOtherHap[i]
+                                               + invertScaleToLogIntegerSubMatrix(referencePriorProbs[i]));
     }
 
     return logHapProb;
 }
 
-uint64_t getReadDepth(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition, int64_t index) {
+uint8_t getReadDepth(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition, int64_t index) {
     /*
      * Calculates the read depth at a given position.
      */
-    uint64_t readDepth = 0;
-    for (int64_t i =0; i < ALPHABET_SIZE; i++) {
+    uint8_t readDepth = 0;
+    for (int64_t i = 0; i < ALPHABET_SIZE; i++) {
         readDepth += getExpectedInstanceNumber(bitCountVectors, depth, partition, index, i) / ALPHABET_MAX_PROB;
     }
     return readDepth;
@@ -506,8 +507,12 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
 
     // Update reference sequence and read depth info
     gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
-    gF->readDepth[j] = getReadDepth(bitCountVectors, column->depth, partition, index);
-
+    gF->hap1Depth[j] = getReadDepth(bitCountVectors, column->depth, partition, index);
+    gF->hap2Depth[j] = getReadDepth(bitCountVectors, column->depth, ~partition, index);
+    gF->alleleCountsHap1[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, partition, index, hapChar1) / ALPHABET_MAX_PROB;
+    gF->alleleCountsHap2[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, ~partition, index, hapChar1) / ALPHABET_MAX_PROB;
+    gF->allele2CountsHap1[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, partition, index, hapChar2) / ALPHABET_MAX_PROB;
+    gF->allele2CountsHap2[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, ~partition, index, hapChar2) / ALPHABET_MAX_PROB;
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
@@ -517,15 +522,14 @@ void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
      * probabilities for a given interval defined by a cell/column. Fills in these values in the
      * genome fragment argument.
      */
-
-    // Calculate the bit vectors
     
     //  Following makes an array in which all positions are marked active
     int64_t activePositions[column->length];
     for(int64_t i=0; i<column->length; i++) {
         activePositions[i] = i;
     }
-    
+
+    // Calculate the bit vectors
     uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
                                                          activePositions, column->length);
 

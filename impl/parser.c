@@ -9,22 +9,30 @@
 #include "stRPHmm.h"
 #include "jsmn.h"
 
+/*
+ * stBaseMapper constructor
+ */
 stBaseMapper* stBaseMapper_construct() {
     stBaseMapper *bm = (stBaseMapper*)st_malloc(sizeof(stBaseMapper));
     bm->charToNum = st_calloc(256, sizeof(uint8_t));
     bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(uint8_t));
     bm->wildcard = "";
     bm->size = 0;
-
     return bm;
 }
 
+/*
+ * stBaseMapper destructor
+ */
 void stBaseMapper_destruct(stBaseMapper *bm) {
     free(bm->charToNum);
     free(bm->numToChar);
     free(bm);
 }
 
+/*
+ * Add bases into the baseMapper object.
+ */
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
     for (uint8_t i = 0; i < strlen(bases); i++) {
         char base = bases[i];
@@ -37,10 +45,16 @@ void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
     }
 }
 
+/*
+ * Set the baseMapper wildcard.
+ */
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
     bm->wildcard = wildcard;
 }
 
+/*
+ * Given a character for a base, return the numeric value.
+ */
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
     uint8_t value = bm->charToNum[base];
     if (value >= 0) return value;
@@ -54,6 +68,9 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
     return UINT8_MAX;
 }
 
+/*
+ * Given the numeric value for a base, return the char.
+ */
 char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
@@ -61,6 +78,9 @@ char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
     return -1;
 }
 
+/*
+ * Convert json token into a string.
+ */
 char *json_token_tostr(char *js, jsmntok_t *t)
 {
     js[t->end] = '\0';
@@ -92,29 +112,39 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
     params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
 
+    // More variables for hmm stuff
+    params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
     params->maxNotSumTransitions = true;
     params->minPartitionsInAColumn = 50;
     params->maxPartitionsInAColumn = 200;
     params->minPosteriorProbabilityForPartition = 0.001;
-
-    params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
     params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
+
+    // Hmm training options
+    params->trainingIterations = 0;
     params->offDiagonalReadErrorPseudoCount = 1;
     params->onDiagonalReadErrorPseudoCount = 1;
-    params->trainingIterations = 0;
-    params->filterBadReads = false;
-    params->filterMatchThreshold = 0.92;
-    params->useReferencePrior = false;
-    params->includeInvertedPartitions = true;
-    params->filterLikelyHomozygousSites = false;
+
+    // Read filtering options
     params->minSecondMostFrequentBaseFilter = 2;
     params->minSecondMostFrequentBaseLogProbFilter = 0;
-    params->gapCharactersForDeletions = true;
     params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
+    params->filterBadReads = false;
+    params->filterMatchThreshold = 0.90;
+    params->filterLikelyHomozygousSites = false;
+    params->mapqFilter = 0;
+
+    // Other marginPhase program options
+    params->useReferencePrior = false;
+    params->gapCharactersForDeletions = true;
     params->estimateReadErrorProbsEmpirically = false;
     params->roundsOfIterativeRefinement = 0;
+    params->includeInvertedPartitions = true;
     params->compareVCFs = false;
     params->writeGVCF = false;
+    params->writeSplitSams = true;
+    params->writeSplitBams = false;
+
     setVerbosity(params, 0);
 
     FILE *fp;
@@ -165,24 +195,28 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
         else if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
             jsmntok_t hapSubTok = tokens[i+1];
             if (hapSubTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("ERROR: Size of haplotype substitution model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
+                st_errAbort("ERROR: Size of haplotype substitution model in JSON "
+                                    "does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
             }
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
                 char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(params->hetSubModel, params->hetSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
+                setSubstitutionProb(params->hetSubModel, params->hetSubModelSlow,
+                                    j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
             }
             i += hapSubTok.size + 1;
         }
         else if (strcmp(keyString, "readErrorModel") == 0) {
             jsmntok_t readErrTok = tokens[i+1];
             if (readErrTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("ERROR: Size of read error model in JSON does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
+                st_errAbort("ERROR: Size of read error model in JSON "
+                                    "does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
             }
             for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
                 jsmntok_t tok = tokens[i+j+2];
                 char *tokStr = json_token_tostr(js, &tok);
-                setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
+                setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow,
+                                    j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
 
             }
             i += readErrTok.size + 1;
@@ -337,6 +371,19 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->writeGVCF = strcmp(tokStr, "true") == 0;
             i++;
+        } else if (strcmp(keyString, "splitReadOutputType") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "sam") || strcmp(tokStr, "bam") || strcmp(tokStr, "both") || strcmp(tokStr, "neither"));
+            params->writeSplitSams = (strcmp(tokStr, "sam") == 0) || (strcmp(tokStr, "both") == 0);
+            params->writeSplitBams = (strcmp(tokStr, "bam") == 0) || (strcmp(tokStr, "both") == 0);
+            i++;
+        }
+        else if (strcmp(keyString, "mapqFilter") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            params->mapqFilter = atoi(tokStr);
+            i++;
         }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
@@ -348,17 +395,22 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     return params;
 }
 
+/*
+ * Sets the level of verbosity for vcf comparison.
+ */
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
     params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) != 0;
     params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) != 0;
     params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
 }
 
+/*
+ * Counts the number of insertions and deletions in a read, given its cigar string.
+ */
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
     for (uint32_t i = 0; i < ncigar; i++) {
         int cigarOp = cigar[i] & BAM_CIGAR_MASK;
         int cigarNum = cigar[i] >> BAM_CIGAR_SHIFT;
-
         if (cigarOp == BAM_CINS) *numInsertions += cigarNum;
         if (cigarOp == BAM_CDEL) *numDeletions += cigarNum;
     }
@@ -559,22 +611,30 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     int64_t signalAlignReadCount = 0;
     int64_t bamReadCount = 0;
     int64_t profileCount = 0;
-    int64_t filteredReads = 0;
     int64_t missingSignalAlignReads = 0;
+    int64_t filteredReads = 0;
+    int64_t filteredReads_flag = 0;
+    int64_t filteredReads_mapq = 0;
 
     while(sam_read1(in,bamHdr,aln) > 0){
         stProfileSeq *pSeq = NULL;
 
-        int64_t pos = aln->core.pos+1; //left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ; //contig name (chromosome)
-        int64_t len = aln->core.l_qseq; //length of the read.
-        uint8_t *seq = bam_get_seq(aln);  // DNA sequence
+        int64_t pos = aln->core.pos+1;                      //left most position of alignment
+        char *chr = bamHdr->target_name[aln->core.tid] ;    //contig name (chromosome)
+        int64_t len = aln->core.l_qseq;                     //length of the read.
+        uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
         char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
 
-        // Filter out any reads we don't one.
+        if (aln->core.l_qseq <= 0) {
+            filteredReads++;
+            continue;
+        }
+
+        // Filter out any reads with specified flags
         if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
             filteredReads++;
+            filteredReads_flag++;
             continue;
         }
 
@@ -582,6 +642,13 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         // know how it aligns
         if (aln->core.n_cigar == 0) {
             filteredReads++;
+            continue;
+        }
+
+        // If the mapq score is less than the given threshold, filter it out
+        if (aln->core.qual <= params->mapqFilter) {
+            filteredReads++;
+            filteredReads_mapq++;
             continue;
         }
 
@@ -629,10 +696,12 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
 
         // Check for soft clipping at the end
-        int lastCigarOp = cigar[aln->core.n_cigar - 1] & BAM_CIGAR_MASK;
-        int lastCigarNum = cigar[aln->core.n_cigar - 1] >> BAM_CIGAR_SHIFT;
-        if (lastCigarOp == BAM_CSOFT_CLIP) {
-            end_read += lastCigarNum;
+        if (aln->core.n_cigar > 1) {
+            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
+            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+            if (lastCigarOp == BAM_CSOFT_CLIP) {
+                end_read += lastCigarNum;
+            }
         }
 
         // Count number of insertions & deletions in sequence
@@ -640,6 +709,11 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         int64_t numDeletions = 0;
         countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
         int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+
+        if (trueLength <= 0) {
+            filteredReads++;
+            continue;
+        }
 
         // Create empty profile sequence
         pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
@@ -664,11 +738,10 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 idxInSeq++;
             } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                // Only add a gap character when that param is on
                 if (params->gapCharactersForDeletions) {
                     // This assumes gap character is the last character in the alphabet given
                     pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
-                } else {
-                    // If ignoring gaps then nothing to be done
                 }
             } else if (cigarOp == BAM_CINS) {
                 // Currently, ignore insertions
@@ -690,25 +763,30 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
         bamReadCount++;
 
-        if (pSeq != NULL) {
+        if (pSeq->length > 0) {
             profileCount++;
             stList_append(profileSequences, pSeq);
         }
-    }
 
-    if (signalAlignDirectory != NULL) {
-        if (missingSignalAlignReads > 0) {
-            st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
+        if (signalAlignDirectory != NULL) {
+            if (missingSignalAlignReads > 0) {
+                st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
+            }
+            st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
+                       profileCount, signalAlignReadCount, bamReadCount);
+
         }
-        st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
-                   profileCount, signalAlignReadCount, bamReadCount);
+
     }
 
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
         st_logDebug("Filtered %" PRIi64
-                " reads with either missing cigar lines or undesired sam flags (sam flags being filtered on: %s\n",
-                filteredReads, samFlagBitString);
+                " reads with either missing cigar lines, \n"
+                            "low mapq scores (filtered %d reads with scores less than %d), \n"
+                            "and undesired sam flags "
+                            "(filtered %d reads with sam flags being filtered on: %s)\n",
+                filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
         free(samFlagBitString);
     }
 
