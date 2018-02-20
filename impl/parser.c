@@ -5,6 +5,7 @@
  */
 #include <unistd.h>
 #include <htslib/sam.h>
+#include <util.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
 
@@ -394,6 +395,7 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
     char *pCStr = calloc(fieldSize, sizeof(char));
     char *pGStr = calloc(fieldSize, sizeof(char));
     char *pTStr = calloc(fieldSize, sizeof(char));
+    char *pGapStr = calloc(fieldSize, sizeof(char));
 
     // for handling the data
     int64_t refPos;
@@ -401,7 +403,7 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
     uint8_t pC;
     uint8_t pG;
     uint8_t pT;
-    uint8_t pGap = ALPHABET_MIN_PROB; //todo how to handle gap?
+    uint8_t pGap;
     uint8_t *aPtr;
     uint8_t *cPtr;
     uint8_t *gPtr;
@@ -413,7 +415,7 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         fscanf( fp, "%[^\n]\n", line);
         if (line[0] == '#') {
             if (line[1] == '#') continue;
-            if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT") != 0) {
+            if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT\tp_") != 0) {
                 st_errAbort("SignalAlign output file %s has unexpected header format: %s",
                             signalAlignReadLocation, line);
             } else {
@@ -429,8 +431,8 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
     int64_t randomSeed = st_randomInt64(0,3);
     while(!feof(fp)) {
         // scan
-        fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
-                chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr);
+        fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
+                chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr, pGapStr);
 
 
         //get reference position
@@ -452,22 +454,25 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
         pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
         pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
+        pGap = (uint8_t) (ALPHABET_MAX_PROB * atof(pGapStr));
         // we need all integer probs to sum to MAX_PROB todo is there a way to do this better?
-        while (pA + pC + pG + pT > ALPHABET_MAX_PROB) {
+        while (pA + pC + pG + pT + pGap > ALPHABET_MAX_PROB) {
             switch (randomSeed++ % 4) {
                 case 0: pA--; break;
                 case 1: pC--; break;
                 case 2: pG--; break;
                 case 3: pT--; break;
+                case 4: pGap--; break;
                 default: assert(FALSE);
             }
         }
-        while (pA + pC + pG + pT < ALPHABET_MAX_PROB) {
+        while (pA + pC + pG + pT + pGap < ALPHABET_MAX_PROB) {
             switch (randomSeed++ % 4) {
                 case 0: pA++; break;
                 case 1: pC++; break;
                 case 2: pG++; break;
                 case 3: pT++; break;
+                case 4: pGap++; break;
                 default: assert(FALSE);
             }
         }
