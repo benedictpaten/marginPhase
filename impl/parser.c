@@ -451,16 +451,16 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
 
     // for handling the data
     int64_t refPos;
-    uint8_t pA;
-    uint8_t pC;
-    uint8_t pG;
-    uint8_t pT;
-    uint8_t pGap;
-    uint8_t *aPtr;
-    uint8_t *cPtr;
-    uint8_t *gPtr;
-    uint8_t *tPtr;
-    uint8_t *gapPtr;
+    uint16_t pA;
+    uint16_t pC;
+    uint16_t pG;
+    uint16_t pT;
+    uint16_t pGap;
+    uint16_t *aPtr;
+    uint16_t *cPtr;
+    uint16_t *gPtr;
+    uint16_t *tPtr;
+    uint16_t *gapPtr;
 
     // parse header
     while(!feof(fp)) {
@@ -502,29 +502,35 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         lastReadPos = refPos;
 
         // get probabilities and save
-        pA = (uint8_t) (ALPHABET_MAX_PROB * atof(pAStr));
-        pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
-        pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
-        pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
-        pGap = (uint8_t) (ALPHABET_MAX_PROB * atof(pGapStr));
+        pA = (uint16_t) (ALPHABET_MAX_PROB * atof(pAStr));
+        pC = (uint16_t) (ALPHABET_MAX_PROB * atof(pCStr));
+        pG = (uint16_t) (ALPHABET_MAX_PROB * atof(pGStr));
+        pT = (uint16_t) (ALPHABET_MAX_PROB * atof(pTStr));
+        pGap = (uint16_t) (ALPHABET_MAX_PROB * atof(pGapStr));
         // we need all integer probs to sum to MAX_PROB todo is there a way to do this better?
-        while (pA + pC + pG + pT + pGap > ALPHABET_MAX_PROB) {
-            switch (randomSeed++ % 4) {
-                case 0: pA--; break;
-                case 1: pC--; break;
-                case 2: pG--; break;
-                case 3: pT--; break;
-                case 4: pGap--; break;
+        while ((pA + pC + pG + pT + pGap) > ALPHABET_MAX_PROB) {
+            if ((pA + pC + pG + pT + pGap) == 0) {
+                break;
+            }
+            switch (randomSeed++ % 5) {
+                case 0: if (pA != 0) pA--; break;
+                case 1: if (pC != 0) pC--; break;
+                case 2: if (pG != 0) pG--; break;
+                case 3: if (pT != 0) pT--; break;
+                case 4: if (pGap != 0) pGap--; break;
                 default: assert(FALSE);
             }
         }
-        while (pA + pC + pG + pT + pGap < ALPHABET_MAX_PROB) {
-            switch (randomSeed++ % 4) {
-                case 0: pA++; break;
-                case 1: pC++; break;
-                case 2: pG++; break;
-                case 3: pT++; break;
-                case 4: pGap++; break;
+        while ((pA + pC + pG + pT + pGap) < ALPHABET_MAX_PROB) {
+            if ((pA + pC + pG + pT + pGap) == 0) {
+                break;
+            }
+            switch (randomSeed++ % 5) {
+                case 0: if (pA != 0) pA++; break;
+                case 1: if (pC != 0) pC++; break;
+                case 2: if (pG != 0) pG++; break;
+                case 3: if (pT != 0) pT++; break;
+                case 4: if (pGap != 0) pGap++; break;
                 default: assert(FALSE);
             }
         }
@@ -566,7 +572,7 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
     }
     // sanity check on the number of modifications to the probabilities
     if (randomSeed > readLength) {
-        st_logInfo("\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
+        st_logDebug("\t\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
                     (1.0 * randomSeed / readLength), readName);
     }
 
@@ -616,7 +622,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     int64_t filteredReads_flag = 0;
     int64_t filteredReads_mapq = 0;
 
-    while(sam_read1(in,bamHdr,aln) > 0){
+    while(sam_read1(in,bamHdr,aln) > 0) {
         stProfileSeq *pSeq = NULL;
 
         int64_t pos = aln->core.pos+1;                      //left most position of alignment
@@ -646,7 +652,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
 
         // If the mapq score is less than the given threshold, filter it out
-        if (aln->core.qual <= params->mapqFilter) {
+        if (aln->core.qual < params->mapqFilter) {
             filteredReads++;
             filteredReads_mapq++;
             continue;
@@ -655,7 +661,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         // tracks how many reads there were
         readCount++;
 
-        // should we read from the signalAlign?
+        // should we read from the signalAlign directory?
         if (signalAlignDirectory != NULL) {
             // get signalAlign file (if exists)
             char *signalAlignReadLocation = stString_print("%s/%s.tsv", signalAlignDirectory, readName);
@@ -663,10 +669,19 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 // could not find the read file
                 missingSignalAlignReads++;
             } else {
+                // found the read file
                 pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper);
                 signalAlignReadCount++;
+                // we have a profile, so save it
+                stList_append(profileSequences, pSeq);
+                profileCount++;
             }
             free(signalAlignReadLocation);
+
+            // if we found a SA file or if we don't want missing reads
+            if (pSeq != NULL || onlySignalAlign) {
+                continue;
+            }
         }
 
         int64_t start_read = 0;
@@ -763,32 +778,38 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         }
         bamReadCount++;
 
+        // save profile
         if (pSeq->length > 0) {
             profileCount++;
             stList_append(profileSequences, pSeq);
         }
 
-        if (signalAlignDirectory != NULL) {
-            if (missingSignalAlignReads > 0) {
-                st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
-            }
-            st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
-                       profileCount, signalAlignReadCount, bamReadCount);
+    }
 
+    // log signal align usage
+    if (signalAlignDirectory != NULL) {
+        if (missingSignalAlignReads > 0) {
+            st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
         }
+        st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
+                   profileCount, signalAlignReadCount, bamReadCount);
 
     }
 
+    // log filtering actions
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-        st_logDebug("Filtered %" PRIi64
-                " reads with either missing cigar lines, \n"
-                            "low mapq scores (filtered %d reads with scores less than %d), \n"
-                            "and undesired sam flags "
+        st_logDebug("\tFiltered %" PRIi64
+                " reads with either missing cigar lines, "
+                            "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
+                            "\n\t\tand undesired sam flags "
                             "(filtered %d reads with sam flags being filtered on: %s)\n",
                 filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
         free(samFlagBitString);
     }
+
+    // santity check (did we accidentally save profile sequences twice?)
+    assert(stList_length(profileSequences) <= readCount);
 
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);

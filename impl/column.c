@@ -200,7 +200,11 @@ double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column) {
      * forward and backward algorithms have been run.
      */
     double p = exp(cell->forwardLogProb + cell->backwardLogProb - column->totalLogProb);
+    if (p > 1.1)
+        st_errAbort("\nERROR: invalid prob %f", p);
     assert(p <= 1.1);
+    if (p < 0.0)
+        st_errAbort("\nERROR: invalid prob %f", p);
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;
 }
