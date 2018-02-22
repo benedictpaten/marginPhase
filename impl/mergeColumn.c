@@ -132,11 +132,14 @@ double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColum
      */
     double p = exp(mCell->forwardLogProb + mCell->backwardLogProb -
            mColumn->nColumn->totalLogProb);
+
+    // for debugging/breakpointing purposes
     if (p > 1.001)
         st_errAbort("\nERROR: invalid prob %f", p);
-    assert(p <= 1.001);
     if (p < 0)
         st_errAbort("\nERROR: invalid prob %f", p);
+
+    assert(p <= 1.001);
     assert(p >= 0.0);
     return p > 1.0 ? 1.0 : p;
 }
