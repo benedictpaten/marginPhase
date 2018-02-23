@@ -51,7 +51,7 @@ MP_DSK_UNITTEST_FACTOR = .2
 
 # for debugging
 DEBUG = True
-DOCKER_LOGGING = False
+DOCKER_LOGGING = True
 
 #chunk_info_keys
 CI_CHUNK_BOUNDARY_START = "chunk_bounary_start_pos" #position where chunk split occured
@@ -332,10 +332,18 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
         raise UserError("Failed to download params {} from {}"
                         .format(os.path.basename(config.params), config.params_fileid))
 
+    # do we want to run cPecan?
+    cpecan_prob_location = None
+    if config.cpecan_probabilities:
+        cpecan_prob_location = run_cpecan_alignment(job, config, chunk_identifier, work_dir,
+                                                    chunk_name, genome_reference_name)
+
     # run marginPhase
     params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
+    if cpecan_prob_location is not None:
+        params.extend(['--signalAlignLocation', os.path.join("/data", cpecan_prob_location)])
     docker_margin_phase = "{}:{}".format(DOCKER_MARGIN_PHASE, config.margin_phase_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
@@ -365,12 +373,11 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
             if config.retry_attempts > MAX_RETRIES:
                 error = "{}: Failed to generate appropriate output files {} times".format(chunk_identifier, MAX_RETRIES)
                 job.fileStore.logToMaster(error)
-                #TODO - this is a hack!!
+                # this enables us to "recover" in the face of failure during a run
                 if CONTINUE_AFTER_FAILURE:
                     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
                     chunk_info[CI_OUTPUT_FILE_ID] = output_file_id
                     return chunk_info
-                #TODO - figure out a better method!!
                 raise UserError(error)
 
         job.fileStore.logToMaster("{}: missing output files.  Attepmting retry {}"
@@ -407,11 +414,38 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     return chunk_info
 
 
+def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_filename, reference_filename):
+    # prep
+    start = time.time()
+    job.fileStore.logToMaster("{}:run_cpecan_alignment:{}".format(chunk_identifier, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}: Running cPecan positional probabilities on {}".format(chunk_identifier, alignment_filename))
+
+    # build cPecan args
+    out_dir_name = "cPecan_out"
+    params = [['python', '/opt/cPecan/marginPhaseIntegration.py'
+               '--ref', os.path.join("/data", reference_filename),
+               '--alignment_file', os.path.join("/data", alignment_filename),
+               '--output_directory', os.path.join("/data", out_dir_name),
+               '--lastz_exe', '/opt/cPecan/cPecanLastz', '--realign_exe', '/opt/cPecan/cPecanRealign'
+              ]]
+    docker_margin_phase = "{}:{}".format(DOCKER_MARGIN_PHASE, config.margin_phase_tag)
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
+    cpecan_output = dockerCheckOutput(job, tool=docker_margin_phase, workDir=work_dir, parameters=params)
+    if DEBUG:
+        for line in (cpecan_output if type(cpecan_output) == list else cpecan_output.split('\n')):
+            job.fileStore.logToMaster("{}:cpecan: \t{}".format(chunk_identifier, line))
+
+    # cleanup
+    _log_time(job, "run_cpecan_alignment", start, config.uuid)
+    return out_dir_name
+
+
 def merge_chunks(job, config, chunk_infos):
     # prep
     start = time.time()
     work_dir = job.fileStore.getLocalTempDir()
-    job.fileStore.logToMaster("{}:merging_chunks:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}:merge_chunks:{}".format(config.uuid, datetime.datetime.now()))
     job.fileStore.logToMaster("{}: Merging {} chunks".format(config.uuid, len(chunk_infos)))
     if config.minimal_output:
         job.fileStore.logToMaster("{}: Minimal output is configured, will only save full chromosome vcf"
@@ -943,6 +977,9 @@ def generate_config():
         # Optional: Tag for marginPhase Docker image (defaults to "latest")
         margin-phase-tag: latest
 
+        # Optional: Perform cPecan single nucleotide probabilities calculation
+        cpecan-probabilities: False
+
         # Optional: URL {scheme} for default FASTA reference
         default-reference: file://path/to/reference.fa
 
@@ -1103,6 +1140,8 @@ def main():
             config.unittest = False
         if "minimal_output" not in config:
             config.minimal_output = False
+        if "cpecan_probabilities" not in config:
+            config.cpecan_probabilities = False
 
         # get samples
         samples = parse_samples(config, args.manifest)

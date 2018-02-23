@@ -28,7 +28,9 @@ reads = [
     # ['np2-q0', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
     # ['pb-q0', 'pb', 's3://margin-phase/bam/realigned/NA12878.hg38.pb.mm.{chr}.bam'],
     # ['np2-q30', 'np', 's3://margin-phase/bam/nanopore2.q30/NA12878.hg38.np2.q30.{chr}.bam'],
-    ['pb-q30', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam'],
+    # ['pb-q30', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam'],
+    ['np2-q30nsu', 'np', 's3://margin-phase/bam/nanopore2.q30nsu/NA12878.hg38.np2.q30nsu.{chr}.bam'],
+    ['pb-q30nsu', 'pb', 's3://margin-phase/bam/pacbio.q30nsu/NA12878.hg38.pb.mm.q30nsu.{chr}.bam'],
 ]
 
 chrs = ["chr{}".format(x) for x in range(1,23)]
