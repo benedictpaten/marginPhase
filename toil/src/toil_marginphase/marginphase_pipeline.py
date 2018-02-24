@@ -164,10 +164,7 @@ def prepare_input(job, sample, config):
     data_bam_location = os.path.join("/data", bam_filename)
 
     # index the bam
-    docker_params = ["index", data_bam_location]
-    if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), docker_params))
-    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=docker_params)
+    _index_bam(job, config, work_dir, bam_filename)
 
     # sanity check
     workdir_bai_location = os.path.join(work_dir, bam_filename + ".bai")
@@ -260,6 +257,14 @@ def prepare_input(job, sample, config):
 
     # log
     _log_time(job, "prepare_input", start, config.uuid)
+
+
+def _index_bam(job, config, work_dir, bam_filename):
+    data_bam_location = os.path.join("/data", bam_filename)
+    docker_params = ["index", data_bam_location]
+    if DOCKER_LOGGING:
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), docker_params))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=docker_params)
 
 
 def _write_select_column_script(work_dir, column=4):
@@ -420,9 +425,12 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
     job.fileStore.logToMaster("{}:run_cpecan_alignment:{}".format(chunk_identifier, datetime.datetime.now()))
     job.fileStore.logToMaster("{}: Running cPecan positional probabilities on {}".format(chunk_identifier, alignment_filename))
 
+    # index bam
+    _index_bam(job, config, work_dir, alignment_filename)
+
     # build cPecan args
     out_dir_name = "cPecan_out"
-    params = [['python', '/opt/cPecan/marginPhaseIntegration.py'
+    params = [['python', '/opt/cPecan/marginPhaseIntegration.py',
                '--ref', os.path.join("/data", reference_filename),
                '--alignment_file', os.path.join("/data", alignment_filename),
                '--output_directory', os.path.join("/data", out_dir_name),
