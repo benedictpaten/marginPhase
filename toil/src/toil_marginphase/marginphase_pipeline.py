@@ -36,10 +36,12 @@ DEFAULT_CONFIG_NAME = 'config-toil-marginphase.yaml'
 DEFAULT_MANIFEST_NAME = 'manifest-toil-marginphase.tsv'
 
 # docker images
-DOCKER_SAMTOOLS = "quay.io/ucsc_cgl/samtools"
+DOCKER_SAMTOOLS_IMG = "quay.io/ucsc_cgl/samtools"
 DOCKER_SAMTOOLS_TAG = "1.3--256539928ea162949d8a65ca5c79a72ef557ce7c"
-DOCKER_MARGIN_PHASE = "tpesout/margin_phase"
-DOCKER_MARGIN_PHASE_DEFAULT_TAG = "latest"
+DOCKER_MARGIN_PHASE_IMG_DEFAULT = "tpesout/margin_phase"
+DOCKER_MARGIN_PHASE_TAG_DEFAULT = "latest"
+DOCKER_CPECAN_IMG_DEFAULT = "tpesout/cpecan"
+DOCKER_CPECAN_TAG_DEFAULT = "latest"
 
 # resource
 MP_CPU = 16
@@ -137,6 +139,7 @@ def prepare_input(job, sample, config):
 
     # todo global resource estimation
     config.maxCores = min(config.maxCores, multiprocessing.cpu_count())
+    config.defaultCores = min(MP_CPU, config.maxCores)
     config.maxMemory = min(config.maxMemory, int(physicalMemory() * .95))
     #config.disk
 
@@ -177,9 +180,9 @@ def prepare_input(job, sample, config):
         ["head", "-n", "1"],
         [os.path.join("/data", _write_select_column_script(work_dir))]
     ]
-    start_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
+    start_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     get_idx_cmd[1][0] = "tail"
-    end_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
+    end_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
     # start index starts one "margin width" ahead of the read's start position
     start_idx = int(start_idx_str) - 1 + config.partition_margin
@@ -216,8 +219,8 @@ def prepare_input(job, sample, config):
         chunk_location = os.path.join(work_dir, chunk_name)
         with open(chunk_location, 'w') as out:
             if DOCKER_LOGGING:
-                job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), bam_split_command))
-            dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=bam_split_command, outfile=out)
+                job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), bam_split_command))
+            dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=bam_split_command, outfile=out)
         #document read count
         chunk_size = os.stat(chunk_location).st_size
         ci[CI_CHUNK_SIZE] = chunk_size
@@ -234,7 +237,7 @@ def prepare_input(job, sample, config):
         # enqueue marginPhase job
         if read_count > 0:
             chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
-            mp_cores = int(min(MP_CPU, config.maxCores))
+            mp_cores = config.defaultCores
             mp_mem = int(min(int(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR), config.maxMemory))
             mp_disk = int(min(int(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR), config.maxDisk))
             if config.unittest: mp_disk = mp_disk * MP_DSK_UNITTEST_FACTOR
@@ -263,8 +266,8 @@ def _index_bam(job, config, work_dir, bam_filename):
     data_bam_location = os.path.join("/data", bam_filename)
     docker_params = ["index", data_bam_location]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), docker_params))
-    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=docker_params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), docker_params))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=docker_params)
 
 
 def _write_select_column_script(work_dir, column=4):
@@ -295,7 +298,7 @@ def _get_bam_read_count(job, work_dir, bam_name):
         ["samtools", "view", os.path.join("/data", bam_name)],
         ["wc", "-l"]
     ]
-    line_count_str = dockerCheckOutput(job, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), params, work_dir)
+    line_count_str = dockerCheckOutput(job, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), params, work_dir)
     return int(line_count_str)
 
 
@@ -349,7 +352,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
               "-r",  os.path.join("/data", vcf_reference_name)]
     if cpecan_prob_location is not None:
         params.extend(['--signalAlignLocation', os.path.join("/data", cpecan_prob_location)])
-    docker_margin_phase = "{}:{}".format(DOCKER_MARGIN_PHASE, config.margin_phase_tag)
+    docker_margin_phase = "{}:{}".format(config.margin_phase_image, config.margin_phase_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
     dockerCall(job, tool=docker_margin_phase, workDir=work_dir, parameters=params)
@@ -434,12 +437,13 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
                '--ref', os.path.join("/data", reference_filename),
                '--alignment_file', os.path.join("/data", alignment_filename),
                '--output_directory', os.path.join("/data", out_dir_name),
-               '--lastz_exe', '/opt/cPecan/cPecanLastz', '--realign_exe', '/opt/cPecan/cPecanRealign'
+               '--lastz_exe', '/opt/cPecan/cPecanLastz', '--realign_exe', '/opt/cPecan/cPecanRealign',
+               '--threads', str(config.defaultCores) #is there a better way to read current allotted toil cores?
               ]]
-    docker_margin_phase = "{}:{}".format(DOCKER_MARGIN_PHASE, config.margin_phase_tag)
+    docker_cpecan = "{}:{}".format(config.cpecan_image, config.cpecan_tag)
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
-    cpecan_output = dockerCheckOutput(job, tool=docker_margin_phase, workDir=work_dir, parameters=params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_cpecan, params))
+    cpecan_output = dockerCheckOutput(job, tool=docker_cpecan, workDir=work_dir, parameters=params)
     if DEBUG:
         for line in (cpecan_output if type(cpecan_output) == list else cpecan_output.split('\n')):
             job.fileStore.logToMaster("{}:cpecan: \t{}".format(chunk_identifier, line))
@@ -717,8 +721,8 @@ def _sort_sam_file(job, config, work_dir, sam_file_name):
     sort_cmd = ["sort", "-o", os.path.join("/data/", sorted_file_name),
                 os.path.join("/data", sam_file_name)]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), sort_cmd))
-    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=sort_cmd)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), sort_cmd))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=sort_cmd)
     # replace
     subprocess.check_call(["mv", os.path.join(work_dir, sorted_file_name), os.path.join(work_dir, sam_file_name)])
 
@@ -875,14 +879,14 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
         convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
         if DOCKER_LOGGING:
             job.fileStore.logToMaster("{}: Running {} with parameters: {}"
-                                      .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), convert_cmd))
-        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=convert_cmd)
+                                      .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), convert_cmd))
+        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=convert_cmd)
 
         # index
         index_cmd = ["index", os.path.join("/data", bam_name)]
         if DOCKER_LOGGING:
-            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format("{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), index_cmd))
-        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=index_cmd)
+            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format("{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), index_cmd))
+        dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=index_cmd)
 
     # read_ids prep
     reads_filename = "{}.reads.txt".format(file_name)
@@ -893,8 +897,8 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
     # call docker
     params = [samtools_cmd, column_script, tee_script]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), params))
-    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=params)
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), params))
+    dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=params)
 
     # get output
     read_ids = set()
@@ -982,11 +986,20 @@ def generate_config():
         # Required: Minimum ratio of reads appearing in cross-chunk boundary to trigger a merge
         min-merge-ratio: .8
 
-        # Optional: Tag for marginPhase Docker image (defaults to "latest")
+        # Optional: Identifier for marginPhase Docker image
+        margin-phase-image: tpesout/margin_phase
+
+        # Optional: Tag for marginPhase Docker image
         margin-phase-tag: latest
 
         # Optional: Perform cPecan single nucleotide probabilities calculation
         cpecan-probabilities: False
+
+        # Optional: Identifier for cPecan Docker image
+        cpecan-image: tpesout/cpecan
+
+        # Optional: Tag for cpecan Docker image
+        cpecan-tag: latest
 
         # Optional: URL {scheme} for default FASTA reference
         default-reference: file://path/to/reference.fa
@@ -1108,6 +1121,7 @@ def main():
         parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
         config = argparse.Namespace(**parsed_config)
         config.maxCores = int(args.maxCores) if args.maxCores else sys.maxsize
+        config.defaultCores = int(min(MP_CPU, config.maxCores))
         config.maxDisk = int(args.maxDisk) if args.maxDisk else sys.maxint
         config.maxMemory = sys.maxint
         # fix parsing of GB to int
@@ -1142,8 +1156,14 @@ def main():
             intermediate_location = os.path.join(config.output_dir, "intermediate")
             mkdir_p(intermediate_location)
             config.intermediate_file_location = intermediate_location
+        if "margin_phase_image" not in config or len(config.margin_phase_image) == 0:
+            config.margin_phase_image = DOCKER_MARGIN_PHASE_IMG_DEFAULT
         if "margin_phase_tag" not in config or len(config.margin_phase_tag) == 0:
-            config.margin_phase_tag = DOCKER_MARGIN_PHASE_DEFAULT_TAG
+            config.margin_phase_tag = DOCKER_MARGIN_PHASE_TAG_DEFAULT
+        if "cpecan_image" not in config or len(config.margin_phase_image) == 0:
+            config.cpecan_image = DOCKER_CPECAN_IMG_DEFAULT
+        if "cpecan_tag" not in config or len(config.margin_phase_tag) == 0:
+            config.cpecan_tag = DOCKER_CPECAN_TAG_DEFAULT
         if "unittest" not in config:
             config.unittest = False
         if "minimal_output" not in config:
