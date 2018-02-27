@@ -35,6 +35,7 @@ L_ALL_LENGTHS = "all_lengths"
 # depth summary
 D_MAX = "max_depth"
 D_MIN = "min_depth"
+D_MED = "median_depth"
 D_AVG = "avg_depth"
 D_STD = "std_depth"
 D_ALL_DEPTHS = "all_depths"
@@ -227,19 +228,6 @@ def get_read_depth_summary(read_summaries, spacing, included_range=None):
             raise Exception("Range {} outside of bounds of chunks: {}".format("-".join(map(str, included_range)),
                                                                               "-".join(map(str, [start_idx*spacing, end_idx*spacing]))))
 
-        #todo
-        # # reverse lists (because we record depths backwards)
-        # depths.reverse()
-        # depth_positions.reverse()
-        # # get appropriate depths
-        # new_depths = list()
-        # new_depth_positions = list()
-        # for depth_idx in range(end_idx - start_idx + 1):
-        #     if start_idx + depth_idx < range_start: continue
-        #     if start_idx + depth_idx > range_end: break
-        #     new_depths.append(depths[depth_idx])
-        #     new_depth_positions.append(depth_positions[depth_idx])
-
         new_depths = list()
         new_depth_positions = list()
         new_depth_map = dict()
@@ -268,6 +256,7 @@ def get_read_depth_summary(read_summaries, spacing, included_range=None):
     summary = {
         D_MAX: max(depths),
         D_MIN: min(depths),
+        D_MED: np.median(depths),
         D_AVG: np.mean(depths),
         D_STD: np.std(depths),
         D_ALL_DEPTHS: depths,
@@ -282,13 +271,47 @@ def get_read_depth_summary(read_summaries, spacing, included_range=None):
     return summary
 
 
+def get_genome_depth_summary(summaries):
+    depths = list()
+    for summary in summaries.values():
+        depths.extend(summary[D_ALL_DEPTHS])
+
+    summary = {
+        D_MAX: max(depths),
+        D_MIN: min(depths),
+        D_MED: np.median(depths),
+        D_AVG: np.mean(depths),
+        D_STD: np.std(depths),
+        D_ALL_DEPTHS: None,
+        D_ALL_DEPTH_POSITIONS: None,
+        D_ALL_DEPTH_MAP: None,
+        D_ALL_DEPTH_BINS: None,
+        D_SPACING: None,
+        D_START_IDX: None,
+        D_RANGE: None
+    }
+    return summary
+
+
+
+
+
 def print_read_depth_summary(summary, verbose=False):
-    for chrom in summary.keys():
+    keys = list(summary.keys())
+    keys.sort()
+    #print genome last
+    if GENOME_KEY in keys:
+        keys.remove(GENOME_KEY)
+        keys.append(GENOME_KEY)
+
+    for chrom in keys:
         print("\tREAD DEPTHS: {}".format(chrom))
         print("\t\tmax: {}".format(summary[chrom][D_MAX]))
         print("\t\tmin: {}".format(summary[chrom][D_MIN]))
+        print("\t\tmed: {}".format(summary[chrom][D_MED]))
         print("\t\tavg: {}".format(summary[chrom][D_AVG]))
         print("\t\tstd: {}".format(summary[chrom][D_STD]))
+        if chrom == GENOME_KEY: continue
         log_depth_bins = summary[chrom][D_ALL_DEPTH_BINS]
         total_depths = sum(log_depth_bins)
         log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
@@ -406,6 +429,7 @@ def main(args = None):
             B_CHROMOSOME: GENOME_KEY
         }
         length_summaries[alignment_filename][GENOME_KEY] = get_read_length_summary(read_summaries)
+        depth_summaries[alignment_filename][GENOME_KEY] = get_genome_depth_summary(depth_summaries[alignment_filename])
 
         # print
         if args.read_length:
@@ -426,22 +450,4 @@ def main(args = None):
 
 
 if __name__ == "__main__":
-    # main()
-    graph_read_length_summary(
-        {
-            6: 4.0,
-            7: 158.0,
-            8: 1734.0,
-            9: 6376.0,
-            10:  15686.0,
-            11:  30620.0,
-            12:  69520.0,
-            13:  131802.0,
-            14:  80428.0,
-            15:  26430.0,
-            16:  21064.0,
-            17:  15700.0,
-            18:  6150.0,
-            19:  608.0,
-        }
-    , "Nanopore Read Lengths at Low Depths")
+    main()
