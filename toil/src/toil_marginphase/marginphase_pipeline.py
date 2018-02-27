@@ -367,6 +367,15 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
         if f.endswith(VCF_SUFFIX): found_vcf = True
         if f.endswith(SAM_HAP_1_SUFFIX): found_hap1 = True
         if f.endswith(SAM_HAP_2_SUFFIX): found_hap2 = True
+    if cpecan_prob_location is not None:
+        cpecan_tarball = glob.glob(os.path.join(work_dir, cpecan_prob_location, "*.tar.gz"))
+        if len(cpecan_tarball) == 0:
+            job.fileStore.logToMaster("{}: Found no cpecan output tarball!".format(chunk_identifier))
+        elif len(cpecan_tarball) > 1:
+            job.fileStore.logToMaster("{}: Found {} cpecan output tarballs!".format(chunk_identifier, len(cpecan_tarball)))
+        else:
+            job.fileStore.logToMaster("{}: Saving cpecan output tarball".format(chunk_identifier))
+            output_file_locations.append(cpecan_tarball[0])
 
     # tarball the output and save
     tarball_name = "{}.tar.gz".format(chunk_identifier)
@@ -447,6 +456,14 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
     if DEBUG:
         for line in (cpecan_output if type(cpecan_output) == list else cpecan_output.split('\n')):
             job.fileStore.logToMaster("{}:cpecan: \t{}".format(chunk_identifier, line))
+
+    # document output
+    output_files = glob.glob(os.path.join(work_dir, out_dir_name, "*.tsv".format(chunk_identifier)))
+    job.fileStore.logToMaster("{}: cPecan generated {} output files".format(chunk_identifier, len(output_files)))
+
+    # tarball the output and save
+    tarball_name = "{}.nuc_pos_prob.tar.gz".format(chunk_identifier)
+    tarball_files(tar_name=tarball_name, file_paths=output_files, output_dir=os.path.join(work_dir, out_dir_name))
 
     # cleanup
     _log_time(job, "run_cpecan_alignment", start, config.uuid)
