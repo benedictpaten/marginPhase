@@ -351,7 +351,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
               "-r",  os.path.join("/data", vcf_reference_name)]
     if cpecan_prob_location is not None:
-        params.extend(['--signalAlignLocation', os.path.join("/data", cpecan_prob_location)])
+        params.extend(['--signalAlignDir', os.path.join("/data", cpecan_prob_location)])
     docker_margin_phase = "{}:{}".format(config.margin_phase_image, config.margin_phase_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
@@ -445,8 +445,10 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
     params = [['python', '/opt/cPecan/marginPhaseIntegration.py',
                '--ref', os.path.join("/data", reference_filename),
                '--alignment_file', os.path.join("/data", alignment_filename),
+               '--workdir_directory', '/data/tmp',
                '--output_directory', os.path.join("/data", out_dir_name),
-               '--lastz_exe', '/opt/cPecan/cPecanLastz', '--realign_exe', '/opt/cPecan/cPecanRealign',
+               '--lastz_exe', '/opt/sonLib/bin/cPecanLastz', '--realign_exe', '/opt/sonLib/bin/cPecanRealign',
+               '--validate',
                '--threads', str(config.defaultCores) #is there a better way to read current allotted toil cores?
               ]]
     docker_cpecan = "{}:{}".format(config.cpecan_image, config.cpecan_tag)
@@ -902,7 +904,8 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
         # index
         index_cmd = ["index", os.path.join("/data", bam_name)]
         if DOCKER_LOGGING:
-            job.fileStore.logToMaster("{}: Running {} with parameters: {}".format("{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), index_cmd))
+            job.fileStore.logToMaster("{}: Running {} with parameters: {}"
+                                      .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), index_cmd))
         dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=index_cmd)
 
     # read_ids prep
@@ -914,7 +917,8 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
     # call docker
     params = [samtools_cmd, column_script, tee_script]
     if DOCKER_LOGGING:
-        job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), params))
+        job.fileStore.logToMaster("{}: Running {} with parameters: {}"
+                                  .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), params))
     dockerCall(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), workDir=work_dir, parameters=params)
 
     # get output
