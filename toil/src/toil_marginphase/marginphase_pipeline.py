@@ -76,6 +76,10 @@ TAG_GENOTYPE = "GT"
 TAG_PHASE_SET = "PS"
 TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
 
+# cpecan locations - todo this is kind of a hack to not have to specify in config/manifest
+CPECAN_NANOPORE_HMM = "/opt/cPecan/hmm/nanopore.hmm"
+CPECAN_PACBIO_HMM = "/opt/cPecan/hmm/pacbio.hmm"
+
 # todo move this to config?
 MAX_RETRIES = 3
 CONTINUE_AFTER_FAILURE = False
@@ -451,6 +455,8 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
                '--validate',
                '--threads', str(config.defaultCores) #is there a better way to read current allotted toil cores?
               ]]
+    hmm_location = _infer_hmm_location(chunk_identifier)
+    if hmm_location is not None: params[0].extend(['--realign_hmm', hmm_location])
     docker_cpecan = "{}:{}".format(config.cpecan_image, config.cpecan_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_cpecan, params))
@@ -470,6 +476,14 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
     # cleanup
     _log_time(job, "run_cpecan_alignment", start, config.uuid)
     return out_dir_name
+
+
+def _infer_hmm_location(identifier):
+    if "np" in identifier and "pb" not in identifier:
+        return CPECAN_NANOPORE_HMM
+    if "np" not in identifier and "pb" in identifier:
+        return CPECAN_PACBIO_HMM
+    return None
 
 
 def merge_chunks(job, config, chunk_infos):
