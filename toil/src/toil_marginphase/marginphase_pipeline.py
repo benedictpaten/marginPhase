@@ -455,8 +455,8 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
                '--validate',
                '--threads', str(config.defaultCores) #is there a better way to read current allotted toil cores?
               ]]
-    # hmm_location = _infer_hmm_location(chunk_identifier)
-    # if hmm_location is not None: params[0].extend(['--realign_hmm', hmm_location])
+    hmm_location = _infer_hmm_location(chunk_identifier)
+    if hmm_location is not None: params[0].extend(['--realign_hmm', hmm_location])
     docker_cpecan = "{}:{}".format(config.cpecan_image, config.cpecan_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_cpecan, params))
