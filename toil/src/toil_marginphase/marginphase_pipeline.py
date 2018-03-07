@@ -962,8 +962,15 @@ def consolidate_output(job, config, chunk_infos):
             out_tars.append(tar_file)
             with tarfile.open(tar_file, 'r') as f_in:
                 for tarinfo in f_in:
-                    if config.minimal_output and (tarinfo.name.endswith("bam") or tarinfo.name.endswith("sam")):
+                    if config.minimal_output and (
+                                tarinfo.name.endswith("bam") or
+                                tarinfo.name.endswith("sam") or
+                                tarinfo.name.endswith("bai")):
                         job.fileStore.logToMaster("{}: (Minimal Output) Skipping output file: {}".format(
+                            config.uuid, tarinfo.name))
+                        continue
+                    if config.minimal_cpecan_output and tarinfo.name.endswith("gz"):
+                        job.fileStore.logToMaster("{}: (Minimal cPecan Output) Skipping output file: {}".format(
                             config.uuid, tarinfo.name))
                         continue
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
@@ -1048,8 +1055,11 @@ def generate_config():
         # Optional: URL {scheme} for default reference vcf
         default-vcf: file://path/to/reference.fa
 
-        # Optional: Only outputs the full vcf for each sample
+        # Optional: Don't include BAM or SAM in output
         minimal-output: False
+
+        # Optional: Don't include cPecan probabilities in output
+        minimal-cpecan-output: False
 
         # Optional: for debugging, this will save intermediate files to the output directory (only works for file:// scheme)
         save-intermediate-files: False
@@ -1203,6 +1213,8 @@ def main():
             config.unittest = False
         if "minimal_output" not in config:
             config.minimal_output = False
+        if "minimal_cpecan_output" not in config:
+            config.minimal_cpecan_output = False
         if "cpecan_probabilities" not in config:
             config.cpecan_probabilities = False
 
