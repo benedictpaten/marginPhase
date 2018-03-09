@@ -434,7 +434,8 @@ void appendProbsToList(stList *probabilityList, uint8_t pA, uint8_t pC, uint8_t 
     stList_append(probabilityList, gapPtr);
 }
 
-stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocation, char *readName, stBaseMapper *baseMapper) {
+stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocation, char *readName,
+                                                    stBaseMapper *baseMapper, stRPHmmParameters *params) {
     // get signalAlign file
     FILE *fp = fopen(signalAlignReadLocation,"r");
 
@@ -451,16 +452,16 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
 
     // for handling the data
     int64_t refPos;
-    uint16_t pA;
-    uint16_t pC;
-    uint16_t pG;
-    uint16_t pT;
-    uint16_t pGap;
-    uint16_t *aPtr;
-    uint16_t *cPtr;
-    uint16_t *gPtr;
-    uint16_t *tPtr;
-    uint16_t *gapPtr;
+    uint8_t pA;
+    uint8_t pC;
+    uint8_t pG;
+    uint8_t pT;
+    uint8_t pGap;
+    uint8_t *aPtr;
+    uint8_t *cPtr;
+    uint8_t *gPtr;
+    uint8_t *tPtr;
+    uint8_t *gapPtr;
 
     // parse header
     while(!feof(fp)) {
@@ -502,11 +503,11 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         lastReadPos = refPos;
 
         // get probabilities and save
-        pA = (uint16_t) (ALPHABET_MAX_PROB * atof(pAStr));
-        pC = (uint16_t) (ALPHABET_MAX_PROB * atof(pCStr));
-        pG = (uint16_t) (ALPHABET_MAX_PROB * atof(pGStr));
-        pT = (uint16_t) (ALPHABET_MAX_PROB * atof(pTStr));
-        pGap = (uint16_t) (ALPHABET_MAX_PROB * atof(pGapStr));
+        pA = (uint8_t) (ALPHABET_MAX_PROB * atof(pAStr));
+        pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
+        pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
+        pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
+        pGap = (uint8_t) (ALPHABET_MAX_PROB * atof(pGapStr));
         // we need all integer probs to sum to MAX_PROB todo is there a way to do this better?
         while ((pA + pC + pG + pT + pGap) > ALPHABET_MAX_PROB) {
             if ((pA + pC + pG + pT + pGap) == 0) {
@@ -561,7 +562,12 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'C')] =  *cPtr;
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'G')] =  *gPtr;
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'T')] =  *tPtr;
-        pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = *gapPtr;
+        if (params->gapCharactersForDeletions) {
+            // This assumes gap character is the last character in the alphabet given
+            pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = *gapPtr;
+        } else {
+            pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MIN_PROB;
+        }
 
         position++;
     }
@@ -672,7 +678,7 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
                 missingSignalAlignReads++;
             } else {
                 // found the read file
-                pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper);
+                pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper, params);
                 signalAlignReadCount++;
                 // we have a profile, so save it
                 stList_append(profileSequences, pSeq);
