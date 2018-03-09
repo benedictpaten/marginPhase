@@ -571,7 +571,9 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
                     stList_length(probabilityList) - 5 * position, readLength, signalAlignReadLocation);
     }
     // sanity check on the number of modifications to the probabilities
-    if (randomSeed > readLength) {
+    // we only modify probability of bases with some probability, so to fix a rounding error, we should at worst have
+    //  to make 4 modifications per location
+    if (randomSeed > (4 * readLength)) {
         st_logDebug("\t\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
                     (1.0 * randomSeed / readLength), readName);
     }
