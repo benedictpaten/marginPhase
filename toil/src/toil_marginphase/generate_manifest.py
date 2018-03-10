@@ -47,7 +47,7 @@ subs = ['hs9993']
 # ptypes = ['rp-train1', 'nofilt']
 # ptypes = ['rp', 'rp-train1', 'plain']
 # ptypes = ['rp-nofilt']
-ptypes = ['rp-nofilt-train1', 'rp-nofilt-train3']
+ptypes = ['rp-nofilt-train1.v1', 'rp-nofilt-train1.v2', 'rp-nofilt-train2.v1']
 # ptypes = ['plain']
 
 have_everything = True

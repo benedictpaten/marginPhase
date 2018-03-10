@@ -78,7 +78,7 @@ TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
 
 # cpecan locations - todo this is kind of a hack to not have to specify in config/manifest
 CPECAN_NANOPORE_HMM = "/opt/cPecan/hmm/nanopore.hmm"
-CPECAN_PACBIO_HMM = "/opt/cPecan/hmm/pacbio.hmm"
+CPECAN_PACBIO_HMM = "/opt/cPecan/hmm/pacbio.s1-gc5.hmm"
 
 # todo move this to config?
 MAX_RETRIES = 3
