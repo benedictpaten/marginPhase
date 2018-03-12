@@ -21,7 +21,7 @@ UUID = "NA12878.hg38.{read0}.{chr}.pec_hmm.{sub}.{ptype}"
 BAM = ""
 CHR = "{chr}"
 FA = "s3://margin-phase/fasta/hg38.{chr}.fa"
-PARAMS = "s3://margin-phase/params/pecan/params.{read1}.{sub}.{ptype}.pec_hmm_1.json"
+PARAMS = "s3://margin-phase/params/pecan/params.{read1}.{sub}.{ptype}.pec_hmm_2.json"
 VCF = "s3://margin-phase/vcf/NA12878.hg38.PG.{chr}.vcf"
 
 reads = [
@@ -36,7 +36,7 @@ reads = [
 chrs = ["chr{}".format(x) for x in range(1,23)]
 chrs.append("chrX")
 # chrs.append("chrY")
-chrs = ['chr18']
+# chrs = ['chr18']
 
 # subs = ['998', '9995']
 # subs = ['9995']
@@ -47,7 +47,8 @@ subs = ['hs9993']
 # ptypes = ['rp-train1', 'nofilt']
 # ptypes = ['rp', 'rp-train1', 'plain']
 # ptypes = ['rp-nofilt']
-ptypes = ['rp-nofilt-train1.v1', 'rp-nofilt-train1.v2', 'rp-nofilt-train2.v1']
+# ptypes = ['rp-nofilt-train1.v1', 'rp-nofilt-train1.v2', 'rp-nofilt-train2.v1']
+ptypes = ['rp-nofilt.v3']
 # ptypes = ['plain']
 
 have_everything = True
