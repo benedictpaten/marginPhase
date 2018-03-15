@@ -38,8 +38,8 @@ def main():
             qualities = read.query_alignment_qualities
             if qualities is None: qualities = MISSING_QUAL_CHAR * len(sequence)
             outfile.write("@{}\n{}\n+\n{}\n".format(read_name, sequence, qualities))
-            assert(len(sequence) == len(qualities), "Read {} (#{}) has sequence len {} and qual len {}"
-                   .format(read_name, read_count, len(sequence), len(qualities)))
+            assert len(sequence) == len(qualities), "Read {} (#{}) has sequence len {} and qual len {}"\
+                .format(read_name, read_count, len(sequence), len(qualities))
     finally:
         if samfile is not None: samfile.close()
         if outfile is not None and args.output is not None: outfile.close()
