@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 from __future__ import print_function
+
 import argparse
 import glob
 import gzip
+import math
+import pickle
 import sys
+import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-import pickle
-import time
-import math
 
 # file names
 FP_NAME = "fp.vcf.gz"
