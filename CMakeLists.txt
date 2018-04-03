@@ -1,12 +1,13 @@
-cmake_minimum_required(VERSION 3.7)
+ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
+#todo remove debug flags
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O3 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt -DNDEBUG")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -g -O0 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt -DNDEBUG")
 
 include(FindOpenMP)
 if(OPENMP_FOUND)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g ${OpenMP_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
@@ -28,6 +29,7 @@ include_directories(inc)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(externalTools/jsmn)
+include_directories(externalTools/linear-haplotypes/src)
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -198,7 +200,27 @@ set(SOURCE_FILES
         impl/parser.c
         impl/outputWriter.c
         impl/vcfTools.c
+
         )
+
+set(LH_SOURCES
+	externalTools/linear-haplotypes/src/allele.cpp
+	externalTools/linear-haplotypes/src/delay_multiplier.cpp
+	externalTools/linear-haplotypes/src/DP_map.cpp
+	externalTools/linear-haplotypes/src/haplotype_manager.cpp
+	externalTools/linear-haplotypes/src/haplotype_state_node.cpp
+	externalTools/linear-haplotypes/src/haplotype_state_tree.cpp
+	externalTools/linear-haplotypes/src/input_haplotype.cpp
+	externalTools/linear-haplotypes/src/interface.cpp
+	externalTools/linear-haplotypes/src/math.cpp
+	externalTools/linear-haplotypes/src/penalty_set.cpp
+	externalTools/linear-haplotypes/src/probability.cpp
+	externalTools/linear-haplotypes/src/reference.cpp
+	externalTools/linear-haplotypes/src/reference_sequence.cpp
+	externalTools/linear-haplotypes/src/row_set.cpp
+	externalTools/linear-haplotypes/src/set_of_extensions.cpp
+	)
+	
 
 
 # Dependencies for htslib
@@ -230,6 +252,7 @@ endif()
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
 add_library(jsmn externalTools/jsmn/jsmn.c)
+add_library(lh ${LH_SOURCES})
 
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
@@ -239,6 +262,11 @@ target_link_libraries(marginPhase son hts jsmn)
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare son hts jsmn)
 
+add_executable(linhapexample tests/linhapexample.c impl/vcftohapman.c)
+target_link_libraries(linhapexample hts lh)
+
+add_executable(combinedmodel combinedmodel.c impl/vcftohapman.c)
+target_link_libraries(combinedmodel hts lh)
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c ${SOURCE_FILES})

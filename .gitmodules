@@ -7,3 +7,6 @@
 [submodule "externalTools/jsmn"]
 	path = externalTools/jsmn
 	url = https://github.com/zserge/jsmn
+[submodule "externalTools/linear-haplotypes"]
+	path = externalTools/linear-haplotypes
+	url = https://github.com/yoheirosen/linear-haplotypes.git
