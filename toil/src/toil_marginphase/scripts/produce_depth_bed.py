@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 from __future__ import print_function
+
 import argparse
 import glob
 import sys
-import os
+
 import bam_stats
+import os
 
 chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
 xor = lambda a, b: (a and not b) or (not a and b)
@@ -80,11 +82,16 @@ def get_genome_read_depths(bam_file, args):
 
     for chromosome in chromosomes:
         if verbose:
-            log("{}: \t{}: \tread_count: {}".format(bam_file, chromosome, bam_summaries[bam_file][chromosome][bam_stats.B_FILTERED_READ_COUNT]))
-            log("{}: \t{}: \tmax_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_MAX]))
-            log("{}: \t{}: \tmin_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_MIN]))
-            log("{}: \t{}: \tavg_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_AVG]))
-            log("{}: \t{}: \tstd_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][bam_stats.D_STD]))
+            log("{}: \t{}: \tread_count: {}".format(bam_file, chromosome, bam_summaries[bam_file][chromosome][
+                bam_stats.B_FILTERED_READ_COUNT]))
+            log("{}: \t{}: \tmax_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][
+                bam_stats.D_MAX]))
+            log("{}: \t{}: \tmin_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][
+                bam_stats.D_MIN]))
+            log("{}: \t{}: \tavg_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][
+                bam_stats.D_AVG]))
+            log("{}: \t{}: \tstd_depth:  {}".format(bam_file, chromosome, depth_summaries[bam_file][chromosome][
+                bam_stats.D_STD]))
 
         positions[chromosome] = depth_summaries[bam_file][chromosome][bam_stats.D_ALL_DEPTH_MAP]
         pass

@@ -17,24 +17,26 @@ def assert_exists(loc):
         return False
     return True
 
-UUID = "NA12878.hg38.{read0}.{chr}.{sub}.{ptype}"
+UUID = "NA12878.hg38.{read0}.{chr}.pec_hmm.{sub}.{ptype}"
 BAM = ""
 CHR = "{chr}"
 FA = "s3://margin-phase/fasta/hg38.{chr}.fa"
-PARAMS = "s3://margin-phase/params/q30-test/params.{read1}.{sub}.{ptype}.json"
+PARAMS = "s3://margin-phase/params/pecan/params.{read1}.{sub}.{ptype}.pec_hmm_2.json"
 VCF = "s3://margin-phase/vcf/NA12878.hg38.PG.{chr}.vcf"
 
 reads = [
-    # ['np2-q0', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
-    # ['pb-q0', 'pb', 's3://margin-phase/bam/realigned/NA12878.hg38.pb.mm.{chr}.bam'],
+    ['np2-q0', 'np', 's3://margin-phase/bam/nanopore2/NA12878.hg38.np2.{chr}.bam'],
+    ['pb-q0', 'pb', 's3://margin-phase/bam/realigned/NA12878.hg38.pb.mm.{chr}.bam'],
     # ['np2-q30', 'np', 's3://margin-phase/bam/nanopore2.q30/NA12878.hg38.np2.q30.{chr}.bam'],
-    ['pb-q30', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam'],
+    # ['pb-q30', 'pb', 's3://margin-phase/bam/pacbio.q30/NA12878.hg38.pb.mm.q30.{chr}.bam'],
+#     ['np2-q30nsu', 'np', 's3://margin-phase/bam/nanopore2.q30nsu/NA12878.hg38.np2.q30nsu.{chr}.bam'],
+#     ['pb-q30nsu', 'pb', 's3://margin-phase/bam/pacbio.q30nsu/NA12878.hg38.pb.mm.q30nsu.{chr}.bam'],
 ]
 
-chrs = ["chr{}".format(x) for x in range(1,23)]
-chrs.append("chrX")
+# chrs = ["chr{}".format(x) for x in range(1,23)]
+# chrs.append("chrX")
 # chrs.append("chrY")
-# chrs = ['chr18']
+chrs = ['chr6']
 
 # subs = ['998', '9995']
 # subs = ['9995']
@@ -44,7 +46,9 @@ subs = ['hs9993']
 # ptypes = ['rp', 'plain']
 # ptypes = ['rp-train1', 'nofilt']
 # ptypes = ['rp', 'rp-train1', 'plain']
-ptypes = ['rp-nofilt']
+# ptypes = ['rp-nofilt']
+# ptypes = ['rp-nofilt-train1.v1', 'rp-nofilt-train1.v2', 'rp-nofilt-train2.v1']
+ptypes = ['rp-nofilt.v3']
 # ptypes = ['plain']
 
 have_everything = True

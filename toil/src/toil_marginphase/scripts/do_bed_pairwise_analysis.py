@@ -17,17 +17,33 @@ import os
 #     # 'giab_high_conf.bed'
 # ]
 
+# BEDS = [
+#     'int_q30_gte5_2xm.bed',
+#     'int_q30_gte10_2xm.bed',
+#     # 'pb_q30_gte10_2xm.bed',
+#     # 'np_q30_gte10_2xm.bed',
+#     'gatk_gvcf_callable.bed',
+#     # 'cloci_callable.bed',
+#     # 'giab_high_conf.bed',
+#     # 'pg_confident.bed'
+# ]
+
 BEDS = [
-    'int_q30_gte5_2xm.bed',
-    'int_q30_gte10_2xm.bed',
-    # 'pb_q30_gte10_2xm.bed',
-    # 'np_q30_gte10_2xm.bed',
+    'int_gte5_lt2xm.bed',
+    'int_gte10_lt2xm.bed',
+    'np_gte5.bed',
+    'np_gte10.bed',
+    'np_gte15.bed',
+    'np_gte20.bed',
+    'pb_gte5.bed',
+    'pb_gte10.bed',
+    'pb_gte15.bed',
+    'pb_gte20.bed',
     'gatk_gvcf_callable.bed',
     # 'cloci_callable.bed',
-    # 'giab_high_conf.bed',
+    'giab_high_conf.bed',
     # 'pg_confident.bed'
 ]
-
 
 
 GENOME = 'hg38.genome'

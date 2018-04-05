@@ -2,7 +2,8 @@ FROM ubuntu:14.04
 MAINTAINER Trevor Pesout, tpesout@ucsc.edu
 
 # update and install dependencies
-RUN apt-get update && apt-get -y install git make gcc bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev libpthread-stubs0-dev g++ wget libbz2-dev liblzma-dev autoconf
+RUN apt-get update && apt-get -y install git make gcc bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev \
+    libpthread-stubs0-dev g++ wget libbz2-dev liblzma-dev autoconf
 
 # install latest cmake
 WORKDIR /tmp

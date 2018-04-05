@@ -105,7 +105,6 @@ stSet *findReadsThatWereMoreProbablyGeneratedByTheOtherHaplotype(uint64_t *haplo
 }
 
 static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *column, stSet *flippingReads) {
-    stSetIterator *setIt = stSet_getIterator(flippingReads);
 
     for(uint64_t i=0; i<column->depth; i++) {
         stProfileSeq *pSeq = column->seqHeaders[i];

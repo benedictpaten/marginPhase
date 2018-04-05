@@ -257,7 +257,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     // Create the initial list of HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
-    st_logInfo("Got %" PRIi64 " hmms before splitting\n", stList_length(hmms));
+    st_logInfo("\tGot %" PRIi64 " hmms before splitting\n", stList_length(hmms));
 
     // Break up the hmms where the phasing is uncertain
     st_logInfo("> Breaking apart HMMs where the phasing is uncertain\n");
@@ -350,8 +350,13 @@ fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
     fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
     fprintf(stderr, "-p --params          : Input params file\n");
     fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
-    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs\n");
+    fprintf(stderr, "-s --signalAlignDir  : Directory of signalAlign single nucleotide probabilities files\n");
+    fprintf(stderr, "-S --onlySignalAlign : Use only signalAlign information (discard BAM reads which aren't in SA dir)\n");
+    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
+    fprintf(stderr, "                     \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
+    fprintf(stderr, "                     \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+
 }
 
 int main(int argc, char *argv[]) {
@@ -361,10 +366,11 @@ int main(int argc, char *argv[]) {
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
     char *referenceVCF = NULL;
-
+    char *signalAlignLocation = NULL;
     char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t verboseBitstring = -1;
+    bool onlySignalAlign = false;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -384,11 +390,13 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
-                { "verbose", optional_argument, 0, 'v'},
+                { "signalAlignDir", required_argument, 0, 's'},
+                { "onlySignalAlign", no_argument, 0, 'S'},
+                { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v::p:r:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:p:r:s:hS", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -411,9 +419,17 @@ int main(int argc, char *argv[]) {
         case 'r':
             referenceVCF = stString_copy(optarg);
             break;
+        case 's':
+            signalAlignLocation = stString_copy(optarg);
+            if (signalAlignLocation[strlen(optarg) - 1] == '/') {
+                signalAlignLocation[strlen(optarg) - 1] = '\0';
+            }
+            break;
+        case 'S':
+            onlySignalAlign = true;
+            break;
         case 'v':
-            if (optarg == NULL) verboseBitstring = (1 << 16) - 1;
-            else verboseBitstring = atoi(optarg);
+            verboseBitstring = atoi(optarg);
             break;
         default:
             usage();
@@ -444,7 +460,13 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
+    int64_t readCount = NULL;
+    if (signalAlignLocation == NULL) {
+        readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
+    } else {
+        readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params,
+                                              signalAlignLocation, onlySignalAlign);
+    }
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
     // Print some stats about the input sequences
@@ -611,7 +633,6 @@ int main(int argc, char *argv[]) {
 
     st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
                (float) totalGFlength / stList_length(hmms));
-
 
     if (params->compareVCFs) {
         // Compare the output vcf with the reference vcf

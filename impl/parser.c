@@ -3,8 +3,9 @@
  *
  * Released under the MIT license, see LICENSE.txt
  */
-
+#include <unistd.h>
 #include <htslib/sam.h>
+#include <util.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
 
@@ -398,9 +399,9 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
  * Sets the level of verbosity for vcf comparison.
  */
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
-    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) > 0;
-    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) > 0;
-    params->verboseFalseNegatives = !((bitstring & LOG_FALSE_NEGATIVES) > 0);
+    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) != 0;
+    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) != 0;
+    params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
 }
 
 /*
@@ -415,6 +416,187 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
     }
 }
 
+void appendProbsToList(stList *probabilityList, uint8_t pA, uint8_t pC, uint8_t pG, uint8_t pT, uint8_t pGap) {
+    uint8_t *aPtr = calloc(1, sizeof(uint8_t));
+    uint8_t *cPtr = calloc(1, sizeof(uint8_t));
+    uint8_t *gPtr = calloc(1, sizeof(uint8_t));
+    uint8_t *tPtr = calloc(1, sizeof(uint8_t));
+    uint8_t *gapPtr = calloc(1, sizeof(uint8_t));
+    *aPtr = pA;
+    *cPtr = pC;
+    *gPtr = pG;
+    *tPtr = pT;
+    *gapPtr = pGap;
+    stList_append(probabilityList, aPtr);
+    stList_append(probabilityList, cPtr);
+    stList_append(probabilityList, gPtr);
+    stList_append(probabilityList, tPtr);
+    stList_append(probabilityList, gapPtr);
+}
+
+stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocation, char *readName,
+                                                    stBaseMapper *baseMapper, stRPHmmParameters *params) {
+    // get signalAlign file
+    FILE *fp = fopen(signalAlignReadLocation,"r");
+
+    // for scanning the file
+    int fieldSize = 2048;
+    char *line = calloc(2048, sizeof(char));
+    char *chromStr = calloc(fieldSize, sizeof(char));
+    char *refPosStr = calloc(fieldSize, sizeof(char));
+    char *pAStr = calloc(fieldSize, sizeof(char));
+    char *pCStr = calloc(fieldSize, sizeof(char));
+    char *pGStr = calloc(fieldSize, sizeof(char));
+    char *pTStr = calloc(fieldSize, sizeof(char));
+    char *pGapStr = calloc(fieldSize, sizeof(char));
+
+    // for handling the data
+    int64_t refPos;
+    uint8_t pA;
+    uint8_t pC;
+    uint8_t pG;
+    uint8_t pT;
+    uint8_t pGap;
+    uint8_t *aPtr;
+    uint8_t *cPtr;
+    uint8_t *gPtr;
+    uint8_t *tPtr;
+    uint8_t *gapPtr;
+
+    // parse header
+    while(!feof(fp)) {
+        fscanf( fp, "%[^\n]\n", line);
+        if (line[0] == '#') {
+            if (line[1] == '#') continue;
+            if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT\tp_") != 0) {
+                st_errAbort("SignalAlign output file %s has unexpected header format: %s",
+                            signalAlignReadLocation, line);
+            } else {
+                break;
+            }
+        }
+    }
+
+    // get probabilities
+    stList* probabilityList = stList_construct3(0, free);
+    uint64_t firstReadPos = NULL;
+    uint64_t lastReadPos = NULL;
+    int64_t randomSeed = st_randomInt64(0,3);
+    while(!feof(fp)) {
+        // scan
+        fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
+                chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr, pGapStr);
+
+
+        //get reference position
+        refPos = atoi(refPosStr);
+        // check for gaps todo this might actually be a bug or something in signalAlign
+        while (firstReadPos != NULL && refPos > lastReadPos + 1) {
+            appendProbsToList(probabilityList, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB,
+                              ALPHABET_MIN_PROB, ALPHABET_MAX_PROB);
+            lastReadPos++;
+        }
+        // check for inserts
+        if (firstReadPos != NULL && refPos < lastReadPos + 1) continue;
+        // update first and last read position
+        if (firstReadPos == NULL) firstReadPos = refPos;
+        lastReadPos = refPos;
+
+        // get probabilities and save
+        pA = (uint8_t) (ALPHABET_MAX_PROB * atof(pAStr));
+        pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
+        pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
+        pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
+        pGap = (uint8_t) (ALPHABET_MAX_PROB * atof(pGapStr));
+        // we need all integer probs to sum to MAX_PROB todo is there a way to do this better?
+        while ((pA + pC + pG + pT + pGap) > ALPHABET_MAX_PROB) {
+            if ((pA + pC + pG + pT + pGap) == 0) {
+                break;
+            }
+            switch (randomSeed++ % 5) {
+                case 0: if (pA != 0) pA--; break;
+                case 1: if (pC != 0) pC--; break;
+                case 2: if (pG != 0) pG--; break;
+                case 3: if (pT != 0) pT--; break;
+                case 4: if (pGap != 0) pGap--; break;
+                default: assert(FALSE);
+            }
+        }
+        while ((pA + pC + pG + pT + pGap) < ALPHABET_MAX_PROB) {
+            if ((pA + pC + pG + pT + pGap) == 0) {
+                break;
+            }
+            switch (randomSeed++ % 5) {
+                case 0: if (pA != 0) pA++; break;
+                case 1: if (pC != 0) pC++; break;
+                case 2: if (pG != 0) pG++; break;
+                case 3: if (pT != 0) pT++; break;
+                case 4: if (pGap != 0) pGap++; break;
+                default: assert(FALSE);
+            }
+        }
+
+        // save the values in a list todo this is not particularly efficient
+        appendProbsToList(probabilityList, pA, pC, pG, pT, pGap);
+    }
+    // now we're done with the file
+    fclose(fp);
+
+    // Create empty profile sequence
+    uint64_t readLength = lastReadPos - firstReadPos + 1;
+    stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chromStr, readName, firstReadPos + 1, readLength);
+
+    // copy probabilities over
+    uint64_t position = 0;
+    stListIterator *itor = stList_getIterator(probabilityList);
+    while (position < readLength) {
+        // get the locations of the probabilities
+        aPtr = stList_getNext(itor);
+        cPtr = stList_getNext(itor);
+        gPtr = stList_getNext(itor);
+        tPtr = stList_getNext(itor);
+        gapPtr = stList_getNext(itor);
+
+        // assign the probabilities
+        pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'A')] =  *aPtr;
+        pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'C')] =  *cPtr;
+        pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'G')] =  *gPtr;
+        pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'T')] =  *tPtr;
+        if (params->gapCharactersForDeletions) {
+            // This assumes gap character is the last character in the alphabet given
+            pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = *gapPtr;
+        } else {
+            pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MIN_PROB;
+        }
+
+        position++;
+    }
+    // we should have nothing left over in the list
+    if (stList_getNext(itor) != NULL) {
+        st_errAbort("Probability list has %d extra elements, with read length %d for file %s",
+                    stList_length(probabilityList) - 5 * position, readLength, signalAlignReadLocation);
+    }
+    // sanity check on the number of modifications to the probabilities
+    // we only modify probability of bases with some probability, so to fix a rounding error, we should at worst have
+    //  to make 4 modifications per location
+    if (randomSeed > (4 * readLength)) {
+        st_logDebug("\t\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
+                    (1.0 * randomSeed / readLength), readName);
+    }
+
+    stList_destruct(probabilityList);
+    free(line);
+    free(chromStr);
+    free(refPosStr);
+    free(pAStr);
+    free(pCStr);
+    free(pGStr);
+    free(pTStr);
+
+    return pSeq;
+}
+
+
 
 /* Parse reads within an input interval of a reference sequence of a bam file
  * and create a list of profile sequences by turning characters into profile probabilities.
@@ -423,6 +605,13 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
  * signal level alignments).
  * */
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
+    return parseReadsWithSignalAlign(profileSequences, bamFile, baseMapper, params, NULL, false);
+}
+int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
+                                  stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign) {
+    if (signalAlignDirectory != NULL) {
+        st_logInfo("\tModifying probabilities from signalAlign files in %s\n", signalAlignDirectory);
+    }
 
     samFile *in = hts_open(bamFile, "r");
     if (in == NULL) {
@@ -433,11 +622,16 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
+    int64_t signalAlignReadCount = 0;
+    int64_t bamReadCount = 0;
+    int64_t profileCount = 0;
+    int64_t missingSignalAlignReads = 0;
     int64_t filteredReads = 0;
     int64_t filteredReads_flag = 0;
     int64_t filteredReads_mapq = 0;
 
-    while(sam_read1(in,bamHdr,aln) > 0){
+    while(sam_read1(in,bamHdr,aln) > 0) {
+        stProfileSeq *pSeq = NULL;
 
         int64_t pos = aln->core.pos+1;                      //left most position of alignment
         char *chr = bamHdr->target_name[aln->core.tid] ;    //contig name (chromosome)
@@ -466,13 +660,38 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         }
 
         // If the mapq score is less than the given threshold, filter it out
-        if (aln->core.qual <= params->mapqFilter) {
+        if (aln->core.qual < params->mapqFilter) {
             filteredReads++;
             filteredReads_mapq++;
             continue;
         }
 
+        // tracks how many reads there were
         readCount++;
+
+        // should we read from the signalAlign directory?
+        if (signalAlignDirectory != NULL) {
+            // get signalAlign file (if exists)
+            char *signalAlignReadLocation = stString_print("%s/%s.tsv", signalAlignDirectory, readName);
+            if (access(signalAlignReadLocation, F_OK) == -1) {
+                // could not find the read file
+                missingSignalAlignReads++;
+            } else {
+                // found the read file
+                pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper, params);
+                signalAlignReadCount++;
+                // we have a profile, so save it
+                stList_append(profileSequences, pSeq);
+                profileCount++;
+            }
+            free(signalAlignReadLocation);
+
+            // if we found a SA file or if we don't want missing reads
+            if (pSeq != NULL || onlySignalAlign) {
+                continue;
+            }
+        }
+
         int64_t start_read = 0;
         int64_t end_read = 0;
         int64_t start_ref = pos;
@@ -480,14 +699,13 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 
         // Find the correct starting locations on the read and reference sequence,
         // to deal with things like inserts / deletions / soft clipping
-        while(cig_idx < aln->core.n_cigar) {
+        while (cig_idx < aln->core.n_cigar) {
             int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
             int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp==BAM_CDIFF) {
+            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 break;
-            }
-            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 start_ref += cigarNum;
                 cig_idx++;
             } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
@@ -521,7 +739,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
         }
 
         // Create empty profile sequence
-        stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
+        pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
 
         // Variables to keep track of position in sequence / cigar operations
         cig_idx = 0;
@@ -542,8 +760,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
                 pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
                 idxInSeq++;
-            }
-            else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
                 // Only add a gap character when that param is on
                 if (params->gapCharactersForDeletions) {
                     // This assumes gap character is the last character in the alphabet given
@@ -555,7 +772,7 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 i--;
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
                 // nothing really to do here. skip to next cigar operation
-                currPosInOp = cigarNum-1;
+                currPosInOp = cigarNum - 1;
                 i--;
             } else {
                 st_logCritical("Unidentifiable cigar operation\n");
@@ -567,26 +784,45 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
                 currPosInOp = 0;
             }
         }
+        bamReadCount++;
+
+        // save profile
         if (pSeq->length > 0) {
+            profileCount++;
             stList_append(profileSequences, pSeq);
         }
+
     }
 
+    // log signal align usage
+    if (signalAlignDirectory != NULL) {
+        if (missingSignalAlignReads > 0) {
+            st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
+        }
+        st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
+                   profileCount, signalAlignReadCount, bamReadCount);
+
+    }
+
+    // log filtering actions
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-        st_logDebug("Filtered %" PRIi64
-                " reads with either missing cigar lines, \n"
-                            "low mapq scores (filtered %d reads with scores less than %d), \n"
-                            "and undesired sam flags "
+        st_logDebug("\tFiltered %" PRIi64
+                " reads with either missing cigar lines, "
+                            "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
+                            "\n\t\tand undesired sam flags "
                             "(filtered %d reads with sam flags being filtered on: %s)\n",
                 filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
         free(samFlagBitString);
     }
 
+    // santity check (did we accidentally save profile sequences twice?)
+    assert(stList_length(profileSequences) <= readCount);
+
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
 
-    return readCount;
+    return profileCount;
 }
 
