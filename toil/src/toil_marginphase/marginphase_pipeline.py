@@ -45,7 +45,7 @@ DOCKER_CPECAN_TAG_DEFAULT = "latest"
 
 # resource
 MP_CPU = 16
-MP_MEM_BAM_FACTOR = 1024 #todo account for learning iterations
+MP_MEM_BAM_FACTOR = 512 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
 MP_DSK_BAM_FACTOR = 5.5 #input bam chunk, output (in sam fmt), vcf etc
 MP_DSK_REF_FACTOR = 2.5
@@ -533,7 +533,7 @@ def merge_chunks(job, config, chunk_infos):
 
         # error out if missing files
         if sam_hap1_file is None or sam_hap2_file is None or vcf_file is None:
-            error = "{}: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
+            error = "{}:merge_chunks: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
                 config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk)
             job.fileStore.logToMaster(error)
             if CONTINUE_AFTER_FAILURE:
@@ -552,10 +552,6 @@ def merge_chunks(job, config, chunk_infos):
                                   mp_identifier="{}".format(chunk_idx),
                                   reverse_phasing=False)
 
-        # all chunk merging is skipped if we only want minimal output
-        if config.minimal_output:
-            continue
-
         # get reads
         read_start_pos = chunk[CI_CHUNK_START]
         read_end_pos = chunk[CI_CHUNK_BOUNDARY_START] + config.partition_margin
@@ -563,7 +559,7 @@ def merge_chunks(job, config, chunk_infos):
                                            config.contig_name, read_start_pos, read_end_pos)
         curr_hap2_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap2_file),
                                            config.contig_name, read_start_pos, read_end_pos)
-        job.fileStore.logToMaster("{}: found {} reads for the start of chunk {} with read boundaries {} - {}"
+        job.fileStore.logToMaster("{}:merge_chunks: found {} reads for the start of chunk {} with read boundaries {} - {}"
                                   .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
                                           chunk[CI_CHUNK_INDEX], read_start_pos, read_end_pos))
 
@@ -580,7 +576,7 @@ def merge_chunks(job, config, chunk_infos):
 
         # this indicates there was no (or equal) read overlap.  probably it means we've just started the process
         if same_haplotype_ordering is None:
-            job.fileStore.logToMaster("{}: starting new merged chunk idx {} from chunk {}"
+            job.fileStore.logToMaster("{}:merge_chunks: starting new merged chunk idx {} from chunk {}"
                                       .format(config.uuid, merged_chunk_idx, chunk_idx))
 
             # get merged haplotype names and files
@@ -608,7 +604,7 @@ def merge_chunks(job, config, chunk_infos):
             # increment merged chunk idx
             merged_chunk_idx += 1
         elif same_haplotype_ordering:
-            job.fileStore.logToMaster("{}:chunk{}: writing same ordering"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}: writing same ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
             #append reads
             excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, read_ids_to_exclude)
@@ -616,10 +612,10 @@ def merge_chunks(job, config, chunk_infos):
             #document excluded reads
             excl_ids_hap1_cnt = len(excl_ids_hap1)
             excl_ids_hap2_cnt = len(excl_ids_hap2)
-            job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
                                               int(100.0 * excl_ids_hap1_cnt / max(len(curr_hap1_read_ids), 1))))
-            job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
                                               int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
@@ -627,7 +623,7 @@ def merge_chunks(job, config, chunk_infos):
                                       chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
                                       mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=True)
         else:
-            job.fileStore.logToMaster("{}:chunk{}: writing different ordering"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}: writing different ordering"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX]))
             #append reads
             excl_ids_hap1 = _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, read_ids_to_exclude)
@@ -635,10 +631,10 @@ def merge_chunks(job, config, chunk_infos):
             #document excluded reads
             excl_ids_hap1_cnt = len(excl_ids_hap1)
             excl_ids_hap2_cnt = len(excl_ids_hap2)
-            job.fileStore.logToMaster("{}:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}:hap1: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap1_cnt,
                                               int(100.0 * excl_ids_hap1_cnt / max(len(curr_hap1_read_ids), 1))))
-            job.fileStore.logToMaster("{}:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}:hap2: excluded {} reads ({}% of overlap) during merge"
                                       .format(config.uuid, chunk[CI_CHUNK_INDEX], excl_ids_hap2_cnt,
                                               int(100.0 * excl_ids_hap2_cnt / max(len(curr_hap2_read_ids), 1))))
             # append vcf calls
@@ -654,7 +650,7 @@ def merge_chunks(job, config, chunk_infos):
         prev_hap2_read_ids = _get_read_ids_in_range(job, config, tar_work_dir, os.path.basename(sam_hap2_file),
                                                 config.contig_name, read_start_pos, read_end_pos)
         prev_chunk = chunk
-        job.fileStore.logToMaster("{}: found {} reads for the end of chunk {} with read boundaries {} - {}"
+        job.fileStore.logToMaster("{}:merge_chunks: found {} reads for the end of chunk {} with read boundaries {} - {}"
                                   .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
                                           prev_chunk[CI_CHUNK_INDEX], read_start_pos, read_end_pos))
 
@@ -666,7 +662,7 @@ def merge_chunks(job, config, chunk_infos):
     #todo run vcfCompare on the full_merged_vcf_file
 
     # tarball the output and save
-    job.fileStore.logToMaster("{}: Output files for merge:".format(config.uuid))
+    job.fileStore.logToMaster("{}:merge_chunks: Output files for merge:".format(config.uuid))
     output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))
     output_file_locations.sort()
     for f in output_file_locations:
@@ -685,18 +681,18 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
                                                   prev_hap1_read_ids, prev_hap2_read_ids,
                                                   curr_hap1_read_ids, curr_hap2_read_ids):
     # prep
-    match_identifier = "{}:read_matching {}-{}".format(config.uuid, prev_chunk[CI_CHUNK_INDEX], curr_chunk[CI_CHUNK_INDEX])
+    match_identifier = "{}:merge_chunks:read_matching: {}-{}".format(config.uuid, prev_chunk[CI_CHUNK_INDEX], curr_chunk[CI_CHUNK_INDEX])
 
     # total counts
     prev_hap1_read_count = len(prev_hap1_read_ids)
     prev_hap2_read_count = len(prev_hap2_read_ids)
     curr_hap1_read_count = len(curr_hap1_read_ids)
     curr_hap2_read_count = len(curr_hap2_read_ids)
-    job.fileStore.logToMaster("{}: \tprev_hap1_cnt:{} \tprev_hap2_cnt:{} \tcurr_hap1_cnt:{} \tcurr_hap2_cnt:{}"
+    job.fileStore.logToMaster("{}:merge_chunks:read_matching: \tprev_hap1_cnt:{} \tprev_hap2_cnt:{} \tcurr_hap1_cnt:{} \tcurr_hap2_cnt:{}"
                               .format(match_identifier, prev_hap1_read_count, prev_hap2_read_count,
                                       curr_hap1_read_count, curr_hap2_read_count))
     if len(curr_hap1_read_ids.intersection(curr_hap2_read_ids)) > 0:
-        job.fileStore.logToMaster("{}: chunk {} had {} reads in both haplotypes!"
+        job.fileStore.logToMaster("{}:merge_chunks:read_matching: chunk {} had {} reads in both haplotypes!"
                                   .format(config.uuid, curr_chunk[CI_CHUNK_INDEX],
                                           len(curr_hap1_read_ids.intersection(curr_hap2_read_ids))))
 
@@ -729,18 +725,18 @@ def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_
         ratio_supporting_different_ordering = 1.0 * reads_supporting_different_ordering / reads_in_currs_and_in_prevs
 
     # log stuff (maybe this can be removed later)
-    job.fileStore.logToMaster("{}: \tcur1_prev1:{} \tcur1_prev2:{} \tcur1_only:{} \tcur2_prev1:{} \tcur2_prev2:{} \tcur2_only:{}"
+    job.fileStore.logToMaster("{}:merge_chunks:read_matching: \tcur1_prev1:{} \tcur1_prev2:{} \tcur1_only:{} \tcur2_prev1:{} \tcur2_prev2:{} \tcur2_only:{}"
                               .format(match_identifier, reads_in_curr1_and_prev1, reads_in_curr1_and_prev2,
                                       reads_in_curr1_and_neither_prev, reads_in_curr2_and_prev1,
                                       reads_in_curr2_and_prev2, reads_in_curr2_and_neither_prev))
-    job.fileStore.logToMaster("{}: \treads_supporting_current_order:{} ({}) \treads_supporting_different_order:{} ({})"
+    job.fileStore.logToMaster("{}:merge_chunks:read_matching: \treads_supporting_current_order:{} ({}) \treads_supporting_different_order:{} ({})"
                               .format(match_identifier, reads_supporting_same_ordering, ratio_supporting_same_ordering,
                                       reads_supporting_different_ordering, ratio_supporting_different_ordering))
 
     # return recommendation:
     # None if no recommendation, else returns whether data indicates same ordering (T or F)
     if (ratio_supporting_same_ordering < config.min_merge_ratio) and (ratio_supporting_different_ordering < config.min_merge_ratio):
-        job.fileStore.logToMaster("{}: ratios supporting orderings below threshold {}"
+        job.fileStore.logToMaster("{}:merge_chunks:read_matching: ratios supporting orderings below threshold {}"
                                   .format(match_identifier, config.min_merge_ratio))
         return None
     return ratio_supporting_same_ordering > ratio_supporting_different_ordering
