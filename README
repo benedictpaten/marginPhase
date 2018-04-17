@@ -1,7 +1,13 @@
-This is a simple demo program for doing genotyping, methylation calling and haplotyping.
+This is a program for genotyping and haplotyping.
 
+## Dependencies ##
+cmake version 3.7 (or higher):
+wget https://cmake.org/files/v3.7/cmake-3.7.2-Linux-x86_64.sh && mkdir /opt/cmake && sh cmake-3.7.2-Linux-x86_64.sh --prefix=/opt/cmake --skip-license && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
-## Installation ##
+If you're on Ubuntu:
+```
+apt-get -y install git make gcc g++ autoconf bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev libpthread-stubs0-dev libbz2-dev liblzma-dev
+```
 
 - Check out the repository:
 ```
@@ -61,12 +67,7 @@ make
 - to run tests: ./allTests
 (This runs every test. You can comment out ones you don't want to run in allTests.c)
 
-Notes:
+## Notes: ##
 - you'll need to have a reference genome available to write out all the files
 
-## Dependencies ##
-If you're on Ubuntu, try:
-```
-apt-get -y install git make gcc g++ autoconf bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev libpthread-stubs0-dev libbz2-dev liblzma-dev
-```
 
