@@ -1,14 +1,17 @@
-This is a simple demo program for doing genotyping, methylation calling and haplotyping.
+This is a program for genotyping and haplotyping.
 
 Dependencies:
-apt-get -y install git make gcc g++ autoconf bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev libpthread-stubs0-dev libbz2-dev liblzma-dev 
+apt-get install git make gcc g++ autoconf bzip2 lzma-dev zlib1g-dev libcurl4-openssl-dev libcrypto++-dev libpthread-stubs0-dev libbz2-dev liblzma-dev 
+
+cmake version 3.7 (or higher):
+wget https://cmake.org/files/v3.7/cmake-3.7.2-Linux-x86_64.sh && mkdir /opt/cmake && sh cmake-3.7.2-Linux-x86_64.sh --prefix=/opt/cmake --skip-license && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
 Installation:
 
 - check out the repository: git clone git@github.com:benedictpaten/marginPhase.git
-- check out submodules: cd marginPhase ; git submodule update --init
-- build htsLib (only required once): cd externalTools/htsLib ; autoconf ; autoheader ; ./configure ; make; cd ../../
-- make build directory: mkdir build ; cd build
+- check out submodules: cd marginPhase && git submodule update --init
+- build htsLib (only required once): cd externalTools/htslib && autoconf && autoheader && ./configure && make && cd ../../
+- make build directory: mkdir build && cd build
 - generate Makefile with cmake: cmake ..
 - build with make: make
 
