@@ -2,7 +2,9 @@ This is a program for genotyping and haplotyping.
 
 ## Dependencies ##
 cmake version 3.7 (or higher):
+```
 wget https://cmake.org/files/v3.7/cmake-3.7.2-Linux-x86_64.sh && mkdir /opt/cmake && sh cmake-3.7.2-Linux-x86_64.sh --prefix=/opt/cmake --skip-license && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
+```
 
 If you're on Ubuntu:
 ```
@@ -22,7 +24,7 @@ git submodule update --init
 
 - Build htsLib (only required once):
 ```
-cd externalTools/htsLib
+cd externalTools/htslib
 autoconf
 autoheader
 ./configure
