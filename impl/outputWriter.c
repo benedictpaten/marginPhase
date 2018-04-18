@@ -28,7 +28,7 @@ void writeSplitBams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
+    st_logDebug("\tWriting haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
     BGZF *out1 = bgzf_open(haplotype1BamOutFile, "w");
     r = bam_hdr_write(out1, bamHdr);
 
@@ -56,7 +56,7 @@ void writeSplitBams(char *bamInFile, char *bamOutBase,
             readCountFiltered++;
         }
     }
-    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+    st_logInfo("\tRead counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
 
     // Cleanup
     bam_destroy1(aln);
@@ -86,7 +86,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1SamOutFile, haplotype2SamOutFile);
+    st_logDebug("\tWriting haplotype output to: %s and %s \n", haplotype1SamOutFile, haplotype2SamOutFile);
     samFile *out1 = hts_open(haplotype1SamOutFile, "w");
     r = sam_hdr_write(out1, bamHdr);
 
@@ -96,6 +96,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     samFile *out3 = hts_open(unmatchedSamOutFile, "w");
     r = sam_hdr_write(out3, bamHdr);
 
+
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
@@ -103,18 +104,29 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
+        kstring_t *str = (kstring_t*)calloc(1, sizeof(kstring_t));
+        ksprintf(str, "%s", readName);
+        kputc(';', str);
         if (stSet_search(haplotype1Ids, readName) != NULL) {
+            ksprintf(str, "%s", "1");
+            bam_aux_append(aln, "MP", 'Z', str->l + 1, (uint8_t*)str->s);
             r = sam_write1(out1, bamHdr, aln);
             readCountH1++;
         } else if (stSet_search(haplotype2Ids, readName) != NULL) {
+            ksprintf(str, "%s", "2");
+            bam_aux_append(aln, "MP", 'Z', str->l + 1, (uint8_t*)str->s);
             r = sam_write1(out2, bamHdr, aln);
             readCountH2++;
         } else {
+            ksprintf(str, "%s", "0");
+            bam_aux_append(aln, "MP", 'Z', str->l + 1, (uint8_t*)str->s);
             r = sam_write1(out3, bamHdr, aln);
             readCountFiltered++;
         }
+        free(str->s);
+        free(str);
     }
-    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+    st_logInfo("\tRead counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
 
     // Cleanup
     bam_destroy1(aln);

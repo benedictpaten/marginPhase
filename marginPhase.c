@@ -593,6 +593,8 @@ int main(int argc, char *argv[]) {
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
 
         if (stSet_size(reads1) < 1 || stSet_size(reads2) < 1) {
+            addProfileSeqIdsToSet(reads1, read1Ids);
+            addProfileSeqIdsToSet(reads2, read2Ids);
             continue;
         }
 
@@ -644,12 +646,12 @@ int main(int argc, char *argv[]) {
 
     // Write out two BAMs, one for each read partition
     if (params->writeSplitSams) {
-        st_logInfo("\n> Writing out SAM files for each partition into files: %s.0.sam and %s.1.sam\n", outputBase,
+        st_logInfo("\n> Writing out SAM files for each partition\n", outputBase,
                    outputBase);
         writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
     }
     if (params->writeSplitBams) {
-        st_logInfo("\n> Writing out BAM files for each partition into files: %s.0.bam and %s.1.bam\n", outputBase,
+        st_logInfo("\n> Writing out BAM files for each partition\n", outputBase,
                    outputBase);
         writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
     }

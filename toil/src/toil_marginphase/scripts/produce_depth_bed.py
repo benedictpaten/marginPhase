@@ -74,7 +74,8 @@ def get_genome_read_depths(bam_file, args):
     if args.filter_secondary: bs_args.append( '--filter_secondary')
     if args.filter_primary: bs_args.append( '--filter_primary')
 
-    bam_summaries, length_summaries, depth_summaries = bam_stats.main(bs_args)
+    bam_summaries, _, depth_summaries = bam_stats.main(bs_args)
+    if bam_stats.GENOME_KEY in depth_summaries[bam_file]: del depth_summaries[bam_file][bam_stats.GENOME_KEY]
 
     positions = dict()
     chromosomes = list(depth_summaries[bam_file].keys())

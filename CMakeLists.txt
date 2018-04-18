@@ -3,7 +3,7 @@ project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
 
 #include(FindOpenMP)
 #if(OPENMP_FOUND)
@@ -16,6 +16,7 @@ set(HTSLIB_HEADERS
         externalTools/htslib
         externalTools/htslib/htslib
         externalTools/htslib/cram
+        externalTools/htslib/os
         )
 set(SONLIB_HEADERS
         externalTools/sonLib/C/inc
@@ -46,6 +47,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/cram/rANS_static.c
         externalTools/htslib/cram/sam_header.c
         externalTools/htslib/cram/string_alloc.c
+        externalTools/htslib/os/rand.c
         externalTools/htslib/test/fieldarith.c
         externalTools/htslib/test/hfile.c
         externalTools/htslib/test/hts_endian.c
