@@ -143,7 +143,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->compareVCFs = false;
     params->writeGVCF = false;
     params->writeSplitSams = true;
-    params->writeSplitBams = false;
+    params->writeSplitBams = true;
 
     setVerbosity(params, 0);
 

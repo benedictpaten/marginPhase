@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <memory.h>
+#include <hashTableC.h>
 
 #include "stRPHmm.h"
 #include "sonLib.h"
@@ -559,8 +560,8 @@ int main(int argc, char *argv[]) {
     stList *hmms = createHMMs(profileSequences, referenceNamesToReferencePriors, params);
 
     // Prep for BAM outputs
-    stSet *read1Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
-    stSet *read2Ids = stSet_construct3(stHash_stringKey, stHash_stringEqualKey, NULL);
+    stReadHaplotypePartitionTable *readHaplotypePartitions = stReadHaplotypePartitionTable_construct(
+            stList_length(profileSequences));
     int64_t totalGFlength = 0;
 
     // Start VCF generation
@@ -592,9 +593,9 @@ int main(int argc, char *argv[]) {
         stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, true);
         stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, false);
 
+        // Only one haplotype found (likely a small set of reads)
         if (stSet_size(reads1) < 1 || stSet_size(reads2) < 1) {
-            addProfileSeqIdsToSet(reads1, read1Ids);
-            addProfileSeqIdsToSet(reads2, read2Ids);
+            populateReadHaplotypePartitionTable(readHaplotypePartitions, gF, hmm, path);
             continue;
         }
 
@@ -603,8 +604,8 @@ int main(int argc, char *argv[]) {
             stGenomeFragment_refineGenomeFragment(gF, reads1, reads2, hmm, path, params->roundsOfIterativeRefinement);
         }
 
-        addProfileSeqIdsToSet(reads1, read1Ids);
-        addProfileSeqIdsToSet(reads2, read2Ids);
+        // save bipartition
+        populateReadHaplotypePartitionTable(readHaplotypePartitions, gF, hmm, path);
 
         // Log information about the hmm
         logHmm(hmm, reads1, reads2, gF);
@@ -614,7 +615,6 @@ int main(int argc, char *argv[]) {
         if (params->writeGVCF) {
             writeVcfFragment(vcfOutFP_all, hdr2, gF, referenceFastaFile, baseMapper, true);
         }
-
 
         // Cleanup
         stGenomeFragment_destruct(gF);
@@ -648,17 +648,16 @@ int main(int argc, char *argv[]) {
     if (params->writeSplitSams) {
         st_logInfo("\n> Writing out SAM files for each partition\n", outputBase,
                    outputBase);
-        writeSplitSams(bamInFile, outputBase, read1Ids, read2Ids);
+        writeSplitSams(bamInFile, outputBase, readHaplotypePartitions);
     }
     if (params->writeSplitBams) {
         st_logInfo("\n> Writing out BAM files for each partition\n", outputBase,
                    outputBase);
-        writeSplitBams(bamInFile, outputBase, read1Ids, read2Ids);
+        writeHaplotypedBam(bamInFile, outputBase, readHaplotypePartitions);
     }
 
     stList_destruct(profileSequences);
-    stSet_destruct(read1Ids);
-    stSet_destruct(read2Ids);
+    stReadHaplotypePartitionTable_destruct(readHaplotypePartitions);
     stList_destruct(hmms);
 
     stBaseMapper_destruct(baseMapper);

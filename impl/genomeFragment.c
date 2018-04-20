@@ -119,7 +119,7 @@ static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *colum
 
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2, stRPHmm *hmm, stList *path, int64_t maxIterations) {
     /*
-     * Refines the genome fragment and reas partitions by greedily and iteratively
+     * Refines the genome fragment and read partitions by greedily and iteratively
      * moving reads between the two partitions according to which haplotype they best match.
      */
 

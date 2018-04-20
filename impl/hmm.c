@@ -410,7 +410,6 @@ stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool pa
      * For an hmm and path through the hmm (e.g. computed with stRPHmm_forwardTraceBack) returns the
      * set of sequences in the hmm that are predicted to come from one given haplotype.
      */
-
     stSet *seqsInHap1 = stSet_construct();
 
     // For each cell/column pair
@@ -423,6 +422,7 @@ stSet *stRPHmm_partitionSequencesByStatePath(stRPHmm *hmm, stList *path, bool pa
             if((seqInHap1(cell->partition, j) && partition1) ||
                     (!seqInHap1(cell->partition, j) && !partition1)) {
                 stSet_insert(seqsInHap1, column->seqHeaders[j]);
+                // todo add to readHaplotypes
             }
         }
 

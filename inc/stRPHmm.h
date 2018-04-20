@@ -570,10 +570,34 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
 void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 
-// Output file writing
-void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
-void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
-void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
+// Tracking haplotypes for read
+typedef struct _stReadHaplotypeSequence stReadHaplotypeSequence;
+struct _stReadHaplotypeSequence {
+    int64_t readStart;
+    int64_t phaseBlock;
+    int64_t length;
+    int8_t haplotype;
+    void *next;
+};
+stReadHaplotypeSequence *stReadHaplotypeSequence_construct(int64_t readStart, int64_t phaseBlock, int64_t length,
+                                                           int8_t haplotype);
+char *stReadHaplotypeSequence_toString(stReadHaplotypeSequence *rhs);
+char *stReadHaplotypeSequence_toStringEmpty();
+void stReadHaplotypeSequence_destruct(stReadHaplotypeSequence * rhs);
 
+// Tracking haplotypes for all reads
+typedef struct hashtable stReadHaplotypePartitionTable;
+stReadHaplotypePartitionTable *stReadHaplotypePartitionTable_construct(int64_t initialSize);
+void stReadHaplotypePartitionTable_add(stReadHaplotypePartitionTable *hpt, char *readName, int64_t readStart,
+                                       int64_t phaseBlock, int64_t length, int8_t haplotype);
+void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
+void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
+                                         stList *path);
+
+
+// Output file writing
+void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions);
+void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 #endif /* ST_RP_HMM_H_ */
