@@ -231,7 +231,6 @@ void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profil
         }
 
         // Cleanup
-        //TODO I think we need to destruct each hmm in here too
         stList_destruct(hmms);
 
         // Normalise the probabilities

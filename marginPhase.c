@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <memory.h>
 #include <hashTableC.h>
+#include <unistd.h>
 
 #include "stRPHmm.h"
 #include "sonLib.h"
@@ -350,9 +351,9 @@ fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
     fprintf(stderr, "-a --logLevel        : Set the log level [default = info]\n");
     fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
     fprintf(stderr, "-p --params          : Input params file\n");
-    fprintf(stderr, "-r --referenceVCF    : Reference vcf file, to compare output to\n");
-    fprintf(stderr, "-s --signalAlignDir  : Directory of signalAlign single nucleotide probabilities files\n");
-    fprintf(stderr, "-S --onlySignalAlign : Use only signalAlign information (discard BAM reads which aren't in SA dir)\n");
+    fprintf(stderr, "-r --referenceVCF    : Reference vcf file for output comparison and training\n");
+    fprintf(stderr, "-s --singleNuclProb  : Directory of single nucleotide probabilities files\n");
+    fprintf(stderr, "-S --onlySNP         : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
     fprintf(stderr, "-v --verbose         : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
     fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
     fprintf(stderr, "                     \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
@@ -367,11 +368,11 @@ int main(int argc, char *argv[]) {
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
     char *referenceVCF = NULL;
-    char *signalAlignLocation = NULL;
+    char *singleNucleotideProbabilityDirectory = NULL;
     char *outputBase = "output";
     char *paramsFile = "params.json";
     int64_t verboseBitstring = -1;
-    bool onlySignalAlign = false;
+    bool onlySNP = false;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -391,8 +392,8 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
-                { "signalAlignDir", required_argument, 0, 's'},
-                { "onlySignalAlign", no_argument, 0, 'S'},
+                { "singleNuclProb", required_argument, 0, 's'},
+                { "onlySNP", no_argument, 0, 'S'},
                 { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
@@ -421,13 +422,13 @@ int main(int argc, char *argv[]) {
             referenceVCF = stString_copy(optarg);
             break;
         case 's':
-            signalAlignLocation = stString_copy(optarg);
-            if (signalAlignLocation[strlen(optarg) - 1] == '/') {
-                signalAlignLocation[strlen(optarg) - 1] = '\0';
+            singleNucleotideProbabilityDirectory = stString_copy(optarg);
+            if (singleNucleotideProbabilityDirectory[strlen(optarg) - 1] == '/') {
+                singleNucleotideProbabilityDirectory[strlen(optarg) - 1] = '\0';
             }
             break;
         case 'S':
-            onlySignalAlign = true;
+            onlySNP = true;
             break;
         case 'v':
             verboseBitstring = atoi(optarg);
@@ -462,11 +463,11 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     int64_t readCount = NULL;
-    if (signalAlignLocation == NULL) {
+    if (singleNucleotideProbabilityDirectory == NULL) {
         readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
     } else {
-        readCount = parseReadsWithSignalAlign(profileSequences, bamInFile, baseMapper, params,
-                                              signalAlignLocation, onlySignalAlign);
+        readCount = parseReadsWithSingleNucleotideProbs(profileSequences, bamInFile, baseMapper, params,
+                                                        singleNucleotideProbabilityDirectory, onlySNP);
     }
     st_logInfo("\tCreated %d profile sequences\n", readCount);
 
@@ -637,11 +638,18 @@ int main(int argc, char *argv[]) {
                (float) totalGFlength / stList_length(hmms));
 
     if (params->compareVCFs) {
-        // Compare the output vcf with the reference vcf
-        stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
-        compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
-        printGenotypeResults(results);
-        free(results);
+        st_logInfo("\n> Comparing VCFs\n");
+        if (referenceVCF == NULL) {
+            st_logInfo("\tParameter file specifies VCFs should be compared, but reference VCF CL parameter is missing\n");
+        } else if (access(referenceVCF, F_OK) == -1) {
+            st_logInfo("\tReference VCF file does not exist: %s\n", referenceVCF);
+        } else {
+            // Compare the output vcf with the reference vcf
+            stGenotypeResults *results = st_calloc(1, sizeof(stGenotypeResults));
+            compareVCFs(stderr, hmms, vcfOutFile, referenceVCF, baseMapper, results, params);
+            printGenotypeResults(results);
+            free(results);
+        }
     }
 
     // Write out two BAMs, one for each read partition
