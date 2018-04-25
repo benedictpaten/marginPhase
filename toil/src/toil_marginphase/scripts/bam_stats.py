@@ -13,13 +13,17 @@ R_START_POS = "start_pos"
 R_END_POS = "end_pos"
 R_LENGTH = "length"
 R_SECONDARY = "secondary_alignment"
+R_SUPPLEMENTARY = "supplementary_alignment"
 R_MAPPING_QUALITY = "mapping_quality"
 R_CHROMOSOME = "chromosome"
 
 #bam summary
 B_READ_COUNT = "read_count"
+B_SECONDARY_COUNT = "secondary_count"
+B_SUPPLEMENTARY_COUNT = "supplementary_count"
 B_FILTERED_READ_COUNT = "filtered_read_count"
 B_CHROMOSOME = "chromosome"
+B_MEDIAN_QUAL = "median_quality"
 
 #length summary
 L_LOG_LENGTH_BUCKETS = "log_length_buckets"
@@ -50,12 +54,15 @@ D_RANGE = "depth_range"
 GENOME_KEY = "genome"
 LENGTH_LOG_BASE_DEFAULT=2
 LENGTH_LOG_MAX_DEFAULT=32
+percent = lambda small, big: int(100.0 * small / big)
 
 
 def parse_args(args = None):
     parser = argparse.ArgumentParser("Provides statistics on a BAM/SAM file")
     parser.add_argument('--input_glob', '-i', dest='input_glob', default="*.bam", type=str,
                         help='Glob matching SAM or BAM file(s)')
+    parser.add_argument('--generic_stats', '-g', dest='generic_stats', action='store_true', default=False,
+                        help='Print generic stats for all files')
     parser.add_argument('--read_length', '-l', dest='read_length', action='store_true', default=False,
                         help='Print statistics on read length for all files')
     parser.add_argument('--read_depth', '-d', dest='read_depth', action='store_true', default=False,
@@ -85,6 +92,7 @@ def get_read_summary(read):
         R_LENGTH: read.reference_length,
         R_ID: read.query_name,
         R_SECONDARY: read.is_secondary,
+        R_SUPPLEMENTARY: read.is_supplementary,
         R_MAPPING_QUALITY: read.mapping_quality,
         R_CHROMOSOME: read.reference_name
     }
@@ -137,6 +145,33 @@ def graph_read_length_summary(summary, title, save_name=None):
         plt.show()
 
 
+def print_generic_read_stats(summary, verbose=False):
+    keys = list(summary.keys())
+    keys.sort()
+    #print genome last
+    if GENOME_KEY in keys:
+        keys.remove(GENOME_KEY)
+        keys.append(GENOME_KEY)
+    #print them all
+    for chrom in keys:
+
+        # if we only have one chrom, skip genome reporting
+        if len(keys) == 2 and chrom == GENOME_KEY: continue
+
+        B_READ_COUNT = "read_count"
+        B_SECONDARY_COUNT = "secondary_count"
+        B_SUPPLEMENTARY_COUNT = "supplementary_count"
+        print("\tGENERIC STATS: {}".format(chrom))
+        print("\t\tcount        : {}".format(summary[chrom][B_READ_COUNT]))
+        print("\t\tsecondary    : {} ({}%)".format(summary[chrom][B_SECONDARY_COUNT],
+                                                   percent(summary[chrom][B_SECONDARY_COUNT],
+                                                           summary[chrom][B_READ_COUNT])))
+        print("\t\tsupplenatary : {} ({}%)".format(summary[chrom][B_SUPPLEMENTARY_COUNT],
+                                                   percent(summary[chrom][B_SUPPLEMENTARY_COUNT],
+                                                           summary[chrom][B_READ_COUNT])))
+        print("\t\tmedian qual  : {}".format(summary[chrom][B_MEDIAN_QUAL]))
+
+
 def print_read_length_summary(summary, verbose=False):
     keys = list(summary.keys())
     keys.sort()
@@ -146,6 +181,10 @@ def print_read_length_summary(summary, verbose=False):
         keys.append(GENOME_KEY)
     #print them all
     for chrom in keys:
+
+        # if we only have one chrom, skip genome reporting
+        if len(keys) == 2 and chrom == GENOME_KEY: continue
+
         print("\tREAD LENGTHS: {}".format(chrom))
         print("\t\tmin: {}".format(summary[chrom][L_MIN]))
         print("\t\tmax: {}".format(summary[chrom][L_MAX]))
@@ -305,13 +344,15 @@ def print_read_depth_summary(summary, verbose=False):
         keys.append(GENOME_KEY)
 
     for chrom in keys:
+        # if we only have one chrom, skip genome reporting
+        if len(keys) == 2 and chrom == GENOME_KEY: continue
         print("\tREAD DEPTHS: {}".format(chrom))
         print("\t\tmax: {}".format(summary[chrom][D_MAX]))
         print("\t\tmin: {}".format(summary[chrom][D_MIN]))
         print("\t\tmed: {}".format(summary[chrom][D_MED]))
         print("\t\tavg: {}".format(summary[chrom][D_AVG]))
         print("\t\tstd: {}".format(summary[chrom][D_STD]))
-        if chrom == GENOME_KEY: continue
+
         log_depth_bins = summary[chrom][D_ALL_DEPTH_BINS]
         total_depths = sum(log_depth_bins)
         log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
@@ -322,14 +363,15 @@ def print_read_depth_summary(summary, verbose=False):
                                                               int(100.0 * log_depth_pairs[i][1] / total_depths)))
 
         if verbose:
-            print("\t\tdepths with spacing {}{}:".format(summary[chrom][D_SPACING],
-                                               "" if summary[chrom][D_RANGE] is None else
-                                               ", and range {}".format(summary[chrom][D_RANGE])))
-            for idx in summary[chrom][D_ALL_DEPTH_POSITIONS]:
-                depth = summary[chrom][D_ALL_DEPTH_MAP][idx]
-                id = "%4d:" % idx
-                pound_count = int(32.0 * depth / summary[chrom][D_MAX])
-                print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
+            if chrom != GENOME_KEY and summary[chrom][D_RANGE] is not None:
+                print("\t\tdepths with spacing {}{}:".format(summary[chrom][D_SPACING],
+                                                   "" if summary[chrom][D_RANGE] is None else
+                                                   ", and range {}".format(summary[chrom][D_RANGE])))
+                for idx in summary[chrom][D_ALL_DEPTH_POSITIONS]:
+                    depth = summary[chrom][D_ALL_DEPTH_MAP][idx]
+                    id = "%4d:" % idx
+                    pound_count = int(32.0 * depth / summary[chrom][D_MAX])
+                    print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
 
             print("\t\tread depth log_2 at above intervals:")
             max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
@@ -345,6 +387,8 @@ def print_read_depth_summary(summary, verbose=False):
 def main(args = None):
     # get our arguments
     args = parse_args() if args is None else parse_args(args)
+    if True not in [args.generic_stats, args.read_depth, args.read_length]:
+        args.generic_stats, args.read_depth, args.read_length = True, True, True
 
     # get filenames, sanity check
     in_alignments = glob.glob(args.input_glob)
@@ -378,15 +422,21 @@ def main(args = None):
 
         # get read data we care about
         samfile = None
-        read_count = -1
+        read_count = 0
+        secondary_read_count = 0
+        supplementary_read_count = 0
         try:
             if not args.silent: print("Read {}:".format(alignment_filename))
             samfile = pysam.AlignmentFile(alignment_filename, 'rb' if alignment_filename.endswith("bam") else 'r')
             for read in samfile.fetch():
                 read_count += 1
-                read_summaries.append(get_read_summary(read))
+                summary = get_read_summary(read)
+                read_summaries.append(summary)
+                secondary_read_count += 1 if summary[R_SECONDARY] else 0
+                supplementary_read_count += 1 if summary[R_SUPPLEMENTARY] else 0
                 chromosomes.add(read.reference_name)
-            if not args.silent: print("read_count: {}".format(read_count))
+            if not args.silent:
+                print("read_count: {}".format(read_count))
         finally:
             if samfile is not None: samfile.close()
 
@@ -408,12 +458,29 @@ def main(args = None):
             if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
 
 
-
         # summarize
         for chromosome in chromosomes:
-            chromosome_reads = list(filter(lambda x: x[R_CHROMOSOME] == chromosome , read_summaries))
+
+            #prep
+            chromosome_reads = list()
+            chrom_read_count = 0
+            chrom_sec_count = 0
+            chrom_sup_count = 0
+
+            # analyze
+            for read in read_summaries:
+                if read[R_CHROMOSOME] == chromosome:
+                    chromosome_reads.append(read)
+                    chrom_read_count += 1
+                    if read[R_SECONDARY]: chrom_sec_count += 1
+                    if read[R_SUPPLEMENTARY]: chrom_sup_count += 1
+
+            # summarize
             bam_summaries[alignment_filename][chromosome] = {
-                B_READ_COUNT: read_count,
+                B_READ_COUNT: chrom_read_count,
+                B_SECONDARY_COUNT: chrom_sec_count,
+                B_SUPPLEMENTARY_COUNT: chrom_sup_count,
+                B_MEDIAN_QUAL: np.median(list(map(lambda x: x[R_MAPPING_QUALITY], chromosome_reads))),
                 B_FILTERED_READ_COUNT:len(chromosome_reads),
                 B_CHROMOSOME: chromosome
             }
@@ -425,6 +492,9 @@ def main(args = None):
         # whole file summaries
         bam_summaries[alignment_filename][GENOME_KEY] = {
             B_READ_COUNT: read_count,
+            B_SECONDARY_COUNT: secondary_read_count,
+            B_SUPPLEMENTARY_COUNT: supplementary_read_count,
+            B_MEDIAN_QUAL: np.median(list(map(lambda x: x[R_MAPPING_QUALITY], read_summaries))),
             B_FILTERED_READ_COUNT: len(read_summaries),
             B_CHROMOSOME: GENOME_KEY
         }
@@ -432,6 +502,8 @@ def main(args = None):
         depth_summaries[alignment_filename][GENOME_KEY] = get_genome_depth_summary(depth_summaries[alignment_filename])
 
         # print
+        if args.generic_stats:
+            if not args.silent: print_generic_read_stats(bam_summaries[alignment_filename], verbose=args.verbose)
         if args.read_length:
             if not args.silent: print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
         if args.read_depth:
@@ -441,7 +513,7 @@ def main(args = None):
         all_read_summaries.extend(read_summaries)
 
     # do whole run analysis
-    if args.read_length and not args.silent:
+    if args.read_length and not args.silent and len(in_alignments) > 1:
         print_read_length_summary({'ALL_FILES':get_read_length_summary(all_read_summaries)}, verbose=args.verbose)
 
     return bam_summaries, length_summaries, depth_summaries
