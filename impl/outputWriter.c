@@ -13,9 +13,10 @@
 
 
 
-void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions) {
+void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                        char *marginPhaseTag) {
     // prep
-    char *haplotypedBamFile = stString_print("%s.haplotyped.bam", bamOutBase);
+    char *haplotypedSamFile = stString_print("%s.haplotyped.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -26,9 +27,10 @@ void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("\tWriting haplotype output to: %s \n", haplotypedBamFile);
-    BGZF *out = bgzf_open(haplotypedBamFile, "w");
-    r = bam_hdr_write(out, bamHdr);
+    st_logDebug("\tWriting haplotype output to: %s \n", haplotypedSamFile);
+
+    samFile *out = hts_open(haplotypedSamFile, "w");
+    r = sam_hdr_write(out, bamHdr);
 
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
@@ -38,16 +40,20 @@ void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
+        if (marginPhaseTag != NULL) {
+            bam_aux_append(aln, MARGIN_PHASE_TAG, 'Z', (int)strlen(marginPhaseTag) + 1, (uint8_t*)marginPhaseTag);
+        }
+
         stReadHaplotypeSequence *readHaplotypes = hashtable_search(readHaplotypePartitions, readName);
         if (readHaplotypes == NULL) {
             haplotypeString = stReadHaplotypeSequence_toStringEmpty();
-            bam_aux_append(aln, "MP", 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
-            r = bam_write1(out, aln);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            r = sam_write1(out, bamHdr, aln);
             readCountFiltered++;
         } else {
             haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
-            bam_aux_append(aln, "MP", 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
-            r = bam_write1(out, aln);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            r = sam_write1(out, bamHdr, aln);
             // document based on last recorded haplotype
             while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
             if (readHaplotypes->haplotype == 1)
@@ -57,18 +63,18 @@ void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
         }
         free(haplotypeString);
     }
-    st_logInfo("\tBAM read counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+    st_logInfo("\tSAM read counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
 
     // Cleanup
     bam_destroy1(aln);
     bam_hdr_destroy(bamHdr);
     sam_close(in);
-    bgzf_close(out);
-    free(haplotypedBamFile);
+    sam_close(out);
+    free(haplotypedSamFile);
 }
 
-void writeSplitSams(char *bamInFile, char *bamOutBase,
-                    stReadHaplotypePartitionTable *readHaplotypePartitions) {
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                    char *marginPhaseTag) {
     // prep
     char *haplotype1SamOutFile = stString_print("%s.1.sam", bamOutBase);
     char *haplotype2SamOutFile = stString_print("%s.2.sam", bamOutBase);
@@ -83,7 +89,8 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("\tWriting haplotype output to: %s and %s \n", haplotype1SamOutFile, haplotype2SamOutFile);
+    st_logDebug("\tWriting haplotype output to: %s, %s, and %s \n", haplotype1SamOutFile,
+                haplotype2SamOutFile, unmatchedSamOutFile);
     samFile *out1 = hts_open(haplotype1SamOutFile, "w");
     r = sam_hdr_write(out1, bamHdr);
 
@@ -102,15 +109,19 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
+        if (marginPhaseTag != NULL) {
+            bam_aux_append(aln, MARGIN_PHASE_TAG, 'Z', (int)strlen(marginPhaseTag) + 1, (uint8_t*)marginPhaseTag);
+        }
+
         stReadHaplotypeSequence *readHaplotypes = hashtable_search(readHaplotypePartitions, readName);
         if (readHaplotypes == NULL) {
             haplotypeString = stReadHaplotypeSequence_toStringEmpty();
-            bam_aux_append(aln, "MP", 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
             r = sam_write1(outUnmatched, bamHdr, aln);
             readCountFiltered++;
         } else {
             haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
-            bam_aux_append(aln, "MP", 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
             // document based on last recorded haplotype
             while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
             if (readHaplotypes->haplotype == 1) {
@@ -839,7 +850,7 @@ char *stReadHaplotypeSequence_toString(stReadHaplotypeSequence *rhs) {
 }
 
 char *stReadHaplotypeSequence_toStringEmpty() {
-    return stString_print("h%"PRIi8",p%"PRIi64",r%"PRIi64",l%"PRIi64, 0, -1, -1, -1);
+    return stString_print("h0,p0,r0,l0");
 }
 
 void stReadHaplotypeSequence_destruct(stReadHaplotypeSequence *rhs) {

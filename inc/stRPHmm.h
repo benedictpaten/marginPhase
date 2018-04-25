@@ -269,7 +269,8 @@ struct _stRPHmmParameters {
 
     // What types of file formats of split reads to output
     bool writeSplitSams;
-    bool writeSplitBams;
+    bool writeUnifiedSam;
+//    bool writeSplitBams;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -565,11 +566,14 @@ struct _stGenotypeResults {
 void printGenotypeResults(stGenotypeResults *results);
 
 // VCF comparison
-
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
 void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
+
+// Tag definitions (for haplotype output)
+#define HAPLOTYPE_TAG "ht"
+#define MARGIN_PHASE_TAG "mp"
 
 // Tracking haplotypes for read
 typedef struct _stReadHaplotypeSequence stReadHaplotypeSequence;
@@ -595,10 +599,9 @@ void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
 void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
                                          stList *path);
 
-
 // Output file writing
-void writeHaplotypedBam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions);
-void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions);
+void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 #endif /* ST_RP_HMM_H_ */

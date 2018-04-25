@@ -347,17 +347,18 @@ fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
             "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
             "giving genotypes and haplotypes for region.\n"
             "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n");
-    fprintf(stderr, "-h --help            : Print this help screen\n");
-    fprintf(stderr, "-a --logLevel        : Set the log level [default = info]\n");
-    fprintf(stderr, "-o --outputBase      : Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
-    fprintf(stderr, "-p --params          : Input params file\n");
-    fprintf(stderr, "-r --referenceVCF    : Reference vcf file for output comparison and training\n");
-    fprintf(stderr, "-s --singleNuclProb  : Directory of single nucleotide probabilities files\n");
-    fprintf(stderr, "-S --onlySNP         : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
-    fprintf(stderr, "-v --verbose         : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
-    fprintf(stderr, "                     \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
-    fprintf(stderr, "                     \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
-    fprintf(stderr, "                     \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+    fprintf(stderr, "-h --help              : Print this help screen\n");
+    fprintf(stderr, "-o --outputBase        : (Required) Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
+    fprintf(stderr, "-p --params            : (Required) Input params file\n");
+    fprintf(stderr, "-a --logLevel          : Set the log level [default = info]\n");
+    fprintf(stderr, "-r --referenceVCF      : Reference vcf file for output comparison\n");
+    fprintf(stderr, "-t --tag               : Annotate all output reads with this value for the '"MARGIN_PHASE_TAG"' tag\n");
+    fprintf(stderr, "-s --singleNuclProbDir : Directory of single nucleotide probabilities files\n");
+    fprintf(stderr, "-S --onlySNP           : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
+    fprintf(stderr, "-v --verbose           : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
+    fprintf(stderr, "                       \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
+    fprintf(stderr, "                       \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
+    fprintf(stderr, "                       \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
 
 }
 
@@ -367,6 +368,7 @@ int main(int argc, char *argv[]) {
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
     char *referenceFastaFile = NULL;
+    char *marginPhaseTag = NULL;
     char *referenceVCF = NULL;
     char *singleNucleotideProbabilityDirectory = NULL;
     char *outputBase = "output";
@@ -392,6 +394,7 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
+                { "tag", required_argument, 0, 't'},
                 { "singleNuclProb", required_argument, 0, 's'},
                 { "onlySNP", no_argument, 0, 'S'},
                 { "verbose", required_argument, 0, 'v'},
@@ -417,6 +420,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'p':
             paramsFile = stString_copy(optarg);
+            break;
+        case 't':
+            marginPhaseTag = stString_copy(optarg);
             break;
         case 'r':
             referenceVCF = stString_copy(optarg);
@@ -656,12 +662,12 @@ int main(int argc, char *argv[]) {
     if (params->writeSplitSams) {
         st_logInfo("\n> Writing out SAM files for each partition\n", outputBase,
                    outputBase);
-        writeSplitSams(bamInFile, outputBase, readHaplotypePartitions);
+        writeSplitSams(bamInFile, outputBase, readHaplotypePartitions, marginPhaseTag);
     }
-    if (params->writeSplitBams) {
-        st_logInfo("\n> Writing out BAM files for each partition\n", outputBase,
+    if (params->writeUnifiedSam) {
+        st_logInfo("\n> Writing out single SAM file with read partitioning\n", outputBase,
                    outputBase);
-        writeHaplotypedBam(bamInFile, outputBase, readHaplotypePartitions);
+        writeHaplotypedSam(bamInFile, outputBase, readHaplotypePartitions, marginPhaseTag);
     }
 
     stList_destruct(profileSequences);

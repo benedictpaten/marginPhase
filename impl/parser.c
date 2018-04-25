@@ -143,7 +143,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->compareVCFs = false;
     params->writeGVCF = false;
     params->writeSplitSams = true;
-    params->writeSplitBams = true;
+    params->writeUnifiedSam = true;
 
     setVerbosity(params, 0);
 
@@ -371,12 +371,17 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->writeGVCF = strcmp(tokStr, "true") == 0;
             i++;
-        } else if (strcmp(keyString, "splitReadOutputType") == 0) {
+        } else if (strcmp(keyString, "writeSplitSams") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "sam") || strcmp(tokStr, "bam") || strcmp(tokStr, "both") || strcmp(tokStr, "neither"));
-            params->writeSplitSams = (strcmp(tokStr, "sam") == 0) || (strcmp(tokStr, "both") == 0);
-            params->writeSplitBams = (strcmp(tokStr, "bam") == 0) || (strcmp(tokStr, "both") == 0);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->writeSplitSams = strcmp(tokStr, "true") == 0;
+            i++;
+        }else if (strcmp(keyString, "writeUnifiedSam") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->writeUnifiedSam = strcmp(tokStr, "true") == 0;
             i++;
         }
         else if (strcmp(keyString, "mapqFilter") == 0) {
