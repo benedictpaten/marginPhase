@@ -357,9 +357,9 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     # run marginPhase
     params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
-              "-r",  os.path.join("/data", vcf_reference_name)]
+              "-r",  os.path.join("/data", vcf_reference_name), '--tag', str(chunk_idx)]
     if cpecan_prob_location is not None:
-        params.extend(['--signalAlignDir', os.path.join("/data", cpecan_prob_location)])
+        params.extend(['--singleNuclProbDir', os.path.join("/data", cpecan_prob_location)])
     docker_margin_phase = "{}:{}".format(config.margin_phase_image, config.margin_phase_tag)
     if DOCKER_LOGGING:
         job.fileStore.logToMaster("{}: Running {} with parameters: {}".format(chunk_identifier, docker_margin_phase, params))
@@ -488,6 +488,45 @@ def _infer_hmm_location(identifier):
     if "np" not in identifier and "pb" in identifier:
         return CPECAN_PACBIO_HMM
     return None
+
+
+def new_merge_chunks(job, config, chunk_infos):
+    """
+    # merging vcf
+    for each chunk:
+        find all phase blocks and reads in phase blocks
+            phase block details:
+                phase start, phase end, hap1 reads, hap2 reads
+
+        get last phase block from prev chunk (if exists)
+        get first phase block from curr chunk
+
+        compare phase boundaries
+        compare reads in both, and the overlap
+        extend (in vcf)
+
+        get phase block spanning the end of the chunk
+            save: phase start, phase end, hap1 reads, hap2 reads
+
+    # merging sam/bam
+    for each chunk
+
+        chunkEnd: find reads spanning the end of the chunk
+        pastChunkEnd: find reads which occur past the end of the chunk
+        excludedReads: remove from pastChunkEnd all reads in chunkEnd
+
+        ditto for chunkStart
+
+        duplicate reads spanning boundaries
+
+        if new chunk phasing:
+            ditto as last time
+        else:
+
+
+    """
+    pass
+
 
 
 def merge_chunks(job, config, chunk_infos):
@@ -667,10 +706,16 @@ def merge_chunks(job, config, chunk_infos):
 
     # tarball the output and save
     job.fileStore.logToMaster("{}:merge_chunks: Output files for merge:".format(config.uuid))
-    output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*"))
+    output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*.*"))
     output_file_locations.sort()
-    for f in output_file_locations:
-        job.fileStore.logToMaster("{}\t\t{}".format(config.uuid, os.path.basename(f)))
+    tmp = output_file_locations
+    output_file_locations = list()
+    for f in tmp:
+        if os.path.isdir(f):
+            job.fileStore.logToMaster("{}\t\t{} (skipped, directory)".format(config.uuid, os.path.basename(f)))
+        else:
+            job.fileStore.logToMaster("{}\t\t{}".format(config.uuid, os.path.basename(f)))
+            output_file_locations.append(f)
     tarball_name = "{}.merged.tar.gz".format(config.uuid)
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
     output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
@@ -910,7 +955,7 @@ def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_
 
     if not os.path.isfile(os.path.join(work_dir, bai_name)):
         # convert to bam
-        convert_cmd = ["view", "-b", os.path.join(file_name), "-o", os.path.join(bam_name)]
+        convert_cmd = ["view", "-b", os.path.join("/data", file_name), "-o", os.path.join("/data", bam_name)]
         if DOCKER_LOGGING:
             job.fileStore.logToMaster("{}: Running {} with parameters: {}"
                                       .format(config.uuid, "{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), convert_cmd))
@@ -967,9 +1012,10 @@ def consolidate_output(job, config, chunk_infos):
             with tarfile.open(tar_file, 'r') as f_in:
                 for tarinfo in f_in:
                     if config.minimal_output and (
-                                tarinfo.name.endswith("bam") or
+                            (tarinfo.name.endswith("bam") or
                                 tarinfo.name.endswith("sam") or
-                                tarinfo.name.endswith("bai")):
+                                tarinfo.name.endswith("bai"))
+                            and "merged" not in tarinfo.name):
                         job.fileStore.logToMaster("{}: (Minimal Output) Skipping output file: {}".format(
                             config.uuid, tarinfo.name))
                         continue
@@ -977,6 +1023,7 @@ def consolidate_output(job, config, chunk_infos):
                         job.fileStore.logToMaster("{}: (Minimal cPecan Output) Skipping output file: {}".format(
                             config.uuid, tarinfo.name))
                         continue
+                    job.fileStore.logToMaster("{}: file {}".format(config.uuid, tarinfo.name))
                     with closing(f_in.extractfile(tarinfo)) as f_in_file:
                         f_out.addfile(tarinfo, fileobj=f_in_file)
                         output_file_count += 1
