@@ -67,15 +67,28 @@ CI_REF_FA_SIZE = "ref_fa_size" #chunk size in bytes
 CI_CHUNK_INDEX = "chunk_index" #index of the chunk
 CI_OUTPUT_FILE_ID = "output_file_id"
 
+# read classification
+CR_BEFORE_START = "before_start"
+CR_SPAN_START = "span_start"
+CR_WHOLLY_WITHIN = "wholly_within"
+CR_SPAN_END = "span_end"
+CR_AFTER_END = "after_end"
+CR_START_HAP1 = "start_hap1"
+CR_START_HAP2 = "start_hap2"
+CR_END_HAP1 = "end_hap1"
+CR_END_HAP2 = "end_hap2"
+
 # output naming conventions
 SAM_HAP_1_SUFFIX = "out.1.sam"
 SAM_HAP_2_SUFFIX = "out.2.sam"
+SAM_UNIFIED_SUFFIX = "out.sam"
 VCF_SUFFIX = "out.vcf"
 
 # tags
 TAG_GENOTYPE = "GT"
 TAG_PHASE_SET = "PS"
 TAG_MARGIN_PHASE_IDENTIFIER = "MPI"
+TAG_HAPLOTYPE = "ht"
 
 # cpecan locations - todo this is kind of a hack to not have to specify in config/manifest
 CPECAN_NANOPORE_HMM = "/opt/cPecan/hmm/nanopore.hmm"
@@ -110,19 +123,17 @@ def parse_samples(config, path_to_manifest):
             # extract sample parts
             uuid = sample[0]
             url = sample[1]
-            contig_name, reference_url, params_url, vcf_url = "", "", "", ""
+            contig_name, reference_url, params_url = "", "", ""
             if len(sample) > 2: contig_name = sample[2]
             if len(sample) > 3: reference_url = sample[3]
             if len(sample) > 4: params_url = sample[4]
-            if len(sample) > 5: vcf_url = sample[5]
 
             # fill defaults
             if len(contig_name) == 0: contig_name = config.default_contig
             if len(reference_url) == 0: reference_url = config.default_reference
             if len(params_url) == 0: params_url = config.default_params
-            if len(vcf_url) == 0: vcf_url = config.default_vcf
 
-            sample = [uuid, url, contig_name, reference_url, params_url, vcf_url]
+            sample = [uuid, url, contig_name, reference_url, params_url]
             samples.append(sample)
     return samples
 
@@ -131,7 +142,7 @@ def prepare_input(job, sample, config):
 
     # job prep
     config = argparse.Namespace(**vars(config))
-    uuid, url, contig_name, reference_url, params_url, vcf_url = sample
+    uuid, url, contig_name, reference_url, params_url = sample
     config.uuid = uuid
     config.contig_name = contig_name
     config.reference_url = reference_url
@@ -155,11 +166,6 @@ def prepare_input(job, sample, config):
     ref_genome_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_genome_filename))
     config.reference_genome_fileid = ref_genome_fileid
     ref_genome_size = os.stat(os.path.join(work_dir, ref_genome_filename)).st_size
-    #ref vcf
-    download_url(vcf_url, work_dir=work_dir)
-    ref_vcf_filename = os.path.basename(vcf_url)
-    ref_vcf_fileid = job.fileStore.writeGlobalFile(os.path.join(work_dir, ref_vcf_filename))
-    config.reference_vcf_fileid = ref_vcf_fileid
     #params
     download_url(params_url, work_dir=work_dir)
     params_filename = os.path.basename(params_url)
@@ -190,8 +196,8 @@ def prepare_input(job, sample, config):
     get_idx_cmd[1][0] = "tail"
     end_idx_str = _dockerCheckOutput_except_141(job, tool="{}:{}".format(DOCKER_SAMTOOLS_IMG, DOCKER_SAMTOOLS_TAG), work_dir=work_dir, parameters=get_idx_cmd).strip()
     job.fileStore.logToMaster("{}: start_pos:{}, end_pos:{}".format(config.uuid, start_idx_str, end_idx_str))
-    # start index starts one "margin width" ahead of the read's start position
-    start_idx = int(start_idx_str) - 1 + config.partition_margin
+    # start index starts at the read's start position
+    start_idx = int(start_idx_str)
     end_idx = int(end_idx_str) + 1
 
     # get reads from positions
@@ -333,13 +339,6 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     if not os.path.isfile(genome_reference_location):
         raise UserError("Failed to download genome reference {} from {}"
                         .format(os.path.basename(config.reference_genome), config.reference_genome_fileid))
-    #ref vcf
-    vcf_reference_name = "reference.vcf"
-    vcf_reference_location = os.path.join(work_dir, vcf_reference_name)
-    job.fileStore.readGlobalFile(config.reference_vcf_fileid, vcf_reference_location)
-    if not os.path.isfile(genome_reference_location):
-        raise UserError("Failed to download vcf reference {} from {}"
-                        .format(os.path.basename(config.reference_vcf), config.reference_vcf_fileid))
     # params
     params_name = "params.json"
     params_location = os.path.join(work_dir, params_name)
@@ -357,7 +356,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     # run marginPhase
     params = [os.path.join("/data", chunk_name), os.path.join("/data", genome_reference_name),
               "-p", os.path.join("/data", params_name), "-o", os.path.join("/data","{}.out".format(chunk_identifier)),
-              "-r",  os.path.join("/data", vcf_reference_name), '--tag', str(chunk_idx)]
+              '--tag', str(chunk_idx)]
     if cpecan_prob_location is not None:
         params.extend(['--singleNuclProbDir', os.path.join("/data", cpecan_prob_location)])
     docker_margin_phase = "{}:{}".format(config.margin_phase_image, config.margin_phase_tag)
@@ -369,12 +368,13 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     # document output
     job.fileStore.logToMaster("{}: Output files after marginPhase:".format(chunk_identifier))
     output_file_locations = glob.glob(os.path.join(work_dir, "{}*".format(chunk_identifier)))
-    found_vcf, found_hap1, found_hap2 = False, False, False
+    found_vcf, found_hap1, found_hap2, found_unified = False, False, False, False
     for f in output_file_locations:
         job.fileStore.logToMaster("{}:\t\t{}".format(chunk_identifier, os.path.basename(f)))
         if f.endswith(VCF_SUFFIX): found_vcf = True
         if f.endswith(SAM_HAP_1_SUFFIX): found_hap1 = True
         if f.endswith(SAM_HAP_2_SUFFIX): found_hap2 = True
+        if f.endswith(SAM_UNIFIED_SUFFIX): found_unified = True
     if cpecan_prob_location is not None:
         cpecan_tarball = glob.glob(os.path.join(work_dir, cpecan_prob_location, "*.tar.gz"))
         if len(cpecan_tarball) == 0:
@@ -390,7 +390,7 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
 
     # validate output, retry if not
-    if not (found_hap1 and found_hap2 and found_vcf):
+    if not (found_hap1 and found_hap2 and found_unified and found_vcf):
         if "retry_attempts" not in config:
             config.retry_attempts = 1
         else:
@@ -490,45 +490,310 @@ def _infer_hmm_location(identifier):
     return None
 
 
-def new_merge_chunks(job, config, chunk_infos):
-    """
-    # merging vcf
-    for each chunk:
-        find all phase blocks and reads in phase blocks
-            phase block details:
-                phase start, phase end, hap1 reads, hap2 reads
+def merge_chunks(job, config, chunk_infos):
+    # prep
+    start = time.time()
+    work_dir = job.fileStore.getLocalTempDir()
+    job.fileStore.logToMaster("{}:merge_chunks:{}".format(config.uuid, datetime.datetime.now()))
+    job.fileStore.logToMaster("{}: Merging {} chunks".format(config.uuid, len(chunk_infos)))
+    if config.minimal_output:
+        job.fileStore.logToMaster("{}: Minimal output is configured, will only save full chromosome vcf and merged BAMs"
+                                  .format(config.uuid))
 
-        get last phase block from prev chunk (if exists)
-        get first phase block from curr chunk
+    # work directory for tar management
+    tar_work_dir = os.path.join(work_dir, "tmp")
+    # output files
+    merged_chunks_directory = os.path.join(work_dir, "merged")
+    os.mkdir(merged_chunks_directory)
+    merged_chunk_idx = 0  # for areas where merging can't happen
+    merged_hap1_name, merged_hap2_name, merged_vcf_name = None, None, None
+    merged_hap1_file, merged_hap2_file, merged_vcf_file = None, None, None
+    full_merged_vcf_file, full_merged_sam_file = None, None
 
-        compare phase boundaries
-        compare reads in both, and the overlap
-        extend (in vcf)
+    # sort by chunk index and validate
+    chunk_infos.sort(key=(lambda x: x[CI_CHUNK_INDEX]))
+    idx = 0
+    missing_indices = []
+    for ci in chunk_infos:
+        while ci[CI_CHUNK_INDEX] > idx:
+            missing_indices.append(idx)
+            idx += 1
+        idx += 1
+    if len(missing_indices) > 0:
+        job.fileStore.logToMaster("{}: Found {} missing indices: {}"
+                                  .format(config.uuid, len(missing_indices), missing_indices))
 
-        get phase block spanning the end of the chunk
-            save: phase start, phase end, hap1 reads, hap2 reads
+    # prep for iteration
+    prev_hap1_read_ids, prev_hap2_read_ids, prev_phase_block = set(), set(), 0
+    prev_chunk = {CI_CHUNK_INDEX: "start"}
+    phasing_reversal = None
 
-    # merging sam/bam
-    for each chunk
+    # iterate over all chunks
+    for chunk in chunk_infos:
+        # get current chunk
+        if os.path.isdir(tar_work_dir):
+            shutil.rmtree(tar_work_dir)
+        sam_hap1_file, sam_hap2_file, sam_unified_file, vcf_file = _extract_chunk_tarball(job, config, tar_work_dir, chunk)
+        chunk_idx = chunk[CI_CHUNK_INDEX]
 
-        chunkEnd: find reads spanning the end of the chunk
-        pastChunkEnd: find reads which occur past the end of the chunk
-        excludedReads: remove from pastChunkEnd all reads in chunkEnd
+        # error out if missing files
+        if sam_hap1_file is None or sam_hap2_file is None or vcf_file is None:
+            error = "{}:merge_chunks: Missing expected output file, sam_hap1:{} sam_hap2:{} vcf:{} chunk_info:{}".format(
+                config.uuid, sam_hap1_file, sam_hap2_file, vcf_file, chunk)
+            job.fileStore.logToMaster(error)
+            if CONTINUE_AFTER_FAILURE:
+                continue
+            raise UserError(error)
 
-        ditto for chunkStart
+        # get read classifcation info
+        read_classifications = _classify_reads(job, config, sam_unified_file, chunk)
 
-        duplicate reads spanning boundaries
+        # fully merged vcf file
+        if full_merged_vcf_file is None:
+            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+            with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
+                for line in input:
+                    if line.startswith("#"): output.write(line)
+                    else: break
+        _append_vcf_calls_to_file(job, config, vcf_file, full_merged_vcf_file,
+                                  chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                  mp_identifier="{}".format(chunk_idx),
+                                  reverse_phasing=False)
 
-        if new chunk phasing:
-            ditto as last time
+        # fully merged sam file
+        if full_merged_sam_file is None:
+            full_merged_sam_file = os.path.join(merged_chunks_directory, "{}.merged.full.sam".format(config.uuid))
+            with open(sam_unified_file, 'r') as input, open(full_merged_sam_file, 'w') as output:
+                for line in input:
+                    if line.startswith("@"): output.write(line)
+                    else: break
+        reads_not_in_chunk = read_classifications[CR_BEFORE_START].union(read_classifications[CR_AFTER_END])
+        excluded_read_count = _append_sam_reads_to_file(job, config, sam_unified_file, full_merged_sam_file, reads_not_in_chunk)
+        if len(reads_not_in_chunk) != excluded_read_count:
+            job.fileStore.logToMaster("{}:chunk{}: SANITY_CHECK_FAIL expected to find {} excluded reads but got {}"
+                                      .format(config.uuid, chunk_idx, len(reads_not_in_chunk), excluded_read_count))
+
+
+        # log the matching info
+        chunk_start_pos = chunk[CI_CHUNK_BOUNDARY_START]
+        chunk_end_pos = chunk[CI_CHUNK_BOUNDARY_END]
+        curr_hap1_read_ids = read_classifications[CR_START_HAP1]
+        curr_hap2_read_ids = read_classifications[CR_START_HAP2]
+        job.fileStore.logToMaster("{}:merge_chunks: found {} reads for the start of chunk {} spanning position {}"
+                                  .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
+                                          chunk[CI_CHUNK_INDEX], chunk_start_pos))
+
+        same_haplotype_ordering = _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, chunk,
+                                                                                prev_hap1_read_ids, prev_hap2_read_ids,
+                                                                                curr_hap1_read_ids, curr_hap2_read_ids)
+
+        # this indicates there was no (or equal) read overlap.  probably it means we've just started the process
+        if same_haplotype_ordering is None:
+            job.fileStore.logToMaster("{}:merge_chunks: starting new merged chunk idx {} from chunk {}"
+                                      .format(config.uuid, merged_chunk_idx, chunk_idx))
+
+            # get merged haplotype names and files
+            merged_hap1_name = "{}.merged.{}.hap1.sam".format(config.uuid, merged_chunk_idx)
+            merged_hap2_name = "{}.merged.{}.hap2.sam".format(config.uuid, merged_chunk_idx)
+            merged_vcf_name  = "{}.merged.{}.vcf".format(config.uuid, merged_chunk_idx)
+            merged_hap1_file = os.path.join(merged_chunks_directory, merged_hap1_name)
+            merged_hap2_file = os.path.join(merged_chunks_directory, merged_hap2_name)
+            merged_vcf_file  = os.path.join(merged_chunks_directory, merged_vcf_name)
+
+            # reset reversal
+            phasing_reversal = False
+
+            # append reads and calls
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx),
+                                      reverse_phasing=phasing_reversal, include_header=True)
+            _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, reads_not_in_chunk, include_header=True)
+            _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, reads_not_in_chunk, include_header=True)
+
+            # increment merged chunk idx
+            merged_chunk_idx += 1
+        elif same_haplotype_ordering:
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}: writing same ordering (phasing_reversal: {})"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], phasing_reversal))
+            #append reads and calls
+            if phasing_reversal:
+                _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, reads_not_in_chunk)
+                _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, reads_not_in_chunk)
+            else:
+                _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, reads_not_in_chunk)
+                _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap1_file, reads_not_in_chunk)
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=False)
         else:
+            phasing_reversal = not phasing_reversal
+            job.fileStore.logToMaster("{}:merge_chunks:chunk{}: writing different ordering (phasing_reversal: {})"
+                                      .format(config.uuid, chunk[CI_CHUNK_INDEX], phasing_reversal))
+            #append reads and calls
+            if phasing_reversal:
+                _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap1_file, reads_not_in_chunk)
+                _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap2_file, reads_not_in_chunk)
+            else:
+                _append_sam_reads_to_file(job, config, sam_hap1_file, merged_hap2_file, reads_not_in_chunk)
+                _append_sam_reads_to_file(job, config, sam_hap2_file, merged_hap1_file, reads_not_in_chunk)
+            _append_vcf_calls_to_file(job, config, vcf_file, merged_vcf_file,
+                                      chunk[CI_CHUNK_BOUNDARY_START], chunk[CI_CHUNK_BOUNDARY_END],
+                                      mp_identifier="{}.{}".format(merged_chunk_idx, chunk_idx), reverse_phasing=True)
+
+        # prep for iteration / cleanup
+        prev_hap1_read_ids = read_classifications[CR_END_HAP1]
+        prev_hap2_read_ids = read_classifications[CR_END_HAP2]
+        if phasing_reversal:
+            tmp = prev_hap1_read_ids
+            prev_hap1_read_ids = prev_hap2_read_ids
+            prev_hap2_read_ids = tmp
+
+        prev_chunk = chunk
+        job.fileStore.logToMaster("{}:merge_chunks: found {} reads for the end of chunk {} spanning position {}"
+                                  .format(config.uuid, (len(curr_hap1_read_ids) + len(curr_hap2_read_ids)),
+                                          prev_chunk[CI_CHUNK_INDEX], chunk_end_pos))
+
+    # post-processing
+    for file_name in os.listdir(merged_chunks_directory):
+        if file_name.endswith(".sam"): _sort_sam_file(job, config, merged_chunks_directory, file_name)
+        if file_name.endswith(".vcf"): _sort_vcf_file(job, config, merged_chunks_directory, file_name)
+
+    # tarball the output and save
+    job.fileStore.logToMaster("{}:merge_chunks: Output files for merge:".format(config.uuid))
+    output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*.*"))
+    output_file_locations.sort()
+    tmp = output_file_locations
+    output_file_locations = list()
+    for f in tmp:
+        if os.path.isdir(f):
+            job.fileStore.logToMaster("{}\t\t{} (skipped, directory)".format(config.uuid, os.path.basename(f)))
+        else:
+            job.fileStore.logToMaster("{}\t\t{}".format(config.uuid, os.path.basename(f)))
+            output_file_locations.append(f)
+    tarball_name = "{}.merged.tar.gz".format(config.uuid)
+    tarball_files(tar_name=tarball_name, file_paths=output_file_locations, output_dir=work_dir)
+    output_file_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, tarball_name))
+    # we need to return the input list of chunk infos for consolidation
+    chunk_infos.append({CI_OUTPUT_FILE_ID: output_file_id, CI_CHUNK_INDEX: "merged"})
+
+    _log_time(job, "merge_chunks", start, config.uuid)
+    return chunk_infos
 
 
-    """
-    pass
+def _classify_reads(job, config, sam_location, chunk_info):
+    start = time.time()
+    # classifications
+    before_chunk_start = set()
+    spans_chunk_start = set()
+    wholly_in_chunk = set()
+    spans_chunk_end = set()
+    after_chunk_end = set()
+    start_hap1 = set()
+    start_hap2 = set()
+    end_hap1 = set()
+    end_hap2 = set()
 
 
+    chunk_start = chunk_info[CI_CHUNK_BOUNDARY_START]
+    chunk_end = chunk_info[CI_CHUNK_BOUNDARY_END]
+    with open(sam_location, 'r') as input:
+        for line in input:
+            #prep
+            if line.startswith("@"): continue  # header
+            read = line.split("\t")
+            read_id = read[0]
+            align_start = int(read[3])
+            align_end = align_start + int(read[8])
+            # organize
+            if align_start < chunk_start and align_end < chunk_start:
+                before_chunk_start.add(read_id)
+            elif align_start <= chunk_start and align_end > chunk_start:
+                spans_chunk_start.add(read_id)
+                _store_read_haplotype_at_locus(job, config, chunk_start, read, start_hap1, start_hap2)
+                # edge case
+                if align_end > chunk_end:
+                    spans_chunk_end.add(read_id)
+                    _store_read_haplotype_at_locus(job, config, chunk_end, read, end_hap1, end_hap2)
+            elif align_start > chunk_start and align_end < chunk_end:
+                wholly_in_chunk.add(read_id)
+            elif align_start <= chunk_end and align_end > chunk_end:
+                spans_chunk_end.add(read_id)
+                _store_read_haplotype_at_locus(job, config, chunk_end, read, end_hap1, end_hap2)
+            elif align_start > chunk_end:
+                after_chunk_end.add(read_id)
+            else:
+                error = "PROGRAMMER ERROR: edge case not met in classify_reads: " \
+                        "chunk_idx:{}, chunk_start:{}, chunk_end:{}, read_id:{}, align_start:{}, align_end:{}"\
+                    .format(chunk_info[CI_CHUNK_INDEX], chunk_start, chunk_end, read_id, align_start, align_end)
+                job.fileStore.logToMaster("{}: {}".format(config.uuid, error))
+                raise Exception(error)
 
+    #loggit
+    job.fileStore.logToMaster("{}:merge_chunks: chunk_idx:{}, chunk_start:{}, chunk_end:{}, before_start:{}, span_start:{}, "
+                              "wholly_within:{}, span_end:{}, after_end:{}"
+                              .format(config.uuid, chunk_info[CI_CHUNK_INDEX], chunk_start, chunk_end,
+                                      len(before_chunk_start), len(spans_chunk_start), len(wholly_in_chunk),
+                                      len(spans_chunk_end), len(after_chunk_end)))
+    job.fileStore.logToMaster("{}:merge_chunks: chunk_idx:{}, chunk_start:{}, chunk_end:{}, start_hap1:{}, start_hap2:{}, "
+                              "end_hap1:{}, end_hap2:{}"
+                              .format(config.uuid, chunk_info[CI_CHUNK_INDEX], chunk_start, chunk_end,
+                                      len(start_hap1), len(start_hap2), len(end_hap1), len(end_hap2)))
+    _log_time(job, "classify_reads", start, config.uuid)
+
+    return {
+        CR_BEFORE_START: before_chunk_start,
+        CR_SPAN_START : spans_chunk_start,
+        CR_WHOLLY_WITHIN : wholly_in_chunk,
+        CR_SPAN_END : spans_chunk_end,
+        CR_AFTER_END : after_chunk_end,
+        CR_START_HAP1 : start_hap1,
+        CR_START_HAP2 : start_hap2,
+        CR_END_HAP1 : end_hap1,
+        CR_END_HAP2 : end_hap2
+    }
+
+
+def _store_read_haplotype_at_locus(job, config, boundary, read, hap1_reads, hap2_reads):
+    read_id = read[0]
+    tags = read[11:]
+
+    # find haplotype tag
+    haplotype_tags = None
+    for tag in tags:
+        if tag.startswith(TAG_HAPLOTYPE):
+            tag_parts = tag.split(":")
+            tag_contents = tag_parts[2]
+            haplotype_tags = tag_contents.split(";")
+    # sanity check
+    if haplotype_tags is None:
+        job.fileStore.logToMaster("{}: SANITY_CHECK_FAIL read {} had no {} tag".format(
+            config.uuid, read_id, TAG_HAPLOTYPE))
+        return None
+
+    # get tag for the phase block we want
+    the_hap_tag_we_want = None
+    for hap_tag in haplotype_tags:
+        if int(hap_tag.split(",")[1].lstrip("p")) <= boundary: the_hap_tag_we_want = hap_tag
+        else: break
+    # sanity check
+    if the_hap_tag_we_want is None:
+        job.fileStore.logToMaster("{}: SANITY_CHECK_FAIL read {} had no phase blocks before {}: '{}'".format(
+            config.uuid, read_id, boundary, ";".join(haplotype_tags)))
+        return None
+
+    # get haplotype
+    haplotype = int(the_hap_tag_we_want.split(",")[0].lstrip("h"))
+    if haplotype == 1:
+        hap1_reads.add(read_id)
+        return True
+    elif haplotype == 2:
+        hap2_reads.add(read_id)
+        return True
+    return False
+
+
+"""
 def merge_chunks(job, config, chunk_infos):
     # prep
     start = time.time()
@@ -585,7 +850,7 @@ def merge_chunks(job, config, chunk_infos):
 
         # fully merged vcf file
         if full_merged_vcf_file is None:
-            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.vcf".format(config.uuid))
+            full_merged_vcf_file = os.path.join(merged_chunks_directory, "{}.merged.full.sam".format(config.uuid))
             with open(vcf_file, 'r') as input, open(full_merged_vcf_file, 'w') as output:
                 for line in input:
                     if line.startswith("#"):
@@ -724,6 +989,7 @@ def merge_chunks(job, config, chunk_infos):
 
     _log_time(job, "merge_chunks", start, config.uuid)
     return chunk_infos
+"""
 
 
 def _should_same_haplotype_ordering_be_maintained(job, config, prev_chunk, curr_chunk,
@@ -832,12 +1098,17 @@ def _sort_vcf_file(job, config, work_dir, vcf_file_name):
     subprocess.check_call(["mv", sorted_vcf_file, vcf_file])
 
 
-def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excluded_read_ids=set()):
+def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excluded_read_ids=set(),
+                              include_header=False):
     written_lines = 0
     read_ids_not_written = set()
     with open(output_sam_file, 'a') as output, open(input_sam_file, 'r') as input:
         for line in input:
-            if line.startswith("@"): continue  # header
+            if line.startswith("@"): # header
+                if include_header:
+                    output.write(line)
+                    written_lines += 1
+                continue
             read_id = line.split("\t")[0]
             if read_id in excluded_read_ids: # already written in a previous chunk
                 read_ids_not_written.add(read_id)
@@ -851,14 +1122,18 @@ def _append_sam_reads_to_file(job, config, input_sam_file, output_sam_file, excl
 
 
 def _append_vcf_calls_to_file(job, config, input_vcf_file, output_vcf_file, start_pos, end_pos,
-                              mp_identifier=None, reverse_phasing=False):
+                              mp_identifier=None, reverse_phasing=False, include_header=False):
     written_lines = 0
     lines_outside_boundaries = 0
     with open(output_vcf_file, 'a') as output, open(input_vcf_file, 'r') as input:
         first_analyzed_line = True #may need to manage the phase set (only for the first phase of a chunk)
         updated_phase_set_value = None
         for line in input:
-            if line.startswith("#"): continue  # header
+            if line.startswith("#"):  # header
+                if include_header:
+                    output.write(line)
+                    written_lines += 1
+                continue
 
             # break line into parts
             line = line.rstrip().split("\t")
@@ -935,17 +1210,19 @@ def _extract_chunk_tarball(job, config, tar_work_dir, chunk):
         tar.extractall(tar_work_dir)
 
     # find desired files
-    sam_hap1, sam_hap2, vcf = None, None, None
+    sam_hap1, sam_hap2, sam_unified, vcf = None, None, None, None
     for name in os.listdir(tar_work_dir):
         if name.endswith(VCF_SUFFIX): vcf = name
         elif name.endswith(SAM_HAP_1_SUFFIX): sam_hap1 = name
         elif name.endswith(SAM_HAP_2_SUFFIX): sam_hap2 = name
+        elif name.endswith(SAM_UNIFIED_SUFFIX): sam_unified = name
     sam_hap1_file = None if sam_hap1 is None else os.path.join(tar_work_dir, sam_hap1)
     sam_hap2_file = None if sam_hap2 is None else os.path.join(tar_work_dir, sam_hap2)
+    sam_unified_file = None if sam_unified is None else os.path.join(tar_work_dir, sam_unified)
     vcf_file = None if vcf is None else os.path.join(tar_work_dir, vcf)
 
     # return file locations
-    return sam_hap1_file, sam_hap2_file, vcf_file
+    return sam_hap1_file, sam_hap2_file, sam_unified_file, vcf_file
 
 
 def _get_read_ids_in_range(job, config, work_dir, file_name, contig_name, start_pos, end_pos):
@@ -1103,9 +1380,6 @@ def generate_config():
         # Optional: URL {scheme} for default parameters file
         default-params: file://path/to/reference.fa
 
-        # Optional: URL {scheme} for default reference vcf
-        default-vcf: file://path/to/reference.fa
-
         # Optional: Don't include BAM or SAM in output
         minimal-output: False
 
@@ -1129,17 +1403,16 @@ def generate_manifest():
         #   CONTIG_NAME     Optional    Contig name (must match the contig in the URL and the reference)
         #   REFERENCE_URL   Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to reference fasta file
         #   PARAMS_URL      Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to parameters file for the run
-        #   VCF_URL         Optional    A URL ['http://', 'file://', 's3://', 'ftp://'] pointing to reference vcf file for the run
         #
         #   For the four optional values, there must be a value specified either in this manifest, or in the configuration
         #   file.  Any value specified in the manifest overrides whatever is specified in the config file
         #
         #   Examples of several combinations are provided below. Lines beginning with # are ignored.
         #
-        #   UUID_1  file:///path/to/file.bam
-        #   UUID_2  s3://path/to/file.bam   chrX    s3://path/to/chrX.reference.fa      file:///path/to/chrX.reference.vcf
-        #   UUID_3  s3://path/to/file.bam   chr4    file:///path/to/chr4.reference.fa   file:///path/to/params.json file:///path/to/chr4.reference.vcf
-        #   UUID_4  file:///path/to/file.bam            file:///path/to/params.json
+        #   UUID_1\tfile:///path/to/file.bam
+        #   UUID_2\ts3://path/to/file.bam\tchrX\ts3://path/to/chrX.reference.fa
+        #   UUID_3\ts3://path/to/file.bam\tchr4\tfile:///path/to/chr4.reference.fa\tfile:///path/to/params.json
+        #   UUID_4\tfile:///path/to/file.bam\t\t\tfile:///path/to/params.json
         #
         #   Place your samples below, one per line.
         """.format(scheme=[x + '://' for x in SCHEMES])[1:])

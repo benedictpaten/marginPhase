@@ -16,7 +16,7 @@
 void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
                         char *marginPhaseTag) {
     // prep
-    char *haplotypedSamFile = stString_print("%s.haplotyped.sam", bamOutBase);
+    char *haplotypedSamFile = stString_print("%s.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -78,7 +78,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionT
     // prep
     char *haplotype1SamOutFile = stString_print("%s.1.sam", bamOutBase);
     char *haplotype2SamOutFile = stString_print("%s.2.sam", bamOutBase);
-    char *unmatchedSamOutFile = stString_print("%s.filtered.sam", bamOutBase);
+    char *unmatchedSamOutFile = stString_print("%s.0.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
