@@ -456,7 +456,8 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
 
     if(stList_length(tilingPaths) > MAX_READ_PARTITIONING_DEPTH || stList_length(tilingPaths) > params->maxCoverageDepth) {
-        st_errAbort("Coverage depth: %" PRIi64 " exceeds maximum: %" PRIi64 " %" PRIi64 "\n",
+        st_errAbort("\nCoverage depth: read depth of %" PRIi64 " exceeds hard maximum of %" PRIi64
+                            " with configured maximum of %" PRIi64 "\n",
                 stList_length(tilingPaths), MAX_READ_PARTITIONING_DEPTH, params->maxCoverageDepth);
     }
 

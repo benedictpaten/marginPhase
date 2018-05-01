@@ -8,16 +8,15 @@
 #include <htslib/vcf.h>
 #include <htslib/bgzf.h>
 #include <htslib/hts.h>
+#include <hashTableC.h>
 #include "stRPHmm.h"
 
 
 
-void writeSplitBams(char *bamInFile, char *bamOutBase,
-                    stSet *haplotype1Ids, stSet *haplotype2Ids) {
+void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                        char *marginPhaseTag) {
     // prep
-    char *haplotype1BamOutFile = stString_print("%s.1.bam", bamOutBase);
-    char *haplotype2BamOutFile = stString_print("%s.2.bam", bamOutBase);
-    char *unmatchedBamOutFile = stString_print("%s.filtered.bam", bamOutBase);
+    char *haplotypedSamFile = stString_print("%s.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -28,54 +27,58 @@ void writeSplitBams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1BamOutFile, haplotype2BamOutFile);
-    BGZF *out1 = bgzf_open(haplotype1BamOutFile, "w");
-    r = bam_hdr_write(out1, bamHdr);
+    st_logDebug("\tWriting haplotype output to: %s \n", haplotypedSamFile);
 
-    BGZF *out2 = bgzf_open(haplotype2BamOutFile, "w");
-    r = bam_hdr_write(out2, bamHdr);
-
-    BGZF *out3 = bgzf_open(unmatchedBamOutFile, "w");
-    r = bam_hdr_write(out3, bamHdr);
+    samFile *out = hts_open(haplotypedSamFile, "w");
+    r = sam_hdr_write(out, bamHdr);
 
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountFiltered = 0;
+    char *haplotypeString;
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
-        if (stSet_search(haplotype1Ids, readName) != NULL) {
-            r = bam_write1(out1, aln);
-            readCountH1++;
-        } else if (stSet_search(haplotype2Ids, readName) != NULL) {
-            r = bam_write1(out2, aln);
-            readCountH2++;
-        } else {
-            r = bam_write1(out3, aln);
-            readCountFiltered++;
+        if (marginPhaseTag != NULL) {
+            bam_aux_append(aln, MARGIN_PHASE_TAG, 'Z', (int)strlen(marginPhaseTag) + 1, (uint8_t*)marginPhaseTag);
         }
+
+        stReadHaplotypeSequence *readHaplotypes = hashtable_search(readHaplotypePartitions, readName);
+        if (readHaplotypes == NULL) {
+            haplotypeString = stReadHaplotypeSequence_toStringEmpty();
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            r = sam_write1(out, bamHdr, aln);
+            readCountFiltered++;
+        } else {
+            haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            r = sam_write1(out, bamHdr, aln);
+            // document based on last recorded haplotype
+            while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
+            if (readHaplotypes->haplotype == 1)
+                readCountH1++;
+            else
+                readCountH2++;
+        }
+        free(haplotypeString);
     }
-    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+    st_logInfo("\tSAM read counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
 
     // Cleanup
     bam_destroy1(aln);
     bam_hdr_destroy(bamHdr);
     sam_close(in);
-    bgzf_close(out1);
-    bgzf_close(out2);
-    bgzf_close(out3);
-    free(haplotype1BamOutFile);
-    free(haplotype2BamOutFile);
-    free(unmatchedBamOutFile);
+    sam_close(out);
+    free(haplotypedSamFile);
 }
 
-void writeSplitSams(char *bamInFile, char *bamOutBase,
-                    stSet *haplotype1Ids, stSet *haplotype2Ids) {
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                    char *marginPhaseTag) {
     // prep
     char *haplotype1SamOutFile = stString_print("%s.1.sam", bamOutBase);
     char *haplotype2SamOutFile = stString_print("%s.2.sam", bamOutBase);
-    char *unmatchedSamOutFile = stString_print("%s.filtered.sam", bamOutBase);
+    char *unmatchedSamOutFile = stString_print("%s.0.sam", bamOutBase);
 
     // file management
     samFile *in = hts_open(bamInFile, "r");
@@ -86,35 +89,53 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     bam1_t *aln = bam_init1();
 
     int r;
-    st_logDebug("Writing haplotype output to: %s and %s \n", haplotype1SamOutFile, haplotype2SamOutFile);
+    st_logDebug("\tWriting haplotype output to: %s, %s, and %s \n", haplotype1SamOutFile,
+                haplotype2SamOutFile, unmatchedSamOutFile);
     samFile *out1 = hts_open(haplotype1SamOutFile, "w");
     r = sam_hdr_write(out1, bamHdr);
 
     samFile *out2 = hts_open(haplotype2SamOutFile, "w");
     r = sam_hdr_write(out2, bamHdr);
 
-    samFile *out3 = hts_open(unmatchedSamOutFile, "w");
-    r = sam_hdr_write(out3, bamHdr);
+    samFile *outUnmatched = hts_open(unmatchedSamOutFile, "w");
+    r = sam_hdr_write(outUnmatched, bamHdr);
+
 
     // read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountFiltered = 0;
+    char *haplotypeString;
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         char *readName = bam_get_qname(aln);
-        if (stSet_search(haplotype1Ids, readName) != NULL) {
-            r = sam_write1(out1, bamHdr, aln);
-            readCountH1++;
-        } else if (stSet_search(haplotype2Ids, readName) != NULL) {
-            r = sam_write1(out2, bamHdr, aln);
-            readCountH2++;
-        } else {
-            r = sam_write1(out3, bamHdr, aln);
-            readCountFiltered++;
+        if (marginPhaseTag != NULL) {
+            bam_aux_append(aln, MARGIN_PHASE_TAG, 'Z', (int)strlen(marginPhaseTag) + 1, (uint8_t*)marginPhaseTag);
         }
+
+        stReadHaplotypeSequence *readHaplotypes = hashtable_search(readHaplotypePartitions, readName);
+        if (readHaplotypes == NULL) {
+            haplotypeString = stReadHaplotypeSequence_toStringEmpty();
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            r = sam_write1(outUnmatched, bamHdr, aln);
+            readCountFiltered++;
+        } else {
+            haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
+            bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
+            // document based on last recorded haplotype
+            while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
+            if (readHaplotypes->haplotype == 1) {
+                r = sam_write1(out1, bamHdr, aln);
+                readCountH1++;
+            } else {
+                r = sam_write1(out2, bamHdr, aln);
+                readCountH2++;
+            }
+        }
+        free(haplotypeString);
+
     }
-    st_logInfo("Read counts:\n\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
+    st_logInfo("\tSAM read counts:\n\t\thap1: %d\thap2: %d\tfiltered out: %d \n", readCountH1, readCountH2, readCountFiltered);
 
     // Cleanup
     bam_destroy1(aln);
@@ -122,7 +143,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase,
     sam_close(in);
     sam_close(out1);
     sam_close(out2);
-    sam_close(out3);
+    sam_close(outUnmatched);
     free(haplotype1SamOutFile);
     free(haplotype2SamOutFile);
     free(unmatchedSamOutFile);
@@ -797,4 +818,135 @@ void writeParamFile(char *outputFilename, stRPHmmParameters *params) {
     fprintf(fd, "}");
 
     if (fclose(fd) != 0) st_logCritical("Failed to close output param file: %s\n", outputFilename);
+}
+
+//
+//  Read Haplotype Sequence functions
+//
+
+stReadHaplotypeSequence *stReadHaplotypeSequence_construct(
+        int64_t readStart, int64_t phaseBlock, int64_t length, int8_t haplotype) {
+    stReadHaplotypeSequence *s = malloc(sizeof(stReadHaplotypeSequence));
+    s->readStart = readStart;
+    s->phaseBlock = phaseBlock;
+    s->length = length;
+    s->haplotype = haplotype;
+    s->next = NULL;
+    return s;
+}
+
+char *stReadHaplotypeSequence_toString(stReadHaplotypeSequence *rhs) {
+    char *curr = stString_print("h%"PRIi8",p%"PRIi64",r%"PRIi64",l%"PRIi64, rhs->haplotype, rhs->phaseBlock,
+                                   rhs->readStart, rhs->length);
+    if (rhs->next != NULL) {
+        char *next = stReadHaplotypeSequence_toString(rhs->next);
+        char *tmp = curr;
+        curr = stString_print("%s;%s", tmp, next);
+        free(tmp);
+        free(next);
+    }
+
+    return curr;
+}
+
+char *stReadHaplotypeSequence_toStringEmpty() {
+    return stString_print("h0,p0,r0,l0");
+}
+
+void stReadHaplotypeSequence_destruct(stReadHaplotypeSequence *rhs) {
+    if (rhs->next != NULL) {
+        stReadHaplotypeSequence_destruct(rhs->next);
+    }
+    free(rhs);
+}
+
+
+//
+//  HaplotypePartitionTable
+//  Tracks ReadHaplotypeSequence information
+//
+
+//todo destroy keys (char*)
+stReadHaplotypePartitionTable *stReadHaplotypePartitionTable_construct(int64_t initialSize) {
+    return create_hashtable((uint64_t) initialSize, stHash_stringKey, stHash_stringEqualKey,
+                            NULL, (void *)stReadHaplotypeSequence_destruct);
+}
+void stReadHaplotypePartitionTable_add(stReadHaplotypePartitionTable *hpt, char *readName, int64_t readStart,
+                                       int64_t phaseBlock, int64_t length, int8_t haplotype) {
+
+    stReadHaplotypeSequence *new = stReadHaplotypeSequence_construct(readStart, phaseBlock, length, haplotype);
+    stReadHaplotypeSequence *curr = hashtable_search(hpt, readName);
+    if (NULL == curr) {
+        hashtable_insert(hpt, readName, new);
+    } else {
+        stReadHaplotypeSequence *prev;
+        do {
+            prev = curr;
+            if (curr->phaseBlock == phaseBlock) {
+                if (haplotype != curr->haplotype) {
+                    st_logCritical("\tRead %s found in both haplotypes in phase block %"PRIi64"\n", readName, phaseBlock);
+                }
+
+                // don't need to record
+                stReadHaplotypeSequence_destruct(new);
+                return;
+            }
+            curr = curr->next;
+        } while (curr != NULL);
+        prev->next = new;
+    }
+}
+void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt) {
+    hashtable_destroy(hpt, true, false);
+}
+
+
+//
+//  Populating HaplotypePartitionTable from GenomeFragment and HMM
+//
+
+void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
+                                         stList *path) {
+    //todo track all partitioned reads and quit early if examined
+    // same for whole GenomeFragment
+    int64_t phaseBlock = gF->refStart - 1;
+    int64_t phaseBlockEnd = phaseBlock + gF->length;
+
+    // variables for partitions
+    char *readName;
+    int64_t readStart;
+    int64_t length;
+    int8_t haplotype;
+
+    // For each cell/column pair
+    stRPColumn *column = hmm->firstColumn;
+    for(int64_t i=0; i<stList_length(path); i++) {
+        stRPCell *cell = stList_get(path, i);
+
+        // Get reads in partitions
+        for(int64_t j=0; j<column->depth; j++) {
+            stProfileSeq *read = column->seqHeaders[j];
+            readName = read->readId;
+            readStart = (read->refStart < phaseBlock ? phaseBlock - read->refStart : 0);
+            length = (read->refStart + read->length > phaseBlockEnd ?
+                      phaseBlockEnd - read->refStart :
+                      read->length - readStart);
+            haplotype = (int8_t) (seqInHap1(cell->partition, j) ? 1 : 2);
+
+            //todo more sanity check
+            assert(length >= 0);
+            assert(length <= read->length);
+            assert(readStart >= 0);
+            assert(readStart <= read->length);
+
+            // save to hpt
+            stReadHaplotypePartitionTable_add(hpt, readName, readStart, phaseBlock, length, haplotype);
+        }
+
+        // iterate
+        if(column->nColumn != NULL) {
+            column = column->nColumn->nColumn;
+        }
+    }
+
 }

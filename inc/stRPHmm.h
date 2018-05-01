@@ -269,7 +269,8 @@ struct _stRPHmmParameters {
 
     // What types of file formats of split reads to output
     bool writeSplitSams;
-    bool writeSplitBams;
+    bool writeUnifiedSam;
+//    bool writeSplitBams;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -505,7 +506,8 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 // Parsing stuff
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
-int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
+int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
+                                            stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
@@ -564,16 +566,42 @@ struct _stGenotypeResults {
 void printGenotypeResults(stGenotypeResults *results);
 
 // VCF comparison
-
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
 void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 
-// Output file writing
-void writeSplitBams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
-void writeSplitSams(char *bamInFile, char *bamOutBase, stSet *haplotype1Ids, stSet *haplotype2Ids);
-void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
+// Tag definitions (for haplotype output)
+#define HAPLOTYPE_TAG "ht"
+#define MARGIN_PHASE_TAG "mp"
 
+// Tracking haplotypes for read
+typedef struct _stReadHaplotypeSequence stReadHaplotypeSequence;
+struct _stReadHaplotypeSequence {
+    int64_t readStart;
+    int64_t phaseBlock;
+    int64_t length;
+    int8_t haplotype;
+    void *next;
+};
+stReadHaplotypeSequence *stReadHaplotypeSequence_construct(int64_t readStart, int64_t phaseBlock, int64_t length,
+                                                           int8_t haplotype);
+char *stReadHaplotypeSequence_toString(stReadHaplotypeSequence *rhs);
+char *stReadHaplotypeSequence_toStringEmpty();
+void stReadHaplotypeSequence_destruct(stReadHaplotypeSequence * rhs);
+
+// Tracking haplotypes for all reads
+typedef struct hashtable stReadHaplotypePartitionTable;
+stReadHaplotypePartitionTable *stReadHaplotypePartitionTable_construct(int64_t initialSize);
+void stReadHaplotypePartitionTable_add(stReadHaplotypePartitionTable *hpt, char *readName, int64_t readStart,
+                                       int64_t phaseBlock, int64_t length, int8_t haplotype);
+void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
+void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
+                                         stList *path);
+
+// Output file writing
+void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
+void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 #endif /* ST_RP_HMM_H_ */

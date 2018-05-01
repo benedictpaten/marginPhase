@@ -143,7 +143,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->compareVCFs = false;
     params->writeGVCF = false;
     params->writeSplitSams = true;
-    params->writeSplitBams = false;
+    params->writeUnifiedSam = true;
 
     setVerbosity(params, 0);
 
@@ -371,12 +371,17 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
             params->writeGVCF = strcmp(tokStr, "true") == 0;
             i++;
-        } else if (strcmp(keyString, "splitReadOutputType") == 0) {
+        } else if (strcmp(keyString, "writeSplitSams") == 0) {
             jsmntok_t tok = tokens[i+1];
             char *tokStr = json_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "sam") || strcmp(tokStr, "bam") || strcmp(tokStr, "both") || strcmp(tokStr, "neither"));
-            params->writeSplitSams = (strcmp(tokStr, "sam") == 0) || (strcmp(tokStr, "both") == 0);
-            params->writeSplitBams = (strcmp(tokStr, "bam") == 0) || (strcmp(tokStr, "both") == 0);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->writeSplitSams = strcmp(tokStr, "true") == 0;
+            i++;
+        }else if (strcmp(keyString, "writeUnifiedSam") == 0) {
+            jsmntok_t tok = tokens[i+1];
+            char *tokStr = json_token_tostr(js, &tok);
+            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+            params->writeUnifiedSam = strcmp(tokStr, "true") == 0;
             i++;
         }
         else if (strcmp(keyString, "mapqFilter") == 0) {
@@ -434,8 +439,8 @@ void appendProbsToList(stList *probabilityList, uint8_t pA, uint8_t pC, uint8_t 
     stList_append(probabilityList, gapPtr);
 }
 
-stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocation, char *readName,
-                                                    stBaseMapper *baseMapper, stRPHmmParameters *params) {
+stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLocation, char *readName,
+                                                       stBaseMapper *baseMapper, stRPHmmParameters *params) {
     // get signalAlign file
     FILE *fp = fopen(signalAlignReadLocation,"r");
 
@@ -605,12 +610,12 @@ stProfileSeq* getProfileSequenceFromSignalAlignFile(char *signalAlignReadLocatio
  * signal level alignments).
  * */
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
-    return parseReadsWithSignalAlign(profileSequences, bamFile, baseMapper, params, NULL, false);
+    return parseReadsWithSingleNucleotideProbs(profileSequences, bamFile, baseMapper, params, NULL, false);
 }
-int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
-                                  stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign) {
-    if (signalAlignDirectory != NULL) {
-        st_logInfo("\tModifying probabilities from signalAlign files in %s\n", signalAlignDirectory);
+int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
+                                            stRPHmmParameters *params, char *singleNuclProbDirectory, bool onlySingleNuclProb) {
+    if (singleNuclProbDirectory != NULL) {
+        st_logInfo("\tModifying probabilities from single nucleotide probability files in %s\n", singleNuclProbDirectory);
     }
 
     samFile *in = hts_open(bamFile, "r");
@@ -622,10 +627,10 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     bam1_t *aln = bam_init1();
 
     int64_t readCount = 0;
-    int64_t signalAlignReadCount = 0;
+    int64_t singleNuclProbReadCount = 0;
     int64_t bamReadCount = 0;
     int64_t profileCount = 0;
-    int64_t missingSignalAlignReads = 0;
+    int64_t missingSingleNuclProbReads = 0;
     int64_t filteredReads = 0;
     int64_t filteredReads_flag = 0;
     int64_t filteredReads_mapq = 0;
@@ -670,24 +675,24 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
         readCount++;
 
         // should we read from the signalAlign directory?
-        if (signalAlignDirectory != NULL) {
+        if (singleNuclProbDirectory != NULL) {
             // get signalAlign file (if exists)
-            char *signalAlignReadLocation = stString_print("%s/%s.tsv", signalAlignDirectory, readName);
-            if (access(signalAlignReadLocation, F_OK) == -1) {
+            char *singleNuclProbReadLocation = stString_print("%s/%s.tsv", singleNuclProbDirectory, readName);
+            if (access(singleNuclProbReadLocation, F_OK) == -1) {
                 // could not find the read file
-                missingSignalAlignReads++;
+                missingSingleNuclProbReads++;
             } else {
                 // found the read file
-                pSeq = getProfileSequenceFromSignalAlignFile(signalAlignReadLocation, readName, baseMapper, params);
-                signalAlignReadCount++;
+                pSeq = getProfileSequenceFromSingleNuclProbFile(singleNuclProbReadLocation, readName, baseMapper, params);
+                singleNuclProbReadCount++;
                 // we have a profile, so save it
                 stList_append(profileSequences, pSeq);
                 profileCount++;
             }
-            free(signalAlignReadLocation);
+            free(singleNuclProbReadLocation);
 
             // if we found a SA file or if we don't want missing reads
-            if (pSeq != NULL || onlySignalAlign) {
+            if (pSeq != NULL || onlySingleNuclProb) {
                 continue;
             }
         }
@@ -795,12 +800,12 @@ int64_t parseReadsWithSignalAlign(stList *profileSequences, char *bamFile, stBas
     }
 
     // log signal align usage
-    if (signalAlignDirectory != NULL) {
-        if (missingSignalAlignReads > 0) {
-            st_logInfo("\t%d/%d reads were missing signalAlign probability file\n", missingSignalAlignReads, readCount);
+    if (singleNuclProbDirectory != NULL) {
+        if (missingSingleNuclProbReads > 0) {
+            st_logInfo("\t%d/%d reads were missing single nucleotide probability file\n", missingSingleNuclProbReads, readCount);
         }
-        st_logInfo("\tOf %d total reads: %d were loaded from signalAlign data, and %d were from the bam\n",
-                   profileCount, signalAlignReadCount, bamReadCount);
+        st_logInfo("\tOf %d total reads: %d were loaded from single nucleotide probability data, and %d were from the bam\n",
+                   profileCount, singleNuclProbReadCount, bamReadCount);
 
     }
 
