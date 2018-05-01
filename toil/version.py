@@ -17,4 +17,5 @@ version = '1.0.0a1'
 required_versions = {'toil': '==3.15.0',
                      'toil-lib': '==1.1.8',
                      'pyyaml': '>=3.11',
-                     'azure': '==2.0'}
+                     'azure': '==2.0',
+                     'pysam': '==0.14.1'}
