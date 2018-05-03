@@ -395,7 +395,7 @@ int main(int argc, char *argv[]) {
                 { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "tag", required_argument, 0, 't'},
-                { "singleNuclProb", required_argument, 0, 's'},
+                { "singleNuclProbDir", required_argument, 0, 's'},
                 { "onlySNP", no_argument, 0, 'S'},
                 { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };

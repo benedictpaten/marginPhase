@@ -381,9 +381,16 @@ def run_margin_phase(job, config, chunk_file_id, chunk_info):
     if cpecan_prob_location is not None:
         cpecan_tarball = glob.glob(os.path.join(work_dir, cpecan_prob_location, "*.tar.gz"))
         if len(cpecan_tarball) == 0:
+            # todo why has tarball_files failed in this location?
+            job.fileStore.logToMaster("{}:run_margin_phase: Found no cpecan output tarball! Trying alt location"
+                                      .format(chunk_identifier))
+            cpecan_tarball = glob.glob(os.path.join(work_dir, "*.tar.gz"))
+
+        if len(cpecan_tarball) == 0:
             job.fileStore.logToMaster("{}:run_margin_phase: Found no cpecan output tarball!".format(chunk_identifier))
         elif len(cpecan_tarball) > 1:
-            job.fileStore.logToMaster("{}:run_margin_phase: Found {} cpecan output tarballs!".format(chunk_identifier, len(cpecan_tarball)))
+            job.fileStore.logToMaster("{}:run_margin_phase: Found {} cpecan output tarballs: {}!"
+                                      .format(chunk_identifier, len(cpecan_tarball), cpecan_tarball))
         else:
             job.fileStore.logToMaster("{}:run_margin_phase: Saving cpecan output tarball".format(chunk_identifier))
             output_file_locations.append(cpecan_tarball[0])
@@ -478,7 +485,16 @@ def run_cpecan_alignment(job, config, chunk_identifier, work_dir, alignment_file
 
     # tarball the output and save
     tarball_name = "{}.nuc_pos_prob.tar.gz".format(chunk_identifier)
-    tarball_files(tar_name=tarball_name, file_paths=output_files, output_dir=os.path.join(work_dir, out_dir_name))
+    try:
+        tarball_files(tar_name=tarball_name, file_paths=output_files, output_dir=os.path.join(work_dir, out_dir_name))
+    except Exception, e:
+        job.fileStore.logToMaster(
+            "{}:run_margin_phase:run_cpecan_alignment: {} error making cPecan tarball: {}"
+                .format(chunk_identifier, type(e), e))
+        tarball_files(tar_name=tarball_name, file_paths=output_files, output_dir=work_dir)
+        job.fileStore.logToMaster(
+            "{}:run_margin_phase:run_cpecan_alignment: created tarball in work_dir: {}"
+                .format(chunk_identifier, os.path.join(work_dir)))
 
     # cleanup
     _log_time(job, "run_cpecan_alignment", start, config.uuid)
