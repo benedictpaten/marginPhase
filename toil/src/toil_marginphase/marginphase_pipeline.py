@@ -47,11 +47,11 @@ DOCKER_CPECAN_TAG_DEFAULT = "latest"
 
 # resource
 MP_CPU = 16
-MP_MEM_BAM_FACTOR = 512 #todo account for learning iterations
+MP_MEM_BAM_FACTOR = 128 #todo account for learning iterations
 MP_MEM_REF_FACTOR = 2
-MP_DSK_BAM_FACTOR = 5.5 #input bam chunk, output (in sam fmt), vcf etc
-MP_DSK_REF_FACTOR = 2.5
-MP_DSK_UNITTEST_FACTOR = .2
+MP_DSK_BAM_FACTOR = 8 #input bam chunk, output (in sam fmt), vcf etc
+MP_DSK_CPECAN_FACTOR = 4
+MP_DSK_REF_FACTOR = 2
 
 # for debugging
 DEBUG = True
@@ -254,9 +254,11 @@ def prepare_input(job, sample, config):
         if read_count > 0:
             chunk_fileid = job.fileStore.writeGlobalFile(chunk_location)
             mp_cores = config.defaultCores
-            mp_mem = int(min(int(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR), config.maxMemory))
-            mp_disk = int(min(int(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR), config.maxDisk))
-            if config.unittest: mp_disk = mp_disk * MP_DSK_UNITTEST_FACTOR
+            mp_mem = int(min(int(chunk_size * MP_MEM_BAM_FACTOR + ref_genome_size * MP_MEM_REF_FACTOR),
+                             config.maxMemory))
+            mp_disk = int(min(int(chunk_size * MP_DSK_BAM_FACTOR + ref_genome_size * MP_DSK_REF_FACTOR +
+                                  (0 if config.cpecan_probabilities else MP_DSK_CPECAN_FACTOR) * chunk_size),
+                              config.maxDisk))
             job.fileStore.logToMaster("{}:{}:prepare_input: requesting {} cores, {}b ({}mb) disk, {}b ({}gb) mem"
                                       .format(config.uuid, idx, mp_cores, mp_disk, int(mp_disk / 1024 / 1024 ),
                                               mp_mem, int(mp_mem / 1024 / 1024 / 1024)))
@@ -738,7 +740,7 @@ def _classify_reads(job, config, sam_location, chunk_info):
             align_end = read.reference_end
 
             # organize
-            if align_start < chunk_start and align_end < chunk_start:
+            if align_start < chunk_start and align_end <= chunk_start:
                 before_chunk_start.add(read_id)
             elif align_start <= chunk_start and align_end > chunk_start:
                 spans_chunk_start.add(read_id)
@@ -749,7 +751,7 @@ def _classify_reads(job, config, sam_location, chunk_info):
                     spans_chunk_end.add(read_id)
                     pb, _ = _store_read_haplotype_at_locus(job, config, chunk_end, read, end_hap1, end_hap2)
                     end_phase_blocks[pb] = 1 if pb not in end_phase_blocks else end_phase_blocks[pb] + 1
-            elif align_start > chunk_start and align_end < chunk_end:
+            elif align_start > chunk_start and align_end <= chunk_end:
                 wholly_in_chunk.add(read_id)
             elif align_start <= chunk_end and align_end > chunk_end:
                 spans_chunk_end.add(read_id)
