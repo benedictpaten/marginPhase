@@ -75,12 +75,14 @@ def parse_args(args = None):
                         help='How far to sample read data')
     parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
                         help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
-    parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
-                        help='Filter secondary alignments out (only include primary)')
-    parser.add_argument('--filter_primary', '-F', dest='filter_primary', action='store_true', default=False,
-                        help='Filter primary alignments out (only include secondary)')
-    parser.add_argument('--min_alignment_threshold', '-a', dest='min_alignment_threshold', action='store', default=None,
-                        type=int, help='Minimum alignment threshold, below which reads are not included')
+    parser.add_argument('--filter_secondary', '-E', dest='filter_secondary', action='store_true', default=False,
+                        help='Filter secondary alignments out')
+    parser.add_argument('--filter_supplemenary', '-U', dest='filter_supplemenary', action='store_true', default=False,
+                        help='Filter supplemenary alignments out')
+    parser.add_argument('--filter_read_length_min', '-L', dest='read_length_min', action='store', default=None, type=int,
+                        help='How far to sample read data')
+    parser.add_argument('--filter_alignment_threshold_min', '-A', dest='min_alignment_threshold', action='store',
+                        default=None, type=int, help='Minimum alignment quality threshold')
 
     return parser.parse_args() if args is None else parser.parse_args(args)
 
@@ -423,8 +425,6 @@ def main(args = None):
         # get read data we care about
         samfile = None
         read_count = 0
-        secondary_read_count = 0
-        supplementary_read_count = 0
         try:
             if not args.silent: print("Read {}:".format(alignment_filename))
             samfile = pysam.AlignmentFile(alignment_filename, 'rb' if alignment_filename.endswith("bam") else 'r')
@@ -432,30 +432,40 @@ def main(args = None):
                 read_count += 1
                 summary = get_read_summary(read)
                 read_summaries.append(summary)
-                secondary_read_count += 1 if summary[R_SECONDARY] else 0
-                supplementary_read_count += 1 if summary[R_SUPPLEMENTARY] else 0
                 chromosomes.add(read.reference_name)
-            if not args.silent:
-                print("read_count: {}".format(read_count))
         finally:
             if samfile is not None: samfile.close()
 
         bad_read_count = len(list(filter(lambda x: x[R_LENGTH] is None, read_summaries)))
-        if bad_read_count > 0:
-            print("Got {}/{} ({}%) bad reads in {}. Filtering out."
+        if bad_read_count > 0 and not args.silent:
+            print("\tGot {}/{} ({}%) bad reads in {}. Filtering out."
                   .format(bad_read_count, len(read_summaries), int(100.0 * bad_read_count / len(read_summaries)),
                           alignment_filename), file=sys.stderr)
         read_summaries = list(filter(lambda x: x[R_LENGTH] is not None, read_summaries))
 
         # filter if appropriate
+        did_filter = False
         if args.filter_secondary:
+            if not args.silent: print("\tFiltering secondary reads")
             read_summaries = list(filter(lambda x: not x[R_SECONDARY], read_summaries))
-        if args.filter_primary:
-            read_summaries = list(filter(lambda x: x[R_SECONDARY], read_summaries))
+            did_filter = True
+        if args.filter_supplemenary:
+            if not args.silent: print("\tFiltering supplementary reads")
+            read_summaries = list(filter(lambda x: not x[R_SUPPLEMENTARY], read_summaries))
+            did_filter = True
         if args.min_alignment_threshold is not None:
+            if not args.silent: print("\tFiltering reads below map quality {}".format(args.min_alignment_threshold))
             read_summaries = list(filter(lambda x: x[R_MAPPING_QUALITY] >= args.min_alignment_threshold, read_summaries))
-        if args.filter_secondary or args.filter_primary or args.min_alignment_threshold is not None:
-            if not args.silent: print("filtered read_count: {} ".format(len(read_summaries)))
+            did_filter = True
+        if args.read_length_min is not None:
+            if not args.silent: print("\tFiltering reads below length {}".format(args.read_length_min))
+            read_summaries = list(filter(lambda x: x[R_LENGTH] >= args.read_length_min, read_summaries))
+            did_filter = True
+        if did_filter:
+            filtered_read_count = len(read_summaries)
+            if not args.silent:
+                print("\tFiltering removed {}/{} reads ({}% remaining) "
+                      .format((read_count - filtered_read_count), read_count, 100 * filtered_read_count / read_count))
 
 
         # summarize
@@ -492,8 +502,8 @@ def main(args = None):
         # whole file summaries
         bam_summaries[alignment_filename][GENOME_KEY] = {
             B_READ_COUNT: read_count,
-            B_SECONDARY_COUNT: secondary_read_count,
-            B_SUPPLEMENTARY_COUNT: supplementary_read_count,
+            B_SECONDARY_COUNT: len(list(filter(lambda x: x[R_SECONDARY], read_summaries))),
+            B_SUPPLEMENTARY_COUNT: len(list(filter(lambda x: x[R_SUPPLEMENTARY], read_summaries))),
             B_MEDIAN_QUAL: np.median(list(map(lambda x: x[R_MAPPING_QUALITY], read_summaries))),
             B_FILTERED_READ_COUNT: len(read_summaries),
             B_CHROMOSOME: GENOME_KEY

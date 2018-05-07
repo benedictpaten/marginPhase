@@ -20,14 +20,6 @@ PB_BLOCK_ID = "pb_block_id"
 PB_START_POS = PB_BLOCK_ID
 PB_END_POS = "pb_end_pos"
 
-# CI_CHUNK_IDX = "ci_chunk_idx"
-# CI_CHUNK_START = "ci_chunk_start"
-# CI_CHUNK_END = "ci_chunk_end"
-# CI_PHASE_BLOCKS = "ci_phase_blocks"
-# CI_READS = "ci_reads"
-# CI_FIRST_PB = "ci_first_pb"
-# CI_LAST_PB = "ci_last_pb"
-
 RD_ID = "read_id"
 RD_ALN_START = "rd_aln_start"
 RD_ALN_END = "rd_aln_end"
@@ -55,7 +47,7 @@ def log(msg, depth=0):
     print("\t" * depth + str(msg))
 
 
-def parse_chunk_id(chunk_id):
+def merge_chunks__parse_chunk_id(chunk_id):
     parts = chunk_id.split(",")
     if len(parts) != 2 or len(parts[1].split("-")) != 2:
         log("malformed chunk_id: {}".format(chunk_id))
@@ -65,7 +57,7 @@ def parse_chunk_id(chunk_id):
     return chunk_idx, chunk_start, chunk_end
 
 
-def parse_phase_info(phase_info):
+def merge_chunks__parse_phase_info(phase_info):
     parts = phase_info.split(",")
     if len(parts) != 4 or not (parts[0].startswith('h') and parts[1].startswith('p') and parts[2].startswith('r')
                                and parts[3].startswith('l')):
@@ -76,7 +68,7 @@ def parse_phase_info(phase_info):
     return haplotype, phase_block, read_start, read_length
 
 
-def encode_phase_info(read_data):
+def merge_chunks__encode_phase_info(read_data):
     haplotype = 0 if read_data[RPB_IS_HAP1] is None else (1 if read_data[RPB_IS_HAP1] else 2)
     phase_block = read_data[RPB_BLOCK_ID]
     read_start = read_data[RPB_READ_START]
@@ -84,7 +76,7 @@ def encode_phase_info(read_data):
     return "h{},p{},r{},l{}".format(haplotype, phase_block, read_start, read_length)
 
 
-def save_read_info(all_reads, read):
+def merge_chunks__save_read_info(all_reads, read):
     # get info
     read_id = read.query_name
     align_start = read.reference_start
@@ -103,9 +95,9 @@ def save_read_info(all_reads, read):
     return read_data
 
 
-def save_phase_block_info(phase_blocks, phase_info, read_id):
+def merge_chunks__save_phase_block_info(phase_blocks, phase_info, read_id):
     # get info
-    haplotype, phase_block, read_start, read_length = parse_phase_info(phase_info)
+    haplotype, phase_block, read_start, read_length = merge_chunks__parse_phase_info(phase_info)
     if haplotype == 0:
         return None
 
@@ -142,7 +134,7 @@ def save_phase_block_info(phase_blocks, phase_info, read_id):
     return read_phase_block_info
 
 
-def read_chunk(chunk_location):
+def merge_chunks__read_chunk(chunk_location):
     # log
     log("{}:".format(chunk_location))
 
@@ -169,12 +161,12 @@ def read_chunk(chunk_location):
                     continue
 
             # save read data
-            read_data = save_read_info(reads, read)
+            read_data = merge_chunks__save_read_info(reads, read)
 
             # save haplotpye data
             haplotype_tags = read.get_tag(TAG_HAPLOTYPE).split(";")
             for pb_tag in haplotype_tags:
-                rpb_info = save_phase_block_info(phase_blocks, pb_tag, read_id)
+                rpb_info = merge_chunks__save_phase_block_info(phase_blocks, pb_tag, read_id)
                 if rpb_info is not None: read_data[RD_PHASE_BLOCKS].append(rpb_info)
 
         log("read {} reads ({}s)".format(read_count, int(time.time() - start)), depth=2)
@@ -194,7 +186,7 @@ def read_chunk(chunk_location):
     return reads, phase_blocks
 
 
-def create_new_phase_block_at_position(split_position, l_read, r_read):
+def merge_chunks__create_new_phase_block_at_position(split_position, l_read, r_read):
     # get all documented haplotpyes
     l_haps = list(filter(lambda x: x[RPB_BLOCK_ID] < split_position, l_read[RD_PHASE_BLOCKS]))
     r_haps = list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS]))
@@ -246,25 +238,15 @@ def create_new_phase_block_at_position(split_position, l_read, r_read):
 
     # save haploptyes
     haps.sort(key=lambda x: x[RPB_BLOCK_ID])
-    new_hap_str = ";".join(map(encode_phase_info, haps))
+    new_hap_str = ";".join(map(merge_chunks__encode_phase_info, haps))
     return new_hap_str, old_right_haplotype
 
 
-def main(args = None):
-    # get our arguments
-    args = parse_args() if args is None else parse_args(args)
-    assert False not in [map(os.path.isfile, [args.chunkLeft, args.chunkRight])]
-
-    ### gather read data
-
-    # get read and phase block info
-    l_reads, l_phase_blocks = read_chunk(args.chunkLeft)
-    r_reads, r_phase_blocks = read_chunk(args.chunkRight)
+def merge_chunks__organize_reads_and_blocks(l_reads, l_phase_blocks, r_reads, r_phase_blocks):
 
     # get all phase blocks with same start pos
     all_phase_blocks = list(set(l_phase_blocks.keys()).union(set(r_phase_blocks.keys())))
     all_phase_block_count = len(all_phase_blocks)
-    center = np.median(all_phase_blocks)
 
     # get all phase blocks with same start pos
     shared_phase_blocks = list(set(l_phase_blocks.keys()).intersection(set(r_phase_blocks.keys())))
@@ -324,25 +306,30 @@ def main(args = None):
     log("Found {} ({}%) matched phase starts".format(
         len(shared_phase_blocks), percent(len(shared_phase_blocks), all_phase_block_count)))
 
-    ### recommend strategy
+    # return what we found
+    return all_phase_blocks, perfect_matches, inverted_matches, shared_phase_blocks
 
-    # data we care about
-    split_position = None
-    phase_block = None
-    invert_right = None
+
+def merge_chunks__recommend_merge_strategy(chunk_boundary, perfect_matches, inverted_matches, shared_phase_blocks):
+
+    # helper function
     def pick_closest_elem(elems,center):
         elems.sort(key=lambda x: abs(center - sum(map(int, str(x).split("-"))) / len(str(x).split("-"))))
         return elems[0]
+
+    split_position, phase_block, invert_right, decision_summary = None, None, None, None
 
     # case1: perfect match:
     #   READS: left of and spanning split_pos from left chunk, starting after split_pos from right chunk
     #   CALLS: left of split pos from left VCF, right of split pos from right VCF
     if len(perfect_matches) > 0:
-        parts = map(int, pick_closest_elem(perfect_matches, center).split("-"))
+        parts = map(int, pick_closest_elem(perfect_matches, chunk_boundary).split("-"))
         split_position = int(np.mean(parts))
         phase_block = parts[0]
         invert_right = False
+        decision_summary = "PERFECT_MATCH"
         log("Found perfect match at pos {} in phase block {}".format(split_position, phase_block))
+
 
     # case2: perfect match but inverted haploptyes
     #   READS: left of and spanning split_pos from left chunk, starting after split_pos from right chunk
@@ -350,10 +337,11 @@ def main(args = None):
     #   CALLS: left of split pos from left VCF, right of split pos from right VCF
     #       reverse phasing of calls in phase block from right chunk
     elif len(inverted_matches) > 0:
-        parts = map(int, pick_closest_elem(inverted_matches, center).split("-"))
+        parts = map(int, pick_closest_elem(inverted_matches, chunk_boundary).split("-"))
         split_position = int(np.mean(parts))
         phase_block = parts[0]
         invert_right = True
+        decision_summary = "INVERT_MATCH"
         log("Found inverted match at pos {} in phase block {}".format(split_position, phase_block))
 
     # case3: found a phase block starting at the same posistion in each chunk
@@ -364,6 +352,7 @@ def main(args = None):
         phase_block = pick_closest_elem(shared_phase_blocks)
         split_position = phase_block
         invert_right = False
+        decision_summary = "PHASE_START_MATCH"
         log("Found phase block start match at {}".format(phase_block))
 
     # case4: no matching phase blocks
@@ -374,12 +363,17 @@ def main(args = None):
     #       phase block spanning split_pos get new phase_block
     else:
         phase_block = None
-        split_position = center
+        split_position = chunk_boundary
         invert_right = False
+        decision_summary = "NO_MATCH"
         log("Found no match, creating new phase block at {}".format(split_position))
 
+    # return data
+    return split_position, phase_block, invert_right, decision_summary
 
-    ### implement strategy
+
+def merge_chunks__specify_split_action(split_position, phase_block, invert_right,
+                                       l_reads, l_phase_blocks, r_reads, r_phase_blocks):
 
     # describes read inclusion and modifications to haplotype string
     left_reads_writing = dict()
@@ -402,7 +396,8 @@ def main(args = None):
             if phase_block is None:
                 l_read = read
                 r_read = r_reads[read[RD_ID]]
-                new_hap_str, old_right_haplotype = create_new_phase_block_at_position(split_position, l_read, r_read)
+                new_hap_str, old_right_haplotype = merge_chunks__create_new_phase_block_at_position(split_position,
+                                                                                                    l_read, r_read)
                 left_reads_writing[read[RD_ID]] = new_hap_str
                 right_phase_block_conversion[old_right_haplotype] = split_position
 
@@ -418,7 +413,7 @@ def main(args = None):
                 haps = list(filter(lambda x: x[RPB_BLOCK_ID] < split_position, l_read[RD_PHASE_BLOCKS]))
                 haps.extend(list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS])))
                 haps.sort(key=lambda x: x[RPB_BLOCK_ID])
-                new_hap_str = ";".join(map(encode_phase_info, haps))
+                new_hap_str = ";".join(map(merge_chunks__encode_phase_info, haps))
                 left_reads_writing[read[RD_ID]] = new_hap_str
 
             # case2, case1:
@@ -438,7 +433,6 @@ def main(args = None):
     else:
         analysis_phase_block = r_phase_blocks[phase_block]
         analysis_read_ids = analysis_phase_block[PB_HAP1_READS].union(analysis_phase_block[PB_HAP2_READS])
-
 
     for read_id in analysis_read_ids:
         read = r_reads[read_id]
@@ -489,9 +483,37 @@ def main(args = None):
         # case1 or case 3: no action
         pass
 
+    # finish
+    return left_reads_writing, right_reads_writing, vcf_split_position, vcf_right_phase_action
+
+
+def merge_chunks__determine_chunk_splitting(args = None):
+
+
+    # get read and phase block info
+    l_reads, l_phase_blocks = merge_chunks__read_chunk(args.chunkLeft)
+    r_reads, r_phase_blocks = merge_chunks__read_chunk(args.chunkRight)
+
+    # organize chunk comparison
+    all_phase_blocks, perfect_matches, inverted_matches, shared_phase_blocks = merge_chunks__organize_reads_and_blocks(
+        l_reads, l_phase_blocks, r_reads, r_phase_blocks)
+
+    # todo
+    chunk_boundary = np.median(all_phase_blocks)
+
+
+    # recommend strategy
+    split_position, phase_block, invert_right, decision_summary = merge_chunks__recommend_merge_strategy(
+        chunk_boundary, perfect_matches, inverted_matches, shared_phase_blocks)
+
+
+    # implement strategy
+    left_reads_writing, right_reads_writing, vcf_split_pos, vcf_right_phase_action = merge_chunks__specify_split_action(
+        split_position, phase_block, invert_right, l_reads, l_phase_blocks, r_reads, r_phase_blocks)
+
     # log summarization
     log("read merge action: write {} from left, {} from right".format(len(left_reads_writing), len(right_reads_writing)))
-    log("call merge action: split at {}, right action {}".format(vcf_split_position, vcf_right_phase_action))
+    log("call merge action: split at {}, right action {}".format(vcf_split_pos, vcf_right_phase_action))
 
 
     """
@@ -545,5 +567,10 @@ def main(args = None):
     """
 
 
+
 if __name__ == "__main__":
-    main()
+
+    # get our arguments
+    args = parse_args()
+    assert False not in [map(os.path.isfile, [args.chunkLeft, args.chunkRight])]
+    merge_chunks__determine_chunk_splitting(args.chunkLeft, args.chunkRight)
