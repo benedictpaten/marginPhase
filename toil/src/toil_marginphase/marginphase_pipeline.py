@@ -205,6 +205,7 @@ def prepare_input(job, sample, config):
     download_url(url, work_dir=work_dir)
     bam_filename = os.path.basename(url)
     data_bam_location = os.path.join("/data", bam_filename)
+    workdir_bam_location = os.path.join(work_dir, bam_filename)
 
     # index the bam
     _index_bam(job, config, work_dir, bam_filename)
@@ -217,7 +218,7 @@ def prepare_input(job, sample, config):
     # get start and end location
     start_idx = sys.maxint
     end_idx = 0
-    with closing(pysam.AlignmentFile(bam_filename, 'rb' if bam_filename.endswith("bam") else 'r')) as aln:
+    with closing(pysam.AlignmentFile(workdir_bam_location, 'rb' if bam_filename.endswith("bam") else 'r')) as aln:
         for read in aln.fetch():
             align_start = read.reference_start
             align_end = read.reference_end
@@ -531,6 +532,7 @@ def merge_chunks(job, config, chunk_infos):
                                   .format(config.uuid, len(missing_indices), missing_indices))
 
     # prep for iteration
+    merge_decisions = dict()
     prev_chunk_workdir = ""
     prev_chunk_sam_file = None
     prev_chunk_vcf_file = None
@@ -549,6 +551,8 @@ def merge_chunks(job, config, chunk_infos):
         curr_chunk_workdir = os.path.join(work_dir, "tmp-{}".format(chunk_idx))
         curr_chunk_sam_file, curr_chunk_vcf_file = merge_chunks__extract_chunk_tarball(
             job, config, curr_chunk_workdir, chunk)
+        job.fileStore.logToMaster("{}:merge_chunks: merging {} and {} across boundary {}"
+                                  .format(merging_step_identifier,prev_chunk[CI_CHUNK_INDEX], chunk_idx, chunk_boundary))
 
         # error out if missing files
         if curr_chunk_sam_file is None or curr_chunk_vcf_file is None:
@@ -569,16 +573,18 @@ def merge_chunks(job, config, chunk_infos):
         # write the rest of the chunks
         else:
             # get chunk splitting
-            prev_reads, curr_reads, curr_vcf_split_pos, curr_vcf_phase_action =\
+            prev_reads, curr_reads, curr_vcf_split_pos, curr_vcf_phase_action, decision_summary =\
                 merge_chunks__determine_chunk_splitting(job, merging_step_identifier, prev_chunk_sam_file,
                                                         curr_chunk_sam_file, chunk_boundary)
+            merge_decisions[decision_summary] =\
+                merge_decisions[decision_summary] + 1 if decision_summary in merge_decisions else 1
 
             # write sam
             curr_written_reads = merge_chunks__append_sam_reads(job, merging_step_identifier, prev_chunk_sam_file,
                                                                 full_merged_sam_file, prev_reads, prev_written_reads)
             if len(curr_reads) > 0:
                 curr_written_right_reads = merge_chunks__append_sam_reads(job, merging_step_identifier, curr_chunk_sam_file,
-                                                                full_merged_sam_file, curr_reads, prev_written_reads)
+                                                                full_merged_sam_file, curr_reads, curr_written_reads)
                 curr_written_reads = curr_written_reads.union(curr_written_right_reads)
 
             # write vcf
@@ -608,6 +614,11 @@ def merge_chunks(job, config, chunk_infos):
                                    prev_vcf_split_pos, sys.maxint, prev_vcf_phase_action,
                                    mp_identifier=prev_chunk[CI_CHUNK_INDEX])
 
+    # loggit
+    job.fileStore.logToMaster("{}:merge_chunks: Finished merge with following matches:".format(config.uuid))
+    for decision, count in merge_decisions.items():
+        job.fileStore.logToMaster("{}:merge_chunks: \t\t{}: \t{}".format(config.uuid, decision, count))
+
     # tarball the output and save
     job.fileStore.logToMaster("{}:merge_chunks: Output files for merge:".format(config.uuid))
     output_file_locations = glob.glob(os.path.join(merged_chunks_directory, "*.*"))
@@ -628,19 +639,6 @@ def merge_chunks(job, config, chunk_infos):
 
     _log_time(job, "merge_chunks", start, config.uuid)
     return chunk_infos
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -672,7 +670,7 @@ def merge_chunks__determine_chunk_splitting(job, chunk_identifier, left_chunk_lo
                               .format(chunk_identifier, vcf_split_pos, vcf_right_phase_action))
 
     # return
-    return left_reads_writing, right_reads_writing, vcf_split_pos, vcf_right_phase_action
+    return left_reads_writing, right_reads_writing, vcf_split_pos, vcf_right_phase_action, decision_summary
 
 
 def merge_chunks__organize_reads_and_blocks(job, chunk_identifier, l_reads, l_phase_blocks, r_reads, r_phase_blocks):
@@ -690,13 +688,11 @@ def merge_chunks__organize_reads_and_blocks(job, chunk_identifier, l_reads, l_ph
     r_pb_uniq_ids = set(map(lambda x: "{}-{}".format(x[PB_START_POS], x[PB_END_POS]), r_phase_blocks.values()))
 
     # find all matches
-    shared_phase_blocks = list()
     perfect_matches = list()
     inverted_matches = list()
     for l_pb_uniq in l_pb_uniq_ids:
         if l_pb_uniq in r_pb_uniq_ids:
             # we know phase block positions align
-            shared_phase_blocks.append(l_pb_uniq)
             shared_phase_block = int(l_pb_uniq.split("-")[0])
             phase_block_median_pos = int((int(l_pb_uniq.split("-")[0]) + int(l_pb_uniq.split("-")[1]))/2.0)
 
@@ -709,13 +705,16 @@ def merge_chunks__organize_reads_and_blocks(job, chunk_identifier, l_reads, l_ph
 
             # get reads spannign median position
             reads_spanning_median = list(filter(
-                lambda x: l_reads[x][RD_ALN_START] <= phase_block_median_pos and
-                          l_reads[x][RD_ALN_END] >= phase_block_median_pos,
+                lambda x:   l_reads[x][RD_ALN_START] <= phase_block_median_pos <= l_reads[x][RD_ALN_END]
+                            if x in l_reads else
+                            r_reads[x][RD_ALN_START] <= phase_block_median_pos <= r_reads[x][RD_ALN_END],
                 reads_in_phase_block))
 
             # perfect match?
             perfect_matched_reads = list(filter(
-                lambda x: l_reads[x][RD_HAPLOTYPE_TAG] == r_reads[x][RD_HAPLOTYPE_TAG], reads_spanning_median
+                lambda x:   l_reads[x][RD_HAPLOTYPE_TAG] == r_reads[x][RD_HAPLOTYPE_TAG]
+                            if x in l_reads and x in r_reads else False,
+                reads_spanning_median
             ))
             if len(perfect_matched_reads) == len(reads_spanning_median):
                 perfect_matches.append(l_pb_uniq)
@@ -724,7 +723,8 @@ def merge_chunks__organize_reads_and_blocks(job, chunk_identifier, l_reads, l_ph
             # inverted match?
             inverted_matched_reads = list(filter(
                 lambda x: l_reads[x][RD_HAPLOTYPE_TAG].replace("h1","<TMP>").replace("h2","h1").replace("<TMP>","h2")
-                          == r_reads[x][RD_HAPLOTYPE_TAG], reads_spanning_median
+                          == r_reads[x][RD_HAPLOTYPE_TAG] if x in l_reads and x in r_reads else False,
+                reads_spanning_median
             ))
             if len(inverted_matched_reads) == len(reads_spanning_median):
                 inverted_matches.append(l_pb_uniq)
@@ -837,12 +837,13 @@ def merge_chunks__specify_split_action(job, chunk_identifier, split_position, ph
             if phase_block is None:
                 l_read = read
                 r_read = r_reads[read[RD_ID]]
-                new_hap_str, old_right_haplotype = merge_chunks__create_new_phase_block_at_position(split_position,
-                                                                                                    l_read, r_read)
-                left_reads_writing[read[RD_ID]] = [read[RD_HAPLOTYPE_TAG], new_hap_str]
-                right_phase_block_conversion[old_right_haplotype] = split_position
+                new_hap_str, old_right_phase_block = merge_chunks__create_new_phase_block_at_position(
+                    job, chunk_identifier, split_position, l_read, r_read)
+                left_reads_writing[read[RD_ID]] = [[read[RD_HAPLOTYPE_TAG], new_hap_str]]
+                if old_right_phase_block is not None: # None indicates read was not haplotyped (ie, h0)
+                    right_phase_block_conversion[old_right_phase_block] = split_position
 
-                # santity check
+                # santity check (should never find two phase blocks from right)
                 if len(right_phase_block_conversion) > 1:
                     raise UserError("SANITY_CHECK_FAILURE:{}: got inconsistent phase blocks ({}) spanning {} for read {}"
                                     .format(chunk_identifier, right_phase_block_conversion.keys(), split_position, read[RD_ID]))
@@ -855,7 +856,7 @@ def merge_chunks__specify_split_action(job, chunk_identifier, split_position, ph
                 haps.extend(list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS])))
                 haps.sort(key=lambda x: x[RPB_BLOCK_ID])
                 new_hap_str = ";".join(map(merge_chunks__encode_phase_info, haps))
-                left_reads_writing[read[RD_ID]] = [read[RD_HAPLOTYPE_TAG], new_hap_str]
+                left_reads_writing[read[RD_ID]] = [[read[RD_HAPLOTYPE_TAG], new_hap_str]]
 
             # case2, case1:
             else:
@@ -896,7 +897,7 @@ def merge_chunks__specify_split_action(job, chunk_identifier, split_position, ph
             pb_from = list(right_phase_block_conversion.keys())[0]
             pb_to = right_phase_block_conversion[pb_from]
             new_hap_str = read[RD_HAPLOTYPE_TAG].replace("p{},".format(pb_from), "p{},".format(pb_to))
-            right_reads_writing[read_id] = [read[RD_HAPLOTYPE_TAG], new_hap_str]
+            right_reads_writing[read_id] = [[read[RD_HAPLOTYPE_TAG], new_hap_str]]
 
         # case2
         elif invert_right:
@@ -904,7 +905,7 @@ def merge_chunks__specify_split_action(job, chunk_identifier, split_position, ph
             h1_tmp = "h1,p<TMP>"
             h2_str = "h2,p{}".format(phase_block)
             new_hap_str = read[RD_HAPLOTYPE_TAG].replace(h1_str, h1_tmp).replace(h2_str, h1_str).replace(h1_tmp, h2_str)
-            right_reads_writing[read_id] = [read[RD_HAPLOTYPE_TAG], new_hap_str]
+            right_reads_writing[read_id] = [[read[RD_HAPLOTYPE_TAG], new_hap_str]]
 
         # case1, case3
         else:
@@ -1064,21 +1065,21 @@ def merge_chunks__read_chunk(job, chunk_identifier, chunk_location):
     return reads, phase_blocks
 
 
-def merge_chunks__create_new_phase_block_at_position(split_position, l_read, r_read):
+def merge_chunks__create_new_phase_block_at_position(job, chunk_identifier, split_position, l_read, r_read):
     # get all documented haplotpyes
-    l_haps = list(filter(lambda x: x[RPB_BLOCK_ID] < split_position, l_read[RD_PHASE_BLOCKS]))
-    r_haps = list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS]))
+    l_haps = l_read[RD_PHASE_BLOCKS]
+    r_haps = r_read[RD_PHASE_BLOCKS]
 
     # data we want at the end
     haps = list()
-    old_right_haplotype = None
+    old_right_phase_block = None
 
     # get desired (and modified) haplotypes from l_read
     for hap in l_haps:
         if hap[RPB_BLOCK_ID] >= split_position:
             continue  # belongs to r_read
         elif hap[RPB_BLOCK_ID] + hap[RPB_READ_LENGTH] < split_position:
-            haps.append(hap)  # before split
+            haps.append(hap)  # before split (or h0 read)
         else:  # this read needs to be split
             new_hap = {
                 RPB_IS_HAP1: hap[RPB_IS_HAP1],
@@ -1104,21 +1105,26 @@ def merge_chunks__create_new_phase_block_at_position(split_position, l_read, r_r
             }
             haps.append(new_hap)
             # sanity check and save old haplotype
-            if old_right_haplotype is not None:
-                raise UserError("SANITY_CHECK_FAILURE: " +
-                                "found multiple phase_blocks ({}, {}) spanning split_position {} for read {}:".format(
-                                    old_right_haplotype, hap[RPB_BLOCK_ID], split_position, l_read[RD_ID]))
-            old_right_haplotype = hap[RPB_BLOCK_ID]
+            if old_right_phase_block is not None:
+                raise UserError("{}:SANITY_CHECK_FAILURE: found multiple phase_blocks ({}, {}) spanning split_position "
+                                "{} for read {}:".format(chunk_identifier, old_right_phase_block, hap[RPB_BLOCK_ID],
+                                                         split_position, l_read[RD_ID]))
+            old_right_phase_block = hap[RPB_BLOCK_ID]
 
-    # sanity check
-    if old_right_haplotype is None:
-        raise UserError("SANITY_CHECK_FAILURE: found no phase_blocks spanning split_position {} for read {}:"
-            .format(split_position, l_read[RD_ID]))
+    # edge case for when l_hap is haplotyped after split pos, but and r_haps is not-haplotyped
+    if len(haps) == 0:
+        job.fileStore.logToMaster("{}:merge_chunks:create_new_phase_block: output no haplotypes for read {} ({}-{}) "
+                                  "spanning split_position {}, with haplotypes (left) {} and (right) {}"
+                                  .format(chunk_identifier, l_read[RD_ID], l_read[RD_ALN_START], l_read[RD_ALN_END],
+                                          split_position, l_read[RD_HAPLOTYPE_TAG], r_read[RD_HAPLOTYPE_TAG]))
+        haps.append({RPB_IS_HAP1: None, RPB_BLOCK_ID: 0, RPB_READ_START: 0, RPB_READ_LENGTH: 0})
 
     # save haploptyes
     haps.sort(key=lambda x: x[RPB_BLOCK_ID])
     new_hap_str = ";".join(map(merge_chunks__encode_phase_info, haps))
-    return new_hap_str, old_right_haplotype
+
+
+    return new_hap_str, old_right_phase_block
 
 
 def merge_chunks__append_sam_reads(job, chunk_identifier, input_sam_file, output_sam_file, included_reads,
@@ -1133,7 +1139,8 @@ def merge_chunks__append_sam_reads(job, chunk_identifier, input_sam_file, output
     # include header?
     include_header = not os.path.isfile(output_sam_file)
     if include_header:
-        job.fileStore.logToMaster("{}: output sam file does not exist, writing header".format(chunk_identifier))
+        job.fileStore.logToMaster("{}:merge_chunks:append_sam_reads: output sam file does not exist, writing header"
+                                  .format(chunk_identifier))
 
     # read and write
     with open(output_sam_file, 'a') as output, open(input_sam_file, 'r') as input:
@@ -1156,6 +1163,11 @@ def merge_chunks__append_sam_reads(job, chunk_identifier, input_sam_file, output
             elif read_id in included_reads:
                 if included_reads[read_id] is not None:
                     for substitution in included_reads[read_id]:
+                        # sanity check
+                        if type(substitution) != list and len(substitution) != 2:
+                            raise UserError("{}:merge_chunks:append_sam_reads: malformed substitution for {} in {}: {}"
+                                            .format(chunk_identifier, read_id, included_reads[read_id], substitution))
+                        # replace old hap str for new one
                         line = line.replace(substitution[0], substitution[1])
                     modified_writes += 1
                 output.write(line)
@@ -1171,9 +1183,11 @@ def merge_chunks__append_sam_reads(job, chunk_identifier, input_sam_file, output
                 reads_not_written += 1
 
     if include_header:
-        job.fileStore.logToMaster("{}: wrote {} header lines from {} to {}".format(chunk_identifier, header_lines,
+        job.fileStore.logToMaster("{}:merge_chunks:append_sam_reads: wrote {} header lines from {} to {}"
+                                  .format(chunk_identifier, header_lines,
                                           os.path.basename(input_sam_file), os.path.basename(output_sam_file)))
-    job.fileStore.logToMaster("{}: wrote {} reads ({} modified) with {} excluded ({} explicitly so) from {} to {}"
+    job.fileStore.logToMaster("{}:merge_chunks:append_sam_reads: wrote {} reads ({} modified) with {} excluded "
+                              "({} explicitly so) from {} to {}"
                               .format(chunk_identifier, len(written_read_ids), modified_writes,
                                       reads_not_written, explicitly_excluded,
                                       os.path.basename(input_sam_file), os.path.basename(output_sam_file)))
@@ -1265,7 +1279,7 @@ def merge_chunks__append_vcf_calls(job, chunk_identifier, input_vcf_file, output
                 line[-2] = ":".join(tags)
 
             # cleanup
-            line[-1] = ":".join(info)
+            line[-1] = ":".join(map(str, info))
             line = "\t".join(line) + "\n"
             output.write(line)
             written_lines += 1
@@ -1273,7 +1287,7 @@ def merge_chunks__append_vcf_calls(job, chunk_identifier, input_vcf_file, output
 
     # loggit
     job.fileStore.logToMaster(
-        "{}:merge_chunks:append_vcf_calls: wrote {} lines ({} skipped from being outside boundaries {}-{}) from {} to {}"
+        "{}:merge_chunks:append_vcf_calls: wrote {} calls ({} skipped from being outside boundaries {}-{}) from {} to {}"
             .format(chunk_identifier, written_lines, lines_outside_boundaries, start_pos, end_pos,
                     os.path.basename(input_vcf_file), os.path.basename(output_vcf_file)))
 

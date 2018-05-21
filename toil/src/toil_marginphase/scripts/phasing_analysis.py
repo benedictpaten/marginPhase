@@ -7,60 +7,52 @@ import numpy as np
 import pysam
 import time
 from contextlib import closing
+import bam_stats
+
+
 
 
 TAG_HAPLOTYPE = "ht"
 TAG_CHUNK_ID = "mp"
 
-PB_HAP1 = "pb_hap1"
-PB_HAP2 = "pb_hap2"
+PB_HAP1_READS = "pb_hap1"
+PB_HAP2_READS = "pb_hap2"
 PB_LENGTH = "pb_len"
 PB_BLOCK_ID = "pb_block_id"
-
-CI_CHUNK_IDX = "ci_chunk_idx"
-CI_CHUNK_START = "ci_chunk_start"
-CI_CHUNK_END = "ci_chunk_end"
-CI_PHASE_BLOCKS = "ci_phase_blocks"
-CI_READS = "ci_reads"
-CI_FIRST_PB = "ci_first_pb"
-CI_LAST_PB = "ci_last_pb"
+PB_START_POS = PB_BLOCK_ID
+PB_END_POS = "pb_end_pos"
 
 RD_ID = "read_id"
 RD_ALN_START = "rd_aln_start"
 RD_ALN_END = "rd_aln_end"
-RD_CHUNK_PHASE_BLOCKS = "rd_chunk_pbs"
+RD_PHASE_BLOCKS = "rd_chunk_pbs"
+RD_HAPLOTYPE_TAG = "rd_haplotype_tag"
 
 RPB_BLOCK_ID = "rpb_bid"
 RPB_READ_START = "rpb_rs"
 RPB_READ_LENGTH = "rpb_rl"
 RPB_IS_HAP1 = "rpb_h1"
 
+AN_READS = "reads"
+AN_PHASE_BLOCKS = "pb"
+AN_UNIQ_PHASE_BLOCKS = "uniq_pb"
+AN_DEPTH_ANALYSIS = "depth"
+AN_CHUNK_BOUNDARIES = "chunk_boundaries"
+AN_CHUNK_SIZE = "chunk_size"
+
+DEPTH_SPACING = 100
+
+
+percent=lambda s, b: int(100.0 * s / b)
+
+
 def parse_args(args = None):
     parser = argparse.ArgumentParser("Provides statistics on a BAM/SAM file")
     parser.add_argument('--input_glob', '-i', dest='input_glob', required=True, type=str,
                         help='Glob matching SAM or BAM file(s) for analysis')
-    # parser.add_argument('--generic_stats', '-g', dest='generic_stats', action='store_true', default=False,
-    #                     help='Print generic stats for all files')
-    # parser.add_argument('--read_length', '-l', dest='read_length', action='store_true', default=False,
-    #                     help='Print statistics on read length for all files')
-    # parser.add_argument('--read_depth', '-d', dest='read_depth', action='store_true', default=False,
-    #                     help='Print statistics on read depth for all files')
-    # parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
-    #                     help='Print histograms for length and depth')
-    # parser.add_argument('--silent', '-V', dest='silent', action='store_true', default=False,
-    #                     help='Print nothing')
-    # parser.add_argument('--depth_spacing', '-s', dest='depth_spacing', action='store', default=1000, type=int,
-    #                     help='How far to sample read data')
-    # parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
-    #                     help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
-    # parser.add_argument('--filter_secondary', '-f', dest='filter_secondary', action='store_true', default=False,
-    #                     help='Filter secondary alignments out (only include primary)')
-    # parser.add_argument('--filter_primary', '-F', dest='filter_primary', action='store_true', default=False,
-    #                     help='Filter primary alignments out (only include secondary)')
-    # parser.add_argument('--min_alignment_threshold', '-a', dest='min_alignment_threshold', action='store', default=None,
-    #                     type=int, help='Minimum alignment threshold, below which reads are not included')
 
     return parser.parse_args() if args is None else parser.parse_args(args)
+
 
 def log(msg, depth=0):
     print("\t" * depth + str(msg))
@@ -93,16 +85,14 @@ def save_read_info(all_reads, read):
     align_start = read.reference_start
     align_end = read.reference_end
 
-    # get storage data
-    if read_id in all_reads:
-        read_data = all_reads[read_id]
-    else:
-        read_data = dict()
-        all_reads[read_id] = read_data
-        read_data[RD_ID] = read_id
-        read_data[RD_ALN_START] = align_start
-        read_data[RD_ALN_END] = align_end
-        read_data[RD_CHUNK_PHASE_BLOCKS] = dict()
+    # save storage data
+    read_data = dict()
+    all_reads[read_id] = read_data
+    read_data[RD_ID] = read_id
+    read_data[RD_ALN_START] = align_start
+    read_data[RD_ALN_END] = align_end
+    read_data[RD_HAPLOTYPE_TAG] = read.get_tag(TAG_HAPLOTYPE)
+    read_data[RD_PHASE_BLOCKS] = list()
 
     # return data
     return read_data
@@ -121,8 +111,9 @@ def save_phase_block_info(phase_blocks, phase_info, read_id):
         phase_block_data = dict()
         phase_blocks[phase_block] = phase_block_data
         phase_block_data[PB_BLOCK_ID] = phase_block
-        phase_block_data[PB_HAP1] = set()
-        phase_block_data[PB_HAP2] = set()
+        phase_block_data[PB_HAP1_READS] = set()
+        phase_block_data[PB_HAP2_READS] = set()
+        phase_block_data[PB_END_POS] = None
         phase_blocks[phase_block] = phase_block_data
 
     # read pb info
@@ -134,10 +125,10 @@ def save_phase_block_info(phase_blocks, phase_info, read_id):
 
     # save read
     if haplotype == 1:
-        phase_block_data[PB_HAP1].add(read_id)
+        phase_block_data[PB_HAP1_READS].add(read_id)
         read_phase_block_info[RPB_IS_HAP1] = True
     elif haplotype == 2:
-        phase_block_data[PB_HAP2].add(read_id)
+        phase_block_data[PB_HAP2_READS].add(read_id)
         read_phase_block_info[RPB_IS_HAP1] = False
     else:
         log("unknown haplotype in phase_info for read {}: {}".format(read_id, phase_info))
@@ -146,32 +137,95 @@ def save_phase_block_info(phase_blocks, phase_info, read_id):
     return read_phase_block_info
 
 
-def save_chunk_info(chunks_by_idx, chunk_info):
+def read_alignment_file(alignment_location):
+    # log
+    log("{}:".format(alignment_location))
 
-    # parse data
-    chunk_idx, chunk_start, chunk_end = parse_chunk_id(chunk_info)
+    # data storage
+    phase_blocks = dict()
+    reads = dict()
+    chunks = set()
+    read_count = 0
+    failed_reads = 0
+    duplicated_reads = 0
+    max_read_end = 0
+    chrom = None
 
-    # get chunk_info_data
-    if chunk_idx in chunks_by_idx:
-        chunk_data = chunks_by_idx[chunk_idx]
-        if chunk_start != chunk_data[CI_CHUNK_START]:
-            log("\t\tmismatched chunks: {} / {}".format(chunk_start, chunk_data[CI_CHUNK_START]))
-        if chunk_end != chunk_data[CI_CHUNK_END]:
-            log("\t\tmismatched chunks: {} / {}".format(chunk_end, chunk_data[CI_CHUNK_END]))
-    else:
-        chunk_data = dict()
-        chunks_by_idx[chunk_idx] = chunk_data
-        chunk_data[CI_CHUNK_IDX] = chunk_idx
-        chunk_data[CI_CHUNK_START] = chunk_start
-        chunk_data[CI_CHUNK_END] = chunk_end
-        chunk_data[CI_PHASE_BLOCKS] = dict()
-        chunk_data[CI_READS] = set()
-        chunk_data[CI_FIRST_PB] = None
-        chunk_data[CI_LAST_PB] = None
-        log("analyzing chunk {}: {} - {}".format(chunk_idx, chunk_start, chunk_end), depth=2)
+    with closing(pysam.AlignmentFile(alignment_location, 'rb' if alignment_location.endswith("bam") else 'r')) as aln:
 
-    # return data
-    return chunk_data
+        start = time.time()
+        for read in aln.fetch():
+            # get read data
+            read_id = read.query_name
+            max_read_end = max(max_read_end, read.reference_end)
+            if chrom is None: chrom = read.reference_name
+            if chrom != read.reference_name:
+                raise Exception("{} has multiple contigs: {}, {}".format(alignment_location, chrom, read.reference_name))
+            read_count += 1
+
+            # find haplotype tag
+            for tag in [TAG_HAPLOTYPE, TAG_CHUNK_ID]:
+                if not read.has_tag(tag):
+                    log("read {} had no {} tag".format(read_id, tag), depth=2)
+                    failed_reads += 1
+                    continue
+
+            # see if duplicate
+            if read_id in reads:
+                duplicated_reads += 1
+                continue
+
+            # save read data
+            read_data = save_read_info(reads, read)
+
+            # save haplotpye data
+            haplotype_tags = read.get_tag(TAG_HAPLOTYPE).split(";")
+            for pb_tag in haplotype_tags:
+                rpb_info = save_phase_block_info(phase_blocks, pb_tag, read_id)
+                if rpb_info is not None: read_data[RD_PHASE_BLOCKS].append(rpb_info)
+
+            # save chunk data
+            chunks.add(read.get_tag(TAG_CHUNK_ID))
+
+        if duplicated_reads > 0:
+            log("found {} ({}%) duplicated reads".format(duplicated_reads, percent(duplicated_reads, read_count)),
+                depth=1)
+        log("read {} reads ({}s)".format(read_count, int(time.time() - start)), depth=1)
+
+    # finish phase block analysis
+    phase_block_ids = list(phase_blocks.keys())
+    phase_block_ids.sort()
+    prev_pb = None
+    for pb_id in phase_block_ids:
+        curr_pb = phase_blocks[pb_id]
+        if prev_pb is not None: prev_pb[PB_END_POS] = curr_pb[PB_START_POS]
+        prev_pb = curr_pb
+    prev_pb[PB_END_POS] = max_read_end
+
+    # finish chunk data
+    chunk_boundaries = set()
+    for chunk in chunks:
+        _, chunk_start, chunk_end = parse_chunk_id(chunk)
+        chunk_boundaries.add(chunk_start)
+        chunk_boundaries.add(chunk_end)
+    chunk_boundaries = list(chunk_boundaries)
+    chunk_boundaries.sort()
+
+    # return chunk data
+    return reads, phase_blocks, chunk_boundaries, chrom
+
+
+def get_depth_analysis(aln_filename, chrom):
+    # get depth from bam_stats
+    args = ['-i', aln_filename, '--silent', '--depth_spacing', str(DEPTH_SPACING)]
+    bam_summaries, length_summaries, depth_summaries = bam_stats.main(args)
+    return depth_summaries[aln_filename][chrom][bam_stats.D_ALL_DEPTH_MAP]
+
+
+def get_average_phase_depth(depth_info, phase_block):
+    phase_block = map(int, phase_block.split("-"))
+    depths = [depth_info[int(x/DEPTH_SPACING)] for x in range(phase_block[0], phase_block[1])]
+    return np.mean(depths)
 
 
 def main(args = None):
@@ -184,10 +238,11 @@ def main(args = None):
         log("No files matching {}".format(args.input_glob))
         return
     else:
-        log("Analyzing {} files".format(len(in_alignments)))
+        log("Analyzing {} files\n".format(len(in_alignments)))
 
     # for storing all information
     all_analysis = dict()
+    depth_analysis = None
 
     # iterate over all alignments
     for aln_filename in in_alignments:
@@ -196,138 +251,150 @@ def main(args = None):
             print("Matched file {} has unexpected filetype".format(aln_filename))
             continue
 
-        # log
-        log("{}:".format(aln_filename))
-
-        # data storage
+        # get data
         aln_analysis = dict()
         all_analysis[aln_filename] = aln_analysis
-        chunks_by_idx = dict()
-        reads_by_id = dict()
-        read_count = 0
 
-        # examine all reads
-        with closing(pysam.AlignmentFile(aln_filename, 'rb' if aln_filename.endswith("bam") else 'r')) as aln:
-            # log
-            log_depth = 1
-            log("reading", depth=1)
-            start = time.time()
-            for read in aln.fetch():
-                # get read data
-                read_id = read.query_name
-                read_count += 1
+        reads, phase_blocks, chunk_boundaries, chrom = read_alignment_file(aln_filename)
+        aln_analysis[AN_READS] = reads
+        aln_analysis[AN_CHUNK_BOUNDARIES] = chunk_boundaries
+        aln_analysis[AN_PHASE_BLOCKS] = phase_blocks
+        uniq_phase_blocks = set(map(lambda x: "{}-{}".format(x[PB_START_POS], x[PB_END_POS]), phase_blocks.values()))
+        aln_analysis[AN_UNIQ_PHASE_BLOCKS]= uniq_phase_blocks
+        if depth_analysis is None: depth_analysis = get_depth_analysis(aln_filename, chrom)
 
-                # find haplotype tag
-                for tag in [TAG_HAPLOTYPE, TAG_CHUNK_ID]:
-                    if not read.has_tag(tag):
-                        log("read {} had no {} tag".format(read_id, tag), depth=2)
-                        continue
+    log("\nAnalysis:")
+    # how many files agree on phase block boundaries
+    all_uniq_phase_blocks = dict()
+    for aln_data in all_analysis.values():
+        for uniq_pb in aln_data[AN_UNIQ_PHASE_BLOCKS]:
+            if uniq_pb not in all_uniq_phase_blocks: all_uniq_phase_blocks[uniq_pb] = 0
+            all_uniq_phase_blocks[uniq_pb] += 1
 
-                # save read data
-                read_data = save_read_info(reads_by_id, read)
+    # stats grouped by "agreement levels"
+    total_uniq_pb = len(all_uniq_phase_blocks)
+    # overall agreement count
+    pb_representation = {x:0 for x in range(1,len(all_analysis)+1)}
+    # length based on agreement count
+    pb_rep_length = {x:list() for x in range(1,len(all_analysis)+1)}
+    # depth based on agreement count
+    pb_rep_depth = {x:list() for x in range(1,len(all_analysis)+1)}
+    # distance to chunk boundary based on agreement count
+    pb_start_chunk_dist = {x:list() for x in range(1,len(all_analysis)+1)}
+    pb_center_chunk_dist = {x:list() for x in range(1,len(all_analysis)+1)}
+    pb_end_chunk_dist = {x:list() for x in range(1,len(all_analysis)+1)}
+    def min_dist_ratio_to_boundary(boundaries, location):
+        half_chunk_size = (boundaries[1] - boundaries[0]) / 2.0
+        closest_below, closest_above = None, None
+        for boundary in boundaries:
+            if boundary <= location: closest_below = abs(boundary - location)
+            if boundary >= location: closest_above = abs(boundary - location)
+            if closest_above is not None: break
+        return min(closest_below, closest_above) / half_chunk_size
 
-                # get chunk data
-                chunk_data = save_chunk_info(chunks_by_idx, read.get_tag(TAG_CHUNK_ID))
-                chunk_idx = chunk_data[CI_CHUNK_IDX]
-                if chunk_idx not in read_data[RD_CHUNK_PHASE_BLOCKS]:
-                    read_data[RD_CHUNK_PHASE_BLOCKS][chunk_idx] = list()
+    # calculate these stats
+    for phase_block, count in all_uniq_phase_blocks.items():
+        # how many pb's are shared among 'count' files
+        pb_representation[count] += 1
+        # length of this phase block
+        pb_rep_length[count].append(int(phase_block.split("-")[1]) - int(phase_block.split("-")[0]))
+        # average depth of this phase block
+        pb_rep_depth[count].append(get_average_phase_depth(depth_analysis, phase_block))
+        # calculating how close to chunk splits these are
+        for analysis in all_analysis.values():
+            if phase_block not in analysis[AN_UNIQ_PHASE_BLOCKS]: continue
+            pb_start = int(phase_block.split("-")[0])
+            pb_end = int(phase_block.split("-")[1])
+            pb_center = (pb_start + pb_end) / 2.0
+            pb_start_chunk_dist[count].append(min_dist_ratio_to_boundary(analysis[AN_CHUNK_BOUNDARIES], pb_start))
+            pb_center_chunk_dist[count].append(min_dist_ratio_to_boundary(analysis[AN_CHUNK_BOUNDARIES], pb_center))
+            pb_end_chunk_dist[count].append(min_dist_ratio_to_boundary(analysis[AN_CHUNK_BOUNDARIES], pb_end))
 
-                # save haplotpye data
-                haplotype_tags = read.get_tag(TAG_HAPLOTYPE).split(";")
-                for pb in haplotype_tags:
-                    rpb_info = save_phase_block_info(chunk_data[CI_PHASE_BLOCKS], pb, read_id)
-                    if rpb_info is not None: read_data[RD_CHUNK_PHASE_BLOCKS][chunk_idx].append(rpb_info)
+    # buckets of distance
+    DIST_BUCKETS = 6
+    pb_start_dist_buckets = {y:{x:0 for x in range(DIST_BUCKETS)} for y in range(1,len(all_analysis)+1)}
+    pb_center_dist_buckets = {y:{x:0 for x in range(DIST_BUCKETS)} for y in range(1,len(all_analysis)+1)}
+    pb_end_dist_buckets = {y:{x:0 for x in range(DIST_BUCKETS)} for y in range(1,len(all_analysis)+1)}
+    for count, values in pb_start_chunk_dist.items():
+        for value in values:
+            pb_start_dist_buckets[count][int(DIST_BUCKETS * value)] += 1
+    for count, values in pb_center_chunk_dist.items():
+        for value in values:
+            pb_center_dist_buckets[count][int(DIST_BUCKETS * value)] += 1
+    for count, values in pb_end_chunk_dist.items():
+        for value in values:
+            pb_end_dist_buckets[count][int(DIST_BUCKETS * value)] += 1
+    def print_hist(buckets, depth):
+        keys = buckets.keys()
+        keys.sort()
+        max_val = max(buckets.values())
+        for key in keys:
+            hash_cnt = int(12.0 * buckets[key] / max_val)
+            log("{}: {}{} ({})"
+                .format("boundary" if key == 0 else ("  center" if key + 1 == DIST_BUCKETS else "        "),
+                        "#" * hash_cnt, " " * (12 - hash_cnt), buckets[key]), depth=depth)
 
-            log("read {} reads ({}s)".format(read_count, int(time.time() - start)), depth=2)
+    # report information organized based on consensus
+    log("Unique PBs: {}".format(total_uniq_pb), depth=1)
+    for x in reversed(range(1,len(all_analysis)+1)):
+        log("")
+        log("Extant in {} file: {} ({}%)".format(x, pb_representation[x], percent(pb_representation[x], total_uniq_pb)),
+            depth=1)
+        log("Length AVG: %8d" % np.mean(pb_rep_length[x]), depth=2)
+        log("Length STD: %8d" % np.std(pb_rep_length[x]), depth=2)
+        log("AvgDepth AVG:  %.2f" % np.mean(pb_rep_depth[x]), depth=2)
+        log("AvgDepth STD:  %.2f" % np.std(pb_rep_depth[x]), depth=2)
+        log("Avg Dist Ratio - phase block start to closest chunk boundary:  %.3f (std %.3f)" %
+            (np.mean(pb_start_chunk_dist[x]), np.std(pb_start_chunk_dist[x])), depth=2)
+        log("Avg Dist Ratio - phase block center to closest chunk boundary: %.3f (std %.3f)" %
+            (np.mean(pb_center_chunk_dist[x]), np.std(pb_center_chunk_dist[x])), depth=2)
+        log("Avg Dist Ratio - phase block end to closest chunk boundary:    %.3f (std %.3f)" %
+            (np.mean(pb_end_chunk_dist[x]), np.std(pb_end_chunk_dist[x])), depth=2)
+        log("PB start to chunk boundary:", depth=2)
+        print_hist(pb_start_dist_buckets[x], 3)
+        log("PB center to chunk boundary:", depth=2)
+        print_hist(pb_center_dist_buckets[x], 3)
+        log("PB end to chunk boundary:", depth=2)
+        print_hist(pb_end_dist_buckets[x], 3)
 
-        ### chunk and blockanalysis
-        log("chunk/block analysis", depth=1)
+    # do analysis of unique phase blocks
+    singleton_phase_blocks = {y:dict() for y in
+                              filter(lambda x: all_uniq_phase_blocks[x] == 1, all_uniq_phase_blocks.keys())}
+    SPB_SPANNED_PHASE_BLOCKS = "spanned_pbs"
+    SPB_WHOLLY_CONTAINS = "wholly_contain"
+    SPB_CONTAINED_WHOLLY_WITHIN = "wholly_within"
 
-        #prep
-        chunk_idxs = list(chunks_by_idx.keys())
-        chunk_idxs.sort()
-        prev_chunk = None
+    for spb in singleton_phase_blocks.keys():
+        spanned_pb_lists = list()
+        spb_contained_wholly = list()
+        spb_wholly_contains = list()
+        spb_start = int(spb.split("-")[0])
+        spb_end = int(spb.split("-")[1])
+        for aln_analysis in all_analysis.values():
+            if spb in aln_analysis[AN_UNIQ_PHASE_BLOCKS]: continue
+            spanned_pbs = list()
+            spb_wholly_contains_value = 0
+            spb_contained_wholly_value = 0
+            for upb in aln_analysis[AN_UNIQ_PHASE_BLOCKS]:
+                upb_start = int(upb.split("-")[0])
+                upb_end = int(upb.split("-")[1])
+                if upb_end > spb_start and spb_end > upb_start:
+                    spanned_pbs.append(upb)
+                    if upb_end <= spb_end and upb_start >= spb_start:
+                        spb_wholly_contains.append(upb_end - upb_start)
+                    elif spb_end <= upb_end and spb_start >= upb_start:
+                        spb_contained_wholly.append(upb_end - upb_start)
+            spanned_pb_lists.append(spanned_pbs)
+            spb_wholly_contains.append(spb_wholly_contains_value)
+            spb_contained_wholly.append(spb_contained_wholly_value)
+        singleton_phase_blocks[spb][SPB_SPANNED_PHASE_BLOCKS] = spanned_pb_lists
+        singleton_phase_blocks[spb][SPB_WHOLLY_CONTAINS] = list(filter(lambda x: x != 0, spb_wholly_contains))
+        singleton_phase_blocks[spb][SPB_CONTAINED_WHOLLY_WITHIN] = list(filter(lambda x: x != 0, spb_contained_wholly))
 
-        # analysis per chunk
-        for chunk_idx in chunk_idxs:
-            # log
-            log("chunk {}:".format(chunk_idx), depth=2)
+    for spb in singleton_phase_blocks.keys():
+        pass
 
-            # chunk_data
-            chunk = chunks_by_idx[chunk_idx]
-            phase_blocks = chunk[CI_PHASE_BLOCKS]
-            phase_block_ids = list(phase_blocks.keys())
-            phase_block_ids.sort()
-            chunk[CI_FIRST_PB] = phase_block_ids[0]
-            chunk[CI_LAST_PB] = phase_block_ids[-1]
-
-            # phase block analysis
-            prev_pb_id = None
-            def print_pb(pb):
-                log("pb:%9d  length:%9d  hap1:%6d  hap2:%6d" %
-                    (pb[PB_BLOCK_ID], pb[PB_LENGTH], len(pb[PB_HAP1]), len(pb[PB_HAP2])), depth=3)
-            for phase_block_id in phase_block_ids:
-                pb = phase_blocks[phase_block_id]
-                if pb[PB_BLOCK_ID] > chunk[CI_CHUNK_END]: break
-                # print last one and get length
-                if prev_pb_id is not None:
-                    prev_pb = phase_blocks[prev_pb_id]
-                    prev_pb[PB_LENGTH] = pb[PB_BLOCK_ID] - prev_pb[PB_BLOCK_ID]
-                    print_pb(prev_pb)
-                prev_pb_id = phase_block_id
-
-            if prev_pb_id is not None:
-                prev_pb = phase_blocks[prev_pb_id]
-                prev_pb[PB_LENGTH] = chunk[CI_CHUNK_END] - prev_pb[PB_BLOCK_ID]
-                print_pb(prev_pb)
-
-        ### read analysis
-        log("border analysis", depth=1)
-        double_reads = list(filter(lambda x: len(x[RD_CHUNK_PHASE_BLOCKS]) > 1, reads_by_id.values()))
-        double_chunk_reads = dict()
-        for read in double_reads:
-            chunks = list(read[RD_CHUNK_PHASE_BLOCKS].keys())
-            chunks.sort()
-            chunk_join_id = "-".join(map(str, chunks))
-            if chunk_join_id not in double_chunk_reads: double_chunk_reads[chunk_join_id] = list()
-            double_chunk_reads[chunk_join_id].append(read)
-
-        double_chunk_ids = list(double_chunk_reads.keys())
-        double_chunk_ids.sort(key=lambda x: int(x.split("-")[0]))
-        for double_chunk_id in double_chunk_ids:
-            chunk_ids = double_chunk_id.split("-")
-            chunk_ids = list(map(int, chunk_ids))
-            all_phase_blocks = set()
-            prev_phase_blocks = dict()
-            next_phase_blocks = dict()
-            for read in double_chunk_reads[double_chunk_id]:
-                for rpb in read[RD_CHUNK_PHASE_BLOCKS][chunk_ids[0]]:
-                    rpb_id = rpb[RPB_BLOCK_ID]
-                    all_phase_blocks.add(rpb_id)
-                    prev_phase_blocks[rpb_id] = 1 if rpb_id not in prev_phase_blocks else (prev_phase_blocks[rpb_id] + 1)
-                for rpb in read[RD_CHUNK_PHASE_BLOCKS][chunk_ids[1]]:
-                    rpb_id = rpb[RPB_BLOCK_ID]
-                    all_phase_blocks.add(rpb_id)
-                    next_phase_blocks[rpb_id] = 1 if rpb_id not in next_phase_blocks else (next_phase_blocks[rpb_id] + 1)
-
-            # analyze
-            all_phase_blocks = list(all_phase_blocks)
-            all_phase_blocks.sort()
-            prev_str = "%3d:\t" % chunk_ids[0]
-            next_str = "%3d:\t" % chunk_ids[1]
-            for pb in all_phase_blocks:
-                prev_str += ("%9d: %3d" % (pb, prev_phase_blocks[pb]) if pb in prev_phase_blocks else " " * 14) + "\t"
-                next_str += ("%9d: %3d" % (pb, next_phase_blocks[pb]) if pb in next_phase_blocks else " " * 14) + "\t"
-
-            log("chunk_boundary: {} ({})".format(double_chunk_id, chunks_by_idx[chunk_ids[0]][CI_CHUNK_END]), depth=2)
-            log(prev_str, depth=3)
-            log(next_str, depth=3)
-
-
-
-
-    pass
-
+    print(str(singleton_phase_blocks))
 
 
 

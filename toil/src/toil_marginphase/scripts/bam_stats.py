@@ -208,7 +208,7 @@ def print_read_length_summary(summary, verbose=False):
                 print("\t\t\t{} {} {}".format(id, "#"*pound_count, count))
 
 
-def get_read_depth_summary(read_summaries, spacing, included_range=None):
+def  get_read_depth_summary(read_summaries, spacing, included_range=None):
     S, E = 's', 'e'
 
     # get reads which start or end on spacing interval
