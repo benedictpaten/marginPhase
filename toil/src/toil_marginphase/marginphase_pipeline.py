@@ -851,9 +851,10 @@ def merge_chunks__specify_split_action(job, chunk_identifier, split_position, ph
             # case3: take hap info before split_pos from left, after right.  phase block exists at split_pos
             elif phase_block == split_position:
                 l_read = l_reads[read[RD_ID]]
-                r_read = r_reads[read[RD_ID]]
                 haps = list(filter(lambda x: x[RPB_BLOCK_ID] < split_position, l_read[RD_PHASE_BLOCKS]))
-                haps.extend(list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS])))
+                if read[RD_ID] in r_reads:
+                    r_read = r_reads[read[RD_ID]]
+                    haps.extend(list(filter(lambda x: x[RPB_BLOCK_ID] >= split_position, r_read[RD_PHASE_BLOCKS])))
                 haps.sort(key=lambda x: x[RPB_BLOCK_ID])
                 new_hap_str = ";".join(map(merge_chunks__encode_phase_info, haps))
                 left_reads_writing[read[RD_ID]] = [[read[RD_HAPLOTYPE_TAG], new_hap_str]]
