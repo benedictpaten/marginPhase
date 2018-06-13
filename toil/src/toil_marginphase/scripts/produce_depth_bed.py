@@ -8,7 +8,6 @@ import sys
 import bam_stats
 import os
 
-chrom_sort = lambda x: int(x.replace("chr", "").replace("X", "23").replace("Y", "24"))
 xor = lambda a, b: (a and not b) or (not a and b)
 
 AVG_DEPTH_PARAM = "avg_depth"
@@ -56,6 +55,11 @@ def parse_args():
 
 def log(msg):
     print(msg, file=sys.stderr)
+
+
+def chrom_sort(chr):
+    new_chr = chr.replace("chr", "").replace("X", "23").replace("Y", "24")
+    return int(new_chr) if new_chr.isdigit() else 100
 
 
 def get_genome_read_depths(bam_file, args):

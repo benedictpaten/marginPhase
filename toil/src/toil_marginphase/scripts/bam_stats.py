@@ -75,14 +75,21 @@ def parse_args(args = None):
                         help='How far to sample read data')
     parser.add_argument('--depth_range', '-r', dest='depth_range', action='store', default=None,
                         help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
-    parser.add_argument('--filter_secondary', '-E', dest='filter_secondary', action='store_true', default=False,
+    parser.add_argument('--filter_secondary', dest='filter_secondary', action='store_true', default=False,
                         help='Filter secondary alignments out')
-    parser.add_argument('--filter_supplemenary', '-U', dest='filter_supplemenary', action='store_true', default=False,
+    parser.add_argument('--filter_supplemenary', dest='filter_supplemenary', action='store_true', default=False,
                         help='Filter supplemenary alignments out')
-    parser.add_argument('--filter_read_length_min', '-L', dest='read_length_min', action='store', default=None, type=int,
-                        help='How far to sample read data')
-    parser.add_argument('--filter_alignment_threshold_min', '-A', dest='min_alignment_threshold', action='store',
+    parser.add_argument('--filter_read_length_min', dest='read_length_min', action='store', default=None, type=int,
+                        help='Removes reads with length below this')
+    parser.add_argument('--filter_read_length_max', dest='read_length_max', action='store', default=None, type=int,
+                        help='Removes reads with length above this')
+    parser.add_argument('--filter_alignment_threshold_min', dest='min_alignment_threshold', action='store',
                         default=None, type=int, help='Minimum alignment quality threshold')
+
+    parser.add_argument('--produce_read_length_tsv', dest='read_length_tsv', action='store',
+                        default=None, type=str, help='Produce a TSV with read lengths, named as this parameter')
+    parser.add_argument('--read_length_bucket_size', dest='read_length_bucket_size', action='store',
+                        default=50000, type=int, help='Bucket size for read length TSV')
 
     return parser.parse_args() if args is None else parser.parse_args(args)
 
@@ -334,7 +341,24 @@ def get_genome_depth_summary(summaries):
     return summary
 
 
+def write_read_length_tsv(reads, filename, bucket_size=50000):
+    length_to_bucket = lambda x: int(1.0 * x / bucket_size)
+    read_lengths = dict()
 
+    for read in reads:
+        bucket = length_to_bucket(read[R_LENGTH])
+        while len(read_lengths) <= bucket:
+            read_lengths[len(read_lengths)] = 0
+        read_lengths[bucket] += 1
+
+    with open(filename, 'w') as output:
+        output.write("#min_length\tmax_length\tread_count\n")
+        started = False
+        for i in range(len(read_lengths)):
+            if not started and read_lengths[i] == 0:
+                continue
+            started = True
+            output.write("{}\t{}\t{}\n".format(bucket_size * i, bucket_size * i + bucket_size - 1, read_lengths[i]))
 
 
 def print_read_depth_summary(summary, verbose=False):
@@ -525,6 +549,10 @@ def main(args = None):
     # do whole run analysis
     if args.read_length and not args.silent and len(in_alignments) > 1:
         print_read_length_summary({'ALL_FILES':get_read_length_summary(all_read_summaries)}, verbose=args.verbose)
+
+    # tsv
+    if args.read_length_tsv is not None:
+        write_read_length_tsv(all_read_summaries, args.read_length_tsv, args.read_length_bucket_size)
 
     return bam_summaries, length_summaries, depth_summaries
 
