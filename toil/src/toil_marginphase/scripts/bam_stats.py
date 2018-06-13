@@ -27,12 +27,15 @@ B_MEDIAN_QUAL = "median_quality"
 
 #length summary
 L_LOG_LENGTH_BUCKETS = "log_length_buckets"
+L_LOG_LENGTH_BUCKETS_ALT = "log_length_buckets_alt"
 L_MIN = "min_length"
 L_MAX = "max_length"
 L_AVG = "avg_length"
 L_MED = 'median_len'
 L_STD = "std_lenght"
+L_N50 = "N50"
 L_LOG_BASE = "log_base"
+L_LOG_BASE_ALT = "log_base_alt"
 L_LOG_MAX = "log_max"
 L_ALL_LENGTHS = "all_lengths"
 
@@ -53,13 +56,14 @@ D_RANGE = "depth_range"
 # misc
 GENOME_KEY = "genome"
 LENGTH_LOG_BASE_DEFAULT=2
+LENGTH_LOG_BASE_ALT=10
 LENGTH_LOG_MAX_DEFAULT=32
 percent = lambda small, big: int(100.0 * small / big)
 
 
 def parse_args(args = None):
     parser = argparse.ArgumentParser("Provides statistics on a BAM/SAM file")
-    parser.add_argument('--input_glob', '-i', dest='input_glob', default="*.bam", type=str,
+    parser.add_argument('--input_glob', '-i', dest='input_glob', default=None, required=True, type=str,
                         help='Glob matching SAM or BAM file(s)')
     parser.add_argument('--generic_stats', '-g', dest='generic_stats', action='store_true', default=False,
                         help='Print generic stats for all files')
@@ -67,6 +71,8 @@ def parse_args(args = None):
                         help='Print statistics on read length for all files')
     parser.add_argument('--read_depth', '-d', dest='read_depth', action='store_true', default=False,
                         help='Print statistics on read depth for all files')
+    parser.add_argument('--genome_only', dest='genome_only', action='store_true', default=False,
+                        help='Print only statistics for the whole genome (do not print stats for individual chroms)')
     parser.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False,
                         help='Print histograms for length and depth')
     parser.add_argument('--silent', '-V', dest='silent', action='store_true', default=False,
@@ -77,7 +83,7 @@ def parse_args(args = None):
                         help='Whether to only calculate depth within a range, ie: \'100000-200000\'')
     parser.add_argument('--filter_secondary', dest='filter_secondary', action='store_true', default=False,
                         help='Filter secondary alignments out')
-    parser.add_argument('--filter_supplemenary', dest='filter_supplemenary', action='store_true', default=False,
+    parser.add_argument('--filter_supplementary', dest='filter_supplementary', action='store_true', default=False,
                         help='Filter supplemenary alignments out')
     parser.add_argument('--filter_read_length_min', dest='read_length_min', action='store', default=None, type=int,
                         help='Removes reads with length below this')
@@ -108,10 +114,20 @@ def get_read_summary(read):
     return summary
 
 
-def get_read_length_summary(read_summaries,
-                            length_log_base=LENGTH_LOG_BASE_DEFAULT, length_log_max=LENGTH_LOG_MAX_DEFAULT):
+def caluclate_n50(lengths):
+    half_total_length = sum(lengths) / 2
+    lengths.sort(reverse=True)
+    for l in lengths:
+        half_total_length -= l
+        if half_total_length <= 0:
+            return l
+
+
+def get_read_length_summary(read_summaries, length_log_base=LENGTH_LOG_BASE_DEFAULT,
+                            length_log_max=LENGTH_LOG_MAX_DEFAULT, length_log_base_alt=LENGTH_LOG_BASE_ALT):
     # what we look for
     log_length_bins = [0 for _ in range(length_log_max)]
+    log_lenght_alt_bins = [0 for _ in range(length_log_base_alt)] if length_log_base_alt is not None else None
     all_lengths = []
 
     for read_summary in read_summaries:
@@ -119,16 +135,20 @@ def get_read_length_summary(read_summaries,
             #todo
             continue
         log_length_bins[int(math.log(read_summary[R_LENGTH], length_log_base))] += 1.0
+        if length_log_base_alt is not None: log_lenght_alt_bins[int(math.log(read_summary[R_LENGTH], length_log_base_alt))] += 1.0
         all_lengths.append(read_summary[R_LENGTH])
 
     summary = {
         L_LOG_LENGTH_BUCKETS: log_length_bins,
+        L_LOG_LENGTH_BUCKETS_ALT: log_lenght_alt_bins,
         L_MAX: max(all_lengths),
         L_MIN: min(all_lengths),
         L_AVG: np.mean(all_lengths),
         L_MED: np.median(all_lengths),
         L_STD: np.std(all_lengths),
+        L_N50: caluclate_n50(all_lengths),
         L_LOG_BASE: length_log_base,
+        L_LOG_BASE_ALT: length_log_base_alt,
         L_LOG_MAX: length_log_max,
         L_ALL_LENGTHS: all_lengths
     }
@@ -154,7 +174,7 @@ def graph_read_length_summary(summary, title, save_name=None):
         plt.show()
 
 
-def print_generic_read_stats(summary, verbose=False):
+def print_generic_read_stats(summary, verbose=False, genome_only=False):
     keys = list(summary.keys())
     keys.sort()
     #print genome last
@@ -165,7 +185,9 @@ def print_generic_read_stats(summary, verbose=False):
     for chrom in keys:
 
         # if we only have one chrom, skip genome reporting
-        if len(keys) == 2 and chrom == GENOME_KEY: continue
+        if len(keys) == 2 and chrom == GENOME_KEY and not genome_only: continue
+        # if genome_only, skip chroms
+        if genome_only and chrom != GENOME_KEY: continue
 
         B_READ_COUNT = "read_count"
         B_SECONDARY_COUNT = "secondary_count"
@@ -181,7 +203,24 @@ def print_generic_read_stats(summary, verbose=False):
         print("\t\tmedian qual  : {}".format(summary[chrom][B_MEDIAN_QUAL]))
 
 
-def print_read_length_summary(summary, verbose=False):
+def print_log_binned_data(log_bins, indent_count=3):
+    max_bucket = max(list(filter(lambda x: log_bins[x] != 0, [x for x in range(len(log_bins))])))
+    min_bucket = min(list(filter(lambda x: log_bins[x] != 0, [x for x in range(len(log_bins))])))
+    max_bucket_size = max(log_bins)
+    total_bucket_size = sum(log_bins)
+    total_bucket_size_left = total_bucket_size
+    for bucket in range(min_bucket, max_bucket + 1):
+        id = "%3d:" % bucket
+        count = int(log_bins[bucket])
+        pound_count = int(32.0 * count / max_bucket_size)
+        of_total = 1.0 * count / total_bucket_size
+        at_least = 1.0 * total_bucket_size_left / total_bucket_size
+        total_bucket_size_left -= count
+        print("{} {} {}{} {:6d}\t({:.3f} of total)\t({:.3f} at least)".format(
+            '\t'*indent_count, id, "#"*pound_count, " "*(32 - pound_count), count, of_total, at_least))
+
+
+def print_read_length_summary(summary, verbose=False, genome_only=False):
     keys = list(summary.keys())
     keys.sort()
     #print genome last
@@ -192,7 +231,9 @@ def print_read_length_summary(summary, verbose=False):
     for chrom in keys:
 
         # if we only have one chrom, skip genome reporting
-        if len(keys) == 2 and chrom == GENOME_KEY: continue
+        if len(keys) == 2 and chrom == GENOME_KEY and not genome_only: continue
+        # if genome_only, skip chroms
+        if genome_only and chrom != GENOME_KEY: continue
 
         print("\tREAD LENGTHS: {}".format(chrom))
         print("\t\tmin: {}".format(summary[chrom][L_MIN]))
@@ -200,19 +241,14 @@ def print_read_length_summary(summary, verbose=False):
         print("\t\tmed: {}".format(summary[chrom][L_MED]))
         print("\t\tavg: {}".format(int(summary[chrom][L_AVG])))
         print("\t\tstd: {}".format(int(summary[chrom][L_STD])))
+        print("\t\tN50: {}".format(int(summary[chrom][L_N50])))
 
         if verbose:
-            length_log_max = summary[chrom][L_LOG_MAX]
-            log_length_bins = summary[chrom][L_LOG_LENGTH_BUCKETS]
             print("\t\tread length log_{}:".format(summary[chrom][L_LOG_BASE]))
-            max_bucket = max(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
-            min_bucket = min(list(filter(lambda x: log_length_bins[x] != 0, [x for x in range(length_log_max)])))
-            max_bucket_size = max(log_length_bins)
-            for bucket in range(min_bucket, max_bucket + 1):
-                id = "%3d:" % bucket
-                count = log_length_bins[bucket]
-                pound_count = int(32.0 * count / max_bucket_size)
-                print("\t\t\t{} {} {}".format(id, "#"*pound_count, count))
+            print_log_binned_data(summary[chrom][L_LOG_LENGTH_BUCKETS])
+            if L_LOG_LENGTH_BUCKETS_ALT in summary[chrom] and summary[chrom][L_LOG_LENGTH_BUCKETS_ALT] is not None:
+                print("\t\tread length log_{}:".format(summary[chrom][L_LOG_BASE_ALT]))
+                print_log_binned_data(summary[chrom][L_LOG_LENGTH_BUCKETS_ALT])
 
 
 def  get_read_depth_summary(read_summaries, spacing, included_range=None):
@@ -361,7 +397,7 @@ def write_read_length_tsv(reads, filename, bucket_size=50000):
             output.write("{}\t{}\t{}\n".format(bucket_size * i, bucket_size * i + bucket_size - 1, read_lengths[i]))
 
 
-def print_read_depth_summary(summary, verbose=False):
+def print_read_depth_summary(summary, verbose=False, genome_only=False):
     keys = list(summary.keys())
     keys.sort()
     #print genome last
@@ -371,7 +407,10 @@ def print_read_depth_summary(summary, verbose=False):
 
     for chrom in keys:
         # if we only have one chrom, skip genome reporting
-        if len(keys) == 2 and chrom == GENOME_KEY: continue
+        if len(keys) == 2 and chrom == GENOME_KEY and not genome_only: continue
+        # if genome_only, skip chroms
+        if genome_only and chrom != GENOME_KEY: continue
+
         print("\tREAD DEPTHS: {}".format(chrom))
         print("\t\tmax: {}".format(summary[chrom][D_MAX]))
         print("\t\tmin: {}".format(summary[chrom][D_MIN]))
@@ -379,14 +418,15 @@ def print_read_depth_summary(summary, verbose=False):
         print("\t\tavg: {}".format(summary[chrom][D_AVG]))
         print("\t\tstd: {}".format(summary[chrom][D_STD]))
 
-        log_depth_bins = summary[chrom][D_ALL_DEPTH_BINS]
-        total_depths = sum(log_depth_bins)
-        log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
-        log_depth_pairs.sort(key=lambda x: x[1], reverse=True)
-        print("\t\tmost frequent read depths [floor(log2(depth))]:")
-        for i in range(0,min(len(list(filter(lambda x: x[1] != 0, log_depth_pairs))), 3)):
-            print("\t\t\t#{}: depth:{} count:{} ({}%)".format(i + 1, log_depth_pairs[i][0], log_depth_pairs[i][1],
-                                                              int(100.0 * log_depth_pairs[i][1] / total_depths)))
+        if chrom != GENOME_KEY and summary[chrom][D_ALL_DEPTH_BINS] is not None:
+            log_depth_bins = summary[chrom][D_ALL_DEPTH_BINS]
+            total_depths = sum(log_depth_bins)
+            log_depth_pairs = [(i, log_depth_bins[i]) for i in range(len(log_depth_bins))]
+            log_depth_pairs.sort(key=lambda x: x[1], reverse=True)
+            print("\t\tmost frequent read depths [floor(log2(depth))]:")
+            for i in range(0,min(len(list(filter(lambda x: x[1] != 0, log_depth_pairs))), 3)):
+                print("\t\t\t#{}: depth:{} count:{} ({}%)".format(i + 1, log_depth_pairs[i][0], log_depth_pairs[i][1],
+                                                                  int(100.0 * log_depth_pairs[i][1] / total_depths)))
 
         if verbose:
             if chrom != GENOME_KEY and summary[chrom][D_RANGE] is not None:
@@ -399,15 +439,17 @@ def print_read_depth_summary(summary, verbose=False):
                     pound_count = int(32.0 * depth / summary[chrom][D_MAX])
                     print("\t\t\t{} {} {}".format(id, '#' * pound_count, depth))
 
-            print("\t\tread depth log_2 at above intervals:")
-            max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
-            min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
-            max_bucket_size = max(log_depth_bins)
-            for bucket in range(min_bucket, max_bucket + 1):
-                id = "%3d:" % bucket
-                count = log_depth_bins[bucket]
-                pound_count = int(32.0 * count / max_bucket_size)
-                print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
+            if chrom != GENOME_KEY and summary[chrom][D_ALL_DEPTH_BINS] is not None:
+                print("\t\tread depth log_2 at above intervals:")
+                print_log_binned_data(log_depth_bins)
+                # max_bucket = max(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+                # min_bucket = min(list(filter(lambda x: log_depth_bins[x] != 0, [x for x in range(16)])))
+                # max_bucket_size = max(log_depth_bins)
+                # for bucket in range(min_bucket, max_bucket + 1):
+                #     id = "%3d:" % bucket
+                #     count = log_depth_bins[bucket]
+                #     pound_count = int(32.0 * count / max_bucket_size)
+                #     print("\t\t\t{} {} {}".format(id, "#" * pound_count, count))
 
 
 def main(args = None):
@@ -473,7 +515,7 @@ def main(args = None):
             if not args.silent: print("\tFiltering secondary reads")
             read_summaries = list(filter(lambda x: not x[R_SECONDARY], read_summaries))
             did_filter = True
-        if args.filter_supplemenary:
+        if args.filter_supplementary:
             if not args.silent: print("\tFiltering supplementary reads")
             read_summaries = list(filter(lambda x: not x[R_SUPPLEMENTARY], read_summaries))
             did_filter = True
@@ -484,6 +526,10 @@ def main(args = None):
         if args.read_length_min is not None:
             if not args.silent: print("\tFiltering reads below length {}".format(args.read_length_min))
             read_summaries = list(filter(lambda x: x[R_LENGTH] >= args.read_length_min, read_summaries))
+            did_filter = True
+        if args.read_length_max is not None:
+            if not args.silent: print("\tFiltering reads above length {}".format(args.read_length_max))
+            read_summaries = list(filter(lambda x: x[R_LENGTH] <= args.read_length_max, read_summaries))
             did_filter = True
         if did_filter:
             filtered_read_count = len(read_summaries)
@@ -537,11 +583,14 @@ def main(args = None):
 
         # print
         if args.generic_stats:
-            if not args.silent: print_generic_read_stats(bam_summaries[alignment_filename], verbose=args.verbose)
+            if not args.silent: print_generic_read_stats(bam_summaries[alignment_filename],
+                                                         verbose=args.verbose, genome_only=args.genome_only)
         if args.read_length:
-            if not args.silent: print_read_length_summary(length_summaries[alignment_filename], verbose=args.verbose)
+            if not args.silent: print_read_length_summary(length_summaries[alignment_filename],
+                                                         verbose=args.verbose, genome_only=args.genome_only)
         if args.read_depth:
-            if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename], verbose=args.verbose)
+            if not args.silent: print_read_depth_summary(depth_summaries[alignment_filename],
+                                                         verbose=args.verbose, genome_only=args.genome_only)
 
         # save
         all_read_summaries.extend(read_summaries)
