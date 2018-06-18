@@ -555,6 +555,9 @@ def main(args = None):
                     if read[R_SECONDARY]: chrom_sec_count += 1
                     if read[R_SUPPLEMENTARY]: chrom_sup_count += 1
 
+            # filtered out all reads
+            if len(chromosome_reads) == 0: continue
+
             # summarize
             bam_summaries[alignment_filename][chromosome] = {
                 B_READ_COUNT: chrom_read_count,
