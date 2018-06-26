@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "stRPHmm.h"
+#include "margin_phase_version.h"
 #include "sonLib.h"
 #include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
@@ -344,21 +345,22 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
 void usage() {
 fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
     fprintf(stderr,
-            "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a gVCF file "
+            "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a VCF file "
             "giving genotypes and haplotypes for region.\n"
-            "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n");
-    fprintf(stderr, "-h --help              : Print this help screen\n");
-    fprintf(stderr, "-o --outputBase        : (Required) Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
-    fprintf(stderr, "-p --params            : (Required) Input params file\n");
-    fprintf(stderr, "-a --logLevel          : Set the log level [default = info]\n");
-    fprintf(stderr, "-r --referenceVCF      : Reference vcf file for output comparison\n");
-    fprintf(stderr, "-t --tag               : Annotate all output reads with this value for the '"MARGIN_PHASE_TAG"' tag\n");
-    fprintf(stderr, "-s --singleNuclProbDir : Directory of single nucleotide probabilities files\n");
-    fprintf(stderr, "-S --onlySNP           : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
-    fprintf(stderr, "-v --verbose           : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
-    fprintf(stderr, "                       \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
-    fprintf(stderr, "                       \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
-    fprintf(stderr, "                       \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+            "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n"
+            "Version: "MARGINPHASE_MARGIN_PHASE_VERSION_H"\n");
+    fprintf(stderr, "\t-h --help              : Print this help screen\n");
+    fprintf(stderr, "\t-o --outputBase        : (Required) Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
+    fprintf(stderr, "\t-p --params            : (Required) Input params file\n");
+    fprintf(stderr, "\t-a --logLevel          : Set the log level [default = info]\n");
+//    fprintf(stderr, "\t-r --referenceVCF      : Reference vcf file for output comparison\n");
+    fprintf(stderr, "\t-t --tag               : Annotate all output reads with this value for the '"MARGIN_PHASE_TAG"' tag\n");
+    fprintf(stderr, "\t-s --singleNuclProbDir : Directory of single nucleotide probabilities files\n");
+    fprintf(stderr, "\t-S --onlySNP           : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
+    fprintf(stderr, "\t-v --verbose           : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
+    fprintf(stderr, "\t                       \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
+    fprintf(stderr, "\t                       \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
+    fprintf(stderr, "\t                       \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
 
 }
 
