@@ -10,28 +10,35 @@
 #include "sonLib.h"
 
 
-int64_t genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
-                    char *referenceFile, char *vcfReference, bool verbose) {
+int64_t genotypingTest2(char *paramsFile, char *bamFile, char *outputBase, char *referenceFile, char *vcfReference,
+                        char* singleNuclProbDir, bool verbose) {
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
-    char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s "
-                                           " --referenceVcf %s",
-                                   bamFile, referenceFile, logString,
-                                   paramsFile, outputBase, vcfReference);
+    char *singleNuclProbCmd = singleNuclProbDir == NULL ? "" :
+                              stString_print("--singleNuclProbDir %s", singleNuclProbDir);
+    char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s --referenceVcf %s %s",
+                                   bamFile, referenceFile, logString, paramsFile, outputBase, vcfReference,
+                                   singleNuclProbCmd);
     st_logInfo("Running command: %s\n", command);
     st_logInfo("> Running margin phase on %s\n", bamFile);
 
     int64_t i = st_system(command);
     free(command);
+    if (singleNuclProbDir != NULL) free(singleNuclProbCmd);
     return i;
-    // TODO : Do VCF comparison using VCF eval
+}
+
+int64_t genotypingTest(char *paramsFile, char *bamFile, char *outputBase,
+                       char *referenceFile, char *vcfReference, bool verbose) {
+
+    return genotypingTest2(paramsFile, bamFile, outputBase, referenceFile, vcfReference, NULL, verbose);
 }
 
 
 void test_5kbGenotyping(CuTest *testCase) {
 
-    char *paramsFile = "../params_pacbio_gaps.json";
+    char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     char *outputBase = "test_5kb";
     bool verbose = true;
@@ -44,31 +51,61 @@ void test_5kbGenotyping(CuTest *testCase) {
 
     st_logInfo("Testing haplotype inference on %s\n", bamFile);
     int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
-                            referenceFile, vcfReference, verbose);
+                               referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 }
 
-void test_100kbGenotyping(CuTest *testCase) {
+void test_5kbGenotyping_singleNuclProb(CuTest *testCase) {
 
-//    char *paramsFile = "../params_pacbio_gaps.json";
-//    char *paramsFile = "../params_pacbio_currentbest.json";
-//    char *paramsFile = "../params_nanopore_currentbest.json";
-//    char *paramsFile = "../../params/params.np.averaged.9995.rp.json";
-    char *paramsFile = "../../params/params.np.transitions.9995.rp.json";
+    char *command = "tar xvf ../tests/NA12878.pb.chr3.5kb.singleNuclProb.zip --directory ../tests";
+    st_logInfo("Running command: %s\n", command);
+
+    int64_t i = st_system(command);
+    CuAssertTrue(testCase, i == 0);
+
+    char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
-    char *outputBase = "test_100kb";
-    bool verbose = false;
+    char *outputBase = "test_5kb_singleNuclProb";
+    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
+    char *singleNuclProbDir = "../tests/NA12878.pb.chr3.5kb";
+    bool verbose = true;
 
-//    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
-    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
-//    char *bamFile = "../tests/NA12878.ihs.chr3.100kb.4.bam";
+    st_logInfo("Testing haplotype inference on %s with singleNuclProbs\n", bamFile);
+    i = genotypingTest2(paramsFile, bamFile, outputBase, referenceFile, vcfReference, singleNuclProbDir, verbose);
+    CuAssertTrue(testCase, i == 0);
+}
+
+void test_100kbGenotyping_pacbio(CuTest *testCase) {
+
+    char *paramsFile = "../params/params.pacbio.json";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *outputBase = "test_100kb_pb";
+    char *bamFile = "../tests/NA12878.pb.chr3.100kb.4.bam";
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
-//    char *vcfReference = "../tests/HG001.GRCh37.chr3.100kb.vcf";
+    bool verbose = false;
 
     st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
 
     int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
-                        referenceFile, vcfReference, verbose);
+                               referenceFile, vcfReference, verbose);
+    CuAssertTrue(testCase, i == 0);
+
+}
+
+void test_100kbGenotyping_nanopore(CuTest *testCase) {
+
+    char *paramsFile = "../params/params.nanopore.json";
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *outputBase = "test_100kb_np";
+    char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
+    char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
+    bool verbose = false;
+
+    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+
+    int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
+                               referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 
 }
@@ -77,9 +114,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
     st_logInfo("Testing all PacBio regions\n");
 
-//    char *paramsFile = "../../params/params.pb.transitions.998.plain.json";
-//    char *paramsFile = "../../params/params.pb.averaged.9995.plain.testing.json";
-    char *paramsFile = "../params_pacbio_currentbest.json";
+    char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -134,9 +169,7 @@ void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
 
     st_logInfo("Testing all nanopore regions\n");
 
-//    char *paramsFile = "../params_nanopore_currentbest.json";
-//        char *paramsFile = "../../params/params.np.averaged.9995.rp.json";
-    char *paramsFile = "../../params/params.np.transitions.9995.rp.json";
+    char *paramsFile = "../params/params.nanopore.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -191,7 +224,7 @@ void test_multiple100kbGenotyping_illuminaHiSeq(CuTest *testCase) {
 
     st_logInfo("Testing all Illumina HiSeq regions\n");
 
-    char *paramsFile = "../params.json";
+    char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
 
@@ -245,8 +278,11 @@ CuSuite *marginPhaseTestSuite(void) {
 
     CuSuite* suite = CuSuiteNew();
 
-//    SUITE_ADD_TEST(suite, test_5kbGenotyping);
-//    SUITE_ADD_TEST(suite, test_100kbGenotyping);
+    SUITE_ADD_TEST(suite, test_5kbGenotyping);
+    SUITE_ADD_TEST(suite, test_5kbGenotyping_singleNuclProb);
+    SUITE_ADD_TEST(suite, test_100kbGenotyping_pacbio);
+    SUITE_ADD_TEST(suite, test_100kbGenotyping_nanopore);
+
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_pacbio);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_nanopore);
 //    SUITE_ADD_TEST(suite, test_multiple100kbGenotyping_illuminaHiSeq);
