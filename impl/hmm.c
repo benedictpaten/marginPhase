@@ -33,10 +33,9 @@ void stRPHmmParameters_destruct(stRPHmmParameters *params) {
 
 static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\t\t");
+        fprintf(fH, "\t\t\t");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
             fprintf(fH, " %f, ", exp(matrixSlow[i*ALPHABET_SIZE + j]));
-            //fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
         }
         fprintf(fH, "\n");
     }
@@ -82,41 +81,39 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     /*
      * Print the parameters in the parameters object in a human readable form.
      */
-    fprintf(fH, "Read Partitioning HMM Parameters\n");
-    fprintf(fH, "\tAlphabet_size: %i\n"
-            "\tMax_read coverage_depth: %" PRIi64 "\n"
-            "\tMax_not sum transitions?: %i\n"
-            "\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
-            "\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
+    fprintf(fH, "\tRead Partitioning HMM Parameters\n");
+    fprintf(fH, "\t\tAlphabet_size: %i\n"
+            "\t\tMax_read coverage_depth: %" PRIi64 "\n"
+            "\t\tMax_not sum transitions?: %i\n"
+            "\t\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
+            "\t\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
             ALPHABET_SIZE, params->maxCoverageDepth,
             (int)params->maxNotSumTransitions, params->maxPartitionsInAColumn,
             params->minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
-    fprintf(fH, "\tHeterozygous substitution rates:\n");
+    fprintf(fH, "\t\tHeterozygous substitution rates:\n");
     printMatrix(fH, params->hetSubModelSlow, params->hetSubModel);
 
-    fprintf(fH, "\tRead error substitution rates:\n");
+    fprintf(fH, "\t\tRead error substitution rates:\n");
     printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
 
-    fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
-    fprintf(fH, "\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
-    fprintf(fH, "\tUse reference prior?: %i\n", (int) params->useReferencePrior);
-    fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
-    fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
-    fprintf(fH, "\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-    fprintf(fH, "\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
-    fprintf(fH, "\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
-    fprintf(fH, "\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
-    fprintf(fH, "\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
-    fprintf(fH, "\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
-    fprintf(fH, "\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
-
-    fprintf(fH, "\tComparing vcfs within program? : %i\n", (int)params->compareVCFs);
-    fprintf(fH, "\tWriting gvcf? : %i\n", (int)params->writeGVCF);
-    fprintf(fH, "\tVerbose Attributes:\n");
-    if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
-    if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");
-    if (params->verboseFalseNegatives) fprintf(fH, "\t\tFALSE_NEGATIVES\n");
+    fprintf(fH, "\t\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fH, "\t\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
+    fprintf(fH, "\t\tUse reference prior?: %i\n", (int) params->useReferencePrior);
+    fprintf(fH, "\t\tFilter bad reads?: %i\n", (int)params->filterBadReads);
+    fprintf(fH, "\t\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\t\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
+    fprintf(fH, "\t\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
+    fprintf(fH, "\t\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
+    fprintf(fH, "\t\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
+    fprintf(fH, "\t\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
+    fprintf(fH, "\t\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
+    fprintf(fH, "\t\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
+    fprintf(fH, "\t\tWriting gvcf? : %i\n", (int)params->writeGVCF);
+    fprintf(fH, "\t\tVerbose Attributes:\n");
+    if (params->verboseTruePositives) fprintf(fH, "\t\t\tTRUE_POSITIVES\n");
+    if (params->verboseFalsePositives) fprintf(fH, "\t\t\tFALSE_POSITIVES\n");
+    if (params->verboseFalseNegatives) fprintf(fH, "\t\t\tFALSE_NEGATIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {

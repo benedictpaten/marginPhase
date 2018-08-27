@@ -140,7 +140,6 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->estimateReadErrorProbsEmpirically = false;
     params->roundsOfIterativeRefinement = 0;
     params->includeInvertedPartitions = true;
-    params->compareVCFs = false;
     params->writeGVCF = false;
     params->writeSplitSams = true;
     params->writeUnifiedSam = true;
@@ -359,10 +358,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             i++;
         }
         else if (strcmp(keyString, "compareVCFs") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->compareVCFs = strcmp(tokStr, "true") == 0;
+            //removed, but legacy params may still contain this
             i++;
         }
         else if (strcmp(keyString, "writeGVCF") == 0) {
@@ -812,8 +808,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
     // log filtering actions
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-        st_logDebug("\tFiltered %" PRIi64
-                " reads with either missing cigar lines, "
+        st_logDebug("\tFiltered %" PRIi64 " reads with either missing cigar lines, "
                             "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
                             "\n\t\tand undesired sam flags "
                             "(filtered %d reads with sam flags being filtered on: %s)\n",

@@ -177,7 +177,7 @@ void printBaseComposition(FILE *fH, double *baseCounts) {
         totalCount += baseCounts[i];
     }
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
+        fprintf(fH, "\t\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
     }
 }
 
@@ -274,7 +274,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
         stList_appendAll(l, stRPHMM_splitWherePhasingIsUncertain(stList_pop(hmms)));
     }
     hmms = l;
-    st_logInfo("Created %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
+    st_logInfo("\tCreated %d hmms after splitting at uncertain regions of phasing (previously %d)\n",
                 stList_length(hmms), initialHmmListSize);
 
     int64_t idx = 0;
@@ -296,43 +296,43 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
     if(st_getLogLevel() == debug) {
         st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
                     hmm->referenceName, hmm->refStart, hmm->refLength);
-        st_logDebug("\nThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
+        st_logDebug("\n\tThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                     stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
         // Print the similarity between the two imputed haplotypes sequences
-        st_logDebug("The haplotypes have an %f identity\n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-        st_logDebug("\tIdentity excluding indels: %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        st_logDebug("\tThe haplotypes have identity: %f \n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        st_logDebug("\tIdentity excluding indels:    %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
 
         // Print the base composition of the haplotype sequences
         double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
-        st_logDebug("The base composition of haplotype 1:\n");
+        st_logDebug("\tThe base composition of haplotype 1:\n");
         printBaseComposition(stderr, hap1BaseCounts);
         free(hap1BaseCounts);
 
         double *hap2BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString2, gF->length);
-        st_logDebug("The base composition of haplotype 2:\n");
+        st_logDebug("\tThe base composition of haplotype 2:\n");
         printBaseComposition(stderr, hap2BaseCounts);
         free(hap2BaseCounts);
 
         // Print the base composition of the reads
         double *reads1BaseCounts =getExpectedProfileSequenceBaseComposition(reads1);
-        st_logDebug("The base composition of reads1 set:\n");
+        st_logDebug("\tThe base composition of reads1 set:\n");
         printBaseComposition(stderr, reads1BaseCounts);
         free(reads1BaseCounts);
 
         double *reads2BaseCounts =getExpectedProfileSequenceBaseComposition(reads2);
-        st_logDebug("The base composition of reads2 set:\n");
+        st_logDebug("\tThe base composition of reads2 set:\n");
         printBaseComposition(stderr, reads2BaseCounts);
         free(reads2BaseCounts);
 
         // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-        st_logDebug("hap1 vs. reads1 identity: %f\n",
+        st_logDebug("\thap1 vs. reads1 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-        st_logDebug("hap1 vs. reads2 identity: %f\n",
+        st_logDebug("\thap1 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-        st_logDebug("hap2 vs. reads2 identity: %f\n",
+        st_logDebug("\thap2 vs. reads2 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-        st_logDebug("hap2 vs. reads1 identity: %f\n",
+        st_logDebug("\thap2 vs. reads1 identity: %f\n",
                     getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
     }
 }
@@ -343,24 +343,38 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
  */
 
 void usage() {
-fprintf(stderr, "marginPhase <BAM_FILE> <REFERENCE_FASTA> [options]\n");
-    fprintf(stderr,
-            "Phases the reads in an interval of a BAM file (BAM_FILE) reporting a VCF file "
-            "giving genotypes and haplotypes for region.\n"
-            "REFERENCE_FASTA is the reference sequence for the region in fasta format.\n"
-            "Version: "MARGINPHASE_MARGIN_PHASE_VERSION_H"\n");
-    fprintf(stderr, "\t-h --help              : Print this help screen\n");
-    fprintf(stderr, "\t-o --outputBase        : (Required) Output Base (\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n");
-    fprintf(stderr, "\t-p --params            : (Required) Input params file\n");
-    fprintf(stderr, "\t-a --logLevel          : Set the log level [default = info]\n");
-//    fprintf(stderr, "\t-r --referenceVCF      : Reference vcf file for output comparison\n");
-    fprintf(stderr, "\t-t --tag               : Annotate all output reads with this value for the '"MARGIN_PHASE_TAG"' tag\n");
-    fprintf(stderr, "\t-s --singleNuclProbDir : Directory of single nucleotide probabilities files\n");
-    fprintf(stderr, "\t-S --onlySNP           : Use only single nucleotide probabilities information (discard reads which aren't in SNP dir)\n");
-    fprintf(stderr, "\t-v --verbose           : Bitmask controlling outputs (0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
-    fprintf(stderr, "\t                       \t%3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
-    fprintf(stderr, "\t                       \t%3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
-    fprintf(stderr, "\t                       \t%3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+    fprintf(stderr, "usage: marginPhase <BAM> <REFERENCE_FASTA> <PARAMS> [options]\n");
+    fprintf(stderr, "Version: "MARGINPHASE_MARGIN_PHASE_VERSION_H"\n\n");
+    fprintf(stderr, "Phases the reads in a BAM file and produces:\n");
+    fprintf(stderr, "    1) a VCF file giving genotypes and haplotypes.\n");
+    fprintf(stderr, "    2) a SAM file where each read is annotated with haplotype information\n");
+
+    fprintf(stderr, "\nRequired arguments:\n");
+    fprintf(stderr, "    BAM is the alignment of reads.  All reads must be aligned to the same contig \n");
+    fprintf(stderr, "        and be in bam format.\n");
+    fprintf(stderr, "    REFERENCE_FASTA is the reference sequence for the BAM's contig in fasta format.\n");
+    fprintf(stderr, "    PARAMS is the file with marginPhase parameters.\n");
+
+    fprintf(stderr, "\nDefault options:\n");
+    fprintf(stderr, "    -h --help              : Print this help screen\n");
+    fprintf(stderr, "    -o --outputBase        : Base output identifier [default = \"output\"]\n");
+    fprintf(stderr, "                               \"example\" -> \"example.sam\", \"example.vcf\"\n");
+    fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
+    fprintf(stderr, "    -t --tag               : Annotate all output reads with this value for the \n");
+    fprintf(stderr, "                               '"MARGIN_PHASE_TAG"' tag\n");
+
+    fprintf(stderr, "\nNucleotide probabilities options:\n");
+    fprintf(stderr, "    -s --singleNuclProbDir : Directory of single nucleotide probabilities files\n");
+    fprintf(stderr, "    -S --onlySNP           : Use only single nucleotide probabilities information,\n");
+    fprintf(stderr, "                               so reads that aren't in SNP dir are discarded\n");
+
+    fprintf(stderr, "\nVCF Comparison options:\n");
+    fprintf(stderr, "    -r --referenceVCF      : Reference vcf file for output comparison\n");
+    fprintf(stderr, "    -v --verbose           : Bitmask controlling outputs \n");
+    fprintf(stderr, "                               %3d - LOG_TRUE_POSITIVES\n", LOG_TRUE_POSITIVES);
+    fprintf(stderr, "                               %3d - LOG_FALSE_POSITIVES\n", LOG_FALSE_POSITIVES);
+    fprintf(stderr, "                               %3d - LOG_FALSE_NEGATIVES\n", LOG_FALSE_NEGATIVES);
+    fprintf(stderr, "                               example: 0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)\n");
 
 }
 
@@ -369,24 +383,25 @@ int main(int argc, char *argv[]) {
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
+    char *paramsFile = NULL;
     char *referenceFastaFile = NULL;
     char *marginPhaseTag = NULL;
     char *referenceVCF = NULL;
     char *singleNucleotideProbabilityDirectory = NULL;
     char *outputBase = "output";
-    char *paramsFile = "params.json";
     int64_t verboseBitstring = -1;
     bool onlySNP = false;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
-    if(argc < 3) {
+    if(argc < 4) {
         usage();
         return 0;
     }
 
     bamInFile = stString_copy(argv[1]);
     referenceFastaFile = stString_copy(argv[2]);
+    paramsFile = stString_copy(argv[3]);
 
     // Parse the options
     while (1) {
@@ -394,7 +409,6 @@ int main(int argc, char *argv[]) {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
                 { "outputBase", required_argument, 0, 'o'},
-                { "params", required_argument, 0, 'p'},
                 { "referenceVcf", required_argument, 0, 'r'},
                 { "tag", required_argument, 0, 't'},
                 { "singleNuclProbDir", required_argument, 0, 's'},
@@ -403,7 +417,7 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:p:r:s:hS", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:s:hS", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -419,9 +433,6 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'o':
             outputBase = stString_copy(optarg);
-            break;
-        case 'p':
-            paramsFile = stString_copy(optarg);
             break;
         case 't':
             marginPhaseTag = stString_copy(optarg);
@@ -640,16 +651,15 @@ int main(int argc, char *argv[]) {
     }
 
     // Write out VCF
-    st_logInfo("Finished writing out VCF into file: %s\n", vcfOutFile);
+    st_logInfo("\n\tFinished writing out VCF into file: %s\n", vcfOutFile);
 
-    st_logInfo("\nThere were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
+    st_logInfo("\n> There were a total of %d genome fragments. Average length = %f\n", stList_length(hmms),
                (float) totalGFlength / stList_length(hmms));
 
-    if (params->compareVCFs) {
+    // do comparison if referenceVCF is specified
+    if (referenceVCF != NULL) {
         st_logInfo("\n> Comparing VCFs\n");
-        if (referenceVCF == NULL) {
-            st_logInfo("\tParameter file specifies VCFs should be compared, but reference VCF CL parameter is missing\n");
-        } else if (access(referenceVCF, F_OK) == -1) {
+        if (access(referenceVCF, F_OK) == -1) {
             st_logInfo("\tReference VCF file does not exist: %s\n", referenceVCF);
         } else {
             // Compare the output vcf with the reference vcf
@@ -662,12 +672,12 @@ int main(int argc, char *argv[]) {
 
     // Write out two BAMs, one for each read partition
     if (params->writeSplitSams) {
-        st_logInfo("\n> Writing out SAM files for each partition\n", outputBase,
+        st_logInfo("\tWriting out SAM files for each partition\n", outputBase,
                    outputBase);
         writeSplitSams(bamInFile, outputBase, readHaplotypePartitions, marginPhaseTag);
     }
     if (params->writeUnifiedSam) {
-        st_logInfo("\n> Writing out single SAM file with read partitioning\n", outputBase,
+        st_logInfo("\tWriting out single SAM file with read partitioning\n", outputBase,
                    outputBase);
         writeHaplotypedSam(bamInFile, outputBase, readHaplotypePartitions, marginPhaseTag);
     }

@@ -261,9 +261,6 @@ struct _stRPHmmParameters {
     // Number of rounds of iterative refinement to attempt to improve the partition.
     int64_t roundsOfIterativeRefinement;
 
-    // Whether or not to do the vcf comparison within marginPhase
-    bool compareVCFs;
-
     // Whether or not to write a gvcf as output
     bool writeGVCF;
 

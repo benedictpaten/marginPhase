@@ -139,7 +139,7 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, 
                 gF->refStart, gF->length, reads2, (stRPHmmParameters *)hmm->parameters);
 
         // If there are no reads wanting to switch then break
-        st_logDebug("At iteration %" PRIi64 " of partition found %" PRIi64 " reads from partition 1 switching to 2 and %" PRIi64
+        st_logDebug("\tAt iteration %" PRIi64 " of partition found %" PRIi64 " reads from partition 1 switching to 2 and %" PRIi64
                     " reads from partition 2 switching to 1\n", iteration, stSet_size(reads1To2), stSet_size(reads2To1));
         if(stSet_size(reads1To2) + stSet_size(reads2To1) == 0) {
             break;

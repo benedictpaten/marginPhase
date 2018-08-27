@@ -17,11 +17,10 @@ int64_t genotypingTest2(char *paramsFile, char *bamFile, char *outputBase, char 
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
     char *singleNuclProbCmd = singleNuclProbDir == NULL ? "" :
                               stString_print("--singleNuclProbDir %s", singleNuclProbDir);
-    char *command = stString_print("./marginPhase %s %s %s --params %s --outputBase %s --referenceVcf %s %s",
-                                   bamFile, referenceFile, logString, paramsFile, outputBase, vcfReference,
+    char *command = stString_print("./marginPhase %s %s %s %s --outputBase %s --referenceVcf %s %s",
+                                   bamFile, referenceFile, paramsFile, logString, outputBase, vcfReference,
                                    singleNuclProbCmd);
-    st_logInfo("Running command: %s\n", command);
-    st_logInfo("> Running margin phase on %s\n", bamFile);
+    st_logInfo("> Running command: %s\n", command);
 
     int64_t i = st_system(command);
     free(command);
@@ -49,19 +48,13 @@ void test_5kbGenotyping(CuTest *testCase) {
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.0.vcf";
 
 
-    st_logInfo("Testing haplotype inference on %s\n", bamFile);
+    st_logInfo("\n\nTesting haplotype inference on %s\n", bamFile);
     int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                                referenceFile, vcfReference, verbose);
     CuAssertTrue(testCase, i == 0);
 }
 
 void test_5kbGenotyping_singleNuclProb(CuTest *testCase) {
-
-    char *command = "tar xvf ../tests/NA12878.pb.chr3.5kb.singleNuclProb.zip --directory ../tests";
-    st_logInfo("Running command: %s\n", command);
-
-    int64_t i = st_system(command);
-    CuAssertTrue(testCase, i == 0);
 
     char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
@@ -71,7 +64,13 @@ void test_5kbGenotyping_singleNuclProb(CuTest *testCase) {
     char *singleNuclProbDir = "../tests/NA12878.pb.chr3.5kb";
     bool verbose = true;
 
-    st_logInfo("Testing haplotype inference on %s with singleNuclProbs\n", bamFile);
+    st_logInfo("\n\nTesting haplotype inference on %s with singleNuclProbs\n", bamFile);
+
+    char *command = "tar xvf ../tests/NA12878.pb.chr3.5kb.singleNuclProb.zip --directory ../tests";
+    int64_t i = st_system(command);
+    CuAssertTrue(testCase, i == 0);
+
+    st_logInfo("\nRunning command: %s\n\n", command);
     i = genotypingTest2(paramsFile, bamFile, outputBase, referenceFile, vcfReference, singleNuclProbDir, verbose);
     CuAssertTrue(testCase, i == 0);
 }
@@ -85,7 +84,7 @@ void test_100kbGenotyping_pacbio(CuTest *testCase) {
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
     bool verbose = false;
 
-    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+    st_logInfo("\n\nTesting haplotype inference on %s\n", bamFile);
 
     int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                                referenceFile, vcfReference, verbose);
@@ -102,7 +101,7 @@ void test_100kbGenotyping_nanopore(CuTest *testCase) {
     char *vcfReference = "../tests/NA12878.PG.chr3.100kb.4.vcf";
     bool verbose = false;
 
-    st_logInfo("\nTesting haplotype inference on %s\n", bamFile);
+    st_logInfo("\n\nTesting haplotype inference on %s\n", bamFile);
 
     int64_t i = genotypingTest(paramsFile, bamFile, outputBase,
                                referenceFile, vcfReference, verbose);
@@ -112,7 +111,7 @@ void test_100kbGenotyping_nanopore(CuTest *testCase) {
 
 void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
-    st_logInfo("Testing all PacBio regions\n");
+    st_logInfo("\n\nTesting all PacBio regions\n");
 
     char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
@@ -167,7 +166,7 @@ void test_multiple100kbGenotyping_pacbio(CuTest *testCase) {
 
 void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
 
-    st_logInfo("Testing all nanopore regions\n");
+    st_logInfo("\n\nTesting all nanopore regions\n");
 
     char *paramsFile = "../params/params.nanopore.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
@@ -222,7 +221,7 @@ void test_multiple100kbGenotyping_nanopore(CuTest *testCase) {
 
 void test_multiple100kbGenotyping_illuminaHiSeq(CuTest *testCase) {
 
-    st_logInfo("Testing all Illumina HiSeq regions\n");
+    st_logInfo("\n\nTesting all Illumina HiSeq regions\n");
 
     char *paramsFile = "../params/params.pacbio.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";

@@ -230,8 +230,19 @@ if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
 
+add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
+        COMMAND autoconf
+        COMMAND autoheader
+        COMMAND ./configure
+        COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
+)
+add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
+
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
+add_dependencies(hts HTSLIB_CONFIGURED)
 add_library(jsmn externalTools/jsmn/jsmn.c)
 
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
