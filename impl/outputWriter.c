@@ -15,10 +15,14 @@
 
 void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
                         char *marginPhaseTag) {
-    // prep
+    /*
+     * Write out haplotyped sam file
+     */
+
+    // Prep
     char *haplotypedSamFile = stString_print("%s.sam", bamOutBase);
 
-    // file management
+    // File management
     samFile *in = hts_open(bamInFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamInFile);
@@ -32,7 +36,7 @@ void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
     samFile *out = hts_open(haplotypedSamFile, "w");
     r = sam_hdr_write(out, bamHdr);
 
-    // read in input file, write out each read to one sam file
+    // Read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountFiltered = 0;
@@ -54,7 +58,8 @@ void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
             haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
             bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
             r = sam_write1(out, bamHdr, aln);
-            // document based on last recorded haplotype
+
+            // Document based on last recorded haplotype
             while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
             if (readHaplotypes->haplotype == 1)
                 readCountH1++;
@@ -75,12 +80,16 @@ void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
 
 void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
                     char *marginPhaseTag) {
-    // prep
+    /*
+     * Write out sam files with reads in each split based on which haplotype partition they are in.
+     */
+
+    // Prep
     char *haplotype1SamOutFile = stString_print("%s.1.sam", bamOutBase);
     char *haplotype2SamOutFile = stString_print("%s.2.sam", bamOutBase);
     char *unmatchedSamOutFile = stString_print("%s.0.sam", bamOutBase);
 
-    // file management
+    // File management
     samFile *in = hts_open(bamInFile, "r");
     if (in == NULL) {
         st_errAbort("ERROR: Cannot open bam file %s\n", bamInFile);
@@ -101,7 +110,7 @@ void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionT
     r = sam_hdr_write(outUnmatched, bamHdr);
 
 
-    // read in input file, write out each read to one sam file
+    // Read in input file, write out each read to one sam file
     int32_t readCountH1 = 0;
     int32_t readCountH2 = 0;
     int32_t readCountFiltered = 0;
@@ -122,7 +131,8 @@ void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionT
         } else {
             haplotypeString = stReadHaplotypeSequence_toString(readHaplotypes);
             bam_aux_append(aln, HAPLOTYPE_TAG, 'Z', (int)strlen(haplotypeString) + 1, (uint8_t*)haplotypeString);
-            // document based on last recorded haplotype
+
+            // Document based on last recorded haplotype
             while (readHaplotypes->next != NULL) {readHaplotypes = readHaplotypes->next;}
             if (readHaplotypes->haplotype == 1) {
                 r = sam_write1(out1, bamHdr, aln);
@@ -150,20 +160,24 @@ void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionT
 }
 
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName) {
+    /*
+     * Write the header of a vcf file.
+     */
+
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     kstring_t str = {0,0,NULL};
 
-    // generic info
+    // Generic info
     str.l = 0;
-    ksprintf(&str, "##marginPhase=htslib-%s\n",hts_version());
+    ksprintf(&str, "##marginPhase=htslib-%s\n", hts_version());
     bcf_hdr_append(hdr, str.s);
 
-    // reference file used
+    // Reference file used
     str.l = 0;
     ksprintf(&str, "##reference=file://%s\n", referenceName);
     bcf_hdr_append(hdr, str.s);
 
-    // contigs
+    // Contigs
     // TODO: assert unique fragments, get full chrom length
     for(int64_t i=0; i<stList_length(genomeFragments); i++) {
         stRPHmm *hmm = stList_get(genomeFragments, i);
@@ -171,6 +185,7 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *reference
         ksprintf(&str, "##contig=<ID=%s>\n", hmm->referenceName); //hmm->referenceName is the chrom
         bcf_hdr_append(hdr, str.s);
     }
+
     // INFO fields
     str.l = 0;
     ksprintf(&str, "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Read depth\">");
@@ -189,16 +204,18 @@ bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *reference
     str.l = 0;
     ksprintf(&str, "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read depth\">");
     bcf_hdr_append(hdr, str.s);
+    str.l = 0;
+    ksprintf(&str, "##FORMAT=<ID=MPI,Number=1,Type=Integer,Description=\"MarginPhase\tIdentifier\">");
+    bcf_hdr_append(hdr, str.s);
 
-
-    // samples
-    bcf_hdr_add_sample(hdr, "SMPL1"); //todo
+    // Samples
+    bcf_hdr_add_sample(hdr, "SMPL1"); //todo change the sample name
     bcf_hdr_add_sample(hdr, NULL);
 
-    // write header
+    // Write header
     bcf_hdr_write(out, hdr);
 
-    // cleanup
+    // Cleanup
     free(str.s);
     return hdr;
 }
@@ -254,6 +271,7 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &refstr);
         kputs(hap1str.s, &refstr);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
+
         // Update allele counts
         ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
         bcf_update_info(bcf_hdr, bcf_rec, "AC", ac_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
@@ -272,6 +290,7 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &hap1str);
         kputs(hap2str.s, &hap1str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, hap1str.s);
+
         // Update allele counts
         ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
         bcf_update_info(bcf_hdr, bcf_rec, "AC", ac_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
@@ -290,6 +309,7 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &hap2str);
         kputs(hap1str.s, &hap2str);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, hap2str.s);
+
         // Update allele counts
         ac_info[0] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];
         bcf_update_info(bcf_hdr, bcf_rec, "AC", ac_info, bcf_hdr_nsamples(bcf_hdr), BCF_HT_INT);
@@ -311,6 +331,7 @@ void writeIndelVariant(int32_t *gt_info, bcf_hdr_t *bcf_hdr, bcf1_t *bcf_rec, st
         kputc(',', &refstr);
         kputs(hap2str.s, &refstr);
         bcf_update_alleles_str(bcf_hdr, bcf_rec, refstr.s);
+
         // Update allele counts
         ac_info[0] = gF->alleleCountsHap1[i] + gF->alleleCountsHap2[i];
         ac_info[1] = gF->allele2CountsHap1[i] + gF->allele2CountsHap2[i];

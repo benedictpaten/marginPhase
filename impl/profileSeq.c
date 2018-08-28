@@ -15,6 +15,7 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *read
     /*
      * Creates an empty profile sequence, with all the profile probabilities set to 0.
      */
+
     stProfileSeq *seq = st_malloc(sizeof(stProfileSeq));
     seq->referenceName = stString_copy(referenceName);
     seq->readId = stString_copy(readId);
@@ -28,6 +29,7 @@ void stProfileSeq_destruct(stProfileSeq *seq) {
     /*
      * Cleans up memory for profile sequence.
      */
+
     free(seq->profileProbs);
     free(seq->readId);
     free(seq->referenceName);
@@ -38,6 +40,7 @@ float getProb(uint8_t *p, int64_t characterIndex) {
     /*
      * Gets probability of a given character as a float.
      */
+
     return ((float)p[characterIndex])/255;
 }
 
@@ -45,6 +48,7 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
     /*
      * Prints a debug representation of a profile sequence.
      */
+
     char profileString[seq->length+1];
     profileString[seq->length] = '\0';
     for(int64_t i=0; i<seq->length; i++) {
@@ -60,12 +64,15 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs) 
         }
         profileString[i] = maxChar + FIRST_ALPHABET_CHAR;
     }
+
     fprintf(fileHandle, "\tSEQUENCE REF_NAME: %s REF_START %"
             PRIi64 " REF_LENGTH: %" PRIi64 " ML_STRING: %s\n",
             seq->referenceName, seq->refStart, seq->length, profileString);
+
     if(includeProbs) {
         for(int64_t i=0; i<seq->length; i++) {
             uint8_t *p = &seq->profileProbs[i * ALPHABET_SIZE];
+
             // Print individual character probs
             fprintf(fileHandle, "\t\tPOS: %" PRIi64 "", i);
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
@@ -80,6 +87,7 @@ void printSeqs(FILE *fileHandle, stSet *profileSeqs) {
     /*
      * Prints a set of profile seqs.
      */
+
     stSetIterator *seqIt = stSet_getIterator(profileSeqs);
     stProfileSeq *pSeq;
     while((pSeq = stSet_getNext(seqIt)) != NULL) {
@@ -92,6 +100,7 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2) 
     /*
      * Print a partition.
      */
+
     fprintf(fileHandle, "First partition\n");
     printSeqs(fileHandle, profileSeqs1);
     fprintf(fileHandle, "Second partition\n");
@@ -109,6 +118,7 @@ inline int stRPProfileSeq_cmpFn(const void *a, const void *b) {
      * will return equal only if they are the same profile sequence, with the same memory
      * address, otherwise compares pointers for equal profile sequences.
      */
+
     stProfileSeq *pSeq1 = (stProfileSeq *)a, *pSeq2 = (stProfileSeq *)b;
     int i = strcmp(pSeq1->referenceName, pSeq2->referenceName);
     if(i == 0) {

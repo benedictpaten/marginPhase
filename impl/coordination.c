@@ -227,6 +227,7 @@ stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePr
      * a list of tiling paths. Each tiling path consisting of maximal sequences of hmms
      * that do not overlap.
      */
+
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
@@ -268,6 +269,7 @@ stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2) {
      *  same format as the input lists.
      *  Destroys the input tilingPaths in the process and cleans them up.
      */
+
     // Partition of the hmms into overlapping connected components
     stSet *components = getOverlappingComponents(tilingPath1, tilingPath2);
     // Cleanup the input tiling paths
@@ -422,9 +424,9 @@ static void getProfileSeqs(stList *tilingPath, stList *pSeqs) {
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params,
         stList *filteredProfileSeqs, stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors) {
     /*
-     * Takes a set of profile sequences and returns a subset such that maximum coverage depth of the subset is less than or
-     * equal to params->maxCoverageDepth. The discarded sequences are placed in the list "discardedProfileSeqs", the retained
-     * sequences are placed in filteredProfileSeqs.
+     * Takes a set of profile sequences and returns a subset such that maximum coverage depth of the subset is
+     * less than or equal to params->maxCoverageDepth. The discarded sequences are placed in the list
+     * "discardedProfileSeqs", the retained sequences are placed in filteredProfileSeqs.
      */
 
     // Create a set of tiling paths
@@ -455,7 +457,8 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
     stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
 
-    if(stList_length(tilingPaths) > MAX_READ_PARTITIONING_DEPTH || stList_length(tilingPaths) > params->maxCoverageDepth) {
+    if(stList_length(tilingPaths) > MAX_READ_PARTITIONING_DEPTH
+       || stList_length(tilingPaths) > params->maxCoverageDepth) {
         st_errAbort("\nCoverage depth: read depth of %" PRIi64 " exceeds hard maximum of %" PRIi64
                             " with configured maximum of %" PRIi64 "\n",
                 stList_length(tilingPaths), MAX_READ_PARTITIONING_DEPTH, params->maxCoverageDepth);

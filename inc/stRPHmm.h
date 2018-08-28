@@ -40,7 +40,6 @@ typedef struct _stReferencePositionFilter stReferencePositionFilter;
  * Overall coordination functions
  */
 
-
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
         stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors);
 
@@ -61,15 +60,16 @@ double logAddP(double a, double b, bool maxNotSum);
 /*
  * Alphabet
  */
-
 #define ALPHABET_SIZE 5
 #define ALPHABET_MAX_PROB 255
 #define ALPHABET_MIN_PROB 0
 #define ALPHABET_CHARACTER_BITS 8
 #define ALPHABET_MIN_SUBSTITUTION_PROB 65535 // 2^16 -1
 
-// Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1, with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
+// Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1,
+// with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
 uint16_t scaleToLogIntegerSubMatrix(double logProb);
+
 double invertScaleToLogIntegerSubMatrix(int64_t i);
 
 void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
@@ -103,9 +103,9 @@ uint64_t invertPartition(uint64_t partition, uint64_t depth);
 uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex);
 
 /*
- * Profile sequence
+ * _stProfileSeq
+ * Struct for profile sequence
  */
-
 #define FIRST_ALPHABET_CHAR 48 // Ascii symbol '0'
 
 struct _stProfileSeq {
@@ -136,23 +136,22 @@ void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
 int stRPProfileSeq_cmpFn(const void *a, const void *b);
 
 /*
- * Prior over reference positions
+ * _stReferencePriorProbs
+ * Struct for prior over reference positions
  */
-
 struct _stReferencePriorProbs {
     char *referenceName;
     int64_t refStart;
     int64_t length;
+
     // The log probability of alphabet characters, as specified by uint16_t
     // see scaleToLogIntegerSubMatrix()
     // and invertScaleToLogIntegerSubMatrix() to see how probabilities are stored
     uint16_t *profileProbs;
-    // The reference sequence
-    uint8_t *referenceSequence;
+    uint8_t *referenceSequence; // The reference sequence
     // Read counts for the bases seen in reads
     double *baseCounts;
-    // Filter array of positions in the reference, used
-    // to ignore some columns in the alignment
+    // Filter array of positions in the reference, used to ignore some columns in the alignment
     bool *referencePositionsIncluded;
 };
 
@@ -170,9 +169,8 @@ int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePrio
 double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
 /*
- * Emission probabilities
+ * Emission probabilities methods
  */
-
 double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors,
                                 stReferencePriorProbs *referencePriorProbs,
                                 stRPHmmParameters *params);
@@ -184,8 +182,9 @@ double emissionLogProbabilitySlow(stRPColumn *column,
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
         stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
 
-// Constituent functions tested and used to do bit twiddling
-
+/*
+ * Constituent functions tested and used to do bit twiddling
+*/
 int popcount64(uint64_t x);
 
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
@@ -194,9 +193,9 @@ uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, ui
 uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions);
 
 /*
- * Hmm parameters
+ * _stRPHmmParameters
+ * Struct for hmm parameters
  */
-
 struct _stRPHmmParameters {
     /*
      * Parameters used for the HMM computation
@@ -284,9 +283,9 @@ void normaliseSubstitutionMatrix(double *subMatrix);
 double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params);
 
 /*
- * Read partitioning hmm
+ * _stRPHmm
+ * Struct for read partitioning hmm
  */
-
 struct _stRPHmm {
     char *referenceName;
     int64_t refStart;
@@ -339,14 +338,17 @@ void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm);
 stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm);
 
 void printBaseComposition2(double *baseCounts);
+
 double *getColumnBaseComposition(stRPColumn *column, int64_t pos);
+
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos);
+
 double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos);
 
 /*
+ * _stRPColumn
  * Column of read partitioning hmm
  */
-
 struct _stRPColumn {
     int64_t refStart;
     int64_t length;
@@ -375,9 +377,9 @@ stSet *stRPColumn_getSequencesInCommon(stRPColumn *column1, stRPColumn *column2)
 stSet *stRPColumn_getColumnSequencesAsSet(stRPColumn *column);
 
 /*
+ * _stRPCell
  * State of read partitioning hmm
  */
-
 struct _stRPCell {
     uint64_t partition;
     double forwardLogProb, backwardLogProb;
@@ -393,9 +395,9 @@ void stRPCell_print(stRPCell *cell, FILE *fileHandle);
 double stRPCell_posteriorProb(stRPCell *cell, stRPColumn *column);
 
 /*
+ * _stRPMergeColumn
  * Merge column of read partitioning hmm
  */
-
 struct _stRPMergeColumn {
     uint64_t maskFrom;
     uint64_t maskTo;
@@ -417,9 +419,9 @@ stRPMergeCell *stRPMergeColumn_getPreviousMergeCell(stRPCell *cell, stRPMergeCol
 int64_t stRPMergeColumn_numberOfPartitions(stRPMergeColumn *mColumn);
 
 /*
+ * _stRPMergeCell
  * Merge cell of read partitioning hmm
  */
-
 struct _stRPMergeCell {
     uint64_t fromPartition;
     uint64_t toPartition;
@@ -436,9 +438,9 @@ void stRPMergeCell_print(stRPMergeCell *mCell, FILE *fileHandle);
 double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColumn);
 
 /*
+ * _stGenomeFragment
  * String to represent genotype and haplotype inference from an HMM
  */
-
 struct _stGenomeFragment {
     // A string where each element represents the predicted genotype at the corresponding
     // position.
@@ -480,12 +482,16 @@ struct _stGenomeFragment {
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
+
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2,
         stRPHmm *hmm, stList *path, int64_t maxIterations);
 
-// Struct for alphabet and mapping bases to numbers
+/*
+ * _stBaseMapper
+ * Struct for alphabet and mapping bases to numbers
+ */
 struct _stBaseMapper {
     uint8_t *charToNum;
     char *numToChar;
@@ -494,18 +500,30 @@ struct _stBaseMapper {
 };
 
 stBaseMapper* stBaseMapper_construct();
+
 void stBaseMapper_destruct(stBaseMapper *bm);
+
 void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
+
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
+
 char stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
-// Parsing stuff
+/*
+ * Parsing methods
+ */
+
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
+
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
+
 int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
                                             stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
+
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
+
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
 #define LOG_TRUE_POSITIVES 1
@@ -513,15 +531,23 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
 #define LOG_FALSE_NEGATIVES 4
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
 
-// File writing
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName, stBaseMapper *baseMapper, bool gvcf);
+/*
+ * File writing methods
+ */
+
+void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName,
+                      stBaseMapper *baseMapper, bool gvcf);
+
 bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
+
 void writeParamFile(char *outputFilename, stRPHmmParameters *params);
 
 /*
- * Stores information about relevant test results.
+ * _stGenotypeResults
+ * Struct which stores information about relevant test results.
  */
 struct _stGenotypeResults {
+
     // Variants in reference
     int64_t negatives;
     int64_t positives;
@@ -531,7 +557,6 @@ struct _stGenotypeResults {
     int64_t hetsInRef;
     int64_t hetsInRef_Insertions;
     int64_t hetsInRef_Deletions;
-
 
     // Variants in evaluated vcf
     int64_t truePositives;
@@ -562,17 +587,26 @@ struct _stGenotypeResults {
 };
 void printGenotypeResults(stGenotypeResults *results);
 
-// VCF comparison
+/*
+ * VCF comparison methods
+ */
+
 void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
                  stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
+
 void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
-void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta, stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
+
+void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta,
+                               stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 
 // Tag definitions (for haplotype output)
 #define HAPLOTYPE_TAG "ht"
 #define MARGIN_PHASE_TAG "mp"
 
-// Tracking haplotypes for read
+/*
+ * _stReadHaplotypeSequence
+ * Struct for tracking haplotypes for read
+ */
 typedef struct _stReadHaplotypeSequence stReadHaplotypeSequence;
 struct _stReadHaplotypeSequence {
     int64_t readStart;
@@ -583,22 +617,37 @@ struct _stReadHaplotypeSequence {
 };
 stReadHaplotypeSequence *stReadHaplotypeSequence_construct(int64_t readStart, int64_t phaseBlock, int64_t length,
                                                            int8_t haplotype);
+
 char *stReadHaplotypeSequence_toString(stReadHaplotypeSequence *rhs);
+
 char *stReadHaplotypeSequence_toStringEmpty();
+
 void stReadHaplotypeSequence_destruct(stReadHaplotypeSequence * rhs);
 
-// Tracking haplotypes for all reads
+/*
+ * stReadHaplotypePartitionTable
+ * Tracking haplotypes for all reads
+ */
+
 typedef struct hashtable stReadHaplotypePartitionTable;
+
 stReadHaplotypePartitionTable *stReadHaplotypePartitionTable_construct(int64_t initialSize);
+
 void stReadHaplotypePartitionTable_add(stReadHaplotypePartitionTable *hpt, char *readName, int64_t readStart,
                                        int64_t phaseBlock, int64_t length, int8_t haplotype);
+
 void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
+
 void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
                                          stList *path);
 
-// Output file writing
-void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
-void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions, char *marginPhaseTag);
+// Output file writing methods
+void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                        char *marginPhaseTag);
+
+void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
+                    char *marginPhaseTag);
+
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 #endif /* ST_RP_HMM_H_ */

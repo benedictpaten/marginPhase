@@ -12,6 +12,7 @@
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
         stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs) {
+
     stRPColumn *column = st_calloc(1, sizeof(stRPColumn));
 
     // Reference coordinates
@@ -51,6 +52,7 @@ stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth
 }
 
 void stRPColumn_destruct(stRPColumn *column) {
+
     // Clean up the contained cells
     stRPCell *cell = column->head;
     while(cell != NULL) {

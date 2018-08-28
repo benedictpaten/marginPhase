@@ -11,6 +11,7 @@
 
 typedef struct _vcfRecordComparisonInfo vcfRecordComparisonInfo;
 struct _vcfRecordComparisonInfo {
+
     // The vcf records
     bcf1_t *unpackedRecordRef;
     bcf1_t *unpackedRecordEval;
@@ -42,31 +43,13 @@ struct _vcfRecordComparisonInfo {
     bool phasingHap2;
 };
 
-void printBaseComposition2(double *baseCounts) {
-    /*
-     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
-     */
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += baseCounts[i];
-    }
-    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
-    st_logDebug("    Counts:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.1f", baseCounts[i]);
-    }
-    st_logDebug("\n    Fraction:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.3f", baseCounts[i]/totalCount);
-    }
-    st_logDebug( "\n");
-}
 
 
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     /*
-     * Print out the columns of the hmm at a specific positionk
+     * Print out the columns of the hmm at a specific position.
      */
+
     stRPColumn *column = hmm->firstColumn;
     while(1) {
         if (pos >= column->refStart && pos < column->refStart+column->length) {
@@ -86,12 +69,14 @@ void printAlleleInfo(vcfRecordComparisonInfo *vcfInfo) {
     /*
      * Print information about the alleles found in the reference vcf and in the vcf being evaluated.
      */
+
     st_logDebug("  pos: %" PRIi64 "\n", vcfInfo->referencePos);
     st_logDebug("  baseline  ref: %s\t alt: ", vcfInfo->refAllele);
     for (int i = 1; i < vcfInfo->unpackedRecordRef->n_allele; i++) {
         if (i != 1) st_logDebug(",");
         st_logDebug("%s", vcfInfo->unpackedRecordRef->d.allele[i]);
     }
+
     st_logDebug(" \tphasing: %d | %d", vcfInfo->refPhasing1, vcfInfo->refPhasing2);
     st_logDebug("\n  output    ref: %s\t alt: %s   \tphasing: %d | %d\n",
                 vcfInfo->evalRefAllele, vcfInfo->evalAltAllele, vcfInfo->evalPhasing1, vcfInfo->evalPhasing2);
@@ -101,6 +86,7 @@ void printPartitionInfo(int64_t pos, stSet *reads1, stSet *reads2, stGenomeFragm
     /*
      * Print information about the base composition of the partitions.
      */
+
     double *read1BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads1, pos);
     double *read2BaseCounts = getProfileSequenceBaseCompositionAtPosition(reads2, pos);
     st_logDebug("\tPartition 1: \n");
@@ -110,10 +96,24 @@ void printPartitionInfo(int64_t pos, stSet *reads1, stSet *reads2, stGenomeFragm
     st_logDebug("\t\t\tposterior prob: %f\n", gF->genotypeProbs[pos-gF->refStart]);
 }
 
+void printPartitionInfo2(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
+    /*
+     * Print information about the base composition of the partitions.
+     */
+
+    st_logDebug("\tTotal counts: \n");
+    printTotalBaseCompositionAtPosition(pos, rProbs1, rProbs2);
+    st_logDebug("\tPartition 1: \n");
+    printBaseCompositionAtPosition(pos, rProbs1);
+    st_logDebug("\tPartition 2: \n");
+    printBaseCompositionAtPosition(pos, rProbs2);
+}
+
 void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs) {
     /*
      * Print the counts/fraction of each alphabet character in a slightly more compressed form.
      */
+
     double totalCount = 0;
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         totalCount += rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i];
@@ -139,12 +139,14 @@ void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rPr
         totalCount += rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i];
         totalCount += rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i];
     }
+
     st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
     st_logDebug("    Counts:");
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         st_logDebug("\t%0.1f", rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
                 rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]);
     }
+
     st_logDebug("\n    Fraction:");
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
         st_logDebug("\t%0.3f", (rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
@@ -153,23 +155,33 @@ void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rPr
     st_logDebug( "\n");
 }
 
-void printPartitionInfo2(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
+void printBaseComposition2(double *baseCounts) {
     /*
-     * Print information about the base composition of the partitions.
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
      */
-    st_logDebug("\tTotal counts: \n");
-    printTotalBaseCompositionAtPosition(pos, rProbs1, rProbs2);
-    st_logDebug("\tPartition 1: \n");
-    printBaseCompositionAtPosition(pos, rProbs1);
-    st_logDebug("\tPartition 2: \n");
-    printBaseCompositionAtPosition(pos, rProbs2);
+
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += baseCounts[i];
+    }
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", baseCounts[i]);
+    }
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", baseCounts[i]/totalCount);
+    }
+    st_logDebug( "\n");
 }
 
 static void recordHomozygousVariantBasic(stGenotypeResults *results, vcfRecordComparisonInfo *vcfInfo) {
     /*
-     * Record a variant that was homozygous in the reference
+     * Record a variant that was homozygous in the reference.
+     * VCF eval counts these both as false positives and as false negatives, so we do too.
      */
-    // VCF eval seems to count these both as false positives and as false negatives
+
     results->falsePositives++;
     results->falseNegatives++;
     results->error_homozygousInRef++;
@@ -186,8 +198,8 @@ stBaseMapper *baseMapper, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stS
     /*
      * Record a variant that was homozygous in the reference (phasing 1/1)
      */
-    recordHomozygousVariantBasic(results, vcfInfo);
 
+    recordHomozygousVariantBasic(results, vcfInfo);
 
     if (hmm->parameters->verboseFalseNegatives || hmm->parameters->verboseFalsePositives) {
 
@@ -220,6 +232,7 @@ static void recordHomozygousVariant2(stGenotypeResults *results, vcfRecordCompar
     /*
      * Record a variant that was homozygous in the reference (phasing 1/1)
      */
+
     recordHomozygousVariantBasic(results, vcfInfo);
 
     if (params->verboseFalseNegatives || params->verboseFalsePositives) {
@@ -247,9 +260,10 @@ static void recordHomozygousVariant2(stGenotypeResults *results, vcfRecordCompar
 
 static void recordHomozygousVariantMissBasic(stGenotypeResults *results, vcfRecordComparisonInfo *vcfInfo) {
     /*
-     * Record a variant that was homozygous in the reference
+     * Record a variant that was homozygous in the reference.
+     * VCF eval counts these as only a false negative.
      */
-    // VCF eval counts these as only false negative
+
     results->falseNegatives++;
     results->error_homozygousInRef++;
     if (strlen(vcfInfo->refAllele) > strlen(vcfInfo->altAllele1)) {
@@ -263,8 +277,9 @@ static void recordHomozygousVariantMissBasic(stGenotypeResults *results, vcfReco
 static void recordHomozygousVariantMiss(stGenotypeResults *results, vcfRecordComparisonInfo *vcfInfo,
                                     stBaseMapper *baseMapper, stRPHmm *hmm, stGenomeFragment *gF, stSet *reads1, stSet *reads2) {
     /*
-     * Record a variant that was homozygous in the reference
+     * Record a variant that was homozygous in the reference.
      */
+
     recordHomozygousVariantMissBasic(results, vcfInfo);
 
     if (hmm->parameters->verboseFalseNegatives) {
@@ -288,6 +303,7 @@ static void recordHomozygousVariantMiss(stGenotypeResults *results, vcfRecordCom
         } else {
             st_logDebug("  output    ref: %c\t alt: %c \tphasing: %d | %d\n", refChar, refChar, 0, 0);
         }
+
         printColumnAtPosition(hmm, vcfInfo->referencePos);
         printPartitionInfo(vcfInfo->referencePos, reads1, reads2, gF);
 
@@ -306,6 +322,7 @@ static void recordHomozygousVariantMiss2(stGenotypeResults *results, vcfRecordCo
     /*
      * Record a variant that was homozygous in the reference
      */
+
     recordHomozygousVariantMissBasic(results, vcfInfo);
 
     if (params->verboseFalseNegatives) {
@@ -342,14 +359,11 @@ static void recordHomozygousVariantMiss2(stGenotypeResults *results, vcfRecordCo
 }
 
 
-
-
-
-
 static void recordTruePositiveBasic(stGenotypeResults *results, vcfRecordComparisonInfo *vcfInfo) {
     /*
      * Record stats and print info about a true positive result.
      */
+
     results->truePositives++;
     if (strlen(vcfInfo->refAllele) > strlen(vcfInfo->altAllele1)  ||
             strlen(vcfInfo->refAllele) < strlen(vcfInfo->altAllele1)) {
@@ -361,6 +375,7 @@ static void recordTruePositive(stGenotypeResults *results, stRPHmmParameters *pa
     /*
      * Record stats and print info about a true positive result.
      */
+
     recordTruePositiveBasic(results, vcfInfo);
 
     if (params->verboseTruePositives) {
@@ -380,6 +395,7 @@ static void recordTruePositive2(stGenotypeResults *results, stRPHmmParameters *p
     /*
      * Record stats and print info about a true positive result.
      */
+
     recordTruePositiveBasic(results, vcfInfo);
 
     if (params->verboseTruePositives) {
@@ -398,9 +414,10 @@ static void recordTruePositive2(stGenotypeResults *results, stRPHmmParameters *p
 
 static void recordIncorrectVariantBasic(vcfRecordComparisonInfo *vcfInfo, stGenotypeResults *results) {
     /*
-     * Records an error where the bases predicted are not consistent with the ref
+     * Records an error where the bases predicted are not consistent with the reference.
+     * In VCF eval, these are recorded as both a false positive and a false negative.
      */
-    // in vcfEval, these appear as both FP and FN
+
     results->falseNegatives++;
     results->falsePositives++;
 
@@ -425,6 +442,7 @@ static void printIncorrectVariantDescription(vcfRecordComparisonInfo *vcfInfo, c
     /*
      * Prints the description of the type of incorrect variant found.
      */
+
     if (vcfInfo->refPhasing1 == vcfInfo->refPhasing2) {
         if (params->verboseFalseNegatives || params->verboseFalsePositives) {
             st_logDebug("\nERROR: PREDICTED HET FOR HOMOZYGOUS VARIANT  (FN, FP)\n");
@@ -447,6 +465,7 @@ static void recordIncorrectVariant(vcfRecordComparisonInfo *vcfInfo, stGenotypeR
     /*
      * Records an error where the bases predicted are not consistent with the ref
      */
+
     recordIncorrectVariantBasic(vcfInfo, results);
     printIncorrectVariantDescription(vcfInfo, hmm->parameters);
 
@@ -466,10 +485,15 @@ static void recordIncorrectVariant(vcfRecordComparisonInfo *vcfInfo, stGenotypeR
     }
 }
 
-static void recordIncorrectVariant2(vcfRecordComparisonInfo *vcfInfo, stGenotypeResults *results, stRPHmmParameters *params, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
+static void recordIncorrectVariant2(vcfRecordComparisonInfo *vcfInfo,
+                                    stGenotypeResults *results,
+                                    stRPHmmParameters *params,
+                                    stReferencePriorProbs *rProbs1,
+                                    stReferencePriorProbs *rProbs2) {
     /*
      * Records an error where the bases predicted are not consistent with the ref
      */
+
     recordIncorrectVariantBasic(vcfInfo, results);
     printIncorrectVariantDescription(vcfInfo, params);
 
@@ -488,10 +512,12 @@ static void recordIncorrectVariant2(vcfRecordComparisonInfo *vcfInfo, stGenotype
 }
 
 static void determinePhasingConsistencyBasic(vcfRecordComparisonInfo *vcfInfo,
-                                             float *switchErrorDistance, stGenotypeResults *results) {
+                                             float *switchErrorDistance,
+                                             stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
      */
+
     char *gt_eval_1 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap1 : vcfInfo->gt_eval_hap2;
     char *gt_eval_2 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap2 : vcfInfo->gt_eval_hap1;
 
@@ -523,12 +549,17 @@ static void determinePhasingConsistencyBasic(vcfRecordComparisonInfo *vcfInfo,
 }
 
 static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
-                                        float *switchErrorDistance, stRPHmm *hmm, stGenomeFragment *gF,
-                                        stSet *reads1, stSet *reads2,
-                                        stRPHmmParameters *params, stGenotypeResults *results) {
+                                        float *switchErrorDistance,
+                                        stRPHmm *hmm,
+                                        stGenomeFragment *gF,
+                                        stSet *reads1,
+                                        stSet *reads2,
+                                        stRPHmmParameters *params,
+                                        stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
      */
+
     char *gt_eval_1 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap1 : vcfInfo->gt_eval_hap2;
     char *gt_eval_2 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap2 : vcfInfo->gt_eval_hap1;
 
@@ -563,11 +594,14 @@ static void determinePhasingConsistency(vcfRecordComparisonInfo *vcfInfo,
 
 static void determinePhasingConsistency2(vcfRecordComparisonInfo *vcfInfo,
                                         float *switchErrorDistance,
-                                         stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2,
-                                        stRPHmmParameters *params, stGenotypeResults *results) {
+                                         stReferencePriorProbs *rProbs1,
+                                         stReferencePriorProbs *rProbs2,
+                                        stRPHmmParameters *params,
+                                         stGenotypeResults *results) {
     /*
      * Determines error and phasing information for a record in the evaluated vcf
      */
+
     char *gt_eval_1 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap1 : vcfInfo->gt_eval_hap2;
     char *gt_eval_2 = vcfInfo->phasingHap1 ? vcfInfo->gt_eval_hap2 : vcfInfo->gt_eval_hap1;
 
@@ -602,11 +636,16 @@ static void determinePhasingConsistency2(vcfRecordComparisonInfo *vcfInfo,
 
 
 
-void printFalsePositive(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm,
-                        stSet *reads1, stSet *reads2, stGenomeFragment *gF, stBaseMapper *baseMapper) {
+void printFalsePositive(vcfRecordComparisonInfo *vcfInfo,
+                        stRPHmm *hmm,
+                        stSet *reads1,
+                        stSet *reads2,
+                        stGenomeFragment *gF,
+                        stBaseMapper *baseMapper) {
     /*
      * Prints out alleles and base compositions for a false positive.
      */
+
     st_logDebug("\nFALSE POSITIVE");
 
     size_t indelLen = strlen(vcfInfo->evalRefAllele) > strlen(vcfInfo->evalAltAllele) ?
@@ -639,10 +678,14 @@ void printFalsePositive(vcfRecordComparisonInfo *vcfInfo, stRPHmm *hmm,
     free(refSeq);
 }
 
-void printFalsePositive2(vcfRecordComparisonInfo *vcfInfo, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2, stBaseMapper *baseMapper) {
+void printFalsePositive2(vcfRecordComparisonInfo *vcfInfo,
+                         stReferencePriorProbs *rProbs1,
+                         stReferencePriorProbs *rProbs2,
+                         stBaseMapper *baseMapper) {
     /*
      * Prints out alleles and base compositions for a false positive.
      */
+
     st_logDebug("\nFALSE POSITIVE");
 
     size_t indelLen = strlen(vcfInfo->evalRefAllele) > strlen(vcfInfo->evalAltAllele) ?
@@ -673,17 +716,20 @@ void printFalsePositive2(vcfRecordComparisonInfo *vcfInfo, stReferencePriorProbs
 }
 
 /*
-     * Test to compare a vcf to a truth vcf containing known variants for the region.
-     *
-     * Test depends on the format of the vcf files written in vcfWriter.c
-     * (Currently they don't follow a quite standard format)
-     *
-     * Information about some of the results saved in the genotypeResults struct
-     *
-     * This is a more limited version of the compareVCFs found in outputWriter.c,
-     * as it does not have the knowledge of the hmms used in marginPhase
-     */
-void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results) {
+* Test to compare a vcf to a truth vcf containing known variants for the region.
+*
+* Test depends on the format of the vcf files written in vcfWriter.c
+* (Currently they don't follow a quite standard format).
+*
+* Information about some of the results is saved in the genotypeResults struct.
+*
+* This is a more limited version of the compareVCFs found in outputWriter.c,
+* as it does not have the knowledge of the hmms used in marginPhase.
+*/
+void compareVCFsBasic(FILE *fh,
+                      char *vcf_toEval,
+                      char *vcf_ref,
+                      stGenotypeResults *results) {
 
     st_logInfo("> Comparing vcf files \n");
     st_logInfo("VCF reference: %s \n", vcf_ref);
@@ -957,13 +1003,17 @@ void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResul
 
 
 /*
-     * Test to compare a vcf to a truth vcf containing known variants for the region.
-     *
-     * Information about some of the results saved in the genotypeResults struct
-     *
-     */
-void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
-                 stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params) {
+ * Test to compare a vcf to a truth vcf containing known variants for the region.
+ *
+ * Information about some of the results is saved in the genotypeResults struct.
+ */
+void compareVCFs(FILE *fh,
+                 stList *hmms,
+                 char *vcf_toEval,
+                 char *vcf_ref,
+                 stBaseMapper *baseMapper,
+                 stGenotypeResults *results,
+                 stRPHmmParameters *params) {
 
     st_logInfo("> Comparing vcf files \n");
     st_logInfo("VCF reference: %s \n", vcf_ref);
@@ -1374,16 +1424,20 @@ void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
 
 
 /*
-     * Test to compare a vcf to a truth vcf containing known variants for the region.
-     *
-     * Information about some of the results saved in the genotypeResults struct.
-     *
-     * This version will do output debugging using the bam files output from marginPhase.
-     *
-     */
-void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2,
-                               char *referenceFasta, stBaseMapper *baseMapper,
-                               stGenotypeResults *results, stRPHmmParameters *params) {
+ * Test to compare a vcf to a truth vcf containing known variants for the region.
+ *
+ * Information about some of the results saved in the genotypeResults struct.
+ *
+ * This version will do output debugging using the bam files output from marginPhase.
+ */
+void compareVCFs_debugWithBams(char *vcf_toEval,
+                               char *vcf_ref,
+                               char *bamFile1,
+                               char *bamFile2,
+                               char *referenceFasta,
+                               stBaseMapper *baseMapper,
+                               stGenotypeResults *results,
+                               stRPHmmParameters *params) {
 
     st_logInfo("> Comparing vcf files \n");
     st_logInfo("VCF reference: %s \n", vcf_ref);
@@ -1735,7 +1789,7 @@ void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, 
     results->trueNegatives += (results->negatives - results->falsePositives);
     results->switchErrorDistance = results->switchErrorDistance/results->switchErrors;
 
-    // cleanup
+    // Cleanup
     vcf_close(inRef);
     vcf_close(inEval);
     bcf_hdr_destroy(hdrRef);

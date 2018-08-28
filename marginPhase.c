@@ -33,9 +33,11 @@ void printSequenceStats(FILE *fH, stList *profileSequences) {
             stList_length(profileSequences), totalLength, ((float)totalLength)/stList_length(profileSequences));
 }
 
-double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int64_t length, stProfileSeq *profileSeq) {
+double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start,
+                                  int64_t length, stProfileSeq *profileSeq) {
     /*
-     * Returns the expected number of positions in the profile sequence that are identical to the given haplotype string.
+     * Returns the expected number of positions in the profile sequence
+     * that are identical to the given haplotype string.
      */
     double totalExpectedMatches = 0.0;
 
@@ -55,8 +57,8 @@ double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start, int6
 
 double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
     /*
-     * Returns the expected fraction of positions in the profile sequences that match their corresponding position in the
-     * given haplotype string.
+     * Returns the expected fraction of positions in the profile sequences
+     * that match their corresponding position in the given haplotype string.
      */
     double totalExpectedNumberOfMatches = 0.0;
     int64_t totalLength = 0;
@@ -99,7 +101,8 @@ double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_
     return ((double)totalMatches)/(length - numGaps);
 }
 
-void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2, int64_t *totalAlignedPositions, double *totalExpectedMatches) {
+void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2,
+                                          int64_t *totalAlignedPositions, double *totalExpectedMatches) {
     /*
      * Calculates the number of base overlaps and expected base matches between two profile sequences.
      */
@@ -186,6 +189,7 @@ double matchesTopTwoBases(int64_t pos, stProfileSeq *profileSeq, stReferencePrio
      * Returns the probability that the profile sequence matched the most common base at
      * position pos, or that it matched either of the top two if the locus looks possibly heterozygous
      */
+
     uint8_t base1, base2;
     double max1 = 0.0;
     double max2 = 0.0;
@@ -217,6 +221,7 @@ double getExpectedNumberOfConsensusMatches(stProfileSeq *profileSeq, stReference
      * Returns the expected number of positions in the profile sequence that are identical
      * to the given haplotype string.
      */
+
     double totalExpectedMatches = 0.0;
 
     for(int64_t i=0; i<profileSeq->length; i++) {
@@ -230,11 +235,13 @@ double getExpectedNumberOfConsensusMatches(stProfileSeq *profileSeq, stReference
     return totalExpectedMatches;
 }
 
-stList *prefilterReads(stList *profileSequences, int64_t *misses, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+stList *prefilterReads(stList *profileSequences, int64_t *misses,
+                       stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*
      * Filter out profile sequences that don't have identity with the consensus reference sequence
      * above a specified threshold.
      */
+
     stList *filteredProfileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 
     for(int64_t i=0; i<stList_length(profileSequences); i++) {
@@ -257,6 +264,7 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     /*
      * Create the set of hmms that the forward-backward algorithm will eventually be run on.
      */
+
     // Create the initial list of HMMs
     st_logInfo("> Creating read partitioning HMMs\n");
     stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
@@ -282,7 +290,8 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
         stListIterator *itor = stList_getIterator(hmms);
         stRPHmm *hmm = NULL;
         while ((hmm = stList_getNext(itor)) != NULL) {
-            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n", idx, hmm->refStart, (hmm->refStart + hmm->refLength));
+            st_logDebug("\thmm %3d: \tstart pos: %8d \tend pos: %8d\n",
+                        idx, hmm->refStart, (hmm->refStart + hmm->refLength));
             idx++;
         }
     }
@@ -293,15 +302,19 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
     /*
      * Print debug-level logging information about an HMM and associated genome fragment.
      */
+
     if(st_getLogLevel() == debug) {
         st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
                     hmm->referenceName, hmm->refStart, hmm->refLength);
-        st_logDebug("\n\tThere are %" PRIi64 " reads covered by the hmm, bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
+        st_logDebug("\n\tThere are %" PRIi64 " reads covered by the hmm, "
+                            "bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
                     stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
 
         // Print the similarity between the two imputed haplotypes sequences
-        st_logDebug("\tThe haplotypes have identity: %f \n", getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-        st_logDebug("\tIdentity excluding indels:    %f \n\n", getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        st_logDebug("\tThe haplotypes have identity: %f \n",
+                    getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
+        st_logDebug("\tIdentity excluding indels:    %f \n\n",
+                    getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
 
         // Print the base composition of the haplotype sequences
         double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
@@ -344,7 +357,7 @@ void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
 
 void usage() {
     fprintf(stderr, "usage: marginPhase <BAM> <REFERENCE_FASTA> <PARAMS> [options]\n");
-    fprintf(stderr, "Version: "MARGINPHASE_MARGIN_PHASE_VERSION_H"\n\n");
+    fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
     fprintf(stderr, "Phases the reads in a BAM file and produces:\n");
     fprintf(stderr, "    1) a VCF file giving genotypes and haplotypes.\n");
     fprintf(stderr, "    2) a SAM file where each read is annotated with haplotype information\n");
@@ -513,7 +526,8 @@ int main(int argc, char *argv[]) {
     if (params->filterBadReads) {
         int64_t initialSize = stList_length(profileSequences);
         int64_t misses = 0;
-        st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n", params->filterMatchThreshold);
+        st_logInfo("> Pre-filtering reads to remove reads with less than %f identity to the consensus sequence\n",
+                   params->filterMatchThreshold);
         profileSequences = prefilterReads(profileSequences, &misses, referenceNamesToReferencePriors, params);
         st_logInfo("\tFiltered %d profile sequences (%f percent)\n", misses, (float)misses*100/initialSize);
     }
@@ -522,9 +536,11 @@ int main(int argc, char *argv[]) {
     if(params->filterLikelyHomozygousSites) {
         int64_t totalPositions;
         st_logInfo("> Filtering likely homozygous positions\n");
-        int64_t filteredPositions = filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
+        int64_t filteredPositions =
+                filterHomozygousReferencePositions(referenceNamesToReferencePriors, params, &totalPositions);
         st_logInfo("\tFiltered %" PRIi64 " (%f) likely homozygous positions, \n\teach with fewer than %" PRIi64
-                " aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64 " (%f) positions of %" PRIi64
+                " aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64
+                           " (%f) positions of %" PRIi64
                 " total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
                 (int64_t)params->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
                 (double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
@@ -534,7 +550,8 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Filtering reads by coverage depth\n");
     stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
     stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs, referenceNamesToReferencePriors);
+    filterReadsByCoverageDepth(profileSequences, params, filteredProfileSeqs, discardedProfileSeqs,
+                               referenceNamesToReferencePriors);
     st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
                        " to achieve maximum coverage depth of %" PRIi64 "\n",
                stList_length(discardedProfileSeqs), stList_length(profileSequences),
@@ -544,8 +561,8 @@ int main(int argc, char *argv[]) {
     stList_destruct(profileSequences);
     profileSequences = filteredProfileSeqs;
 
-    // Estimate the read error substitution matrix from the alignment of the reads to the reference and set the read error
-    // substitution probs
+    // Estimate the read error substitution matrix from the alignment of the reads
+    // to the reference and set the read error substitution probs
     if(params->estimateReadErrorProbsEmpirically) {
         st_logInfo("> Estimating read errors from alignment (quick and dirty)\n");
 
@@ -642,6 +659,7 @@ int main(int argc, char *argv[]) {
         stSet_destruct(reads2);
         stList_destruct(path);
     }
+
     // Cleanup vcf
     vcf_close(vcfOutFP);
     bcf_hdr_destroy(hdr);
