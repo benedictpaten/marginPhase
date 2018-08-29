@@ -88,8 +88,8 @@ char *json_token_tostr(char *js, jsmntok_t *t)
 }
 
 /*
-     * Get model parameters from params file.
-     * Set hmm parameters.
+ * Get model parameters from params file.
+ * Set hmm parameters.
 */
 stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
@@ -140,7 +140,6 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     params->estimateReadErrorProbsEmpirically = false;
     params->roundsOfIterativeRefinement = 0;
     params->includeInvertedPartitions = true;
-    params->compareVCFs = false;
     params->writeGVCF = false;
     params->writeSplitSams = true;
     params->writeUnifiedSam = true;
@@ -359,10 +358,7 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
             i++;
         }
         else if (strcmp(keyString, "compareVCFs") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = json_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->compareVCFs = strcmp(tokStr, "true") == 0;
+            //removed, but legacy params may still contain this
             i++;
         }
         else if (strcmp(keyString, "writeGVCF") == 0) {
@@ -488,32 +484,35 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
     uint64_t lastReadPos = NULL;
     int64_t randomSeed = st_randomInt64(0,3);
     while(!feof(fp)) {
-        // scan
+        // Scan
         fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
                 chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr, pGapStr);
 
-
-        //get reference position
+        // Get reference position
         refPos = atoi(refPosStr);
-        // check for gaps todo this might actually be a bug or something in signalAlign
+
+        // Check for gaps todo this might actually be a bug or something in signalAlign
         while (firstReadPos != NULL && refPos > lastReadPos + 1) {
             appendProbsToList(probabilityList, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB,
                               ALPHABET_MIN_PROB, ALPHABET_MAX_PROB);
             lastReadPos++;
         }
-        // check for inserts
+
+        // Check for inserts
         if (firstReadPos != NULL && refPos < lastReadPos + 1) continue;
-        // update first and last read position
+
+        // Update first and last read position
         if (firstReadPos == NULL) firstReadPos = refPos;
         lastReadPos = refPos;
 
-        // get probabilities and save
+        // Get probabilities and save
         pA = (uint8_t) (ALPHABET_MAX_PROB * atof(pAStr));
         pC = (uint8_t) (ALPHABET_MAX_PROB * atof(pCStr));
         pG = (uint8_t) (ALPHABET_MAX_PROB * atof(pGStr));
         pT = (uint8_t) (ALPHABET_MAX_PROB * atof(pTStr));
         pGap = (uint8_t) (ALPHABET_MAX_PROB * atof(pGapStr));
-        // we need all integer probs to sum to MAX_PROB todo is there a way to do this better?
+
+        // We need all integer probs to sum to MAX_PROB todo is there a way to do this better?
         while ((pA + pC + pG + pT + pGap) > ALPHABET_MAX_PROB) {
             if ((pA + pC + pG + pT + pGap) == 0) {
                 break;
@@ -541,32 +540,34 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
             }
         }
 
-        // save the values in a list todo this is not particularly efficient
+        // Save the values in a list todo this is not particularly efficient
         appendProbsToList(probabilityList, pA, pC, pG, pT, pGap);
     }
-    // now we're done with the file
+    // Now we're done with the file
     fclose(fp);
 
     // Create empty profile sequence
     uint64_t readLength = lastReadPos - firstReadPos + 1;
     stProfileSeq *pSeq = stProfileSeq_constructEmptyProfile(chromStr, readName, firstReadPos + 1, readLength);
 
-    // copy probabilities over
+    // Copy probabilities over
     uint64_t position = 0;
     stListIterator *itor = stList_getIterator(probabilityList);
     while (position < readLength) {
-        // get the locations of the probabilities
+
+        // Get the locations of the probabilities
         aPtr = stList_getNext(itor);
         cPtr = stList_getNext(itor);
         gPtr = stList_getNext(itor);
         tPtr = stList_getNext(itor);
         gapPtr = stList_getNext(itor);
 
-        // assign the probabilities
+        // Assign the probabilities
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'A')] =  *aPtr;
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'C')] =  *cPtr;
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'G')] =  *gPtr;
         pSeq->profileProbs[position * ALPHABET_SIZE + stBaseMapper_getValueForChar(baseMapper, 'T')] =  *tPtr;
+
         if (params->gapCharactersForDeletions) {
             // This assumes gap character is the last character in the alphabet given
             pSeq->profileProbs[position * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = *gapPtr;
@@ -576,13 +577,13 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 
         position++;
     }
-    // we should have nothing left over in the list
+    // We should have nothing left over in the list
     if (stList_getNext(itor) != NULL) {
         st_errAbort("Probability list has %d extra elements, with read length %d for file %s",
                     stList_length(probabilityList) - 5 * position, readLength, signalAlignReadLocation);
     }
-    // sanity check on the number of modifications to the probabilities
-    // we only modify probability of bases with some probability, so to fix a rounding error, we should at worst have
+    // Sanity check on the number of modifications to the probabilities
+    // We only modify probability of bases with some probability, so to fix a rounding error, we should at worst have
     //  to make 4 modifications per location
     if (randomSeed > (4 * readLength)) {
         st_logDebug("\t\tNeeded average of %f modifications to base probs to ensure proper total probability for %s\n",
@@ -612,10 +613,13 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
     return parseReadsWithSingleNucleotideProbs(profileSequences, bamFile, baseMapper, params, NULL, false);
 }
+
 int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
-                                            stRPHmmParameters *params, char *singleNuclProbDirectory, bool onlySingleNuclProb) {
+                                            stRPHmmParameters *params, char *singleNuclProbDirectory,
+                                            bool onlySingleNuclProb) {
     if (singleNuclProbDirectory != NULL) {
-        st_logInfo("\tModifying probabilities from single nucleotide probability files in %s\n", singleNuclProbDirectory);
+        st_logInfo("\tModifying probabilities from single nucleotide probability files in %s\n",
+                   singleNuclProbDirectory);
     }
 
     samFile *in = hts_open(bamFile, "r");
@@ -638,9 +642,9 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
     while(sam_read1(in,bamHdr,aln) > 0) {
         stProfileSeq *pSeq = NULL;
 
-        int64_t pos = aln->core.pos+1;                      //left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ;    //contig name (chromosome)
-        int64_t len = aln->core.l_qseq;                     //length of the read.
+        int64_t pos = aln->core.pos+1;                      // Left most position of alignment
+        char *chr = bamHdr->target_name[aln->core.tid] ;    // Contig name (chromosome)
+        int64_t len = aln->core.l_qseq;                     // Length of the read.
         uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
         char *readName = bam_get_qname(aln);
         uint32_t *cigar = bam_get_cigar(aln);
@@ -671,27 +675,29 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
             continue;
         }
 
-        // tracks how many reads there were
+        // Tracks how many reads there were
         readCount++;
 
-        // should we read from the signalAlign directory?
+        // Should we read from the signalAlign directory?
         if (singleNuclProbDirectory != NULL) {
-            // get signalAlign file (if exists)
+
+            // Get signalAlign file (if exists)
             char *singleNuclProbReadLocation = stString_print("%s/%s.tsv", singleNuclProbDirectory, readName);
             if (access(singleNuclProbReadLocation, F_OK) == -1) {
-                // could not find the read file
+                // Could not find the read file
                 missingSingleNuclProbReads++;
             } else {
-                // found the read file
+                // Found the read file
                 pSeq = getProfileSequenceFromSingleNuclProbFile(singleNuclProbReadLocation, readName, baseMapper, params);
                 singleNuclProbReadCount++;
-                // we have a profile, so save it
+
+                // We have a profile, so save it
                 stList_append(profileSequences, pSeq);
                 profileCount++;
             }
             free(singleNuclProbReadLocation);
 
-            // if we found a SA file or if we don't want missing reads
+            // If we found a SA file or if we don't want missing reads
             if (pSeq != NULL || onlySingleNuclProb) {
                 continue;
             }
@@ -776,7 +782,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
                 idxInSeq++;
                 i--;
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                // nothing really to do here. skip to next cigar operation
+                // Nothing really to do here. skip to next cigar operation
                 currPosInOp = cigarNum - 1;
                 i--;
             } else {
@@ -791,7 +797,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
         }
         bamReadCount++;
 
-        // save profile
+        // Save profile seq
         if (pSeq->length > 0) {
             profileCount++;
             stList_append(profileSequences, pSeq);
@@ -799,7 +805,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
 
     }
 
-    // log signal align usage
+    // Log signal align usage
     if (singleNuclProbDirectory != NULL) {
         if (missingSingleNuclProbReads > 0) {
             st_logInfo("\t%d/%d reads were missing single nucleotide probability file\n", missingSingleNuclProbReads, readCount);
@@ -809,11 +815,10 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
 
     }
 
-    // log filtering actions
+    // Log filtering actions
     if(st_getLogLevel() == debug) {
         char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-        st_logDebug("\tFiltered %" PRIi64
-                " reads with either missing cigar lines, "
+        st_logDebug("\tFiltered %" PRIi64 " reads with either missing cigar lines, "
                             "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
                             "\n\t\tand undesired sam flags "
                             "(filtered %d reads with sam flags being filtered on: %s)\n",
@@ -821,7 +826,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
         free(samFlagBitString);
     }
 
-    // santity check (did we accidentally save profile sequences twice?)
+    // Sanity check (did we accidentally save profile sequences twice?)
     assert(stList_length(profileSequences) <= readCount);
 
     bam_hdr_destroy(bamHdr);

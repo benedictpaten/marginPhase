@@ -1,4 +1,6 @@
-This is a program for genotyping and haplotyping.
+# MarginPhase #
+
+MarginPhase is a program for simultaneous haplotyping and genotyping.
 
 ## Dependencies ##
 cmake version 3.7 (or higher):
@@ -22,19 +24,6 @@ cd marginPhase
 git submodule update --init
 ```
 
-- Build htsLib (only required once):
-```
-cd externalTools/htslib
-autoconf
-autoheader
-./configure
-make
-cd ../../
-```
-If the `lzma` and `bz2` packages are not installed, when configuring htslib run
-``` ./configure --disable-lzma --disable-bz2 ```
-to compile without those packages.
-
 - Make build directory:
 ```
 mkdir build
@@ -43,7 +32,7 @@ cd build
 
 - Generate Makefile with cmake:
 ```
- cmake ..
+cmake ..
  ```
 
 - Build with make:
@@ -54,17 +43,42 @@ make
 ## Running the program ##
 
 - to run marginPhase:
-``` ./marginPhase <PATH/TO/BAM> <PATH/TO/REFERENCE> [OPTIONS] ```
+``` marginPhase <BAM_FILE> <REFERENCE_FASTA> <PARAMS> [options] ```
 
 - program OPTIONS:
 ```
-    -p --params <PATH/TO/JSON>
-    -r --referenceVCF <PATH/TO/REFERENCE/VCF>
-    -a --logLevel <critical, info, debug [default = info]>
-    -o --outputBase <\"example\" -> \"example1.sam\", \"example2.sam\", \"example.vcf\")\n">
-    -v --verbose <verbosity bitmask>
+Required arguments:
+    BAM is the alignment of reads.  All reads must be aligned to the same contig 
+        and be in bam format.
+    REFERENCE_FASTA is the reference sequence for the BAM's contig in fasta format.
+    PARAMS is the file with marginPhase parameters.
+
+
+Default options:
+    -h --help              : Print this help screen
+    -o --outputBase        : Base output identifier [default = "output"]
+                               "example" -> "example.sam", "example.vcf"
+    -a --logLevel          : Set the log level [default = info]
+    -t --tag               : Annotate all output reads with this value for the 
+                               'mp' tag
+
+Nucleotide probabilities options:
+    -s --singleNuclProbDir : Directory of single nucleotide probabilities files
+    -S --onlySNP           : Use only single nucleotide probabilities information,
+                               so reads that aren't in SNP dir are discarded
+
+VCF Comparison options:
+    -r --referenceVCF      : Reference vcf file for output comparison
+    -v --verbose           : Bitmask controlling outputs 
+                                 1 - LOG_TRUE_POSITIVES
+                                 2 - LOG_FALSE_POSITIVES
+                                 4 - LOG_FALSE_NEGATIVES
+                               example: 0 -> N/A; 2 -> LFP; 7 -> LTP,LFP,LFN)
 ```
 
+- Nucleotide Probabilities - this is an alternate input format where reads aligned in a bam have nucleotide alignment posteriors stored in an external location. This option expects the files to be of the form: ${singleNuclProbDir}/${readId}.tsv  If specified, MarginPhase will load the posteriors into its model instead of alignments taken directly from the BAM.  Experimentally, we have found that alignments in this form help ameliorate high error rates found in long reads.
+
+- VCF Comparison - passing in a referenceVCF into the program will do a comparison of the generated VCF and the specified truth set.  Verbosity level will determine what variant classifications will be printed.
 
 - to run tests: ./allTests
 (This runs every test. You can comment out ones you don't want to run in allTests.c)

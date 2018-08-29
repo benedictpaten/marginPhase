@@ -10,6 +10,7 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     /*
      * Returns an genome fragment inferred from the hmm and given path through it.
      */
+
     stGenomeFragment *gF = st_calloc(1, sizeof(stGenomeFragment));
 
     // Set coordinates
@@ -43,7 +44,8 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
         assert(cell != NULL);
 
         // Calculate the predicted genotype/haplotypes for the given cell
-        fillInPredictedGenome(gF, cell->partition, column, hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
+        fillInPredictedGenome(gF, cell->partition, column,
+                              hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
 
         column = column->nColumn->nColumn;
     }
@@ -51,12 +53,14 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Get predictions for the last column
     assert(column != NULL);
     assert(column->nColumn == NULL);
-    fillInPredictedGenome(gF, ((stRPCell *)stList_peek(path))->partition, column, hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
+    fillInPredictedGenome(gF, ((stRPCell *)stList_peek(path))->partition, column,
+                          hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
 
     return gF;
 }
 
-double getLogProbOfReadGivenHaplotype(uint64_t *haplotypeString, int64_t start, int64_t length, stProfileSeq *profileSeq, stRPHmmParameters *params) {
+double getLogProbOfReadGivenHaplotype(uint64_t *haplotypeString, int64_t start, int64_t length,
+                                      stProfileSeq *profileSeq, stRPHmmParameters *params) {
     /*
      * Returns the log probability of the read given the haplotype.
      */
@@ -117,7 +121,8 @@ static uint64_t flipReadsBetweenPartitions(uint64_t partition, stRPColumn *colum
     return partition;
 }
 
-void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2, stRPHmm *hmm, stList *path, int64_t maxIterations) {
+void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2,
+                                           stRPHmm *hmm, stList *path, int64_t maxIterations) {
     /*
      * Refines the genome fragment and read partitions by greedily and iteratively
      * moving reads between the two partitions according to which haplotype they best match.
@@ -139,8 +144,9 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, 
                 gF->refStart, gF->length, reads2, (stRPHmmParameters *)hmm->parameters);
 
         // If there are no reads wanting to switch then break
-        st_logDebug("At iteration %" PRIi64 " of partition found %" PRIi64 " reads from partition 1 switching to 2 and %" PRIi64
-                    " reads from partition 2 switching to 1\n", iteration, stSet_size(reads1To2), stSet_size(reads2To1));
+        st_logDebug("\tAt iteration %" PRIi64 " of partition found %" PRIi64 " reads from partition 1 switching to 2 "
+                            "and %" PRIi64 " reads from partition 2 switching to 1\n",
+                    iteration, stSet_size(reads1To2), stSet_size(reads2To1));
         if(stSet_size(reads1To2) + stSet_size(reads2To1) == 0) {
             break;
         }
@@ -178,6 +184,7 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, 
 }
 
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
+
     // Coordinates
     free(genomeFragment->referenceName);
     free(genomeFragment->referenceSequence);

@@ -33,10 +33,9 @@ void stRPHmmParameters_destruct(stRPHmmParameters *params) {
 
 static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
     for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\t\t");
+        fprintf(fH, "\t\t\t");
         for(int64_t j=0; j<ALPHABET_SIZE; j++) {
             fprintf(fH, " %f, ", exp(matrixSlow[i*ALPHABET_SIZE + j]));
-            //fprintf(fH, "(FROM %" PRIi64 ", TO: %" PRIi64 "): %8f (%6i); ", i, j, exp(matrixSlow[i*ALPHABET_SIZE + j]), matrixFast[i*ALPHABET_SIZE + j]);
         }
         fprintf(fH, "\n");
     }
@@ -82,41 +81,39 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
     /*
      * Print the parameters in the parameters object in a human readable form.
      */
-    fprintf(fH, "Read Partitioning HMM Parameters\n");
-    fprintf(fH, "\tAlphabet_size: %i\n"
-            "\tMax_read coverage_depth: %" PRIi64 "\n"
-            "\tMax_not sum transitions?: %i\n"
-            "\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
-            "\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
+    fprintf(fH, "\tRead Partitioning HMM Parameters\n");
+    fprintf(fH, "\t\tAlphabet_size: %i\n"
+            "\t\tMax_read coverage_depth: %" PRIi64 "\n"
+            "\t\tMax_not sum transitions?: %i\n"
+            "\t\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
+            "\t\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
             ALPHABET_SIZE, params->maxCoverageDepth,
             (int)params->maxNotSumTransitions, params->maxPartitionsInAColumn,
             params->minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
-    fprintf(fH, "\tHeterozygous substitution rates:\n");
+    fprintf(fH, "\t\tHeterozygous substitution rates:\n");
     printMatrix(fH, params->hetSubModelSlow, params->hetSubModel);
 
-    fprintf(fH, "\tRead error substitution rates:\n");
+    fprintf(fH, "\t\tRead error substitution rates:\n");
     printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
 
-    fprintf(fH, "\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
-    fprintf(fH, "\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
-    fprintf(fH, "\tUse reference prior?: %i\n", (int) params->useReferencePrior);
-    fprintf(fH, "\tFilter bad reads?: %i\n", (int)params->filterBadReads);
-    fprintf(fH, "\tFilter match threshold: %f\n", params->filterMatchThreshold);
-    fprintf(fH, "\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-    fprintf(fH, "\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
-    fprintf(fH, "\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
-    fprintf(fH, "\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
-    fprintf(fH, "\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
-    fprintf(fH, "\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
-    fprintf(fH, "\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
-
-    fprintf(fH, "\tComparing vcfs within program? : %i\n", (int)params->compareVCFs);
-    fprintf(fH, "\tWriting gvcf? : %i\n", (int)params->writeGVCF);
-    fprintf(fH, "\tVerbose Attributes:\n");
-    if (params->verboseTruePositives) fprintf(fH, "\t\tTRUE_POSITIVES\n");
-    if (params->verboseFalsePositives) fprintf(fH, "\t\tFALSE_POSITIVES\n");
-    if (params->verboseFalseNegatives) fprintf(fH, "\t\tFALSE_NEGATIVES\n");
+    fprintf(fH, "\t\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
+    fprintf(fH, "\t\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
+    fprintf(fH, "\t\tUse reference prior?: %i\n", (int) params->useReferencePrior);
+    fprintf(fH, "\t\tFilter bad reads?: %i\n", (int)params->filterBadReads);
+    fprintf(fH, "\t\tFilter match threshold: %f\n", params->filterMatchThreshold);
+    fprintf(fH, "\t\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
+    fprintf(fH, "\t\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
+    fprintf(fH, "\t\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
+    fprintf(fH, "\t\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
+    fprintf(fH, "\t\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
+    fprintf(fH, "\t\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
+    fprintf(fH, "\t\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
+    fprintf(fH, "\t\tWriting gvcf? : %i\n", (int)params->writeGVCF);
+    fprintf(fH, "\t\tVerbose Attributes:\n");
+    if (params->verboseTruePositives) fprintf(fH, "\t\t\tTRUE_POSITIVES\n");
+    if (params->verboseFalsePositives) fprintf(fH, "\t\t\tFALSE_POSITIVES\n");
+    if (params->verboseFalseNegatives) fprintf(fH, "\t\t\tFALSE_NEGATIVES\n");
 }
 
 static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {
@@ -191,8 +188,8 @@ double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params) {
 void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
         stHash *referenceNamesToReferencePriors) {
     /*
-     * Learn the substitution matrices iteratively, updating the params object in place. Iterations is the number of cycles
-     * of stochastic parameter search to do.
+     * Learn the substitution matrices iteratively, updating the params object in place.
+     * Iterations is the number of cycles of stochastic parameter search to do.
      */
 
     // For each iteration construct a set of HMMs and estimate the parameters from it.
@@ -437,6 +434,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
     /*
      * Prints a debug friendly representation of the state of an hmm.
      */
+
     //Header line
     fprintf(fileHandle, "HMM REF_NAME: %s REF_START: %" PRIi64 " REF_LENGTH %" PRIi64
             " COLUMN_NUMBER %" PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n",
@@ -467,7 +465,8 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
 
 stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     /*
-     * Fuses together two hmms, such that leftHmm and rightHMM are on the same reference sequence and non-overlapping and
+     * Fuses together two hmms, such that leftHmm and rightHMM
+     * are on the same reference sequence and non-overlapping and
      * left hmm precedes right hmm on the reference sequence.
      * Returns fused hmm, destroys input hmms in the process.
      */
@@ -529,6 +528,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
         // Links
         mColumn->nColumn = column;
         column->pColumn = mColumn;
+
         // Make cell for empty column
         column->head = stRPCell_construct(0);
 
@@ -541,6 +541,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
         // Links
         column->nColumn = mColumn;
         mColumn->pColumn = column;
+
         // Increase the column number to account for the introduced gap column
         hmm->columnNumber += 1;
     }
@@ -585,12 +586,16 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         stRPColumn *column = stRPColumn_construct(hmm1->refStart,
                 hmm2->refStart - hmm1->refStart,
                 0, NULL, NULL, hmm1->referencePriorProbs);
+
         // Add cell
         column->head = stRPCell_construct(0);
+
         // Create merge column
         stRPMergeColumn *mColumn = stRPMergeColumn_construct(0,0);
+
         // Add merge cell
         stRPMergeCell_construct(0, 0, mColumn);
+
         // Create links
         hmm2->firstColumn->pColumn = mColumn;
         mColumn->nColumn = hmm2->firstColumn;
@@ -598,9 +603,11 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         column->nColumn = mColumn;
         assert(column->pColumn == NULL);
         hmm2->firstColumn = column;
+
         //Adjust start and length of hmm2 interval
         hmm2->refLength += hmm2->refStart - hmm1->refStart;
         hmm2->refStart = hmm1->refStart;
+
         // Increase column number
         hmm2->columnNumber++;
     }
@@ -618,12 +625,16 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm2->lastColumn->refStart + hmm2->lastColumn->length,
                 hmm1->refLength - hmm2->refLength, 0, NULL, NULL, hmm1->referencePriorProbs);
+
         // Add cell
         column->head = stRPCell_construct(0);
+
         // Create merge column
         stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
+
         // Add merge cell
         stRPMergeCell_construct(0, 0, mColumn);
+
         // Create links
         hmm2->lastColumn->nColumn = mColumn;
         mColumn->pColumn = hmm2->lastColumn;
@@ -631,8 +642,10 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
         column->pColumn = mColumn;
         assert(column->nColumn == NULL);
         hmm2->lastColumn = column;
+
         //Adjust start and length of hmm2 interval
         hmm2->refLength = hmm1->refLength;
+
         // Increase column number
         hmm2->columnNumber++;
     }
@@ -695,6 +708,7 @@ stRPCell **makeCell(uint64_t partition, stRPCell **pCell, stHash *seen) {
     /*
      * Make a cell for a column.
      */
+
     // Make the cell
     stRPCell *cell = stRPCell_construct(partition);
 
@@ -733,20 +747,25 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
 
     // Create a new empty hmm
     stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
+
     // Set the reference interval
     hmm->referenceName = stString_copy(hmm1->referenceName);
     hmm->refStart = hmm1->refStart;
     hmm->refLength = hmm1->refLength;
+
     // Create the combined list of profile seqs
     hmm->profileSeqs = stList_copy(hmm1->profileSeqs, NULL);
     stList_appendAll(hmm->profileSeqs, hmm2->profileSeqs);
+
     // Set column number
     hmm->columnNumber = hmm1->columnNumber;
+
     // Set substitution matrices
     if(hmm1->parameters != hmm2->parameters) {
         st_errAbort("Hmm parameters differ in fuse function, panic.");
     }
     hmm->parameters = hmm1->parameters;
+
     // Set reference position prior probabilities
     if(hmm1->referencePriorProbs != hmm2->referencePriorProbs) {
         st_errAbort("Hmm reference prior probs differ in hmm cross product function, panic.");
@@ -800,8 +819,8 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         stRPCell **pCell = &column->head;
         stRPCell *cell1 = column1->head;
 
-        // includeInvertedPartitions forces that the partition and its inverse are included in the resulting combined
-        // hmm.
+        // includeInvertedPartitions forces that the partition and its inverse are included
+        // in the resulting combine hmm.
         if(hmm->parameters->includeInvertedPartitions) {
             stHash *seen = stHash_construct3(intHashFn, intEqualsFn, NULL, NULL);
             do {
@@ -890,8 +909,8 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
 
                 assert(popcount64(fromPartition) == popcount64(toPartition));
 
-                // includeInvertedPartitions forces that the partition and its inverse are included in the resulting combined
-                // hmm.
+                // includeInvertedPartitions forces that the partition and its inverse are included
+                // in the resulting combined hmm.
                 if(hmm->parameters->includeInvertedPartitions) {
                     if(stHash_search(mColumn->mergeCellsFrom, &fromPartition) == NULL) {
                         stRPMergeCell_construct(fromPartition, toPartition, mColumn);
@@ -899,8 +918,10 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
                         // If the mask includes no sequences then the the inverted will be identical, so we check
                         // to avoid adding the same partition twice
                         if(popcount64(fromMask) > 0) {
-                            uint64_t invertedFromPartition = mColumn->maskFrom & invertPartition(fromPartition, mColumn1->pColumn->depth + mColumn2->pColumn->depth);
-                            uint64_t invertedToPartition = mColumn->maskTo & invertPartition(toPartition, mColumn1->nColumn->depth + mColumn2->nColumn->depth);
+                            uint64_t invertedFromPartition = mColumn->maskFrom &
+                                    invertPartition(fromPartition, mColumn1->pColumn->depth + mColumn2->pColumn->depth);
+                            uint64_t invertedToPartition = mColumn->maskTo &
+                                    invertPartition(toPartition, mColumn1->nColumn->depth + mColumn2->nColumn->depth);
 
                             stRPMergeCell_construct(invertedFromPartition, invertedToPartition, mColumn);
                         }
@@ -927,6 +948,7 @@ static void stRPHmm_initialiseProbs(stRPHmm *hmm) {
     /*
      * Initialize the forward and backward matrices.
      */
+
     // Initialize total forward and backward probabilities
     hmm->forwardLogProb = ST_MATH_LOG_ZERO;
     hmm->backwardLogProb = ST_MATH_LOG_ZERO;
@@ -1242,7 +1264,8 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         // Get rid of the excess cells
         while(stList_length(cells) > hmm->parameters->minPartitionsInAColumn &&
               (stList_length(cells) > hmm->parameters->maxPartitionsInAColumn ||
-               stRPCell_posteriorProb(stList_peek(cells), column) < hmm->parameters->minPosteriorProbabilityForPartition)) {
+               stRPCell_posteriorProb(stList_peek(cells), column) <
+                       hmm->parameters->minPosteriorProbabilityForPartition)) {
             stRPCell_destruct(stList_pop(cells));
         }
 
@@ -1267,7 +1290,8 @@ void stRPHmm_pruneForwards(stRPHmm *hmm) {
         stList_sort2(chosenMergeCellsList, mergeCellCmpFn, mColumn);
         while(stList_length(chosenMergeCellsList) > hmm->parameters->minPartitionsInAColumn &&
               (stList_length(chosenMergeCellsList) > hmm->parameters->maxPartitionsInAColumn ||
-               stRPMergeCell_posteriorProb(stList_peek(chosenMergeCellsList), mColumn) < hmm->parameters->minPosteriorProbabilityForPartition)) {
+               stRPMergeCell_posteriorProb(stList_peek(chosenMergeCellsList), mColumn) <
+                       hmm->parameters->minPosteriorProbabilityForPartition)) {
             stSet_remove(chosenMergeCellsSet, stList_pop(chosenMergeCellsList));
         }
         assert(stList_length(chosenMergeCellsList) == stSet_size(chosenMergeCellsSet));
@@ -1391,6 +1415,7 @@ void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm) {
     hmm->columnNumber = 0;
     hmm->maxDepth = 0;
     stRPColumn *column = hmm->firstColumn;
+
     while(1) {
         hmm->columnNumber++;
         if(hmm->maxDepth < column->depth) {
@@ -1499,8 +1524,10 @@ static bool sitesLinkageIsWellSupported(stRPHmm *hmm, int64_t leftSite, int64_t 
 stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
     /*
      * Takes the input hmm and splits into a sequence of contiguous fragments covering the same reference interval,
-     * returned as an ordered list of hmm fragments. Hmms are split where there is insufficient support between heterozygous
-     * sites to support phasing between the two haplotypes. See sitesLinkageIsWellSupported for details.
+     * returned as an ordered list of hmm fragments.
+     * Hmms are split where there is insufficient support between heterozygous
+     * sites to support phasing between the two haplotypes.
+     * See sitesLinkageIsWellSupported for details.
      */
 
     // Run the forward-backward algorithm
@@ -1537,8 +1564,10 @@ stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
             stRPHmm *rightHmm = stRPHmm_split(hmm, splitPoint);
             assert(rightHmm->refStart == splitPoint);
             assert(hmm->refStart + hmm->refLength == splitPoint);
+
             // Add prefix of hmm to list of split hmms
             stList_append(splitHmms, hmm);
+
             // Set hmm as right hmm
             hmm = rightHmm;
         }

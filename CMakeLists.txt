@@ -47,7 +47,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/cram/rANS_static.c
         externalTools/htslib/cram/sam_header.c
         externalTools/htslib/cram/string_alloc.c
-        externalTools/htslib/os/rand.c
+        #externalTools/htslib/os/rand.c
         externalTools/htslib/test/fieldarith.c
         externalTools/htslib/test/hfile.c
         externalTools/htslib/test/hts_endian.c
@@ -209,29 +209,45 @@ find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'z' library")
 endif()
+
 find_library(BZ2LIB bz2)
 if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'bz2' library")
 endif()
+
 find_library(LZMALIB lzma)
 if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'lzma' library")
 endif()
+
 find_library(CURLLIB curl)
 if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
+
 find_library(CRYPTOLIB crypto)
 if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'crypto' library")
 endif()
+
 find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
 
+add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
+        COMMAND autoconf
+        COMMAND autoheader
+        COMMAND ./configure
+        COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
+)
+add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
+
 add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
+add_dependencies(hts HTSLIB_CONFIGURED)
 add_library(jsmn externalTools/jsmn/jsmn.c)
 
 target_link_libraries(hts pthread crypto bz2 lzma z curl)

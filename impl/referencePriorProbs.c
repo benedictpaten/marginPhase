@@ -16,6 +16,7 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
     /*
      * Creates an empty object, with all the profile probabilities set to 0.
      */
+
     stReferencePriorProbs *referencePriorProbs = st_calloc(1, sizeof(stReferencePriorProbs));
     referencePriorProbs->referenceName = stString_copy(referenceName);
     referencePriorProbs->refStart = referenceStart;
@@ -31,6 +32,9 @@ stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referen
 }
 
 void stReferencePriorProbs_destruct(stReferencePriorProbs *referencePriorProbs) {
+    /*
+     * Destructor for reference prior probs
+     */
     free(referencePriorProbs->profileProbs);
     free(referencePriorProbs->referenceName);
     free(referencePriorProbs->referenceSequence);
@@ -43,6 +47,7 @@ static stReferencePriorProbs *getNext(stList *profileSequences, stList *profileS
     /*
      * Construct an empty stReferencePriorProbs for the next interval of a reference sequence.
      */
+
     assert(stList_length(profileSequences) > 0);
     stProfileSeq *pSeq = stList_pop(profileSequences);
     char *refName = pSeq->referenceName;
@@ -75,6 +80,7 @@ void setReadBaseCounts(stReferencePriorProbs *rProbs, stList *profileSequences) 
     /*
      * Set the base counts observed in the set of profile sequences at each reference position.
      */
+
     for(int64_t i=0; i<stList_length(profileSequences); i++) {
         stProfileSeq *pSeq = stList_get(profileSequences, i);
         assert(stString_eq(rProbs->referenceName, pSeq->referenceName));
@@ -199,7 +205,6 @@ double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToRef
             // Now get read bases
             double *baseCounts = &rProbs->baseCounts[i*ALPHABET_SIZE];
 
-            //
             for(int64_t j=0; j<ALPHABET_SIZE; j++) {
                 readErrorSubModel[ALPHABET_SIZE*refChar + j] += baseCounts[j];
             }
@@ -219,6 +224,7 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
      * In a column, let x be the number of occurrences of the most frequent non-reference base.
      * If x is less than params.minNonReferenceBaseFilter then the column is filtered out.
      */
+
     int64_t filteredPositions = 0;
     for(int64_t i=0; i<rProbs->length; i++) {
         double *baseCounts = &rProbs->baseCounts[i*ALPHABET_SIZE];
@@ -256,10 +262,12 @@ int64_t stReferencePriorProbs_setReferencePositionFilter(stReferencePriorProbs *
         // into account read error substitution probabilities. It can be used to ignore columns with
         // larger numbers of gaps, for example, if
         // gaps occur frequently, while including columns with rarer apparent substitution patterns
+
         if(secondMostFrequentBaseCount < params->minSecondMostFrequentBaseFilter ||
            -*getSubstitutionProbSlow(params->readErrorSubModelSlow, mostFrequentBase, secondMostFrequentBase) * secondMostFrequentBaseCount <
            params->minSecondMostFrequentBaseLogProbFilter) {
             filteredPositions++;
+
             // Mask the position
             assert(rProbs->referencePositionsIncluded[i] == true);
             rProbs->referencePositionsIncluded[i] = false;
@@ -287,6 +295,7 @@ int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePrio
      * Returns total number of positions filtered out, sets totalPositions to the total number of
      * reference positions.
      */
+
     int64_t filteredPositions = 0;
     *totalPositions = 0;
     stHashIterator *hashIt = stHash_getIterator(referenceNamesToReferencePriors);

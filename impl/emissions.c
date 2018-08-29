@@ -12,7 +12,8 @@
 
 uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to) {
     /*
-     * Gets the (log) substitution probability of getting the derived (to) character given the source (from/haplotype) character.
+     * Gets the (log) substitution probability of getting the derived (to) character
+     * given the source (from/haplotype) character.
      */
     return &matrix[from * ALPHABET_SIZE + to];
 }
@@ -46,13 +47,16 @@ void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
                          int64_t sourceCharacterIndex,
                          int64_t derivedCharacterIndex, double prob) {
     /*
-     * Sets the substitution probability, scaling it appropriately by taking the log and then storing as integer (see definition)
+     * Sets the substitution probability, scaling it appropriately by taking the log and then
+     * storing as integer (see definition)
      */
     if(prob <= 0 || prob > 1.0) {
         st_errAbort("Attempting to set substitution probability out of 0-1 range");
     }
-    *getSubstitutionProb(logSubMatrix, sourceCharacterIndex, derivedCharacterIndex) = scaleToLogIntegerSubMatrix(log(prob));
-    *getSubstitutionProbSlow(logSubMatrixSlow, sourceCharacterIndex, derivedCharacterIndex) = log(prob);
+    *getSubstitutionProb(logSubMatrix, sourceCharacterIndex, derivedCharacterIndex)
+            = scaleToLogIntegerSubMatrix(log(prob));
+    *getSubstitutionProbSlow(logSubMatrixSlow, sourceCharacterIndex, derivedCharacterIndex)
+            = log(prob);
 }
 
 /*
@@ -98,7 +102,9 @@ static inline uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
      * Returns a pointer to a bit count vector for a given position (offset in the column),
      * character index and bit.
      */
-    return &bitCountVector[position * ALPHABET_CHARACTER_BITS * ALPHABET_SIZE + characterIndex * ALPHABET_CHARACTER_BITS + bit];
+    return &bitCountVector[position * ALPHABET_CHARACTER_BITS * ALPHABET_SIZE
+                           + characterIndex * ALPHABET_CHARACTER_BITS
+                           + bit];
 }
 
 uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
@@ -115,7 +121,8 @@ uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
     return bitCountVector;
 }
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions) {
+uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth,
+                                   int64_t *activePositions, int64_t totalActivePositions) {
     /*
      * Calculates the bit count vector for every active position, character and bit in the column.
      */
@@ -142,8 +149,9 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activ
 uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
                                    int64_t position, int64_t characterIndex) {
     /*
-     * Returns the number of instances of a character, given by characterIndex, at the given position within the column for
-     * the given partition. Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
+     * Returns the number of instances of a character, given by characterIndex,
+     * at the given position within the column for the given partition.
+     * Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
      * is the expected number of instances of the given character in the given subpartition of the column.
      */
     uint64_t *j = retrieveBitCountVector(bitCountVectors, position, characterIndex, 0);
@@ -212,7 +220,8 @@ static inline void columnIndexLogHapProbability(stRPColumn *column, uint64_t ind
 }
 
 static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t index,
-                                                 uint64_t partition, uint64_t *bitCountVectors, uint16_t *referencePriorProbs,
+                                                 uint64_t partition, uint64_t *bitCountVectors,
+                                                 uint16_t *referencePriorProbs,
                                                  stRPHmmParameters *params) {
     /*
      * Get the probability of the characters in a given position within a column for a given partition.
@@ -226,9 +235,13 @@ static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t in
                                  ~partition, bitCountVectors, params, rootCharacterProbsHap2);
 
     // Combine the probabilities to calculate the overall probability of a given position in a column
-    uint64_t logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0] + referencePriorProbs[0] * ALPHABET_MAX_PROB;
+    uint64_t logColumnProb = rootCharacterProbsHap1[0]
+                             + rootCharacterProbsHap2[0]
+                             + referencePriorProbs[0] * ALPHABET_MAX_PROB;
     for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logColumnProb = minP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i] + referencePriorProbs[i] * ALPHABET_MAX_PROB); // + (i == ALPHABET_SIZE-1 ? scaleToLogIntegerSubMatrix(0.001) : 0));
+        logColumnProb = minP(logColumnProb,
+                             rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i] + referencePriorProbs[i] * ALPHABET_MAX_PROB);
+        // + (i == ALPHABET_SIZE-1 ? scaleToLogIntegerSubMatrix(0.001) : 0));
     }
 
     return logColumnProb;
@@ -276,7 +289,8 @@ double getLogProbOfReadCharactersSlow(double *logSubMatrix, uint64_t *expectedIn
 }
 
 void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
-                                      uint64_t partition, uint64_t *bitCountVectors, stRPHmmParameters *params, double *characterProbsHap) {
+                                      uint64_t partition, uint64_t *bitCountVectors,
+                                      stRPHmmParameters *params, double *characterProbsHap) {
     /*
      * Get the probabilities of the haplotype characters for a given read sub-partition and a haplotype.
      */
@@ -362,6 +376,7 @@ double emissionLogProbabilitySlow(stRPColumn *column,
     uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
     double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
                                                             cell->partition, bitCountVectors, rProbs, params, maxNotSum);
+
     for(int64_t i=1; i<column->length; i++) {
         rProbs = &rProbs[ALPHABET_SIZE]; // Move to the next column of the reference prior
         logPartitionProb += columnIndexLogProbabilitySlow(column, i,
