@@ -1,32 +1,33 @@
 FROM ubuntu:14.04
 MAINTAINER Trevor Pesout, tpesout@ucsc.edu
 
-# update and install dependencies
-RUN apt-get update && apt-get -y install git make wget autoconf gcc g++ bzip2 libcurl4-openssl-dev libpthread-stubs0-dev libbz2-dev liblzma-dev libssl-dev
+ENV GIT_COMMIT=0f0747fe30d240f08a2ef4343d59534a469da193
 
-# install latest cmake
+# update and install dependencies
+RUN apt-get update && \
+    apt-get -y install git make wget autoconf gcc g++ bzip2 libcurl4-openssl-dev libpthread-stubs0-dev \
+        libbz2-dev liblzma-dev libssl-dev time && \
+    apt-get clean && \
+    apt-get purge && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# install cmake
 WORKDIR /tmp
-RUN wget https://cmake.org/files/v3.7/cmake-3.7.2-Linux-x86_64.sh
-RUN mkdir /opt/cmake
-RUN sh /tmp/cmake-3.7.2-Linux-x86_64.sh --prefix=/opt/cmake --skip-license
-RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
+RUN mkdir /opt/cmake && \
+    wget https://cmake.org/files/v3.11/cmake-3.11.4-Linux-x86_64.sh && \
+    sh /tmp/cmake-3.11.4-Linux-x86_64.sh --prefix=/opt/cmake --skip-license && \
+    ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
 # get marginPhase
 WORKDIR /opt
-ADD tempMarginPhase /opt/marginPhase
+RUN git clone --recursive https://github.com/benedictpaten/marginPhase && \
+    cd /opt/marginPhase && \
+    git fetch && \
+    git checkout $GIT_COMMIT && \
+    rm -rf /opt/marginPhase/.git
 
-# build htslib
-WORKDIR /opt/marginPhase/externalTools/htslib
-RUN autoconf ; autoheader ; ./configure ; make clean ; make
-
-# build sonlib
-WORKDIR /opt/marginPhase/externalTools/sonLib
-RUN make clean ; make
-
-# build marginPhase
-WORKDIR /opt/marginPhase
-RUN cmake .
-RUN make clean && make
+WORKDIR /opt/marginPhase/build
+RUN cmake .. && make
 
 # setup entrypoint
 COPY wrapper.sh /opt/
