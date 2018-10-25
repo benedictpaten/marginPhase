@@ -15,7 +15,9 @@
 #include "randomSequences.h"
 #include "stateMachine.h"
 
-static char *nanoporeHmmFile = "./threeStateNanopore.hmm";
+static char *nanoporeHmmFile = "./params/polish/threeStateNanopore.hmm";
+static char *repeatCountsModelFile = "./params/polish/log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt";
+#define TEST_POLISH_FILES_DIR "./tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
 	char *reference = "GATTACA";
@@ -604,7 +606,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	poa_normalize(poa); // Shift all the indels
 
-	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_parse("./log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt");
+	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_parse(repeatCountsModelFile);
 
 	// Look at non-rle comparison
 	char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, repeatSubMatrix);
@@ -771,66 +773,66 @@ static void test_poa_realign_rle_example2(CuTest *testCase) {
 
 static int64_t exampleNo = 20;
 static const char *examples[] = {
-		"tests/testExamples/random_chr1_windows/NC_003279.8_11396386_11396426.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_11396386_11396426_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_11614960_11614996.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_11614960_11614996_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_12932558_12932578.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_12932558_12932578_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13007488_13007541.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13007488_13007541_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13107718_13107792.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13107718_13107792_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_1343860_1343898.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_1343860_1343898_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13941170_13941228.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_13941170_13941228_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_2318461_2318484.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_2318461_2318484_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_2730008_2730037.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_2730008_2730037_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_3485131_3485192.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_3485131_3485192_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_3931232_3931306.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_3931232_3931306_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_4333072_4333143.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_4333072_4333143_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_5398020_5398073.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_5398020_5398073_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_5525849_5525911.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_5525849_5525911_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_6769182_6769243.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_6769182_6769243_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_7599992_7600003.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_7599992_7600003_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8020725_8020765.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8020725_8020765_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8072702_8072725.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8072702_8072725_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8980246_8980274.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_8980246_8980274_ref.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_9712745_9712803.fasta",
-		"tests/testExamples/random_chr1_windows/NC_003279.8_9712745_9712803_ref.fasta"
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11396386_11396426.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11396386_11396426_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11614960_11614996.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11614960_11614996_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_12932558_12932578.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_12932558_12932578_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13007488_13007541.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13007488_13007541_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13107718_13107792.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13107718_13107792_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_1343860_1343898.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_1343860_1343898_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13941170_13941228.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13941170_13941228_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2318461_2318484.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2318461_2318484_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2730008_2730037.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2730008_2730037_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3485131_3485192.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3485131_3485192_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3931232_3931306.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3931232_3931306_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_4333072_4333143.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_4333072_4333143_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5398020_5398073.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5398020_5398073_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5525849_5525911.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5525849_5525911_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_6769182_6769243.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_6769182_6769243_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_7599992_7600003.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_7599992_7600003_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8020725_8020765.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8020725_8020765_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8072702_8072725.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8072702_8072725_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8980246_8980274.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8980246_8980274_ref.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_9712745_9712803.fasta",
+		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_9712745_9712803_ref.fasta"
 };
 
 static int64_t messyExampleNo = 8;
 static const char *messyExamples[] = {
-		"tests/testExamples/messy_windows/NC_003279.8_10029532_10029615.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10029532_10029615_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10031827_10031861.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10031827_10031861_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10037167_10037249.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10037167_10037249_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10039004_10039029.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10039004_10039029_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10040234_10040295.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10040234_10040295_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_1004298_1004407.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_1004298_1004407_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10044514_10044568.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_10044514_10044568_ref.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_14952113_14952138.fasta",
-		"tests/testExamples/messy_windows/NC_003279.8_14952113_14952138_ref.fasta"
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10029532_10029615.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10029532_10029615_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10031827_10031861.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10031827_10031861_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10037167_10037249.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10037167_10037249_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10039004_10039029.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10039004_10039029_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10040234_10040295.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10040234_10040295_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_1004298_1004407.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_1004298_1004407_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10044514_10044568.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10044514_10044568_ref.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138.fasta",
+		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138_ref.fasta"
 };
 
 struct List *readSequences(char *fastaFile) {
@@ -928,19 +930,19 @@ static void test_poa_realign_examples_large(CuTest *testCase, int64_t exampleNo,
 }
 
 void test_poa_realign_examples_very_large_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 2000, "tests/testExamples/2000_random_windows_chr1_celegans_guppy", 1);
+	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 1);
 }
 
 void test_poa_realign_examples_very_large_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 2000, "tests/testExamples/2000_random_windows_chr1_celegans_guppy", 0);
+	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 0);
 }
 
 void test_poa_realign_examples_large_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 200, "tests/testExamples/200_random_windows_chr1_celegans_guppy", 1);
+	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 1);
 }
 
 void test_poa_realign_examples_large_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 200, "tests/testExamples/200_random_windows_chr1_celegans_guppy", 0);
+	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 0);
 }
 
 static void test_rleString_example(CuTest *testCase, const char *testStr, int64_t rleLength, const char *testStrRLE, const int64_t *repeatCounts) {
@@ -980,7 +982,6 @@ void test_removeDelete(CuTest *testCase) {
 	CuAssertStrEquals(testCase, "GATTACA", removeDelete("GATTACATT", 2, 7));
 	CuAssertStrEquals(testCase, "GATTACA", removeDelete("AGATTACA", 1, 0));
 }
-
 
 //char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
 
@@ -1052,7 +1053,7 @@ static void test_hmm(CuTest *testCase) {
 CuSuite* realignmentTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign_example1);
@@ -1062,23 +1063,21 @@ CuSuite* realignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign);
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
+    SUITE_ADD_TEST(suite, test_rleString_examples);
+    SUITE_ADD_TEST(suite, test_addInsert);
+    SUITE_ADD_TEST(suite, test_removeDelete);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);*/
+    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
 
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_rle);
+    //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_no_rle);
-
-    SUITE_ADD_TEST(suite, test_rleString_examples);
-
-    SUITE_ADD_TEST(suite, test_addInsert);
-    SUITE_ADD_TEST(suite, test_removeDelete);
 
     return suite;
 }

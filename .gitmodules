@@ -7,3 +7,6 @@
 [submodule "externalTools/jsmn"]
 	path = externalTools/jsmn
 	url = https://github.com/zserge/jsmn
+[submodule "externalTools/cPecan"]
+	path = externalTools/cPecan
+	url = git@github.com:benedictpaten/cPecan.git

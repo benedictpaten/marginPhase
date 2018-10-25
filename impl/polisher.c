@@ -4,14 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "sonLib.h"
-#include "pairwiseAligner.h"
-#include "realigner.h"
-#include <stdlib.h>
-#include <math.h>
-#include "stGraph.h"
-#include <inttypes.h>
-#include <ctype.h>
+#include "stPolish.h"
 
 PoaBaseObservation *poaBaseObservation_construct(int64_t readNo, int64_t offset, double weight) {
 	PoaBaseObservation *poaBaseObservation = st_calloc(1, sizeof(PoaBaseObservation));

@@ -9,6 +9,11 @@
 
 #include "sonLib.h"
 #include "pairwiseAligner.h"
+#include <stdlib.h>
+#include <math.h>
+#include "stGraph.h"
+#include <inttypes.h>
+#include <ctype.h>
 
 /*
  * Basic data structures for representing a POA alignment.
