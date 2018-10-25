@@ -27,8 +27,6 @@ set(SONLIB_HEADERS
         )
 set(CPECAN_HEADERS
         externalTools/cPecan/C/inc
-        externalTools/cPecan/C/impl
-        externalTools/cPecan/C/tests
         externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src
         )
 
@@ -199,12 +197,11 @@ set(CPECAN_SOURCES
         externalTools/cPecan/impl/multipleAligner.c
         externalTools/cPecan/impl/pairwiseAligner.c
         externalTools/cPecan/impl/stateMachine.c
+        externalTools/cPecan/impl/randomSequences.c
         externalTools/cPecan/tests/allTests.c
         externalTools/cPecan/tests/multipleAlignerTest.c
         externalTools/cPecan/tests/pairwiseAlignerLongTest.c
         externalTools/cPecan/tests/pairwiseAlignerTest.c
-        externalTools/cPecan/tests/randomSequences.c
-        externalTools/cPecan/tests/randomSequences.h
         externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/align_diffs.c
 		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/axt.c
 		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/capsule.c

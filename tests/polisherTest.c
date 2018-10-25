@@ -5,15 +5,13 @@
  */
 
 #include "CuTest.h"
+#include "stPolish.h"
+#include "randomSequences.h"
 #include "sonLib.h"
-#include "pairwiseAligner.h"
-#include "multipleAligner.h"
-#include "realigner.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "randomSequences.h"
-#include "stateMachine.h"
+#include <time.h>
 
 static char *nanoporeHmmFile = "./params/polish/threeStateNanopore.hmm";
 static char *repeatCountsModelFile = "./params/polish/log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt";
