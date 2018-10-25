@@ -929,13 +929,13 @@ static void test_poa_realign_examples_large(CuTest *testCase, int64_t exampleNo,
 	free(examples);
 }
 
-void test_poa_realign_examples_very_large_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 1);
-}
+//void test_poa_realign_examples_very_large_rle(CuTest *testCase) {
+//	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 1);
+//}
 
-void test_poa_realign_examples_very_large_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 0);
-}
+//void test_poa_realign_examples_very_large_no_rle(CuTest *testCase) {
+//	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 0);
+//}
 
 void test_poa_realign_examples_large_rle(CuTest *testCase) {
 	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 1);
