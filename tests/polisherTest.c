@@ -12,6 +12,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <multipleAligner.h>
 
 static char *nanoporeHmmFile = "./params/polish/threeStateNanopore.hmm";
 static char *repeatCountsModelFile = "./params/polish/log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt";

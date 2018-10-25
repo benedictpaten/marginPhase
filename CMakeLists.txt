@@ -26,7 +26,8 @@ set(SONLIB_HEADERS
         externalTools/sonLib/externalTools/quicktree_1.1/include
         )
 set(CPECAN_HEADERS
-        externalTools/cPecan/C/inc
+        externalTools/cPecan/inc
+        externalTools/cPecan/tests
         externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src
         )
 
@@ -52,7 +53,6 @@ set(HTSLIB_SOURCES
         externalTools/htslib/cram/rANS_static.c
         externalTools/htslib/cram/sam_header.c
         externalTools/htslib/cram/string_alloc.c
-        externalTools/htslib/os/rand.c
         externalTools/htslib/test/fieldarith.c
         externalTools/htslib/test/hfile.c
         externalTools/htslib/test/hts_endian.c
@@ -192,46 +192,49 @@ set(SONLIB_SOURCES
         externalTools/sonLib/externalTools/quicktree_1.1/src/tree.c
         externalTools/sonLib/externalTools/quicktree_1.1/src/util.c
         )
+
+set(LASTZ_SOURCES
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/align_diffs.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/axt.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/capsule.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/chain.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/cigar.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/continuity_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/coverage_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/diag_hash.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/dna_utilities.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/edit_script.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gapped_extend.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/genpaf.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gfa.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/identity_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/infer_scores.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lastz.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lav.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/maf.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/masking.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/output.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/pos_table.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/quantum.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sam.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seed_search.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seeds.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/segment.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sequences.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/text_align.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/tweener.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/utilities.c
+        )
        
 set(CPECAN_SOURCES
         externalTools/cPecan/impl/multipleAligner.c
         externalTools/cPecan/impl/pairwiseAligner.c
         externalTools/cPecan/impl/stateMachine.c
-        externalTools/cPecan/impl/randomSequences.c
         externalTools/cPecan/tests/allTests.c
         externalTools/cPecan/tests/multipleAlignerTest.c
         externalTools/cPecan/tests/pairwiseAlignerLongTest.c
         externalTools/cPecan/tests/pairwiseAlignerTest.c
-        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/align_diffs.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/axt.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/capsule.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/chain.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/cigar.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/continuity_dist.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/coverage_dist.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/diag_hash.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/dna_utilities.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/edit_script.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gapped_extend.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/genpaf.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gfa.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/identity_dist.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/infer_scores.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lastz.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lav.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/maf.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/masking.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/output.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/pos_table.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/quantum.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sam.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seed_search.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seeds.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/segment.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sequences.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/text_align.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/tweener.c
-		externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/utilities.c
+        externalTools/cPecan/tests/randomSequences.c
         )
 
 set(SOURCE_FILES
@@ -292,10 +295,14 @@ add_custom_command(
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
 
 add_library(son ${SONLIB_SOURCES})
+add_library(lastz ${LASTZ_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
+add_dependencies(cpecan lastz)
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
 add_library(jsmn externalTools/jsmn/jsmn.c)
+
+target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
 target_link_libraries(hts pthread crypto bz2 lzma z curl)
 
@@ -303,10 +310,10 @@ add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase cpecan son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare son hts jsmn)
+target_link_libraries(vcfCompare cpecan son hts jsmn)
 
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c ${SOURCE_FILES})
-target_link_libraries(allTests hts cpecan son jsmn)
+add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c ${SOURCE_FILES})
+target_link_libraries(allTests cpecan hts cpecan son jsmn)
 add_test(stRPHmm allTests)
