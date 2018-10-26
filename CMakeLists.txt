@@ -286,11 +286,11 @@ endif()
 
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
         COMMAND autoconf
         COMMAND autoheader
         COMMAND ./configure
         COMMAND make
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
 

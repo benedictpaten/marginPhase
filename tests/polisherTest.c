@@ -1,18 +1,11 @@
 /*
- * Copyright (C) 2009-2011 by Benedict Paten (benedictpaten@gmail.com)
+ * Copyright (C) 2009-2018 by Benedict Paten (benedictpaten@gmail.com)
  *
  * Released under the MIT license, see LICENSE.txt
  */
 
 #include "CuTest.h"
 #include "stPolish.h"
-#include "randomSequences.h"
-#include "sonLib.h"
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <time.h>
-#include <multipleAligner.h>
 
 static char *nanoporeHmmFile = "../params/polish/threeStateNanopore.hmm";
 static char *repeatCountsModelFile = "../params/polish/log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt";
