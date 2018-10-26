@@ -1094,10 +1094,10 @@ CuSuite* realignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);*/
 
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);*/
+    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
+    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);

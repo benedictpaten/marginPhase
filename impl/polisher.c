@@ -490,11 +490,27 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 				PoaBaseObservation *obs = stList_get(poaNode->observations, j);
 				if(obs->weight/PAIR_ALIGNMENT_PROB_1 > 0.9) { // High confidence anchor pair
 					stList *anchorPairs = stList_get(anchorAlignments, obs->readNo);
-					stList_append(anchorPairs, stIntTuple_construct2(consensusIndex, obs->offset));
+
+					if(stList_length(anchorPairs) == 0) {
+						stList_append(anchorPairs, stIntTuple_construct2(consensusIndex, obs->offset));
+					}
+					else {
+						stIntTuple *pPair = stList_peek(anchorPairs);
+						if(stIntTuple_get(pPair, 0) < consensusIndex && stIntTuple_get(pPair, 1) < obs->offset) {
+							stList_append(anchorPairs, stIntTuple_construct2(consensusIndex, obs->offset));
+						}
+					}
+
 				}
 			}
 		}
 	}
+
+	fprintf(stderr, "Anchors:");
+	for(int64_t i=0; i<noOfReads; i++) {
+		fprintf(stderr, " %i", (int)stList_length(stList_get(anchorAlignments, i)));
+	}
+	fprintf(stderr, "\n");
 
 	return anchorAlignments;
 }
@@ -768,7 +784,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap) {
 	// string positions initially all to gaps.
 	*poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
 	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
-		*poaToConsensusMap[i] = -1;
+		(*poaToConsensusMap)[i] = -1;
 	}
 
 	stList *consensusStrings = stList_construct3(0, free);
@@ -803,7 +819,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap) {
 			stList_append(consensusStrings, stString_print("%c", symbol_convertSymbolToChar(maxBaseIndex)));
 
 			// Update poa to consensus map
-			*poaToConsensusMap[i-1] = runningConsensusLength++;
+			(*poaToConsensusMap)[i-1] = runningConsensusLength++;
 		}
 
 		// Get max insert
@@ -862,8 +878,8 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap) {
 
 	// Now reverse the poaToConsensusMap, because offsets are from  end of string but need them to be from beginning
 	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
-		if(*poaToConsensusMap[i] != -1) {
-			*poaToConsensusMap[i] = runningConsensusLength - 1 - *poaToConsensusMap[i];
+		if((*poaToConsensusMap)[i] != -1) {
+			(*poaToConsensusMap)[i] = runningConsensusLength - 1 - (*poaToConsensusMap)[i];
 		}
 	}
 
