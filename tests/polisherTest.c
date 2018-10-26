@@ -603,8 +603,6 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	Poa *poaTrue = poa_realign(reads, rleTrueReference->rleString, sM, p);
 
-	poa_normalize(poa); // Shift all the indels
-
 	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_parse(repeatCountsModelFile);
 
 	// Look at non-rle comparison
