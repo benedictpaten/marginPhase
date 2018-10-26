@@ -231,11 +231,11 @@ set(CPECAN_SOURCES
         externalTools/cPecan/impl/multipleAligner.c
         externalTools/cPecan/impl/pairwiseAligner.c
         externalTools/cPecan/impl/stateMachine.c
-        externalTools/cPecan/impl/randomSequences.c
         externalTools/cPecan/tests/allTests.c
         externalTools/cPecan/tests/multipleAlignerTest.c
         externalTools/cPecan/tests/pairwiseAlignerLongTest.c
         externalTools/cPecan/tests/pairwiseAlignerTest.c
+        externalTools/cPecan/tests/randomSequences.c
         )
 
 set(SOURCE_FILES
