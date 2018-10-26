@@ -53,6 +53,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/cram/rANS_static.c
         externalTools/htslib/cram/sam_header.c
         externalTools/htslib/cram/string_alloc.c
+        externalTools/htslib/os/rand.c
         externalTools/htslib/test/fieldarith.c
         externalTools/htslib/test/hfile.c
         externalTools/htslib/test/hts_endian.c

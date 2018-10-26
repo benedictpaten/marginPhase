@@ -9,4 +9,4 @@
 	url = https://github.com/zserge/jsmn
 [submodule "externalTools/cPecan"]
 	path = externalTools/cPecan
-	url = git@github.com:benedictpaten/cPecan.git
+	url = https://github.com/benedictpaten/cPecan.git
