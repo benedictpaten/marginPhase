@@ -9,6 +9,10 @@
 #include <htslib/vcf.h>
 #include "stRPHmm.h"
 
+void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs);
+void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2);
+
+
 typedef struct _vcfRecordComparisonInfo vcfRecordComparisonInfo;
 struct _vcfRecordComparisonInfo {
 
