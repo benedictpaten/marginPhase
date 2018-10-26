@@ -79,7 +79,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/hfile_gcs.c
         externalTools/htslib/hfile_libcurl.c
         externalTools/htslib/hfile_net.c
-        externalTools/htslib/hfile_s3.c
+        #externalTools/htslib/hfile_s3.c
         externalTools/htslib/hts.c
         externalTools/htslib/htsfile.c
         externalTools/htslib/kfunc.c
@@ -265,9 +265,9 @@ if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'bz2' library")
 endif()
 
-find_library(LZMALIB lzma)
-if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'lzma' library")
+find_library(PTHREADLIB pthread)
+if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
+    message(FATAL_ERROR "Couldn't find the 'pthread' library")
 endif()
 
 find_library(CURLLIB curl)
@@ -275,22 +275,22 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 
-find_library(CRYPTOLIB crypto)
-if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'crypto' library")
-endif()
+#find_library(LZMALIB lzma)
+#if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
+#    message(FATAL_ERROR "Couldn't find the 'lzma' library")
+#endif()
 
-find_library(PTHREADLIB pthread)
-if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'pthread' library")
-endif()
+#find_library(CRYPTOLIB crypto)
+#if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
+#    message(FATAL_ERROR "Couldn't find the 'crypto' library")
+#endif()
 
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
         COMMAND autoconf
         COMMAND autoheader
-        COMMAND ./configure
+        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins
         COMMAND make
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
@@ -305,7 +305,8 @@ add_library(jsmn externalTools/jsmn/jsmn.c)
 
 target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
-target_link_libraries(hts pthread crypto bz2 lzma z curl)
+#target_link_libraries(hts pthread crypto bz2 lzma z curl)
+target_link_libraries(hts pthread bz2 z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase cpecan son hts jsmn)
