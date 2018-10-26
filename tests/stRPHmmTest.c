@@ -12,27 +12,27 @@
 
 #define RANDOM_TEST_NO 2
 
-char getRandomBase() {
+char stRPHmm_getRandomBase() {
     /*
      * Returns an ascii character starting from ascii symbol 48: '0', '1', '2', ... alphabetsize
      */
     return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+ALPHABET_SIZE);
 }
 
-char *getRandomSequence(int64_t referenceLength) {
+char *stRPHmm_getRandomSequence(int64_t referenceLength) {
     /*
      * Creates a random sequence of form [ACTG]*referenceLength
      */
     char *randomSequence = st_malloc(sizeof(char) * (referenceLength+1));
     for(int64_t i=0; i<referenceLength; i++) {
-        randomSequence[i] = getRandomBase();
+        randomSequence[i] = stRPHmm_getRandomBase();
     }
     randomSequence[referenceLength] = '\0';
 
     return randomSequence;
 }
 
-char *permuteSequence(char *referenceSeq, double hetRate) {
+char *stRPHmm_permuteSequence(char *referenceSeq, double hetRate) {
     /*
      * Takes a random sequence and returns a copy of it, permuting randomly each position with rate hetRate.
      */
@@ -40,7 +40,7 @@ char *permuteSequence(char *referenceSeq, double hetRate) {
     int64_t strLength = strlen(referenceSeq);
     for(int64_t i=0; i<strLength; i++) {
         if(st_random() < hetRate) {
-            referenceSeq[i] = getRandomBase();
+            referenceSeq[i] = stRPHmm_getRandomBase();
         }
     }
     return referenceSeq;
@@ -60,7 +60,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 
     for(int64_t i=0; i<readLength; i++) {
         // Haplotype base or error at random
-        char b = st_random() < readErrorRate ? getRandomBase() : hapSeq[start+i];
+        char b = st_random() < readErrorRate ? stRPHmm_getRandomBase() : hapSeq[start+i];
         assert(b - FIRST_ALPHABET_CHAR >= 0);
         assert(b - FIRST_ALPHABET_CHAR < ALPHABET_SIZE);
         // Fill in the profile probabilities according to the chosen base
@@ -133,7 +133,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
     for(int64_t i=0; i<referenceSeqNumber; i++) {
         // Generate random reference sequence
         int64_t referenceLength = st_randomInt(minReferenceLength, maxReferenceLength+1);
-        char *referenceSeq = getRandomSequence(referenceLength);
+        char *referenceSeq = stRPHmm_getRandomSequence(referenceLength);
         // Reference name
         char *referenceName = stString_print("Reference_%" PRIi64 "", i);
 
@@ -143,7 +143,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
                 stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength);
         stHash_insert(referenceNamesToReferencePriors, stString_copy(referenceName), rProbs);
 
-		char *noisyReferenceSeq = permuteSequence(referenceSeq, hetRate);
+		char *noisyReferenceSeq = stRPHmm_permuteSequence(referenceSeq, hetRate);
         for(int64_t i=0; i<referenceLength; i++) {
             int64_t refChar = noisyReferenceSeq[i] - FIRST_ALPHABET_CHAR;
             assert(refChar >= 0 && refChar < ALPHABET_SIZE);
@@ -153,8 +153,8 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         }
 
         // Create haplotype sequences for reference
-        char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate);
-        char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate);
+        char *haplotypeSeq1 = stRPHmm_permuteSequence(referenceSeq, hetRate);
+        char *haplotypeSeq2 = stRPHmm_permuteSequence(referenceSeq, hetRate);
 
         stList_append(hapSeqs1, haplotypeSeq1);
         stList_append(hapSeqs2, haplotypeSeq2);

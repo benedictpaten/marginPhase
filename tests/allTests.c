@@ -22,7 +22,7 @@ int marginPhaseTests(void) {
 
 //	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 //	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, realignmentTestSuite());
 
 	CuSuiteRun(suite);
