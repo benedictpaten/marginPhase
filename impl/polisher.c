@@ -469,7 +469,37 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
 	stSortedSet_destruct(matchesSet);
 }
 
-Poa *poa_realign(stList *reads, char *reference,
+/*
+ * Generates a set of anchor alignments for the reads aligned to it.
+ * Is used to restrict subsequent alignments.
+ */
+stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads) {
+
+	// Allocate anchor alignments
+	stList *anchorAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+	for(int64_t i=0; i<noOfReads; i++) {
+		stList_append(anchorAlignments, stList_construct3(0, (void (*)(void *))stIntTuple_destruct));
+	}
+
+	// Walk through the weights of the POA to construct the anchor alignments
+	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+		PoaNode *poaNode = stList_get(poa->nodes, i);
+		int64_t consensusIndex = poaToConsensusMap[i-1];
+		if(consensusIndex != -1) { // Poa reference position is aligned to the consensus
+			for(int64_t j=0; j<stList_length(poqNode->observations); j++) {
+				poaBaseObservation_*obs = stList_get(poaNode->observations, j);
+				if(obs->weight/PAIR_ALIGNMENT_PROB_1 > 0.9) { // High confidence anchor pair
+					stList *anchorPairs = stList_get(anchorAlignments, obs->readNo);
+					stList_append(anchorPairs, stIntTuple_construct2(consensusIndex, obs->offset));
+				}
+			}
+		}
+	}
+
+	return anchorAlignments;
+}
+
+Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
 			  	 StateMachine *sM, PairwiseAlignmentParameters *p) {
 	// Build a reference graph with zero weights
 	Poa *poa = poa_getReferenceGraph(reference);
@@ -480,7 +510,14 @@ Poa *poa_realign(stList *reads, char *reference,
 
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
-		getAlignedPairsWithIndels(sM, reference, read, p, &matches, &deletes, &inserts, 0, 0);
+
+		if(anchorAlignments == NULL) {
+			getAlignedPairsWithIndels(sM, reference, read, p, &matches, &deletes, &inserts, 0, 0);
+		}
+		else {
+			stList *anchorPairs = stList_get(anchorAlignments, i); // An alignment anchoring the read to the reference
+			getAlignedPairsWithIndelsUsingAnchors(sM, reference, read, anchorPairs, p, &matches, &deletes, &inserts, 0, 0);
+		}
 
 		// Add weights, edges and nodes to the poa
 		poa_augment(poa, read, i, matches, inserts, deletes);
@@ -623,7 +660,7 @@ void poa_printSummaryStats(Poa *poa, FILE *fH) {
 			totalInsertWeight, totalDeleteWeight, totalInsertWeight + totalDeleteWeight, totalInsertWeight + totalDeleteWeight + totalReferenceMismatchWeight);
 }
 
-char *poa_getConsensus(Poa *poa) {
+char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap) {
 	// Cheesy profile HMM like algorithm
 	// Calculates forward probabilities through model, then
 	// traces back through max prob local path, greedily
@@ -727,7 +764,15 @@ char *poa_getConsensus(Poa *poa) {
 
 	// Now traceback picking consensus greedily
 
+	// Allocate consensus map, setting the alignment of reference
+	// string positions initially all to gaps.
+	*poaToConsensusMap = st_malloc((stList->length(poa->nodes)-1) * sizeof(int64_t));
+	for(int64_t i=0; i<stList_len(poa->node)-1; i++) {
+		*poaToConsensusMap[i] = -1;
+	}
+
 	stList *consensusStrings = stList_construct3(0, free);
+	int64_t runningConsensusLength = 0;
 
 	for(int64_t i=stList_length(poa->nodes); i>0;) {
 
@@ -756,6 +801,9 @@ char *poa_getConsensus(Poa *poa) {
 			}
 
 			stList_append(consensusStrings, stString_print("%c", symbol_convertSymbolToChar(maxBaseIndex)));
+
+			// Update poa to consensus map
+			*poaToConsensusMap[i-1] = runningConsensusLength++;
 		}
 
 		// Get max insert
@@ -798,6 +846,7 @@ char *poa_getConsensus(Poa *poa) {
 			// Is likely an insert, append insert to consensus string
 			// and move to a previous reference base
 			stList_append(consensusStrings, stString_copy(maxInsert->insert));
+			runningConsensusLength += strlen(maxInsert->insert);
 			i--;
 		}
 		else {
@@ -809,6 +858,14 @@ char *poa_getConsensus(Poa *poa) {
 	// Concatenate backwards to make consensus string
 	stList_reverse(consensusStrings);
 	char *consensusString = stString_join2("", consensusStrings);
+	assert(runningConsensusLength == strlen(consensusString));
+
+	// Now reverse the poaToConsensusMap, because offsets are from  end of string but need them to be from beginning
+	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
+		if(*poaToConsensusMap[i] != -1) {
+			*poaToConsensusMap[i] = runningConsensusLength - 1 - *poaToConsensusMap[i];
+		}
+	}
 
 	// Cleanup
 	stList_destruct(consensusStrings);
@@ -820,23 +877,34 @@ char *poa_getConsensus(Poa *poa) {
 	return consensusString;
 }
 
-Poa *poa_realignIterative(stList *reads, char *reference,
+Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference,
 			  	 StateMachine *sM, PairwiseAlignmentParameters *p) {
-	Poa *poa = poa_realign(reads, reference, sM, p);
+	Poa *poa = poa_realign(reads, anchorAlignments, reference, sM, p);
 	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
 
 	int64_t i=0;
 	while(1) {
-		reference = poa_getConsensus(poa);
+		int64_t *poaToConsensusMap;
+		reference = poa_getConsensus(poa, &poaToConsensusMap);
 
 		// Stop in case consensus string is same as old reference (i.e. greedy convergence)
 		if(stString_eq(reference, poa->refString)) {
 			free(reference);
+			free(poaToConsensusMap);
 			break;
 		}
 
-		Poa *poa2 = poa_realign(reads, reference, sM, p);
+		// Get anchor alignments
+		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads));
+
+		// Generated updated poa
+		Poa *poa2 = poa_realign(reads, anchorAlignments, reference, sM, p);
+
+		// Cleanup
 		free(reference);
+		free(poaToConsensusMap);
+		stList_destruct(anchorAlignments);
+
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
 		// Stop if score decreases (greedy stopping)

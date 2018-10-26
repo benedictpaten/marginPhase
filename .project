@@ -3,6 +3,8 @@
 	<name>marginPhase</name>
 	<comment></comment>
 	<projects>
+		<project>cPecan</project>
+		<project>sonLib</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

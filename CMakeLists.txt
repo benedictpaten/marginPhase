@@ -286,11 +286,11 @@ endif()
 
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
         COMMAND autoconf
         COMMAND autoheader
         COMMAND ./configure
         COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
 
@@ -311,7 +311,6 @@ target_link_libraries(marginPhase cpecan son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare cpecan son hts jsmn)
-
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c ${SOURCE_FILES})

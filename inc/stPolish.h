@@ -65,10 +65,20 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
 
 /*
  * Creates a POA representing the reference and the expected inserts / deletes and substitutions from the 
- * alignment of the given set of reads aligned to the reference.
+ * alignment of the given set of reads aligned to the reference. Anchor alignments is a set of pairwise 
+ * alignments between the reads and the reference sequence. There is one alignment for each read. See 
+ * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, char *reference,
+Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
 			  	 StateMachine *sM, PairwiseAlignmentParameters *p);
+
+/*
+ * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
+ * These anchors can be used to restrict subsequent alignments to the consensus to generate a new poa.
+ * PoaToConsensusMap is a map from the positions in the poa reference sequence to the derived consensus 
+ * sequence. See poa_getConsensus for description of poaToConsensusMap.
+ */
+stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads);
 
 /*
  * Prints representation of the POA.
@@ -86,18 +96,25 @@ void poa_printSummaryStats(Poa *poa, FILE *fH);
 void poa_normalize(Poa *poa);
 
 /*
- * Creates a consensus reference sequence from the POA.
+ * Creates a consensus reference sequence from the POA. poaToConsensusMap is a pointer to an 
+ * array of integers of length str(poa->refString), giving the index of the reference positions 
+ * alignment to the consensus sequence, or -1 if not aligned. It is initialised as a 
+ * return value of the function.
  */
-char *poa_getConsensus(Poa *poa);
+char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap);
 
 /*
- * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence for the given reads and 
- * the starting reference.
+ * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence 
+ * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, char *reference,
+Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference,
 			  	 StateMachine *sM, PairwiseAlignmentParameters *p);
 
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, StateMachine *sM, PairwiseAlignmentParameters *p);
+/*
+ * Greedily evaluate the top scoring indels.  
+ */
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, 
+									  StateMachine *sM, PairwiseAlignmentParameters *p);
 				 
 void poa_destruct(Poa *poa);
 
