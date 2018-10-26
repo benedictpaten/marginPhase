@@ -14,6 +14,10 @@ static char *repeatCountsModelFile = "../params/polish/log_prob_matrices_fasta_o
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
+	/*
+	 * Test building a trivial poa graph containing just a reference string.
+	 */
+
 	char *reference = "GATTACA";
 
 	Poa *poa = poa_getReferenceGraph(reference);
@@ -46,6 +50,10 @@ static char *makeShiftedString(char *str, char *insert, int64_t insertPoint) {
 }
 
 static void test_getShift(CuTest *testCase) {
+	/*
+	 * Test left shifting code.
+	 */
+
 	for(int64_t test=0; test<10000; test++) {
 		// Make random string
 		int64_t length = st_randomInt(1, 20);
@@ -131,6 +139,10 @@ static void checkNode(CuTest *testCase, Poa *poa, int64_t nodeIndex, char base, 
 }
 
 static void test_poa_augment_example(CuTest *testCase) {
+	/*
+	 * Test poa_augment gives works as expected on a small example.
+	 */
+
 	char *reference = "GATTACA";
 
 	Poa *poa = poa_getReferenceGraph(reference);
@@ -209,6 +221,9 @@ static void test_poa_augment_example(CuTest *testCase) {
 }
 
 static void test_poa_realign_tiny_example1(CuTest *testCase) {
+	/*
+	 * Tests that poa_realign builds the expected poa graph for a small example of input sequences
+	 */
 
 	char *reference = "GATACAGCGGG";
 	char *read = "GATTACAGCG";
@@ -242,7 +257,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 					stIntTuple_get(alignedPair, 2), ((float)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1);
 	}*/
 
-	Poa *poa = poa_realign(reads, reference, sM, p);
+	Poa *poa = poa_realign(reads, NULL, reference, sM, p);
 
 	// Check we get the set of inserts and deletes we expect
 
@@ -335,6 +350,10 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 }
 
 static void test_poa_realign(CuTest *testCase) {
+	/*
+	 * Test poa_realign by generating lots of random examples
+	 */
+
 	for (int64_t test = 0; test < 100; test++) {
 
 		//Make true reference
@@ -356,7 +375,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 		StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
 
-		Poa *poa = poa_realign(reads, reference, sM, p);
+		Poa *poa = poa_realign(reads, NULL, reference, sM, p);
 
 		poa_normalize(poa); // Shift all the indels
 
@@ -410,6 +429,10 @@ static void test_poa_realign(CuTest *testCase) {
 }
 
 static void test_poa_realignIterative(CuTest *testCase) {
+	/*
+	 * Test random small examples against poa_realignIterative
+	 */
+
 	for (int64_t test = 0; test < 100; test++) {
 
 		//Make true reference
@@ -431,7 +454,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 
 		StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
 
-		Poa *poa = poa_realignIterative(reads, reference, sM, p);
+		Poa *poa = poa_realignIterative(reads, NULL, reference, sM, p);
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
@@ -591,12 +614,12 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
 
-	Poa *poa = poa_realign(reads, rleReference->rleString, sM, p);
-	Poa *poaRefined = poa_realignIterative(reads, rleReference->rleString, sM, p);
+	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, sM, p);
+	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, sM, p);
 
 	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
 
-	Poa *poaTrue = poa_realign(reads, rleTrueReference->rleString, sM, p);
+	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, sM, p);
 
 	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_parse(repeatCountsModelFile);
 
@@ -681,8 +704,8 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
 
-	Poa *poa = poa_realign(reads, reference, sM, p);
-	Poa *poaRefined = poa_realignIterative(reads, reference, sM, p);
+	Poa *poa = poa_realign(reads, NULL, reference, sM, p);
+	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, sM, p);
 
 	poa_normalize(poa); // Shift all the indels
 
@@ -937,6 +960,14 @@ void test_poa_realign_examples_large_no_rle(CuTest *testCase) {
 	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 0);
 }
 
+void test_poa_realign_examples_long_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"largeExamples", 1);
+}
+
+void test_poa_realign_examples_long_no_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"largeExamples", 0);
+}
+
 static void test_rleString_example(CuTest *testCase, const char *testStr, int64_t rleLength, const char *testStrRLE, const int64_t *repeatCounts) {
 	RleString *rleString = rleString_construct((char *)testStr);
 
@@ -1045,7 +1076,7 @@ static void test_hmm(CuTest *testCase) {
 CuSuite* realignmentTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign_example1);
@@ -1066,7 +1097,10 @@ CuSuite* realignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);*/
+
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_no_rle);

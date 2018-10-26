@@ -486,8 +486,8 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 		PoaNode *poaNode = stList_get(poa->nodes, i);
 		int64_t consensusIndex = poaToConsensusMap[i-1];
 		if(consensusIndex != -1) { // Poa reference position is aligned to the consensus
-			for(int64_t j=0; j<stList_length(poqNode->observations); j++) {
-				poaBaseObservation_*obs = stList_get(poaNode->observations, j);
+			for(int64_t j=0; j<stList_length(poaNode->observations); j++) {
+				PoaBaseObservation *obs = stList_get(poaNode->observations, j);
 				if(obs->weight/PAIR_ALIGNMENT_PROB_1 > 0.9) { // High confidence anchor pair
 					stList *anchorPairs = stList_get(anchorAlignments, obs->readNo);
 					stList_append(anchorPairs, stIntTuple_construct2(consensusIndex, obs->offset));
@@ -766,8 +766,8 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap) {
 
 	// Allocate consensus map, setting the alignment of reference
 	// string positions initially all to gaps.
-	*poaToConsensusMap = st_malloc((stList->length(poa->nodes)-1) * sizeof(int64_t));
-	for(int64_t i=0; i<stList_len(poa->node)-1; i++) {
+	*poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
+	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
 		*poaToConsensusMap[i] = -1;
 	}
 
@@ -991,7 +991,8 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, StateMachine *sM,
 		// Create new graph with edit
 		char *editRef = maxInsert->weight >= maxDelete->weight ? addInsert(poa->refString, maxInsert->insert, insertStart) :
 				removeDelete(poa->refString, maxDelete->length, deleteStart);
-		Poa *poa2 = poa_realign(reads, editRef, sM, p);
+		// TODO: Add anchor constraints
+		Poa *poa2 = poa_realign(reads, NULL, editRef, sM, p);
 		free(editRef);
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
