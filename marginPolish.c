@@ -1,0 +1,232 @@
+/*
+ * Copyright (C) 2018 by Benedict Paten (benedictpaten@gmail.com)
+ *
+ * Released under the MIT license, see LICENSE.txt
+ */
+
+#include <getopt.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <memory.h>
+#include <hashTableC.h>
+#include <unistd.h>
+
+#include "margin_phase_version.h"
+#include "sonLib.h"
+#include "stPolish.h"
+
+/*
+ * Main functions
+ */
+
+void usage() {
+    fprintf(stderr, "usage: marginPolish <SAM/BAM/CRAM> <REFERENCE_FASTA> <PARAMS> [options]\n");
+    fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
+    fprintf(stderr, "Polishes an assembly using the reads in a BAM file and produces:\n");
+    fprintf(stderr, "    1) a fasta file giving an updated reference.\n");
+    fprintf(stderr, "    2) and (optionally) a SAM/BAM/CRAM file of the reads giving their alignment to the updated reference\n");
+
+    fprintf(stderr, "\nRequired arguments:\n");
+    fprintf(stderr, "    SAM/BAM/CRAM is the alignment of reads.  All reads must be aligned to the same contig \n");
+    fprintf(stderr, "        and be in sam/bam/cram format.\n");
+    fprintf(stderr, "    REFERENCE_FASTA is the reference sequence for the SAM/BAM/CRAM's contig in fasta format.\n");
+    fprintf(stderr, "    PARAMS is the file with marginPolish parameters.\n");
+
+    fprintf(stderr, "\nDefault options:\n");
+    fprintf(stderr, "    -h --help              : Print this help screen\n");
+    fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
+}
+
+int main(int argc, char *argv[]) {
+
+    // Parameters / arguments
+    char *logLevelString = stString_copy("info");
+    char *bamInFile = NULL;
+    char *paramsFile = NULL;
+    char *referenceFastaFile = NULL;
+    char *outputBase = "output";
+    int64_t verboseBitstring = -1;
+
+    // TODO: When done testing, optionally set random seed using st_randomSeed();
+
+    if(argc < 4) {
+        usage();
+        return 0;
+    }
+
+    bamInFile = stString_copy(argv[1]);
+    referenceFastaFile = stString_copy(argv[2]);
+    paramsFile = stString_copy(argv[3]);
+
+    // Parse the options
+    while (1) {
+        static struct option long_options[] = {
+                { "logLevel", required_argument, 0, 'a' },
+                { "help", no_argument, 0, 'h' },
+                { "outputBase", required_argument, 0, 'o'},
+                { "verbose", required_argument, 0, 'v'},
+                { 0, 0, 0, 0 } };
+
+        int option_index = 0;
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:h", long_options, &option_index);
+
+        if (key == -1) {
+            break;
+        }
+
+        switch (key) {
+        case 'a':
+            free(logLevelString);
+            logLevelString = stString_copy(optarg);
+            break;
+        case 'h':
+            usage();
+            return 0;
+        case 'o':
+            outputBase = stString_copy(optarg);
+            break;
+        case 'v':
+            verboseBitstring = atoi(optarg);
+            break;
+        default:
+            usage();
+            return 0;
+        }
+    }
+
+    // Initialization from arguments
+    st_setLogLevelFromString(logLevelString);
+    free(logLevelString);
+
+    // Parse parameters
+    st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
+    FILE *fh = fopen(paramsFile, "r");
+    PolishParams *params = polishParams_readParams(fh);
+    fclose(fh);
+
+    // Print a report of the parsed parameters
+    if(st_getLogLevel() == debug) {
+    	polishParams_printParameters(params, stderr);
+    }
+
+    // Parse reference as map of header string to nucleotide sequences
+    st_logInfo("> Parsing reference sequences from file: %s\n", referenceFastaFile);
+    fh = fopen(referenceFastaFile, "r");
+    stHash *referenceSequences = fastaReadToMap(fh);
+    fclose(fh);
+
+    // Open output files
+    char *referenceOutFile = stString_print("%s.fa", outputBase);
+    char *bamOutFile = stString_print("%s.bam", outputBase);
+    st_logInfo("> Going to write polished reference in : %s\n", referenceOutFile);
+    st_logInfo("> Going to write polished bam file in : %s\n", bamOutFile);
+    FILE *referenceOutFh = fopen(referenceOutFile, "w");
+    FILE *bamOutFh = fopen(bamOutFile, "w");
+    free(referenceOutFile);
+    free(bamOutFile);
+
+    BamChunker *bamChunker = bamChunker_construct(bamInFile);
+
+    // For each chunk of the BAM
+    BamChunk *bamChunk;
+    while((bamChunk = bamChunker_getNext(bamChunk)) != NULL) {
+    	// Get reference string for chunk of alignment
+    	char *referenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+
+		// Convert bam lines into corresponding reads and alignments
+		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
+		stList *reads = stList_construct3(0, free);
+		stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+		convertToReadsAndAlignments(bamChunk, reads, alignments);
+
+		// Output data structures
+		char *consensusReferenceString = NULL; // The polished reference string
+		stList *updatedAlignments = NULL; // TODO
+		Poa *poa = NULL; // The partial order alignment
+
+		// Now run the polishing method
+
+		if(params->useRunLengthEncoding) {
+			st_logInfo("> Running polishing algorithm using run-length encoding\n");
+
+			// Run-length encoded polishing
+
+			// Do run length encoding
+			stList *rleStrings = stList_construct3(0, (void (*)(void *))rleString_destruct);
+			stList *l = stList_construct(); // Just the rle nucleotide strings
+			stList *rleAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+			for(int64_t j=0; j<stList_length(reads); j++) {
+				char *read = stList_get(reads, j);
+				RleString *rleRead = rleString_construct(read);
+				stList_append(rleStrings, rleRead);
+				stList_append(l, rleRead->rleString);
+				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j, read)));
+			}
+			char *rleReference = rleString_construct(referenceString);
+
+			// Generate partial order alignment (POA)
+			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
+
+			// Do run-length decoding
+			consensusReferenceString = expandRLEConsensus(poa, rleReads, params);
+
+			// Generate updated alignments in RLE space
+			//TODO
+
+			// Expand alignments into non-RLE space
+			//TODO
+
+			// Now cleanup run-length stuff
+			stList_destruct(rleStrings);
+			stList_destruct(l);
+			stList_destruct(rleAlignments);
+			rleString_destruct(rleReference);
+			bamChunk_destruct(bamChunk);
+		}
+		else { // Non-run-length encoded polishing
+			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
+
+			// Generate partial order alignment (POA)
+			poa = poa_realignIterative(reads, alignments, referenceString, params);
+
+			// Consensus is the final backbone of the POA
+			consensusReferenceString = stString_copy(poa->refString);
+
+			// Generate updated alignments
+			//TODO
+
+			// Clean up
+			poa_destruct(poa);
+		}
+
+		// Log info about the POA
+		if (st_getLogLevel() >= info) {
+			st_logInfo("Summary stats for POA:\t");
+			poa_printSummaryStats(poa, stderr);
+		}
+		if (st_getLogLevel() >= debug) {
+			poa_print(poa, stderr, 5);
+		}
+
+		// Output the finished sequence
+		fastaWrite(bamChunk->refSeqName, consensusReferenceString, referenceOutFile);
+
+		//TODO Write bam reads
+
+		// Cleanup
+		poa_destruct(poa);
+		free(consensusReferenceString);
+    }
+
+    // Cleanup
+    bamChunker_destruct(bamChunker);
+    fclose(referenceOutFh);
+    fclose(bamOutFh);
+    stHash_destruct(referenceSequences);
+    polishParams_destruct(params);
+
+    //while(1); // Use this for testing for memory leaks
+
+    return 0;
+}
+

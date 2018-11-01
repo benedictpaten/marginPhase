@@ -13,17 +13,17 @@
 CuSuite *stRPHmmTestSuite(void);
 CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
-CuSuite* realignmentTestSuite(void);
+CuSuite* polisherTestSuite(void);
 
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-//	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
-//	CuSuiteAddSuite(suite, marginPhaseTestSuite());
-	CuSuiteAddSuite(suite, realignmentTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
+	CuSuiteAddSuite(suite, marginPhaseTestSuite());
+	CuSuiteAddSuite(suite, polisherTestSuite());
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);

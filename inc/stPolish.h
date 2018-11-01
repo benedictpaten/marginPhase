@@ -15,6 +15,29 @@
 #include <ctype.h>
 
 /*
+ * Parameter object for polish algorithm
+ */
+
+typedef struct _repeatSubMatrix RepeatSubMatrix; 
+
+typedef struct _polishParams {
+	bool useRunLengthEncoding;
+	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
+	double minPosteriorProbForAlignmentAnchor; // used by by poa_getAnchorAlignments to determine which alignment pairs
+	// to use for alignment anchors during poa_realignIterative
+	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
+	StateMachine *sM; // Statemachine derived from the hmm
+	PairwiseAlignmentParameters *p; // Parameters object used for aligning
+	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix	
+} PolishParams;
+
+PolishParams *polishParams_readParams(FILE *fileHandle);
+
+void polishParams_printParameters(PolishParams *polishParams, FILE *fh);
+
+void polishParams_destruct(PolishParams *polishParams);
+
+/*
  * Basic data structures for representing a POA alignment.
  */
  
@@ -70,7 +93,7 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
 Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
-			  	 StateMachine *sM, PairwiseAlignmentParameters *p);
+			  	 PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -78,7 +101,8 @@ Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
  * PoaToConsensusMap is a map from the positions in the poa reference sequence to the derived consensus 
  * sequence. See poa_getConsensus for description of poaToConsensusMap.
  */
-stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads);
+stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads, 
+							    PolishParams *polishParams);
 
 /*
  * Prints representation of the POA.
@@ -91,30 +115,23 @@ void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold);
 void poa_printSummaryStats(Poa *poa, FILE *fH);
 
 /*
- * Left align indels and then sorts them by character
- */
-void poa_normalize(Poa *poa);
-
-/*
  * Creates a consensus reference sequence from the POA. poaToConsensusMap is a pointer to an 
  * array of integers of length str(poa->refString), giving the index of the reference positions 
  * alignment to the consensus sequence, or -1 if not aligned. It is initialised as a 
  * return value of the function.
  */
-char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap);
+char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
 /*
  * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence 
  * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference,
-			  	 StateMachine *sM, PairwiseAlignmentParameters *p);
+Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams);
 
 /*
  * Greedily evaluate the top scoring indels.  
  */
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, 
-									  StateMachine *sM, PairwiseAlignmentParameters *p);
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *polishParams);
 				 
 void poa_destruct(Poa *poa);
 
@@ -165,22 +182,31 @@ void rleString_destruct(RleString *rlString);
 
 // Data structure for storing log-probabilities of observing
 // one repeat count given another
-typedef struct _repeatSubMatrix {
+struct _repeatSubMatrix {
 	double *logProbabilities;
 	int64_t maximumRepeatLength;
-} RepeatSubMatrix;
+};
 
 /*
  * Reads the repeat count matrix from a given input file.
  */
-RepeatSubMatrix *repeatSubMatrix_parse(char *fileName);
+ 
+RepeatSubMatrix *repeatSubMatrix_constructEmpty();
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix);
+
+
 
 /*
  * Gets the log probability of observing a given repeat conditioned on an underlying repeat count and base.
  */
-double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, int64_t observedRepeatCount, int64_t underlyingRepeatCount);
+double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, 
+								  int64_t observedRepeatCount, int64_t underlyingRepeatCount);
+
+/*
+ * As gets, but returns the address.
+ */
+double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, int64_t observedRepeatCount, int64_t underlyingRepeatCount);
 
 /*
  * Gets the log probability of observing a given set of repeat observations conditioned on an underlying repeat count and base.
@@ -192,7 +218,8 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
  * Gets the maximum likelihood underlying repeat count for a given set of observed read repeat counts.
  * Puts the ml log probility in *logProbabilty.
  */
-int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations, stList *rleReads, double *logProbability);
+int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, 
+										 stList *observations, stList *rleReads, double *logProbability);
 
 /*
  * Takes a POA done in run-length space and returns an expanded consensus string in
@@ -209,5 +236,23 @@ char *addInsert(char *string, char *insertString, int64_t editStart);
  * Make edited string with given insert. Edit start is the index of the first position to delete from the string.
  */
 char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
+
+/*
+ * Functions for processing BAMs
+ */
+ 
+typedef struct _bamChunker {
+	char *bamFile;
+} BamChunker;
+
+typedef struct _bamChunk {
+	
+} BamChunk;
+
+BamChunker *bamChunker_construct(char *bamFile);
+
+void bamChunker_destruct(BamChunker *bamChunker);
+
+BamChunk *bamChunker_getNext(BamChunker *bamChunker);
 
 #endif /* REALIGNER_H_ */

@@ -9,8 +9,7 @@
 #include "stPolish.h"
 #include "randomSequences.h"
 
-static char *nanoporeHmmFile = "../params/polish/threeStateNanopore.hmm";
-static char *repeatCountsModelFile = "../params/polish/log_prob_matrices_fasta_one_liners_2x_pseudocounts.txt";
+static char *polishParamsFile = "../params/polish/polishParams.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
@@ -231,8 +230,13 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	stList *reads = stList_construct();
 	stList_append(reads, read);
 
-	PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
-	StateMachine *sM = stateMachine3_construct(threeState);
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
+	
+	polishParams->p->diagonalExpansion = 20;
+	
+	
 
 	/*
 	// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
@@ -257,7 +261,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 					stIntTuple_get(alignedPair, 2), ((float)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1);
 	}*/
 
-	Poa *poa = poa_realign(reads, NULL, reference, sM, p);
+	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 
 	// Check we get the set of inserts and deletes we expect
 
@@ -343,8 +347,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	// L2 after ref 7
 	checkDeletes(testCase, poa, 8, 1, (const int64_t[]){ 2 }, (const double[]){ 0.87598 }, 1);
 
-	stateMachine_destruct(sM);
-	pairwiseAlignmentBandingParameters_destruct(p);
+	polishParams_destruct(polishParams);
 	poa_destruct(poa);
 	stList_destruct(reads);
 }
@@ -369,15 +372,11 @@ static void test_poa_realign(CuTest *testCase) {
 			stList_append(reads, evolveSequence(trueReference));
 		}
 
-		PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
+		FILE *fh = fopen(polishParamsFile, "r");
+		PolishParams *polishParams = polishParams_readParams(fh);
+		fclose(fh);
 
-		Hmm *hmm = hmm_loadFromFile(nanoporeHmmFile);
-
-		StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
-
-		Poa *poa = poa_realign(reads, NULL, reference, sM, p);
-
-		poa_normalize(poa); // Shift all the indels
+		Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 
 		// Generate the read alignments and check the matches
 		// Currently don't check the insert and deletes
@@ -389,7 +388,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 			// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 			stList *matches = NULL, *inserts = NULL, *deletes = NULL;
-			getAlignedPairsWithIndels(sM, reference, read, p, &matches, &deletes, &inserts, 0, 0);
+			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 
 			// Collate matches
 			for(int64_t j=0; j<stList_length(matches); j++) {
@@ -418,13 +417,11 @@ static void test_poa_realign(CuTest *testCase) {
 
 		//Cleanup
 		free(baseWeights);
-		stateMachine_destruct(sM);
 		free(trueReference);
 		free(reference);
 		stList_destruct(reads);
-		pairwiseAlignmentBandingParameters_destruct(p);
 		poa_destruct(poa);
-		hmm_destruct(hmm);
+		polishParams_destruct(polishParams);
 	}
 }
 
@@ -448,13 +445,11 @@ static void test_poa_realignIterative(CuTest *testCase) {
 			stList_append(reads, evolveSequence(trueReference));
 		}
 
-		PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
+		FILE *fh = fopen(polishParamsFile, "r");
+		PolishParams *polishParams = polishParams_readParams(fh);
+		fclose(fh);
 
-		Hmm *hmm = hmm_loadFromFile(nanoporeHmmFile);
-
-		StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
-
-		Poa *poa = poa_realignIterative(reads, NULL, reference, sM, p);
+		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
@@ -462,13 +457,11 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		}
 
 		//Cleanup
-		stateMachine_destruct(sM);
 		free(trueReference);
 		free(reference);
 		stList_destruct(reads);
-		pairwiseAlignmentBandingParameters_destruct(p);
 		poa_destruct(poa);
-		hmm_destruct(hmm);
+		polishParams_destruct(polishParams);
 	}
 }
 
@@ -568,21 +561,18 @@ static char *referenceExample2 =     "GATGTAAAAAAGAAATGATTTGCTAGAACAGAGCATAAATAC
 static char *trueReferenceExample2 = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT";
 
 static double calcSequenceMatches(char *seq1, char *seq2) {
-	PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
-	Hmm *hmm = hmm_loadFromFile(nanoporeHmmFile);
-	StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
 
 	//Get identity
-	stList *allAlignedPairs = getAlignedPairs(sM, seq1, seq2, p, 0, 0);
+	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
 	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, 0.0);
 
 	double matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
 
 	// Cleanup
-	stateMachine_destruct(sM);
-	pairwiseAlignmentBandingParameters_destruct(p);
-	hmm_destruct(hmm);
-	//stList_destruct(allAlignedPairs);
+	polishParams_destruct(polishParams);
 	stList_destruct(alignedPairs);
 
 	return matches;
@@ -608,23 +598,19 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
 
-	PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
 
-	Hmm *hmm = hmm_loadFromFile(nanoporeHmmFile);
-
-	StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
-
-	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, sM, p);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, sM, p);
+	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, polishParams);
+	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, polishParams);
 
 	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
 
-	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, sM, p);
-
-	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_parse(repeatCountsModelFile);
+	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
 	// Look at non-rle comparison
-	char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, repeatSubMatrix);
+	char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, polishParams->repeatSubMatrix);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(rleTrueReference->rleString, poaRefined->refString);
@@ -677,14 +663,11 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	}
 
 	// Cleanup
-	repeatSubMatrix_destruct(repeatSubMatrix);
-	stateMachine_destruct(sM);
-	pairwiseAlignmentBandingParameters_destruct(p);
+	polishParams_destruct(polishParams);
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	poa_destruct(poaTrue);
 	stList_destruct(reads);
-	hmm_destruct(hmm);
 	rleString_destruct(rleTrueReference);
 	rleString_destruct(rleReference);
 	stList_destruct(rleStrings);
@@ -698,16 +681,12 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 		stList_append(reads, (char *)readArray[i]);
 	}
 
-	PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
 
-	Hmm *hmm = hmm_loadFromFile(nanoporeHmmFile);
-
-	StateMachine *sM = hmm_getStateMachine(hmm); //stateMachine3_construct(threeState);
-
-	Poa *poa = poa_realign(reads, NULL, reference, sM, p);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, sM, p);
-
-	poa_normalize(poa); // Shift all the indels
+	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
+	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
@@ -741,12 +720,10 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	}
 
 	// Cleanup
-	stateMachine_destruct(sM);
-	pairwiseAlignmentBandingParameters_destruct(p);
+	polishParams_destruct(polishParams);
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	stList_destruct(reads);
-	hmm_destruct(hmm);
 }
 
 static void test_poa_realign_example1(CuTest *testCase) {
@@ -961,11 +938,11 @@ void test_poa_realign_examples_large_no_rle(CuTest *testCase) {
 }
 
 void test_poa_realign_examples_long_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"largeExamples", 1);
+	test_poa_realign_examples_large(testCase, 1, TEST_POLISH_FILES_DIR"largeExamples", 1);
 }
 
 void test_poa_realign_examples_long_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"largeExamples", 0);
+	test_poa_realign_examples_large(testCase, 1, TEST_POLISH_FILES_DIR"largeExamples", 0);
 }
 
 static void test_rleString_example(CuTest *testCase, const char *testStr, int64_t rleLength, const char *testStrRLE, const int64_t *repeatCounts) {
@@ -990,20 +967,52 @@ static void test_rleString_examples(CuTest *testCase) {
 	test_rleString_example(testCase, "TTTTTCC", 2, "TC", (const int64_t[]){ 5, 2 });
 }
 
+void checkStringsAndFree(CuTest *testCase, const char *expected, char *temp) {
+	CuAssertStrEquals(testCase, expected, temp);
+	free(temp);
+}
+
 void test_addInsert(CuTest *testCase) {
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("GAACA", "TT", 2));
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("", "GATTACA", 0));
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("ATTACA", "G", 0));
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("GATTAC", "A", 6));
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("GATTACA", "", 6));
-	CuAssertStrEquals(testCase, "GATTACA", addInsert("GATTACA", "", 3));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("GAACA", "TT", 2));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("", "GATTACA", 0));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("ATTACA", "G", 0));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("GATTAC", "A", 6));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("GATTACA", "", 6));
+	checkStringsAndFree(testCase, "GATTACA", addInsert("GATTACA", "", 3));
 }
 
 void test_removeDelete(CuTest *testCase) {
-	CuAssertStrEquals(testCase, "GATTACA", removeDelete("GATTGGACA", 2, 4));
-	CuAssertStrEquals(testCase, "GATTACA", removeDelete("GATTACA", 0, 0));
-	CuAssertStrEquals(testCase, "GATTACA", removeDelete("GATTACATT", 2, 7));
-	CuAssertStrEquals(testCase, "GATTACA", removeDelete("AGATTACA", 1, 0));
+	checkStringsAndFree(testCase, "GATTACA", removeDelete("GATTGGACA", 2, 4));
+	checkStringsAndFree(testCase, "GATTACA", removeDelete("GATTACA", 0, 0));
+	checkStringsAndFree(testCase, "GATTACA", removeDelete("GATTACATT", 2, 7));
+	checkStringsAndFree(testCase, "GATTACA", removeDelete("AGATTACA", 1, 0));
+}
+
+void test_polishParams(CuTest *testCase) {
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
+
+	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
+	CuAssertDblEquals(testCase, polishParams->referenceBasePenalty, 0.5, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchor, 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
+	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 5, 0);
+	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 10, 0);
+	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 9000000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
+	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
+
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, a, 0, 0), -0.067512716, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, c, 0, 0), -0.027735314, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, g, 0, 0), -0.037436114, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, t, 0, 0), -0.045324434, 0);
+
+	polishParams_destruct(polishParams);
 }
 
 //char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
@@ -1073,10 +1082,10 @@ static void test_hmm(CuTest *testCase) {
 	fclose(fH);
 }*/
 
-CuSuite* realignmentTestSuite(void) {
+CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign_example1);
@@ -1094,13 +1103,15 @@ CuSuite* realignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);*/
+    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
 
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
+
+    SUITE_ADD_TEST(suite, test_polishParams);
 
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_no_rle);

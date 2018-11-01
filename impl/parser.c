@@ -8,6 +8,80 @@
 #include <util.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
+#include "stPolish.h"
+
+/*
+ * Json parsing helper functions
+ */
+
+/*
+ * Convert json token into a string.
+ */
+char *json_token_tostr(char *js, jsmntok_t *t) {
+    js[t->end] = '\0';
+    return js + t->start;
+}
+
+int64_t json_parseInt(char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+	jsmntok_t tok = tokens[tokenIndex];
+	char *tokStr = json_token_tostr(js, &tok);
+	return atoi(tokStr);
+}
+
+double json_parseFloat(char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+	jsmntok_t tok = tokens[tokenIndex];
+	char *tokStr = json_token_tostr(js, &tok);
+	return atof(tokStr);
+}
+
+int64_t json_parseFloatArray(double *toArray, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+	jsmntok_t subTok = tokens[tokenIndex];
+	for (int j = 0; j < subTok.size; j++) {
+		toArray[j] = json_parseFloat(js, tokens, tokenIndex+j+1);
+	}
+	return tokenIndex+subTok.size;
+}
+
+bool json_parseBool(char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+	jsmntok_t tok = tokens[tokenIndex];
+	char *tokStr = json_token_tostr(js, &tok);
+	assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
+	return strcmp(tokStr, "true") == 0;
+}
+
+int64_t json_getNestedTokenCount(jsmntok_t *tokens, int64_t tokenIndex) {
+	/*
+	 * Gets the number of tokens for the given element and all the nested tokens it contains.
+	 */
+	jsmntok_t tok = tokens[tokenIndex];
+	int64_t nestedTokens = 1;
+	for(int64_t i=0; i<tok.size; i++) {
+		nestedTokens += json_getNestedTokenCount(tokens, tokenIndex + nestedTokens);
+	}
+	return nestedTokens;
+}
+
+size_t json_setupParser(char *buf, size_t r, jsmntok_t **tokens, char **js) {
+	// Initialise for parsing
+	jsmn_parser parser;
+	jsmn_init(&parser);
+
+	// Copy buffer to a mutable array
+	*js = st_malloc(r);
+	strncpy(*js, buf, r);
+
+	// Now tokenize, first calculating the token number
+	int64_t tokenNumber = jsmn_parse(&parser, *js, r, NULL, 0);
+	*tokens = st_calloc(tokenNumber, sizeof(jsmntok_t));
+	jsmn_init(&parser);
+	int64_t i = jsmn_parse(&parser, *js, r, *tokens, tokenNumber);
+
+	if (i == JSMN_ERROR_NOMEM) {
+		st_errAbort("Error when parsing json: not enough tokens allocated. Is the JSON file too big? %d\n", i);
+	}
+
+	return tokenNumber;
+}
 
 /*
  * stBaseMapper constructor
@@ -79,97 +153,70 @@ char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
 }
 
 /*
- * Convert json token into a string.
- */
-char *json_token_tostr(char *js, jsmntok_t *t)
-{
-    js[t->end] = '\0';
-    return js + t->start;
-}
-
-/*
  * Get model parameters from params file.
  * Set hmm parameters.
 */
-stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
 
-    // Variables for parsing
-    int numTokens = 256;
-    jsmn_parser parser;
-    jsmn_init(&parser);
-    jsmntok_t tokens[numTokens];
-    char *js = NULL;
-    size_t jslen = 0;
-    char buf[BUFSIZ * 10]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
-    int r;
+stRPHmmParameters *stRPHmmParameters_construct() {
+	// Params object
+	stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
 
-    // Params object
-    stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
+	// Variables for hmm parameters (initialize & set default values)
+	params->hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
+	params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+	params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
+	params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
 
-    // Variables for hmm parameters (initialize & set default values)
-    params->hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-    params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-    params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
+	// More variables for hmm stuff
+	params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
+	params->maxNotSumTransitions = true;
+	params->minPartitionsInAColumn = 50;
+	params->maxPartitionsInAColumn = 200;
+	params->minPosteriorProbabilityForPartition = 0.001;
+	params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
 
-    // More variables for hmm stuff
-    params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
-    params->maxNotSumTransitions = true;
-    params->minPartitionsInAColumn = 50;
-    params->maxPartitionsInAColumn = 200;
-    params->minPosteriorProbabilityForPartition = 0.001;
-    params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
+	// Hmm training options
+	params->trainingIterations = 0;
+	params->offDiagonalReadErrorPseudoCount = 1;
+	params->onDiagonalReadErrorPseudoCount = 1;
 
-    // Hmm training options
-    params->trainingIterations = 0;
-    params->offDiagonalReadErrorPseudoCount = 1;
-    params->onDiagonalReadErrorPseudoCount = 1;
+	// Read filtering options
+	params->minSecondMostFrequentBaseFilter = 2;
+	params->minSecondMostFrequentBaseLogProbFilter = 0;
+	params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
+	params->filterBadReads = false;
+	params->filterMatchThreshold = 0.90;
+	params->filterLikelyHomozygousSites = false;
+	params->mapqFilter = 0;
 
-    // Read filtering options
-    params->minSecondMostFrequentBaseFilter = 2;
-    params->minSecondMostFrequentBaseLogProbFilter = 0;
-    params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
-    params->filterBadReads = false;
-    params->filterMatchThreshold = 0.90;
-    params->filterLikelyHomozygousSites = false;
-    params->mapqFilter = 0;
+	// Other marginPhase program options
+	params->useReferencePrior = false;
+	params->gapCharactersForDeletions = true;
+	params->estimateReadErrorProbsEmpirically = false;
+	params->roundsOfIterativeRefinement = 0;
+	params->includeInvertedPartitions = true;
+	params->writeGVCF = false;
+	params->writeSplitSams = true;
+	params->writeUnifiedSam = true;
 
-    // Other marginPhase program options
-    params->useReferencePrior = false;
-    params->gapCharactersForDeletions = true;
-    params->estimateReadErrorProbsEmpirically = false;
-    params->roundsOfIterativeRefinement = 0;
-    params->includeInvertedPartitions = true;
-    params->writeGVCF = false;
-    params->writeSplitSams = true;
-    params->writeUnifiedSam = true;
+	return params;
+}
+
+stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *baseMapper) {
+	// Setup parser
+	jsmntok_t *tokens;
+	char *js;
+	int64_t tokenNumber = json_setupParser(buf, r, &tokens, &js);
+
+	stRPHmmParameters *params = stRPHmmParameters_construct();
 
     setVerbosity(params, 0);
 
-    FILE *fp;
-    fp = fopen(paramsFile, "rb");
-    if (fp == NULL) {
-        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
-    }
-    r = fread(buf, 1, sizeof(buf), fp);
-    if (r > 0) {
-        js = realloc(js, jslen + r + 1);
-    }
-    fclose(fp);
-    if (js != NULL) {
-        strncpy(js + jslen, buf, r);
-        jslen = jslen + r;
-        r = jsmn_parse(&parser, js, jslen, tokens, numTokens);
-    }
-
-    if (r == JSMN_ERROR_NOMEM) {
-        st_errAbort("Error when parsing json: not enough tokens allocated. Is the JSON file too big? %d\n", r);
-        return NULL;
-    }
+    //TODO: refactor the following to use the json parsing functions
 
     // Parse tokens, starting at token 1
     // (token 0 is entire object)
-    for (int64_t i = 1; i < r; i++) {
+    for (int64_t i = 1; i < tokenNumber; i++) {
         jsmntok_t key = tokens[i];
         char *keyString = json_token_tostr(js, &key);
 
@@ -393,7 +440,20 @@ stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
     }
 
     free(js);
+    free(tokens);
+
     return params;
+}
+
+stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
+	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	FILE *fh = fopen(paramsFile, "rb");
+	if (fh == NULL) {
+		st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+	}
+	stRPHmmParameters *p =  parseParameters_fromJson(buf, fread(buf, sizeof(char), sizeof(buf), fh), baseMapper);
+	fclose(fh);
+	return p;
 }
 
 /*
@@ -834,5 +894,171 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
     sam_close(in);
 
     return profileCount;
+}
+
+/*
+ * Params object for polisher
+ */
+
+PairwiseAlignmentParameters *pairwiseAlignmentParameters_jsonParse(char *buf, size_t r) {
+	// Setup parser
+	jsmntok_t *tokens;
+	char *js;
+	int64_t tokenNumber = json_setupParser(buf, r, &tokens, &js);
+
+	PairwiseAlignmentParameters *params = pairwiseAlignmentBandingParameters_construct();
+
+	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
+		jsmntok_t key = tokens[tokenIndex];
+		char *keyString = json_token_tostr(js, &key);
+
+		if (strcmp(keyString, "threshold") == 0) {
+			params->threshold = json_parseFloat(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "minDiagsBetweenTraceBack") == 0) {
+			params->minDiagsBetweenTraceBack = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "traceBackDiagonals") == 0) {
+			params->traceBackDiagonals = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "diagonalExpansion") == 0) {
+			params->diagonalExpansion = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "constraintDiagonalTrim") == 0) {
+			params->constraintDiagonalTrim = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "anchorMatrixBiggerThanThis") == 0) {
+			params->anchorMatrixBiggerThanThis = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "repeatMaskMatrixBiggerThanThis") == 0) {
+			params->repeatMaskMatrixBiggerThanThis = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "splitMatrixBiggerThanThis") == 0) {
+			params->splitMatrixBiggerThanThis = json_parseInt(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "alignAmbiguityCharacters") == 0) {
+			params->alignAmbiguityCharacters = json_parseBool(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "gapGamma") == 0) {
+			params->gapGamma = json_parseFloat(js, tokens, ++tokenIndex);
+		}
+		else {
+			st_errAbort("ERROR: Unrecognised key in pairwise alignment parameters json: %s\n", keyString);
+		}
+	}
+
+	// Cleanup
+	free(js);
+	free(tokens);
+
+	return params;
+}
+
+int64_t repeatSubMatrix_parseLogProbabilities(RepeatSubMatrix *repeatSubMatrix, Symbol base, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+	int64_t maxRepeatCount = 51;
+
+	int64_t i = json_parseFloatArray(repeatSubMatrix_setLogProb(repeatSubMatrix, base, 0, 0), js, tokens, tokenIndex);
+	if(i-tokenIndex != maxRepeatCount*maxRepeatCount) {
+		st_errAbort("Error when parsing repeat count array from json: is log prob array incorrectly sized? Got %i tokens, expected %i\n",
+				(int)(i-tokenIndex), (int)maxRepeatCount*maxRepeatCount);
+	}
+	return i;
+}
+
+RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
+	// Setup parser
+	jsmntok_t *tokens;
+	char *js;
+	int64_t tokenNumber = json_setupParser(buf, r, &tokens, &js);
+
+	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty();
+
+	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
+		jsmntok_t key = tokens[tokenIndex];
+		char *keyString = json_token_tostr(js, &key);
+
+		if (strcmp(keyString, "repeatCountLogProbabilities_A") == 0) {
+			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, a, js, tokens, tokenIndex+1);
+		} else if (strcmp(keyString, "repeatCountLogProbabilities_C") == 0) {
+			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, c, js, tokens, tokenIndex+1);
+		} else if (strcmp(keyString, "repeatCountLogProbabilities_G") == 0) {
+			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, g, js, tokens, tokenIndex+1);
+		} else if (strcmp(keyString, "repeatCountLogProbabilities_T") == 0) {
+			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, t, js, tokens, tokenIndex+1);
+		} else {
+			st_errAbort("ERROR: Unrecognised key in repeat sub matrix json: %s\n", keyString);
+		}
+	}
+
+	free(js);
+	free(tokens);
+
+	return repeatSubMatrix;
+}
+
+PolishParams *polishParams_jsonParse(char *buf, size_t r) {
+	// Setup parser
+	jsmntok_t *tokens;
+	char *js;
+	int64_t tokenNumber = json_setupParser(buf, r, &tokens, &js);
+
+	// Make empty params object
+	PolishParams *params = st_calloc(1, sizeof(PolishParams));
+
+	// Parse tokens, starting at token 1
+    // (token 0 is entire object)
+    for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
+        jsmntok_t key = tokens[tokenIndex];
+        char *keyString = json_token_tostr(js, &key);
+
+        if (strcmp(keyString, "useRunLengthEncoding") == 0) {
+        	params->useRunLengthEncoding = json_parseBool(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "referenceBasePenalty") == 0) {
+        	params->referenceBasePenalty = json_parseFloat(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "minPosteriorProbForAlignmentAnchor") == 0) {
+        	params->minPosteriorProbForAlignmentAnchor = json_parseFloat(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "repeatCountSubstitutionMatrix") == 0) {
+        	jsmntok_t tok = tokens[tokenIndex+1];
+        	char *tokStr = json_token_tostr(js, &tok);
+        	params->repeatSubMatrix = repeatSubMatrix_jsonParse(tokStr, strlen(tokStr));
+        	tokenIndex += json_getNestedTokenCount(tokens, tokenIndex+1);
+        }
+        else if (strcmp(keyString, "hmm") == 0) {
+        	jsmntok_t tok = tokens[++tokenIndex];
+        	char *tokStr = json_token_tostr(js, &tok);
+        	params->hmm = hmm_loadFromFile(tokStr);
+        	params->sM = hmm_getStateMachine(params->hmm);
+        }
+        else if (strcmp(keyString, "pairwiseAlignmentParameters") == 0) {
+        	jsmntok_t tok = tokens[tokenIndex+1];
+        	char *tokStr = json_token_tostr(js, &tok);
+        	params->p = pairwiseAlignmentParameters_jsonParse(tokStr, strlen(tokStr));
+        	tokenIndex += json_getNestedTokenCount(tokens, tokenIndex+1);
+        }
+        else {
+            st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
+        }
+    }
+
+    free(js);
+    free(tokens);
+
+    return params;
+}
+
+PolishParams *polishParams_readParams(FILE *fp) {
+	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	return polishParams_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
+}
+
+void polishParams_destruct(PolishParams *params) {
+	repeatSubMatrix_destruct(params->repeatSubMatrix);
+	stateMachine_destruct(params->sM);
+	hmm_destruct(params->hmm);
+	pairwiseAlignmentBandingParameters_destruct(params->p);
+	free(params);
 }
 
