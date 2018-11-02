@@ -12,6 +12,11 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 
 #    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 #endif()
 
+
+###############################
+##### HEADERS AND SOURCES #####
+###############################
+
 set(HTSLIB_HEADERS
         externalTools/htslib
         externalTools/htslib/htslib
@@ -255,7 +260,14 @@ set(SOURCE_FILES
         impl/vcfTools.c
         )
 
-# Dependencies for htslib
+###############################
+########## LIBRARIES ##########
+###############################
+
+# so we can generate margin.so
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Dependencies
 find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'z' library")
@@ -276,6 +288,7 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 
+# HTSLIB
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
@@ -285,30 +298,40 @@ add_custom_command(
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
-
-add_library(son ${SONLIB_SOURCES})
-add_library(lastz ${LASTZ_SOURCES})
-add_library(cpecan ${CPECAN_SOURCES})
-add_dependencies(cpecan lastz)
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
-add_library(jsmn externalTools/jsmn/jsmn.c)
-
-target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
-
 target_link_libraries(hts pthread bz2 z curl)
 
-add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
-target_link_libraries(marginPhase cpecan son hts jsmn)
+# LASTZ
+add_library(lastz ${LASTZ_SOURCES})
+target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
+
+# MISC
+add_library(son ${SONLIB_SOURCES})
+add_library(jsmn externalTools/jsmn/jsmn.c)
+add_library(cpecan ${CPECAN_SOURCES})
+add_dependencies(cpecan lastz)
+
+# Build MarginPhatever Library
+add_library(margin SHARED ${SOURCE_FILES})
+target_link_libraries(margin cpecan son hts jsmn)
+
+
+###############################
+######### EXECUTABLES #########
+###############################
+
+add_executable(marginPhase marginPhase.c )
+target_link_libraries(marginPhase margin)
 
 #TODO uncomment after compilation errors are fixed
-add_executable(marginPolish marginPolish.c ${SOURCE_FILES})
-target_link_libraries(marginPolish cpecan son hts jsmn)
+add_executable(marginPolish marginPolish.c )
+target_link_libraries(marginPolish margin)
 
-add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare cpecan son hts jsmn)
+add_executable(vcfCompare vcfCompare.c )
+target_link_libraries(vcfCompare margin)
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c ${SOURCE_FILES})
-target_link_libraries(allTests cpecan hts cpecan son jsmn)
+add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c )
+target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)
