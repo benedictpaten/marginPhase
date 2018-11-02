@@ -160,9 +160,9 @@ int main(int argc, char *argv[]) {
 				RleString *rleRead = rleString_construct(read);
 				stList_append(rleStrings, rleRead);
 				stList_append(l, rleRead->rleString);
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j, read)));
+				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), read));
 			}
-			char *rleReference = rleString_construct(referenceString);
+            RleString *rleReference = rleString_construct(referenceString);
 
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
@@ -209,7 +209,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Output the finished sequence
-		fastaWrite(bamChunk->refSeqName, consensusReferenceString, referenceOutFile);
+		fastaWrite(bamChunk->refSeqName, consensusReferenceString, referenceOutFh);
 
 		//TODO Write bam reads
 

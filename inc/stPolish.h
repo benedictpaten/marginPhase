@@ -246,7 +246,7 @@ typedef struct _bamChunker {
 } BamChunker;
 
 typedef struct _bamChunk {
-	
+	char *refSeqName;
 } BamChunk;
 
 BamChunker *bamChunker_construct(char *bamFile);
@@ -254,5 +254,7 @@ BamChunker *bamChunker_construct(char *bamFile);
 void bamChunker_destruct(BamChunker *bamChunker);
 
 BamChunk *bamChunker_getNext(BamChunker *bamChunker);
+
+void bamChunk_destruct(BamChunk *bamChunk);
 
 #endif /* REALIGNER_H_ */

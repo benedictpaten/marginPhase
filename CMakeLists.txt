@@ -245,13 +245,13 @@ set(SOURCE_FILES
         impl/genomeFragment.c
         impl/hmm.c
         impl/mergeColumn.c
+        impl/outputWriter.c
+        impl/parser.c
         impl/partitions.c
+        impl/polisher.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
-        impl/parser.c
-        impl/outputWriter.c
         impl/vcfTools.c
-        impl/polisher.c
         )
 
 # Dependencies for htslib
@@ -275,16 +275,6 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 
-#find_library(LZMALIB lzma)
-#if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
-#    message(FATAL_ERROR "Couldn't find the 'lzma' library")
-#endif()
-
-#find_library(CRYPTOLIB crypto)
-#if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
-#    message(FATAL_ERROR "Couldn't find the 'crypto' library")
-#endif()
-
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
@@ -305,11 +295,14 @@ add_library(jsmn externalTools/jsmn/jsmn.c)
 
 target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
-#target_link_libraries(hts pthread crypto bz2 lzma z curl)
 target_link_libraries(hts pthread bz2 z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase cpecan son hts jsmn)
+
+#TODO uncomment after compilation errors are fixed 
+#add_executable(marginPolish marginPolish.c ${SOURCE_FILES})
+#target_link_libraries(marginPolish cpecan son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare cpecan son hts jsmn)
