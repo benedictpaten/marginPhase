@@ -1054,6 +1054,11 @@ PolishParams *polishParams_readParams(FILE *fp) {
 	return polishParams_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
 }
 
+void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
+    //TODO
+    st_errAbort("Need to implement polishParams_printParameters");
+}
+
 void polishParams_destruct(PolishParams *params) {
 	repeatSubMatrix_destruct(params->repeatSubMatrix);
 	stateMachine_destruct(params->sM);

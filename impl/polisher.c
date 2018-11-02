@@ -1182,3 +1182,14 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	return mlRepeatLength;
 }
 
+
+void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
+	//TODO
+    st_errAbort("Need to implement convertToReadsAndAlignments");
+}
+
+void *runLengthEncodeAlignment(void *alignment, char *read) {
+	//TODO
+    st_errAbort("Need to implement runLengthEncodeAlignment");
+	return NULL;
+}

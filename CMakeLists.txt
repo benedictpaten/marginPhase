@@ -239,6 +239,7 @@ set(CPECAN_SOURCES
         )
 
 set(SOURCE_FILES
+        impl/chunker.c
         impl/column.c
         impl/coordination.c
         impl/emissions.c
@@ -300,9 +301,9 @@ target_link_libraries(hts pthread bz2 z curl)
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
 target_link_libraries(marginPhase cpecan son hts jsmn)
 
-#TODO uncomment after compilation errors are fixed 
-#add_executable(marginPolish marginPolish.c ${SOURCE_FILES})
-#target_link_libraries(marginPolish cpecan son hts jsmn)
+#TODO uncomment after compilation errors are fixed
+add_executable(marginPolish marginPolish.c ${SOURCE_FILES})
+target_link_libraries(marginPolish cpecan son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
 target_link_libraries(vcfCompare cpecan son hts jsmn)
