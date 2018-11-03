@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
     char *bamInFile = NULL;
     char *paramsFile = NULL;
     char *referenceFastaFile = NULL;
-    char *outputBase = "output";
+    char *outputBase = stString_copy("output");
     int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
@@ -83,6 +83,7 @@ int main(int argc, char *argv[]) {
             usage();
             return 0;
         case 'o':
+            free(outputBase);
             outputBase = stString_copy(optarg);
             break;
         case 'v':
@@ -128,8 +129,8 @@ int main(int argc, char *argv[]) {
     BamChunker *bamChunker = bamChunker_construct(bamInFile);
 
     // For each chunk of the BAM
-    BamChunk *bamChunk;
-    while((bamChunk = bamChunker_getNext(bamChunk)) != NULL) {
+    BamChunk *bamChunk = NULL;
+    while((bamChunk = bamChunker_getNext(bamChunker)) != NULL) {
     	// Get reference string for chunk of alignment
     	char *referenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
 

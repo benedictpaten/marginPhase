@@ -764,45 +764,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
         }
 
         int64_t start_read = 0;
-        int64_t end_read = 0;
-        int64_t start_ref = pos;
-        int64_t cig_idx = 0;
-
-        // Find the correct starting locations on the read and reference sequence,
-        // to deal with things like inserts / deletions / soft clipping
-        while (cig_idx < aln->core.n_cigar) {
-            int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-            int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
-
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                break;
-            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                start_ref += cigarNum;
-                cig_idx++;
-            } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
-                start_read += cigarNum;
-                cig_idx++;
-            } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                cig_idx++;
-            } else {
-                st_errAbort("Unidentifiable cigar operation\n");
-            }
-        }
-
-        // Check for soft clipping at the end
-        if (aln->core.n_cigar > 1) {
-            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
-            if (lastCigarOp == BAM_CSOFT_CLIP) {
-                end_read += lastCigarNum;
-            }
-        }
-
-        // Count number of insertions & deletions in sequence
-        int64_t numInsertions = 0;
-        int64_t numDeletions = 0;
-        countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+        int64_t trueLength = getAlignedReadLength(aln, &start_read);
 
         if (trueLength <= 0) {
             filteredReads++;
@@ -813,7 +775,7 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
         pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
 
         // Variables to keep track of position in sequence / cigar operations
-        cig_idx = 0;
+        int64_t cig_idx = 0;
         int64_t currPosInOp = 0;
         int64_t cigarOp = -1;
         int64_t cigarNum = -1;
@@ -894,6 +856,60 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
     sam_close(in);
 
     return profileCount;
+}
+
+int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
+    // start read needs to be init'd to 0
+    if (*start_read != 0) {
+        st_errAbort("getAlignedReadLength invoked with improper start_read parameter");
+    }
+
+    // get relevant cigar info
+    int64_t len = aln->core.l_qseq;
+    uint32_t *cigar = bam_get_cigar(aln);
+
+    // data for tracking
+    int64_t start_ref = 0;
+    int64_t end_read = 0;
+    int64_t cig_idx = 0;
+
+    // Find the correct starting locations on the read and reference sequence,
+    // to deal with things like inserts / deletions / soft clipping
+    while (cig_idx < aln->core.n_cigar) {
+        int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+        int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+
+        if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+            break;
+        } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            start_ref += cigarNum;
+            cig_idx++;
+        } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+            if (start_read != NULL) *start_read += cigarNum;
+            cig_idx++;
+        } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+            cig_idx++;
+        } else {
+            st_errAbort("Unidentifiable cigar operation\n");
+        }
+    }
+
+    // Check for soft clipping at the end
+    if (aln->core.n_cigar > 1) {
+        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
+        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+        if (lastCigarOp == BAM_CSOFT_CLIP) {
+            end_read += lastCigarNum;
+        }
+    }
+
+    // Count number of insertions & deletions in sequence
+    int64_t numInsertions = 0;
+    int64_t numDeletions = 0;
+    countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
+    int64_t trueLength = len - *start_read - end_read + numDeletions - numInsertions;
+
+    return trueLength;
 }
 
 /*
