@@ -6,6 +6,8 @@
 
 #include "stPolish.h"
 #include <time.h>
+#include <htslib/sam.h>
+#include <stRPHmm.h>
 
 PoaBaseObservation *poaBaseObservation_construct(int64_t readNo, int64_t offset, double weight) {
 	PoaBaseObservation *poaBaseObservation = st_calloc(1, sizeof(PoaBaseObservation));
@@ -1182,3 +1184,114 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	return mlRepeatLength;
 }
 
+
+void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
+	//TODO
+    st_errAbort("Need to implement convertToReadsAndAlignments");
+
+	/*
+	 * This is copied from parser.c
+	 *
+	 * It should give an example of how to get reads which correspond to a chunk (inefficiently) but should
+	 * be workable.
+	 *
+	 * This is untested, but the basic idea is here.
+	 */
+
+	// prep
+	int64_t chunkStart = bamChunk->chunkMarginStart;
+	int64_t chunkEnd = bamChunk->chunkMarginEnd;
+	char *bamFile = bamChunk->parent->bamFile;
+	char *contig = bamChunk->refSeqName;
+
+	// get header, init align object
+	samFile *in = hts_open(bamFile, "r");
+	if (in == NULL) {
+		st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+		return;
+	}
+	bam_hdr_t *bamHdr = sam_hdr_read(in);
+	bam1_t *aln = bam_init1();
+
+	// read in align
+	while(sam_read1(in,bamHdr,aln) > 0) {
+
+		//data
+		char *chr = bamHdr->target_name[aln->core.tid];
+		int64_t start_read = 0;
+		int64_t alnReadLength = getAlignedReadLength(aln, &start_read);
+		if (alnReadLength <= 0) {
+			continue;
+		}
+		int64_t alnStartPos = aln->core.pos + 1;
+		int64_t alnEndPos = alnStartPos + alnReadLength;
+
+		// does this belong in our chunk
+		if (stString_eq(contig, chr)) continue;
+		if (alnStartPos > chunkEnd) continue;
+		if (alnEndPos < chunkStart) continue;
+
+		uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
+		char *readName = bam_get_qname(aln);
+		uint32_t *cigar = bam_get_cigar(aln);
+
+		// other filtering (no read length, no cigar)
+		if (aln->core.l_qseq <= 0) {
+			continue;
+		}
+		if (aln->core.n_cigar == 0) {
+			continue;
+		}
+
+		// Variables to keep track of position in sequence / cigar operations
+		int64_t cig_idx = 0;
+		int64_t currPosInOp = 0;
+		int64_t cigarOp = -1;
+		int64_t cigarNum = -1;
+		int64_t idxInSeq = start_read;
+
+		// iterate over cigar operations
+		for (uint32_t i = 0; i < alnReadLength; i++) {
+
+			if (currPosInOp == 0) {
+				cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+				cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+			}
+			if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+				char b = seq_nt16_str[bam_seqi(seq, idxInSeq)];
+				//TODO match
+				idxInSeq++;
+			} else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+				//TODO delete (no character in read here)
+			} else if (cigarOp == BAM_CINS) {
+				//TODO insert (the below code )
+				idxInSeq++;
+				i--;
+			} else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+				// Nothing really to do here. skip to next cigar operation
+				currPosInOp = cigarNum - 1;
+				i--;
+			} else {
+				st_logCritical("Unidentifiable cigar operation\n");
+			}
+
+			currPosInOp++;
+			if (currPosInOp == cigarNum) {
+				cig_idx++;
+				currPosInOp = 0;
+			}
+		}
+	}
+
+	// close it all down
+	bam_hdr_destroy(bamHdr);
+	bam_destroy1(aln);
+	sam_close(in);
+
+}
+
+void *runLengthEncodeAlignment(void *alignment, char *read) {
+	//TODO
+    st_errAbort("Need to implement runLengthEncodeAlignment");
+	return NULL;
+}

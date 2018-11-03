@@ -522,6 +522,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
                                             stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
 
+int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read);
+
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 
 // Verbosity for what's printed.  To add more verbose options, you need to update:

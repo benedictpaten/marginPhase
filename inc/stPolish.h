@@ -237,16 +237,28 @@ char *addInsert(char *string, char *insertString, int64_t editStart);
  */
 char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
 
+
 /*
  * Functions for processing BAMs
  */
  
 typedef struct _bamChunker {
 	char *bamFile;
+    uint64_t chunkSize;
+    uint64_t chunkMargin;
+    stList *chunks;
+    uint64_t chunkCount;
+    int64_t itorIdx;
 } BamChunker;
 
 typedef struct _bamChunk {
-	char *refSeqName;
+	char *refSeqName;           // name of contig
+    int64_t chunkMarginStart;  // the first 'position' where we have an aligned read
+    int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
+                                //  should be used to initialize the probabilities at chunkStart
+    int64_t chunkEnd;          // same for chunk end
+    int64_t chunkMarginEnd;    // no reads should start after this position
+    BamChunker *parent;         // reference to parent (may not be needed)
 } BamChunk;
 
 BamChunker *bamChunker_construct(char *bamFile);
@@ -255,6 +267,26 @@ void bamChunker_destruct(BamChunker *bamChunker);
 
 BamChunk *bamChunker_getNext(BamChunker *bamChunker);
 
+BamChunk *bamChunk_construct();
+BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkMarginStart, int64_t chunkStart, int64_t chunkEnd,
+                              int64_t chunkMarginEnd, BamChunker *parent);
+
 void bamChunk_destruct(BamChunk *bamChunk);
+
+/*
+ * Converts chunk of aligned reads into list of reads and alignments.
+ */
+void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
+
+/*
+ * TODO define what this is; tpesout doesn't know what the signature is.. I don't see the alignment struct defined
+ */
+void *runLengthEncodeAlignment(void *alignment, char *read);
+//void *runLengthEncodeAlignment(void *alignment, RleString *read);
+
+
+
+
+
 
 #endif /* REALIGNER_H_ */
