@@ -35,7 +35,6 @@ include_directories(inc)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(${CPECAN_HEADERS})
-include_directories(externalTools/jsmn)
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -144,6 +143,8 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/impl/stSafeC.c
         externalTools/sonLib/C/impl/stThreadPool.c
         externalTools/sonLib/C/impl/stUnionFind.c
+        externalTools/sonLib/C/impl/stJson.c
+        externalTools/sonLib/C/impl/jsmn.c
         externalTools/sonLib/C/tests/allTests.c
         externalTools/sonLib/C/tests/cigarsTest.c
         externalTools/sonLib/C/tests/fastaCTest.c
@@ -291,23 +292,22 @@ add_library(cpecan ${CPECAN_SOURCES})
 add_dependencies(cpecan lastz)
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
-add_library(jsmn externalTools/jsmn/jsmn.c)
 
 target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
 target_link_libraries(hts pthread bz2 z curl)
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
-target_link_libraries(marginPhase cpecan son hts jsmn)
+target_link_libraries(marginPhase cpecan son hts)
 
 #TODO uncomment after compilation errors are fixed 
 #add_executable(marginPolish marginPolish.c ${SOURCE_FILES})
 #target_link_libraries(marginPolish cpecan son hts jsmn)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare cpecan son hts jsmn)
+target_link_libraries(vcfCompare cpecan son hts)
 
 enable_testing()
 add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c ${SOURCE_FILES})
-target_link_libraries(allTests cpecan hts cpecan son jsmn)
+target_link_libraries(allTests cpecan hts cpecan son)
 add_test(stRPHmm allTests)
