@@ -195,85 +195,43 @@ stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *b
             i += readErrTok.size + 1;
         }
         else if (strcmp(keyString, "maxNotSumTransitions") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->maxNotSumTransitions = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->maxNotSumTransitions = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minPartitionsInAColumn") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->minPartitionsInAColumn = atoi(tokStr);
-            i++;
+        	params->minPartitionsInAColumn = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "maxPartitionsInAColumn") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->maxPartitionsInAColumn = atoi(tokStr);
-            i++;
+        	params->maxPartitionsInAColumn = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minPosteriorProbabilityForPartition") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->minPosteriorProbabilityForPartition = atof(tokStr);
-            i++;
+        	params->minPosteriorProbabilityForPartition = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "maxCoverageDepth") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->maxCoverageDepth = atoi(tokStr);
-            i++;
+        	params->maxCoverageDepth = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = atoi(tokStr);
-            i++;
+        	params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "onDiagonalReadErrorPseudoCount") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->onDiagonalReadErrorPseudoCount = atof(tokStr);
-            i++;
+        	params->onDiagonalReadErrorPseudoCount = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "offDiagonalReadErrorPseudoCount") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->offDiagonalReadErrorPseudoCount = atof(tokStr);
-            i++;
+        	params->offDiagonalReadErrorPseudoCount = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "trainingIterations") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->trainingIterations = atoi(tokStr);
-            i++;
+        	params->trainingIterations = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "filterBadReads") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            if (strcmp(tokStr, "true") == 0) params->filterBadReads = true;
-            i++;
+        	params->filterBadReads = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "filterMatchThreshold") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->filterMatchThreshold = atof(tokStr);
-            i++;
+        	params->filterMatchThreshold = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "useReferencePrior") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->useReferencePrior = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->useReferencePrior = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "includeInvertedPartitions") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->includeInvertedPartitions = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->includeInvertedPartitions = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "verbose") == 0) {
             jsmntok_t tok = tokens[i+1];
@@ -283,30 +241,16 @@ stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *b
             i++;
         }
         else if(strcmp(keyString, "filterLikelyHomozygousSites") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->filterLikelyHomozygousSites = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->filterLikelyHomozygousSites = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minSecondMostFrequentBaseFilter") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->minSecondMostFrequentBaseFilter = atof(tokStr);
-            i++;
+        	params->minSecondMostFrequentBaseFilter = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minSecondMostFrequentBaseLogProbFilter") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->minSecondMostFrequentBaseLogProbFilter = atof(tokStr);
-            i++;
+        	params->minSecondMostFrequentBaseLogProbFilter = stJson_parseFloat(js, tokens, ++i);
         }
         else if (strcmp(keyString, "gapCharactersForDeletions") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->gapCharactersForDeletions = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->gapCharactersForDeletions = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "filterAReadWithAnyOneOfTheseSamFlagsSet") == 0) {
             jsmntok_t tok = tokens[i+1];
@@ -319,53 +263,31 @@ stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *b
             i++;
         }
         else if (strcmp(keyString, "estimateReadErrorProbsEmpirically") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->estimateReadErrorProbsEmpirically = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->estimateReadErrorProbsEmpirically = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "roundsOfIterativeRefinement") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->roundsOfIterativeRefinement = atoi(tokStr);
-            i++;
+        	params->roundsOfIterativeRefinement = stJson_parseInt(js, tokens, ++i);
         }
         else if (strcmp(keyString, "compareVCFs") == 0) {
             //removed, but legacy params may still contain this
             i++;
         }
         else if (strcmp(keyString, "writeGVCF") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->writeGVCF = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->writeGVCF = stJson_parseBool(js, tokens, ++i);
         } else if (strcmp(keyString, "writeSplitSams") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->writeSplitSams = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->writeSplitSams = stJson_parseBool(js, tokens, ++i);
         }else if (strcmp(keyString, "writeUnifiedSam") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            assert(strcmp(tokStr, "true") || strcmp(tokStr, "false"));
-            params->writeUnifiedSam = strcmp(tokStr, "true") == 0;
-            i++;
+        	params->writeUnifiedSam = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "mapqFilter") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            params->mapqFilter = atoi(tokStr);
-            i++;
+        	params->mapqFilter = stJson_parseInt(js, tokens, ++i);
         }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
         }
-
     }
 
+    // Cleanup
     free(js);
     free(tokens);
 
@@ -883,6 +805,7 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 		st_errAbort("ERROR: Did not find all the probabilities in the repeat count json\n");
 	}
 
+	// Cleanup
 	free(js);
 	free(tokens);
 
@@ -956,6 +879,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     	st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
     }
 
+    // Cleanup
     free(js);
     free(tokens);
 

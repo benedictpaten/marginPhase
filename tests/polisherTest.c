@@ -234,9 +234,9 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	PolishParams *polishParams = polishParams_readParams(fh);
 	fclose(fh);
 	
-	polishParams->p->diagonalExpansion = 20;
-	
-	
+	// This test used the default state machine in cPecan
+	stateMachine_destruct(polishParams->sM);
+	polishParams->sM = stateMachine3_construct(threeState);
 
 	/*
 	// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
@@ -262,7 +262,6 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	}*/
 
 	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
-
 	// Check we get the set of inserts and deletes we expect
 
 	// . = match
