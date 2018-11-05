@@ -1038,11 +1038,11 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *pol
 RleString *rleString_construct(char *str) {
 	RleString *rleString = st_calloc(1, sizeof(RleString));
 
-	int64_t strLength = strlen(str);
+	rleString->nonRleLength = strlen(str);
 
 	// Calc length of rle'd str
-	for(int64_t i=0; i<strLength; i++) {
-		if(i+1 == strLength || str[i] != str[i+1]) {
+	for(int64_t i=0; i<rleString->nonRleLength; i++) {
+		if(i+1 == rleString->nonRleLength || str[i] != str[i+1]) {
 			rleString->length++;
 		}
 	}
@@ -1050,13 +1050,17 @@ RleString *rleString_construct(char *str) {
 	// Allocate
 	rleString->rleString = st_calloc(rleString->length+1, sizeof(char));
 	rleString->repeatCounts = st_calloc(rleString->length, sizeof(int64_t));
+	rleString->rleToNonRleCoordinateMap = st_calloc(rleString->length, sizeof(int64_t));
+	rleString->nonRleToRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
 
 	// Fill out
 	int64_t j=0, k=1;
-	for(int64_t i=0; i<strLength; i++) {
-		if(i+1 == strLength || str[i] != str[i+1]) {
+	for(int64_t i=0; i<rleString->nonRleLength; i++) {
+		rleString->nonRleToRleCoordinateMap[i] = j;
+		if(i+1 == rleString->nonRleLength || str[i] != str[i+1]) {
 			rleString->rleString[j] = str[i];
-			rleString->repeatCounts[j++] = k;
+			rleString->repeatCounts[j] = k;
+			rleString->rleToNonRleCoordinateMap[j++] = i - k + 1;
 			k=1;
 		}
 		else {
@@ -1071,6 +1075,8 @@ RleString *rleString_construct(char *str) {
 void rleString_destruct(RleString *rleString) {
 	free(rleString->rleString);
 	free(rleString->repeatCounts);
+	free(rleString->rleToNonRleCoordinateMap);
+	free(rleString->nonRleToRleCoordinateMap);
 	free(rleString);
 }
 
@@ -1110,6 +1116,26 @@ char *expandRLEConsensus(Poa *poa, stList *rleReads, RepeatSubMatrix *repeatSubM
 	char *consensusString = stString_join2("", consensus);
 	stList_destruct(consensus);
 	return consensusString;
+}
+
+stList *runLengthEncodeAlignment(stList *alignment,
+							     RleString *seqX, RleString *seqY) {
+	stList *rleAlignment = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
+
+	int64_t x=-1, y=-1;
+	for(int64_t i=0; i<stList_length(alignment); i++) {
+		stIntTuple *alignedPair = stList_get(alignment, i);
+
+		int64_t x2 = seqX->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 0)];
+		int64_t y2 = seqY->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 1)];
+
+		if(x2 > x && y2 > y) {
+			stList_append(rleAlignment, stIntTuple_construct2(x2, y2));
+			x = x2; y = y2;
+		}
+	}
+
+	return rleAlignment;
 }
 
 /*
@@ -1183,7 +1209,6 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	*logProbability = mlLogProb;
 	return mlRepeatLength;
 }
-
 
 void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
 	//TODO
@@ -1288,10 +1313,4 @@ void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alig
 	bam_destroy1(aln);
 	sam_close(in);
 
-}
-
-void *runLengthEncodeAlignment(void *alignment, char *read) {
-	//TODO
-    st_errAbort("Need to implement runLengthEncodeAlignment");
-	return NULL;
 }

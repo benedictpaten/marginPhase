@@ -173,7 +173,12 @@ double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa);
 typedef struct _rleString {
 	char *rleString; //Run-length-encoded (RLE) string
 	int64_t *repeatCounts; // Count of repeat for each position in rleString
-	int64_t length; // Length of the rleSrring
+	int64_t *rleToNonRleCoordinateMap; // For each position in the RLE string the corresponding, left-most position
+	// in the expanded non-RLE string
+	int64_t *nonRleToRleCoordinateMap; // For each position in the expanded non-RLE string the corresponding the position
+	// in the RLE string
+	int64_t length; // Length of the rleString
+	int64_t nonRleLength; // Length of the expanded non-rle string
 } RleString;
 
 RleString *rleString_construct(char *string);
@@ -228,6 +233,12 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 char *expandRLEConsensus(Poa *poa, stList *rlReads, RepeatSubMatrix *repeatSubMatrix);
 
 /*
+ * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing 
+ * in both underlying sequences (seqX and seqY) into an equivalent run-length encoded space alignment.
+ */
+stList *runLengthEncodeAlignment(stList *alignment, RleString *seqX, RleString *seqY);
+
+/*
  * Make edited string with given insert. Edit start is the index of the position to insert the string.
  */
 char *addInsert(char *string, char *insertString, int64_t editStart);
@@ -241,6 +252,8 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
 /*
  * Functions for processing BAMs
  */
+ 
+// TODO: MOVE BAMCHUNKER TO PARSER .c
  
 typedef struct _bamChunker {
 	char *bamFile;
@@ -277,16 +290,5 @@ void bamChunk_destruct(BamChunk *bamChunk);
  * Converts chunk of aligned reads into list of reads and alignments.
  */
 void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
-
-/*
- * TODO define what this is; tpesout doesn't know what the signature is.. I don't see the alignment struct defined
- */
-void *runLengthEncodeAlignment(void *alignment, char *read);
-//void *runLengthEncodeAlignment(void *alignment, RleString *read);
-
-
-
-
-
 
 #endif /* REALIGNER_H_ */
