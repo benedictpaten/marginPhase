@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O0 --pedantic -g -fno-inline")
 
 #include(FindOpenMP)
 #if(OPENMP_FOUND)
@@ -11,11 +11,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 #    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 #endif()
-
-
-###############################
-##### HEADERS AND SOURCES #####
-###############################
 
 set(HTSLIB_HEADERS
         externalTools/htslib
@@ -244,30 +239,23 @@ set(CPECAN_SOURCES
         )
 
 set(SOURCE_FILES
-        impl/chunker.c
         impl/column.c
         impl/coordination.c
         impl/emissions.c
         impl/genomeFragment.c
         impl/hmm.c
         impl/mergeColumn.c
-        impl/outputWriter.c
-        impl/parser.c
         impl/partitions.c
-        impl/polisher.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
+        impl/parser.c
+        impl/outputWriter.c
         impl/vcfTools.c
+        impl/polisher.c
+        impl/callConsensus.c
         )
 
-###############################
-########## LIBRARIES ##########
-###############################
-
-# so we can generate margin.so
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# Dependencies
+# Dependencies for htslib
 find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'z' library")
@@ -288,7 +276,16 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 
-# HTSLIB
+#find_library(LZMALIB lzma)
+#if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
+#    message(FATAL_ERROR "Couldn't find the 'lzma' library")
+#endif()
+
+#find_library(CRYPTOLIB crypto)
+#if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
+#    message(FATAL_ERROR "Couldn't find the 'crypto' library")
+#endif()
+
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
@@ -298,40 +295,30 @@ add_custom_command(
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
-add_library(hts ${HTSLIB_SOURCES})
-add_dependencies(hts HTSLIB_CONFIGURED)
-target_link_libraries(hts pthread bz2 z curl)
 
-# LASTZ
-add_library(lastz ${LASTZ_SOURCES})
-target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
-
-# MISC
 add_library(son ${SONLIB_SOURCES})
-add_library(jsmn externalTools/jsmn/jsmn.c)
+add_library(lastz ${LASTZ_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
 add_dependencies(cpecan lastz)
+add_library(hts ${HTSLIB_SOURCES})
+add_dependencies(hts HTSLIB_CONFIGURED)
+add_library(jsmn externalTools/jsmn/jsmn.c)
 
-# Build MarginPhatever Library
-add_library(margin SHARED ${SOURCE_FILES})
-target_link_libraries(margin cpecan son hts jsmn)
+target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
+#target_link_libraries(hts pthread crypto bz2 lzma z curl)
+target_link_libraries(hts pthread bz2 z curl)
 
-###############################
-######### EXECUTABLES #########
-###############################
+add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
+target_link_libraries(marginPhase cpecan son hts jsmn)
 
-add_executable(marginPhase marginPhase.c )
-target_link_libraries(marginPhase margin)
-
-#TODO uncomment after compilation errors are fixed
-add_executable(marginPolish marginPolish.c )
-target_link_libraries(marginPolish margin)
-
-add_executable(vcfCompare vcfCompare.c )
-target_link_libraries(vcfCompare margin)
+add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
+target_link_libraries(vcfCompare cpecan son hts jsmn)
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c )
-target_link_libraries(allTests margin)
+add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c ${SOURCE_FILES})
+target_link_libraries(allTests cpecan hts cpecan son jsmn)
 add_test(stRPHmm allTests)
+
+add_executable(simpleConsensusTest tests/simpleConsensusTest.c ${SOURCE_FILES})
+target_link_libraries(simpleConsensusTest cpecan hts cpecan son jsmn)
