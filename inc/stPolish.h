@@ -252,13 +252,13 @@ typedef struct _bamChunker {
 } BamChunker;
 
 typedef struct _bamChunk {
-	char *refSeqName;           // name of contig
+	char *refSeqName;          // name of contig
     int64_t chunkMarginStart;  // the first 'position' where we have an aligned read
     int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
-                                //  should be used to initialize the probabilities at chunkStart
+                               //  should be used to initialize the probabilities at chunkStart
     int64_t chunkEnd;          // same for chunk end
     int64_t chunkMarginEnd;    // no reads should start after this position
-    BamChunker *parent;         // reference to parent (may not be needed)
+    BamChunker *parent;        // reference to parent (may not be needed)
 } BamChunk;
 
 BamChunker *bamChunker_construct(char *bamFile);

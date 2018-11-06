@@ -55,8 +55,7 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     while(sam_read1(in,bamHdr,aln) > 0) {
 
         // get aligned read length (and sanity check)
-        int64_t unused = 0;
-        int64_t readLength = getAlignedReadLength(aln, &unused);
+        int64_t readLength = getAlignedReadLength(aln);
         if (readLength <= 0) {
             continue;
         }

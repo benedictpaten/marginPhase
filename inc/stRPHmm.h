@@ -522,7 +522,8 @@ int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMa
 int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
                                             stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
 
-int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read);
+int64_t getAlignedReadLength(bam1_t *aln);
+int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip);
 
 void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 

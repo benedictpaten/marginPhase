@@ -1184,19 +1184,10 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	return mlRepeatLength;
 }
 
-
+#define ALN_DEBUG FALSE
 void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
-	//TODO
-    st_errAbort("Need to implement convertToReadsAndAlignments");
-
-	/*
-	 * This is copied from parser.c
-	 *
-	 * It should give an example of how to get reads which correspond to a chunk (inefficiently) but should
-	 * be workable.
-	 *
-	 * This is untested, but the basic idea is here.
-	 */
+	// TODO configuration
+	bool includeSoftClip = FALSE;
 
 	// prep
 	int64_t chunkStart = bamChunk->chunkMarginStart;
@@ -1218,69 +1209,105 @@ void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alig
 
 		//data
 		char *chr = bamHdr->target_name[aln->core.tid];
-		int64_t start_read = 0;
-		int64_t alnReadLength = getAlignedReadLength(aln, &start_read);
+		int64_t start_softclip = 0;
+		int64_t end_softclip = 0;
+		int64_t alnReadLength = getAlignedReadLength2(aln, &start_softclip, &end_softclip);
 		if (alnReadLength <= 0) {
 			continue;
 		}
 		int64_t alnStartPos = aln->core.pos + 1;
 		int64_t alnEndPos = alnStartPos + alnReadLength;
 
-		// does this belong in our chunk
-		if (stString_eq(contig, chr)) continue;
+		// does this belong in our chunk?
+		if (!stString_eq(contig, chr)) continue;
 		if (alnStartPos > chunkEnd) continue;
 		if (alnEndPos < chunkStart) continue;
+		// other filtering (no read length, no cigar)
+		if (aln->core.l_qseq <= 0) continue;
+		if (aln->core.n_cigar == 0) continue;
 
-		uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
-		char *readName = bam_get_qname(aln);
+		// get sequence positions
+		int64_t seqLen = aln->core.l_qseq;
+		int64_t readPos = 0;
+		int64_t endPos = seqLen;
+		if (!includeSoftClip) {
+			seqLen = aln->core.l_qseq - start_softclip - end_softclip;
+			readPos = start_softclip;
+			endPos = start_softclip + seqLen;
+		}
+
+		// get sequence
+		char *seq = malloc((seqLen + 1) * sizeof(char));
+		uint8_t *seqBits = bam_get_seq(aln);
+		for (int64_t i = 0; readPos < endPos; readPos++) {
+			seq[i] = seq_nt16_str[bam_seqi(seqBits, readPos)];
+			i++;
+		}
+		seq[seqLen] = '\0';
+
+		// get cigar
 		uint32_t *cigar = bam_get_cigar(aln);
 
-		// other filtering (no read length, no cigar)
-		if (aln->core.l_qseq <= 0) {
-			continue;
-		}
-		if (aln->core.n_cigar == 0) {
-			continue;
-		}
+		// cigar representation
+		stList *cigRepr = stList_construct();
 
 		// Variables to keep track of position in sequence / cigar operations
 		int64_t cig_idx = 0;
 		int64_t currPosInOp = 0;
 		int64_t cigarOp = -1;
 		int64_t cigarNum = -1;
-		int64_t idxInSeq = start_read;
+		int64_t idxInSeq = start_softclip;
+		int64_t idxInRef = alnStartPos;
 
 		// iterate over cigar operations
 		for (uint32_t i = 0; i < alnReadLength; i++) {
 
+			// do we need the next cigar operation?
 			if (currPosInOp == 0) {
 				cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
 				cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
 			}
+
+			// handle current character
 			if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-				char b = seq_nt16_str[bam_seqi(seq, idxInSeq)];
-				//TODO match
+				char b = seq_nt16_str[bam_seqi(seqBits, idxInSeq)];
+				stList_append(cigRepr, stIntTuple_construct2(idxInSeq - (includeSoftClip ? 0 : start_softclip), idxInRef));
+                if (ALN_DEBUG) st_logDebug("\tM\ts%d\tr%d\n", idxInSeq - (includeSoftClip ? 0 : start_softclip), idxInRef);
 				idxInSeq++;
-			} else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-				//TODO delete (no character in read here)
+                idxInRef++;
+            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+                //delete (no character in read here)
+                if (ALN_DEBUG) st_logDebug("\tD\ts%d\tr%d\n", idxInSeq - (includeSoftClip ? 0 : start_softclip), idxInRef);
+                idxInRef++;
 			} else if (cigarOp == BAM_CINS) {
-				//TODO insert (the below code )
+				//insert (the below code )
+                if (ALN_DEBUG) st_logDebug("\tI\ts%d\tr%d\n", idxInSeq - (includeSoftClip ? 0 : start_softclip), idxInRef);
 				idxInSeq++;
 				i--;
 			} else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-				// Nothing really to do here. skip to next cigar operation
+				// nothing to do here. skip to next cigar operation
 				currPosInOp = cigarNum - 1;
 				i--;
 			} else {
-				st_logCritical("Unidentifiable cigar operation\n");
+				st_logCritical("Unidentifiable cigar operation!\n");
 			}
 
+			// have we finished this last cigar
 			currPosInOp++;
 			if (currPosInOp == cigarNum) {
 				cig_idx++;
 				currPosInOp = 0;
 			}
 		}
+
+        // sanity checks
+        assert(idxInRef == alnEndPos);
+
+        assert(idxInSeq == endPos + (includeSoftClip ? 0 :))
+
+		// save
+		stList_append(reads, seq);
+		stList_append(alignments, cigRepr);
 	}
 
 	// close it all down
