@@ -47,7 +47,51 @@ struct _vcfRecordComparisonInfo {
     bool phasingHap2;
 };
 
+void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
 
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i];
+    }
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i]);
+    }
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i]/totalCount);
+    }
+    st_logDebug( "\n");
+}
+
+void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
+    /*
+     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
+     */
+    double totalCount = 0;
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        totalCount += rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i];
+        totalCount += rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i];
+    }
+
+    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
+    st_logDebug("    Counts:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.1f", rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
+                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]);
+    }
+
+    st_logDebug("\n    Fraction:");
+    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
+        st_logDebug("\t%0.3f", (rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
+                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]) /totalCount);
+    }
+    st_logDebug( "\n");
+}
 
 void printColumnAtPosition(stRPHmm *hmm, int64_t pos) {
     /*
@@ -113,51 +157,9 @@ void printPartitionInfo2(int64_t pos, stReferencePriorProbs *rProbs1, stReferenc
     printBaseCompositionAtPosition(pos, rProbs2);
 }
 
-void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs) {
-    /*
-     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
-     */
 
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i];
-    }
-    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
-    st_logDebug("    Counts:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.1f", rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i]);
-    }
-    st_logDebug("\n    Fraction:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.3f", rProbs->baseCounts[(pos - rProbs->refStart)*ALPHABET_SIZE + i]/totalCount);
-    }
-    st_logDebug( "\n");
-}
 
-void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2) {
-    /*
-     * Print the counts/fraction of each alphabet character in a slightly more compressed form.
-     */
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i];
-        totalCount += rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i];
-    }
 
-    st_logDebug("\t\t0 (A)\t1 (C)\t2 (G)\t3 (T)\t4 (-) \n");
-    st_logDebug("    Counts:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.1f", rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
-                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]);
-    }
-
-    st_logDebug("\n    Fraction:");
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        st_logDebug("\t%0.3f", (rProbs1->baseCounts[(pos - rProbs1->refStart)*ALPHABET_SIZE + i] +
-                rProbs2->baseCounts[(pos - rProbs2->refStart)*ALPHABET_SIZE + i]) /totalCount);
-    }
-    st_logDebug( "\n");
-}
 
 void printBaseComposition2(double *baseCounts) {
     /*

@@ -389,8 +389,8 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 
     // get probabilities
     stList* probabilityList = stList_construct3(0, free);
-    uint64_t firstReadPos = NULL;
-    uint64_t lastReadPos = NULL;
+    uint64_t firstReadPos = 0;
+    uint64_t lastReadPos = 0;
     int64_t randomSeed = st_randomInt64(0,3);
     while(!feof(fp)) {
         // Scan
@@ -401,17 +401,17 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
         refPos = atoi(refPosStr);
 
         // Check for gaps todo this might actually be a bug or something in signalAlign
-        while (firstReadPos != NULL && refPos > lastReadPos + 1) {
+        while (firstReadPos != 0 && refPos > lastReadPos + 1) {
             appendProbsToList(probabilityList, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB,
                               ALPHABET_MIN_PROB, ALPHABET_MAX_PROB);
             lastReadPos++;
         }
 
         // Check for inserts
-        if (firstReadPos != NULL && refPos < lastReadPos + 1) continue;
+        if (firstReadPos != 0 && refPos < lastReadPos + 1) continue;
 
         // Update first and last read position
-        if (firstReadPos == NULL) firstReadPos = refPos;
+        if (firstReadPos == 0) firstReadPos = refPos;
         lastReadPos = refPos;
 
         // Get probabilities and save
