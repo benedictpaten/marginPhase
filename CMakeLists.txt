@@ -331,6 +331,12 @@ add_executable(vcfCompare vcfCompare.c )
 target_link_libraries(vcfCompare margin)
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c )
+add_executable(allTests
+        tests/allTests.c
+        tests/marginPhaseTest.c
+        tests/stRPHmmTest.c
+        tests/parserTest.c
+        tests/polisherTest.c
+        tests/chunkingTest.c)
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)

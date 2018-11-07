@@ -243,9 +243,13 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
  */
  
 typedef struct _bamChunker {
+    // file locations
 	char *bamFile;
+    // configuration
     uint64_t chunkSize;
-    uint64_t chunkMargin;
+    uint64_t chunkBoundary;
+    bool includeSoftClip;
+    // internal data
     stList *chunks;
     uint64_t chunkCount;
     int64_t itorIdx;
@@ -253,30 +257,31 @@ typedef struct _bamChunker {
 
 typedef struct _bamChunk {
 	char *refSeqName;          // name of contig
-    int64_t chunkMarginStart;  // the first 'position' where we have an aligned read
+    int64_t chunkBoundaryStart;  // the first 'position' where we have an aligned read
     int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
                                //  should be used to initialize the probabilities at chunkStart
     int64_t chunkEnd;          // same for chunk end
-    int64_t chunkMarginEnd;    // no reads should start after this position
+    int64_t chunkBoundaryEnd;    // no reads should start after this position
     BamChunker *parent;        // reference to parent (may not be needed)
 } BamChunk;
 
 BamChunker *bamChunker_construct(char *bamFile);
+BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClip);
 
 void bamChunker_destruct(BamChunker *bamChunker);
 
 BamChunk *bamChunker_getNext(BamChunker *bamChunker);
 
 BamChunk *bamChunk_construct();
-BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkMarginStart, int64_t chunkStart, int64_t chunkEnd,
-                              int64_t chunkMarginEnd, BamChunker *parent);
+BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int64_t chunkStart, int64_t chunkEnd,
+                              int64_t chunkBoundaryEnd, BamChunker *parent);
 
 void bamChunk_destruct(BamChunk *bamChunk);
 
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
-void convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
+uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
 
 /*
  * TODO define what this is; tpesout doesn't know what the signature is.. I don't see the alignment struct defined

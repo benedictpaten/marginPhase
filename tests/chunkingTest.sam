@@ -1,0 +1,14 @@
+@HD	VN:1.4	GO:none	SO:coordinate
+@SQ	SN:contig_1	LN:10000000
+@SQ	SN:contig_2	LN:10000000
+read_1	0	contig_1	100000	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_1	2100000	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100000	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100004	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100008	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100012	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100016	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100020	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100024	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100028	50	8M	*	0	8	ACGTACGT	*
+read_1	0	contig_2	100032	50	8M	*	0	8	ACGTACGT	*
