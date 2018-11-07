@@ -324,4 +324,3 @@ add_executable(simpleConsensusTest tests/simpleConsensusTest.c ${SOURCE_FILES})
 target_link_libraries(simpleConsensusTest cpecan hts cpecan son jsmn)
 
 add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
-link_libraries(callConsensus cpecan son jsmn)
