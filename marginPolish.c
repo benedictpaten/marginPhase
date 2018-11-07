@@ -176,6 +176,10 @@ int main(int argc, char *argv[]) {
 			consensusReferenceString = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
 
 			// Generate updated alignments in RLE space
+
+			// get anchor alignments
+			// get pairwise alignments with mea function
+			// do left shifts
 			//TODO
 
 			// Expand alignments into non-RLE space
