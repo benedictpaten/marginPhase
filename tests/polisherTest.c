@@ -944,26 +944,39 @@ void test_poa_realign_examples_long_no_rle(CuTest *testCase) {
 	test_poa_realign_examples_large(testCase, 1, TEST_POLISH_FILES_DIR"largeExamples", 0);
 }
 
-static void test_rleString_example(CuTest *testCase, const char *testStr, int64_t rleLength, const char *testStrRLE, const int64_t *repeatCounts) {
+static void test_rleString_example(CuTest *testCase, const char *testStr,
+		int64_t rleLength, int64_t nonRleLength,
+		const char *testStrRLE, const int64_t *repeatCounts,
+		const int64_t *rleToNonRleCoordinateMap, const int64_t *nonRleToRleCoordinateMap) {
 	RleString *rleString = rleString_construct((char *)testStr);
 
 	CuAssertIntEquals(testCase, rleLength, rleString->length);
 	CuAssertStrEquals(testCase, testStrRLE, rleString->rleString);
 	for(int64_t i=0; i<rleLength; i++) {
 		CuAssertIntEquals(testCase, repeatCounts[i], rleString->repeatCounts[i]);
+		CuAssertIntEquals(testCase, rleToNonRleCoordinateMap[i], rleString->rleToNonRleCoordinateMap[i]);
+	}
+
+	CuAssertIntEquals(testCase, nonRleLength, rleString->nonRleLength);
+	for(int64_t i=0; i<nonRleLength; i++) {
+		CuAssertIntEquals(testCase, nonRleToRleCoordinateMap[i], rleString->nonRleToRleCoordinateMap[i]);
 	}
 
 	rleString_destruct(rleString);
 }
 
 static void test_rleString_examples(CuTest *testCase) {
-	test_rleString_example(testCase, "GATTACAGGGGTT", 8, "GATACAGT", (const int64_t[]){ 1,1,2,1,1,1,4,2 });
+	test_rleString_example(testCase, "GATTACAGGGGTT", 8, 13, "GATACAGT", (const int64_t[]){ 1,1,2,1,1,1,4,2 },
+			(const int64_t[]){ 0,1,2,4,5,6,7,11 }, (const int64_t[]){ 0,1,2,2,3,4,5,6,6,6,6,7,7 });
 
-	test_rleString_example(testCase, "TTTTT", 1, "T", (const int64_t[]){ 5 });
+	test_rleString_example(testCase, "TTTTT", 1, 5, "T", (const int64_t[]){ 5 },
+			(const int64_t[]){ 0 }, (const int64_t[]){ 0,0,0,0,0 });
 
-	test_rleString_example(testCase, "", 0, "", (const int64_t[]){ 1 });
+	test_rleString_example(testCase, "", 0, 0, "", (const int64_t[]){ 1 },
+			(const int64_t[]){ 0 }, (const int64_t[]){ 0 });
 
-	test_rleString_example(testCase, "TTTTTCC", 2, "TC", (const int64_t[]){ 5, 2 });
+	test_rleString_example(testCase, "TTTTTCC", 2, 7, "TC", (const int64_t[]){ 5, 2 },
+			(const int64_t[]){ 0,5 }, (const int64_t[]){ 0,0,0,0,0,1,1 });
 }
 
 void checkStringsAndFree(CuTest *testCase, const char *expected, char *temp) {

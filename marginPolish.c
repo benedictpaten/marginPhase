@@ -152,7 +152,12 @@ int main(int argc, char *argv[]) {
 
 			// Run-length encoded polishing
 
-			// Do run length encoding
+			// Do run length encoding (RLE)
+
+			// First RLE the reference
+			RleString *rleReference = rleString_construct(referenceString);
+
+			// Now RLE the reads
 			stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
 			stList *l = stList_construct(); // Just the rle nucleotide strings
 			stList *rleAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
@@ -161,17 +166,20 @@ int main(int argc, char *argv[]) {
 				RleString *rleRead = rleString_construct(read);
 				stList_append(rleReads, rleRead);
 				stList_append(l, rleRead->rleString);
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), read));
+				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleRead));
 			}
-            RleString *rleReference = rleString_construct(referenceString);
 
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
 
 			// Do run-length decoding
-			consensusReferenceString = expandRLEConsensus(poa, rleReads, params);
+			consensusReferenceString = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
 
 			// Generate updated alignments in RLE space
+
+			// get anchor alignments
+			// get pairwise alignments with mea function
+			// do left shifts
 			//TODO
 
 			// Expand alignments into non-RLE space

@@ -36,7 +36,7 @@
 	    "threshold" : 0.01,
 	    "minDiagsBetweenTraceBack" : 10000,
 	    "traceBackDiagonals" : 40,
-	    "diagonalExpansion" : 5,
+	    "diagonalExpansion" : 6,
 	    "constraintDiagonalTrim" : 10,
 	    "anchorMatrixBiggerThanThis" : 250000,
 	    "repeatMaskMatrixBiggerThanThis" : 250000,
