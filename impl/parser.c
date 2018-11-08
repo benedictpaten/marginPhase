@@ -754,6 +754,12 @@ int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end
         int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
         if (lastCigarOp == BAM_CSOFT_CLIP) {
             *end_softclip += lastCigarNum;
+        } else if (lastCigarOp == BAM_CHARD_CLIP && aln->core.n_cigar > 2) {
+            lastCigarOp = cigar[aln->core.n_cigar-2] & BAM_CIGAR_MASK;
+            lastCigarNum = cigar[aln->core.n_cigar-2] >> BAM_CIGAR_SHIFT;
+            if (lastCigarOp == BAM_CSOFT_CLIP) {
+                *end_softclip += lastCigarNum;
+            }
         }
     }
 

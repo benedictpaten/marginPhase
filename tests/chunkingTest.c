@@ -17,6 +17,7 @@ static void test_getChunksByChrom(CuTest *testCase) {
         itorCount++;
     }
     CuAssertTrue(testCase, itorCount == 2);
+    bamChunker_destruct(chunker);
 }
 
 static void test_getChunksBy100kb(CuTest *testCase) {
@@ -30,6 +31,7 @@ static void test_getChunksBy100kb(CuTest *testCase) {
         itorCount++;
     }
     CuAssertTrue(testCase, itorCount == 22);
+    bamChunker_destruct(chunker);
 }
 
 static void test_getChunksWithBoundary(CuTest *testCase) {
@@ -71,8 +73,11 @@ static void test_getChunksWithBoundary(CuTest *testCase) {
 
         // increment
         contig2ChunkCount++;
+        stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, contig2ChunkCount == 5);
+    bamChunker_destruct(chunker);
 }
 
 
@@ -115,8 +120,94 @@ static void test_getChunksWithoutBoundary(CuTest *testCase) {
 
         // increment
         contig2ChunkCount++;
+        stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, contig2ChunkCount == 5);
+    bamChunker_destruct(chunker);
+}
+
+void assertClippingAlignmentMatchCount(CuTest *testCase, int64_t idx, stList *alignment) {
+    switch (idx) {
+        case 0: //8S8M
+        case 1: //8M8S
+        case 2: //4S8M4S
+        case 4: //4S4M2D4M4S
+        case 6: //4S1M1D6M1D1M4S
+        case 7: //4H8S8M
+        case 8: //8M8S4H
+        case 9: //4H4S8M4S4H
+            CuAssertTrue(testCase, stList_length(alignment) == 8);
+            break;
+        case 3: //4S2M4I2M4S
+            CuAssertTrue(testCase, stList_length(alignment) == 4);
+            break;
+        case 5: //4S1M1I4M1I1M4S
+            CuAssertTrue(testCase, stList_length(alignment) == 6);
+            break;
+        default:
+            CuAssertTrue(testCase, FALSE);
+    }
+}
+
+static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
+    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, FALSE);
+
+    // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
+    BamChunk *chunk = NULL;
+    bool foundChunk = FALSE;
+    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+        if (!stString_eq(chunk->refSeqName, "contig_1") || (chunk->chunkBoundaryStart != 200000 &&
+                chunk->chunkBoundaryEnd != 4000000)) continue;
+        CuAssertTrue(testCase, !foundChunk);
+        foundChunk = TRUE;
+
+        // analyze reads and alignments
+        stList *reads = stList_construct3(0, free);
+        stList *alignments = stList_construct3(0, (void*)stIntTuple_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
+        CuAssertTrue(testCase, readCount == 10);
+        for (int64_t i = 0; i < 10; i++) {
+            // by design, each read is 8 characters without softclipped bases
+            CuAssertTrue(testCase, strlen((char*) stList_get(reads, i)) == 8);
+            // check the length of the cigar strings
+            assertClippingAlignmentMatchCount(testCase, i, stList_get(alignments, i));
+        }
+        stList_destruct(reads);
+        stList_destruct(alignments);
+    }
+    CuAssertTrue(testCase, foundChunk);
+    bamChunker_destruct(chunker);
+}
+
+static void test_getReadsWithSoftClipping(CuTest *testCase) {
+    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, TRUE);
+
+    // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
+    BamChunk *chunk = NULL;
+    bool foundChunk = FALSE;
+    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+        if (!stString_eq(chunk->refSeqName, "contig_1") || (chunk->chunkBoundaryStart != 200000 &&
+            chunk->chunkBoundaryEnd != 4000000)) continue;
+        CuAssertTrue(testCase, !foundChunk);
+        foundChunk = TRUE;
+
+        // analyze reads and alignments
+        stList *reads = stList_construct();
+        stList *alignments = stList_construct();
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
+        CuAssertTrue(testCase, readCount == 10);
+        for (int64_t i = 0; i < 10; i++) {
+            // by design, each read is 16 characters with softclipped bases
+            CuAssertTrue(testCase, strlen((char*) stList_get(reads, i)) == 16);
+            // check the length of the cigar strings
+            assertClippingAlignmentMatchCount(testCase, i, stList_get(alignments, i));
+        }
+        stList_destruct(reads);
+        stList_destruct(alignments);
+    }
+    CuAssertTrue(testCase, foundChunk);
+    bamChunker_destruct(chunker);
 }
 
 
@@ -127,6 +218,8 @@ CuSuite* chunkingTestSuite(void) {
     SUITE_ADD_TEST(suite, test_getChunksBy100kb);
     SUITE_ADD_TEST(suite, test_getChunksWithBoundary);
     SUITE_ADD_TEST(suite, test_getChunksWithoutBoundary);
+    SUITE_ADD_TEST(suite, test_getReadsWithSoftClipping);
+    SUITE_ADD_TEST(suite, test_getReadsWithoutSoftClipping);
 
     return suite;
 }

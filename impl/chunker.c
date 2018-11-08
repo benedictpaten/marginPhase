@@ -7,12 +7,6 @@
 #include "stRPHmm.h"
 #include <stPolish.h>
 
-//TODO put these in a parameters file?
-#define CHUNK_SIZE_DEFAULT 100000
-#define CHUNK_MARGIN_DEFAULT 5000
-#define CHUNK_INCLUDE_SOFTCLIP_DEFAULT FALSE
-
-
 int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t contigStartPos, int64_t contigEndPos,
                          uint64_t chunkSize, uint64_t chunkMargin) {
 
@@ -43,7 +37,7 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     chunker->chunkSize = chunkSize;
     chunker->chunkBoundary = chunkBoundary;
     chunker->includeSoftClip = includeSoftClip;
-    chunker->chunks = stList_construct();
+    chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
     chunker->chunkCount = 0;
     chunker->itorIdx = -1;
 
@@ -122,11 +116,13 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
 }
 
 BamChunker *bamChunker_construct(char *bamFile) {
-    return bamChunker_construct2(bamFile, UINT32_MAX, 0, CHUNK_INCLUDE_SOFTCLIP_DEFAULT);
+    return bamChunker_construct2(bamFile, UINT32_MAX, 0, FALSE);
 }
 
 void bamChunker_destruct(BamChunker *bamChunker) {
-    //TODO
+    free(bamChunker->bamFile);
+    stList_destruct(bamChunker->chunks);
+    free(bamChunker);
 }
 
 BamChunk *bamChunker_getNext(BamChunker *bamChunker) {
@@ -164,7 +160,8 @@ BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int6
 }
 
 void bamChunk_destruct(BamChunk *bamChunk) {
-    //TODO
+    free(bamChunk->refSeqName);
+    free(bamChunk);
 }
 
 
@@ -284,7 +281,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
 
         // sanity checks
         assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
-        assert(cigarIdxInSeq == readEndIdx); //does not include soft clip
+        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
 
         // save
         stList_append(reads, seq);
