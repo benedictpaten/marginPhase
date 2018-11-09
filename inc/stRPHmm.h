@@ -454,6 +454,7 @@ struct _stGenomeFragment {
     // each between 0 and 1, for the corresponding genotypes
     // in the genotype string
     float *genotypeProbs;
+    float **genotypeLikelihoods;
 
     // Strings representing the predicted haplotypes, where each element is an alphabet character
     // index in [0, ALPHABET_SIZE)
@@ -507,7 +508,7 @@ void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
 
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
 
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value);
 
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 

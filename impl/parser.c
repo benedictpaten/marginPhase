@@ -71,7 +71,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
 /*
  * Given the numeric value for a base, return the char.
  */
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
