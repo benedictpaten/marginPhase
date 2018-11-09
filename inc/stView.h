@@ -12,10 +12,10 @@
 typedef struct _refMsaView {
 	int64_t refLength; // The length of the reference sequence
 	char *refSeq; // The reference sequence - this is not copied by the constructor
-	char *refSeqName; // The reference sequence name - this is not copied by the constructor
+	char *refSeqName; // The reference sequence name - this is not copied by the constructor, and can be NULL
 	int64_t seqNo; // The number of non-ref sequences aligned to the reference
 	stList *seqs; // The non-ref sequences - - this is not copied by the constructor
-	stList *seqNames; // The non-ref sequence names - this is not copied by the constructor
+	stList *seqNames; // The non-ref sequence names - this is not copied by the constructor, and can be NULL
 	int64_t *seqCoordinates; // A matrix giving the coordinates of the non-reference sequence
 	// as aligned to the reference sequence
 	int64_t *maxPrecedingInsertLengths; // The maximum length of an insert in
@@ -38,12 +38,12 @@ int64_t msaView_getPrecedingInsertLength(MsaView *view, int64_t rightRefCoordina
  * Gets the first position in the sequence of an insert preceding the given reference position. If there
  * is no such insert returns -1.
  */
-int64_t msaView_getPrecedingIndelStart(MsaView *view, int64_t rightRefCoordinate, int64_t seqIndex);
+int64_t msaView_getPrecedingInsertStart(MsaView *view, int64_t rightRefCoordinate, int64_t seqIndex);
 
 /*
  * Gets the maximum length of an indel preceding the given reference position
  */
-int64_t msaView_getMaxPrecedingIndelLength(MsaView *view, int64_t rightRefCoordinate);
+int64_t msaView_getMaxPrecedingInsertLength(MsaView *view, int64_t rightRefCoordinate);
 
 /*
  * Builds an MSA view for the given reference and aligned sequences.

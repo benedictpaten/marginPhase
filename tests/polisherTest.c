@@ -826,7 +826,7 @@ static const char *messyExamples[] = {
 		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138_ref.fasta"
 };
 
-struct List *readSequences(char *fastaFile) {
+static struct List *readSequences(char *fastaFile) {
 	struct List *seqs = constructEmptyList(0, free);
 	struct List *seqLengths = constructEmptyList(0, free);
 	struct List *headers = constructEmptyList(0, free);

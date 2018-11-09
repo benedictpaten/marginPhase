@@ -99,10 +99,17 @@ Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
  * These anchors can be used to restrict subsequent alignments to the consensus to generate a new poa.
  * PoaToConsensusMap is a map from the positions in the poa reference sequence to the derived consensus 
- * sequence. See poa_getConsensus for description of poaToConsensusMap.
+ * sequence. See poa_getConsensus for description of poaToConsensusMap. If poaToConsensusMap is NULL then
+ * the alignment is just the reference sequence of the poa.
  */
 stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads, 
 							    PolishParams *polishParams);
+							    
+/*
+ * Generates a set of maximal expected alignments for the reads aligned to the the POA reference sequence.
+ * Unlike the draft anchor alignments, these are designed to be complete, high quality alignments.
+ */
+stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *polishParams);
 
 /*
  * Prints representation of the POA.
@@ -247,6 +254,14 @@ char *addInsert(char *string, char *insertString, int64_t editStart);
  * Make edited string with given insert. Edit start is the index of the first position to delete from the string.
  */
 char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
+
+
+/*
+ * Generates MEA alignments between two string. Anchor alignment may be null.
+ * TODO: Move to cpecan
+ */
+stList *getPairwiseMEAAlignment(char *stringX, char *stringY, stList *anchorAlignment,
+								PairwiseAlignmentParameters  *p, StateMachine *sM);
 
 
 /*
