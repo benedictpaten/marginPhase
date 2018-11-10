@@ -826,7 +826,7 @@ static const char *messyExamples[] = {
 		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138_ref.fasta"
 };
 
-struct List *readSequences(char *fastaFile) {
+static struct List *readSequences(char *fastaFile) {
 	struct List *seqs = constructEmptyList(0, free);
 	struct List *seqLengths = constructEmptyList(0, free);
 	struct List *headers = constructEmptyList(0, free);
@@ -1011,11 +1011,11 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
-	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 5, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 6, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 10, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 9000000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 100000000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
 

@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
 
 #include(FindOpenMP)
@@ -256,6 +257,7 @@ set(SOURCE_FILES
         impl/parser.c
         impl/partitions.c
         impl/polisher.c
+        impl/view.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
         impl/vcfTools.c
@@ -337,6 +339,8 @@ add_executable(allTests
         tests/stRPHmmTest.c
         tests/parserTest.c
         tests/polisherTest.c
-        tests/chunkingTest.c)
+        tests/chunkingTest.c
+        tests/viewTest.c)
+
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)

@@ -472,10 +472,7 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
 	stSortedSet_destruct(matchesSet);
 }
 
-/*
- * Generates a set of anchor alignments for the reads aligned to it.
- * Is used to restrict subsequent alignments.
- */
+
 stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads, PolishParams *pp) {
 
 	// Allocate anchor alignments
@@ -487,7 +484,8 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 	// Walk through the weights of the POA to construct the anchor alignments
 	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
 		PoaNode *poaNode = stList_get(poa->nodes, i);
-		int64_t consensusIndex = poaToConsensusMap[i-1];
+		// If consensus index is null, then just use the underlying reference sequence of the POA.
+		int64_t consensusIndex = poaToConsensusMap == NULL ? i-1 : poaToConsensusMap[i-1];
 		if(consensusIndex != -1) { // Poa reference position is aligned to the consensus
 			for(int64_t j=0; j<stList_length(poaNode->observations); j++) {
 				PoaBaseObservation *obs = stList_get(poaNode->observations, j);
@@ -1029,6 +1027,59 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *pol
 		poa = poa2;
 		score = score2;
 	}
+}
+
+stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *polishParams) {
+	// Generate anchor alignments
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), polishParams);
+
+	// Alignments
+	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+
+	// Make alignment
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		char *read  = stList_get(reads, i);
+		stList *anchorAlignment = stList_get(anchorAlignments, i);
+
+		stList *alignedPairs, *gapXPairs, *gapYPairs;
+		getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, poa->refString, read, anchorAlignment,
+				polishParams->p, &alignedPairs, &gapXPairs, &gapYPairs,
+				0, 0);
+
+		double alignmentScore;
+		stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
+				stList_length(poa->nodes)-1, strlen(read),
+				&alignmentScore, polishParams->p);
+
+		// TODO: Left shifting alignment
+
+		stList_append(alignments, alignment);
+
+		// Cleanup
+		stList_destruct(gapXPairs);
+		stList_destruct(gapYPairs);
+		stList_destruct(alignedPairs);
+	}
+
+	// Cleanup
+	stList_destruct(anchorAlignments);
+
+	return alignments;
+}
+
+stList *getPairwiseMEAAlignment(char *stringX, char *stringY, stList *anchorAlignment,
+								PairwiseAlignmentParameters  *p, StateMachine *sM) {
+	stList *alignedPairs, *gapXPairs, *gapYPairs;
+	getAlignedPairsWithIndelsUsingAnchors(sM, stringX, stringY, anchorAlignment,
+									      p, &alignedPairs, &gapXPairs, &gapYPairs,
+										  0, 0);
+
+	double alignmentScore;
+	stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
+																     strlen(stringX), strlen(stringY),
+																	 &alignmentScore, p);
+
+	return alignment;
 }
 
 /*

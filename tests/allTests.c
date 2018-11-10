@@ -14,6 +14,7 @@ CuSuite *stRPHmmTestSuite(void);
 CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
 CuSuite* polisherTestSuite(void);
+CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
 
 // New tests for marginPhase interface
@@ -25,6 +26,7 @@ int marginPhaseTests(void) {
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, polisherTestSuite());
+	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
 
 	CuSuiteRun(suite);
