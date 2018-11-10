@@ -1131,7 +1131,19 @@ void rleString_destruct(RleString *rleString) {
 	free(rleString);
 }
 
-static char *expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
+char *rleString_expand(RleString *rleString) {
+	char *s = st_calloc(rleString->nonRleLength+1, sizeof(char));
+	int64_t j=0;
+	for(int64_t i=0; i<rleString->length; i++) {
+		for(int64_t k=0; k<rleString->repeatCounts[i]; k++) {
+			s[j++] = rleString->rleString[i];
+		}
+	}
+	s[rleString->nonRleLength] = '\0';
+	return s;
+}
+
+static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
 	// Pick the base
 	double maxBaseWeight = node->baseWeights[0];
 	int64_t maxBaseIndex = 0;
@@ -1145,28 +1157,33 @@ static char *expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatri
 
 	// Repeat count
 	double logProbability;
-	int64_t repeatCount = repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, maxBaseIndex, node->observations,
+	return repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, maxBaseIndex, node->observations,
 			rleReads, &logProbability);
-
-	// Make repeat string
-	char *str = st_calloc(repeatCount+1, sizeof(char));
-	for(int64_t j=0; j<repeatCount; j++) {
-		str[j] = base;
-	}
-	str[repeatCount] = '\0';
-
-	return str;
 }
 
-char *expandRLEConsensus(Poa *poa, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
-	stList *consensus = stList_construct3(0, free);
+RleString *expandRLEConsensus(Poa *poa, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
+	RleString *rleString = st_calloc(1, sizeof(RleString));
+
+	rleString->length = stList_length(poa->nodes)-1;
+	rleString->rleString = stString_copy(poa->refString);
+	rleString->repeatCounts = st_calloc(rleString->length, sizeof(int64_t));
+	rleString->rleToNonRleCoordinateMap = st_calloc(rleString->length, sizeof(int64_t));
 	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
-		stList_append(consensus, expandRLEConsensus2(stList_get(poa->nodes, i),
-				rleReads, repeatSubMatrix));
+		int64_t repeatCount = expandRLEConsensus2(stList_get(poa->nodes, i), rleReads, repeatSubMatrix);
+		rleString->repeatCounts[i-1] = repeatCount;
+		rleString->rleToNonRleCoordinateMap[i-1] = rleString->nonRleLength;
+		rleString->nonRleLength += repeatCount;
 	}
-	char *consensusString = stString_join2("", consensus);
-	stList_destruct(consensus);
-	return consensusString;
+	rleString->nonRleToRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
+	int64_t j=0;
+	for(int64_t i=0; i<rleString->length; i++) {
+		for(int64_t k=0; k<rleString->repeatCounts[i]; k++) {
+			rleString->nonRleToRleCoordinateMap[j++] = i;
+		}
+	}
+	assert(rleString->nonRleLength == j);
+
+	return rleString;
 }
 
 stList *runLengthEncodeAlignment(stList *alignment,

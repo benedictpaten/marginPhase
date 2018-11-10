@@ -19,6 +19,11 @@ int64_t msaView_getSeqCoordinate(MsaView *view, int64_t refCoordinate, int64_t s
 	return i < 0 ? -1 : i-2;
 }
 
+int64_t msaView_getUpToSeqCoordinate(MsaView *view, int64_t refCoordinate, int64_t seqIndex) {
+	int64_t i = msaView_set(view, refCoordinate, seqIndex)[0];
+	return i < 0 ? -i-2 : i-2;
+}
+
 int64_t msaView_getPrecedingInsertLength(MsaView *view, int64_t rightRefCoordinate, int64_t seqIndex) {
 	int64_t i = msaView_set(view, rightRefCoordinate, seqIndex)[0];
 	if(i < 0) {
@@ -130,15 +135,20 @@ static void printRepeatChar(FILE *fh, char repeatChar, int64_t repeatCount) {
 	}
 }
 
-static void printSeqName(FILE *fh, char *seqName) {
+static void printSeqName(FILE *fh, char *seqName, int64_t seqCoordinate) {
 	int64_t j = strlen(seqName);
 	for(int64_t i=0; i<10; i++) {
 		fprintf(fh, "%c", i < j ? seqName[i] : ' ');
 	}
-	fprintf(fh, " ");
+	fprintf(fh, "\t%" PRIi64 "\t", seqCoordinate);
 }
 
-static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int64_t minInsertCoverage, FILE *fh) {
+static void msaView_printP2(MsaView *view, int64_t refStart, int64_t length,
+						   int64_t minInsertCoverage,
+						   char (*refCharFn)(int64_t refCoordinate, void *extraArg),
+						   char (*charFn)(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg),
+						   void *extraArg,
+						   FILE *fh) {
 	// Calculate which indels to print
 	int64_t indelLengthsToPrint[length];
 	for(int64_t i=0; i<length; i++) {
@@ -146,10 +156,10 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int6
 	}
 
 	// Print the reference
-	printSeqName(fh, view->refSeqName == NULL ? "REF" : view->refSeqName);
+	printSeqName(fh, view->refSeqName == NULL ? "REF" : view->refSeqName, refStart);
 	for(int64_t i=refStart; i<refStart+length; i++) {
 		printRepeatChar(fh, '-', indelLengthsToPrint[i-refStart]);
-		fprintf(fh, "%c", view->refSeq[i]);
+		fprintf(fh, "%c", refCharFn(i, extraArg));
 	}
 	fprintf(fh, "\n");
 
@@ -157,13 +167,12 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int6
 	for(int64_t j=0; j<view->seqNo; j++) {
 		if(view->seqNames == NULL) {
 			char *seqName = stString_print("SEQ:%i", j);
-			printSeqName(fh, seqName);
+			printSeqName(fh, seqName, msaView_getUpToSeqCoordinate(view, refStart, j));
 			free(seqName);
 		}
 		else {
-			printSeqName(fh, stList_get(view->seqNames, j));
+			printSeqName(fh, stList_get(view->seqNames, j), msaView_getUpToSeqCoordinate(view, refStart, j));
 		}
-		char *sequence = stList_get(view->seqs, j);
 		for(int64_t i=refStart; i<refStart+length; i++) {
 			int64_t indelLength = msaView_getPrecedingInsertLength(view, i, j);
 			if(indelLength > indelLengthsToPrint[i-refStart]) {
@@ -172,14 +181,14 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int6
 			if(indelLength > 0) {
 				int64_t indelStart = msaView_getPrecedingInsertStart(view, i, j);
 				for(int64_t k=0; k<indelLength; k++) {
-					fprintf(fh, "%c", sequence[indelStart+k]);
+					fprintf(fh, "%c", charFn(j, indelStart+k, -1, extraArg));
 				}
 			}
 			printRepeatChar(fh, '-', indelLengthsToPrint[i-refStart] - indelLength);
 
 			int64_t seqCoordinate = msaView_getSeqCoordinate(view, i, j);
 			if(seqCoordinate != -1) {
-				fprintf(fh, "%c", view->refSeq[i] == sequence[seqCoordinate] ? '*' : sequence[seqCoordinate]);
+				fprintf(fh, "%c", charFn(j, seqCoordinate, i, extraArg));
 			}
 			else {
 				fprintf(fh, "+");
@@ -190,9 +199,54 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int6
 	fprintf(fh, "\n");
 }
 
-void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh) {
+void msaView_printP(MsaView *view, int64_t minInsertCoverage,
+				   char (*refCharFn)(int64_t refCoordinate, void *extraArg),
+				   char (*charFn)(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg),
+				   void *extraArg, FILE *fh) {
 	int64_t width = 40;
 	for(int64_t i=0; i<view->refLength; i+=width) {
-		msaView_print2(view, i, (i+width < view->refLength) ? width : view->refLength-i, minInsertCoverage, fh);
+		msaView_printP2(view, i, (i+width < view->refLength) ? width : view->refLength-i, minInsertCoverage,
+					   refCharFn, charFn, extraArg, fh);
 	}
 }
+
+char refCharBaseFn(int64_t refCoordinate, void *extraArg) {
+	MsaView *view = extraArg;
+	return  view->refSeq[refCoordinate];
+}
+
+char seqCharBaseFn(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg) {
+	MsaView *view = extraArg;
+	char *sequence = stList_get(view->seqs, seq);
+	return view->refSeq[refCoordinate] == sequence[seqCoordinate] ? '*' : sequence[seqCoordinate];
+}
+
+void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh) {
+	msaView_printP(view, minInsertCoverage, refCharBaseFn, seqCharBaseFn, view, fh);
+}
+
+char repeatCountToChar(int64_t repeatCount) {
+	return (char)(repeatCount + 48);
+}
+
+char refCharRepeatCountFn(int64_t refCoordinate, void *extraArg) {
+	RleString *refString = ((void **)extraArg)[0];
+	return repeatCountToChar(refString->repeatCounts[refCoordinate]);
+}
+
+char seqCharRepeatCountFn(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg) {
+	RleString *refString = ((void **)extraArg)[0];
+	stList *rleStrings = ((void **)extraArg)[1];
+	RleString *rleString = stList_get(rleStrings, seq);
+
+	int64_t refRepeatCount = refCoordinate >= 0 ? refString->repeatCounts[refCoordinate] : -1;
+	int64_t seqRepeatCount = rleString->repeatCounts[seqCoordinate];
+
+	return refRepeatCount == seqRepeatCount ? '*' : repeatCountToChar(seqRepeatCount);
+}
+
+void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
+							   RleString *refString, stList *rleStrings, FILE *fh) {
+	msaView_printP(view, minInsertCoverage, refCharRepeatCountFn, seqCharRepeatCountFn, (const void *[]){ refString, rleStrings }, fh);
+}
+

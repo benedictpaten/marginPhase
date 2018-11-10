@@ -71,4 +71,10 @@ void msaView_destruct(MsaView * view);
  */
 void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh);
 
+/*
+ * Prints the repeat counts of the MSA.
+ */
+void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
+							   RleString *refString, stList *rleStrings, FILE *fh);
+
 #endif /* VIEW_H_ */

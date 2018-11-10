@@ -140,10 +140,13 @@ void test_viewExamples(CuTest *testCase) {
 		// Parse reads & reference
 		struct List *r = readSequences((char *)readFile);
 		assert(r->length > 1);
+		RleString *rleReference = rleString_construct(r->list[0]);
 		char *reference = getString(r->list[0], rle);
 		stList *reads = stList_construct();
+		stList *rleReads = stList_construct();
 		for(int64_t i=1; i<r->length; i++) {
 			stList_append(reads, getString(r->list[i], rle));
+			stList_append(rleReads, rleString_construct(r->list[i]));
 		}
 		destructList(r);
 
@@ -151,6 +154,7 @@ void test_viewExamples(CuTest *testCase) {
 		struct List *trueReferenceList = readSequences((char *)trueRefFile);
 		assert(trueReferenceList->length == 1);
 		char *trueReference = getString(trueReferenceList->list[0], rle);
+		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
 		destructList(trueReferenceList);
 
 		// Polish params
@@ -178,12 +182,24 @@ void test_viewExamples(CuTest *testCase) {
 
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(reads, trueReference);
+		stList_append(rleReads, rleTrueReference);
 
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
 								   	      alignments, reads, seqNames);
 		if (st_getLogLevel() >= debug) {
-			msaView_print(view, 2, stderr);
+			msaView_print(view, 1, stderr);
+
+			if(rle) {
+				// Expand the RLE string
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, polishParams->repeatSubMatrix);
+				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+
+				msaView_printRepeatCounts(view, 1,
+						rleConsensusString, rleReads, stderr);
+
+				rleString_destruct(rleConsensusString);
+			}
 		}
 
 		// Simple stats
@@ -191,6 +207,8 @@ void test_viewExamples(CuTest *testCase) {
 		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
 
 		// Cleanup
+		rleString_destruct(rleReference);
+		stList_destruct(rleReads);
 		free(readFile);
 		free(trueRefFile);
 		stList_destruct(reads);
