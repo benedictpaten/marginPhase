@@ -26,7 +26,7 @@
   		]
   },
   
-  "useRunLengthEncoding" : true,
+  "useRunLengthEncoding" : false,
   
   "referenceBasePenalty" : 0.5,
   

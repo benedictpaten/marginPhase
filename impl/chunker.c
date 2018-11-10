@@ -280,8 +280,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         }
 
         // sanity checks
-        assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
-        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
+        //TODO these may fail because of the existance of non-match end cigar operations
+//        assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
+//        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
 
         // save
         stList_append(reads, seq);
