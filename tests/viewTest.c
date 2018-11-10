@@ -86,7 +86,7 @@ void test_view(CuTest *testCase) {
 	}
 
 	// Print it
-	if (st_getLogLevel() >= info) {
+	if (st_getLogLevel() >= debug) {
 		msaView_print(view, stderr);
 	}
 
@@ -179,7 +179,7 @@ void test_viewExamples(CuTest *testCase) {
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
 								   	      alignments, reads, seqNames);
-		if (st_getLogLevel() >= info) {
+		if (st_getLogLevel() >= debug) {
 			msaView_print(view, stderr);
 		}
 
