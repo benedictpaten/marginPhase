@@ -559,7 +559,7 @@ static const char *readArrayExample2[] = {
 static char *referenceExample2 =     "GATGTAAAAAAGAAATGATTTGCTAGAACAGAGCATAAATACACATCTGT";
 static char *trueReferenceExample2 = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT";
 
-static double calcSequenceMatches(char *seq1, char *seq2) {
+double calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
 	PolishParams *polishParams = polishParams_readParams(fh);
 	fclose(fh);
@@ -848,6 +848,8 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		const char *readFile = examples[example*2];
 		const char *trueRefFile = examples[example*2+1];
 
+		st_logInfo("Doing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
+
 		// Parse sequences
 		struct List *reads = readSequences((char *)readFile);
 		assert(reads->length > 1);
@@ -1120,7 +1122,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
     SUITE_ADD_TEST(suite, test_polishParams);

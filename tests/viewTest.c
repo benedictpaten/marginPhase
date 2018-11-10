@@ -10,6 +10,8 @@
 #include "stView.h"
 #include "randomSequences.h"
 
+double calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
+
 static char *polishParamsFile = "../params/polish/polishParams.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
@@ -87,7 +89,7 @@ void test_view(CuTest *testCase) {
 
 	// Print it
 	if (st_getLogLevel() >= debug) {
-		msaView_print(view, stderr);
+		msaView_print(view, 1, stderr);
 	}
 
 	// Cleanup
@@ -133,6 +135,8 @@ void test_viewExamples(CuTest *testCase) {
 		char *readFile = stString_print("%s/%i.fasta", path, (int)example);
 		char *trueRefFile = stString_print("%s/%i.ref.fasta", path, (int)example);
 
+		st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
+
 		// Parse reads & reference
 		struct List *r = readSequences((char *)readFile);
 		assert(r->length > 1);
@@ -153,7 +157,6 @@ void test_viewExamples(CuTest *testCase) {
 		FILE *fh = fopen(polishParamsFile, "r");
 		PolishParams *polishParams = polishParams_readParams(fh);
 		fclose(fh);
-		polishParams->p->diagonalExpansion = 20;
 
 		// Generate alignment
 		//Poa *poa = poa_realign(reads, NULL, reference, polishParams);
@@ -180,8 +183,12 @@ void test_viewExamples(CuTest *testCase) {
 		MsaView *view = msaView_construct(poa->refString, NULL,
 								   	      alignments, reads, seqNames);
 		if (st_getLogLevel() >= debug) {
-			msaView_print(view, stderr);
+			msaView_print(view, 2, stderr);
 		}
+
+		// Simple stats
+		double totalMatches = calcSequenceMatches(poa->refString, trueReference);
+		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
 
 		// Cleanup
 		free(readFile);

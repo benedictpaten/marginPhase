@@ -46,6 +46,19 @@ int64_t msaView_getMaxPrecedingInsertLength(MsaView *view, int64_t rightRefCoord
 	return view->maxPrecedingInsertLengths[rightRefCoordinate];
 }
 
+int64_t msaView_getPrecedingCoverageDepth(MsaView *view, int64_t rightRefCoordinate, int64_t indelOffset) {
+	return  view->precedingInsertCoverages[rightRefCoordinate][indelOffset];
+}
+
+int64_t msaView_getMaxPrecedingInsertLengthWithGivenCoverage(MsaView *view, int64_t rightRefCoordinate, int64_t minCoverage) {
+	for(int64_t i=0; i<msaView_getMaxPrecedingInsertLength(view, rightRefCoordinate); i++) {
+		if(msaView_getPrecedingCoverageDepth(view, rightRefCoordinate, i) < minCoverage) {
+			return i;
+		}
+	}
+	return msaView_getMaxPrecedingInsertLength(view, rightRefCoordinate);
+}
+
 MsaView *msaView_construct(char *refSeq, char *refName,
 		stList *refToSeqAlignments, stList *seqs, stList *seqNames) {
 	MsaView *view = st_malloc(sizeof(MsaView));
@@ -83,6 +96,7 @@ MsaView *msaView_construct(char *refSeq, char *refName,
 	}
 
 	view->maxPrecedingInsertLengths = st_calloc(view->refLength+1, sizeof(int64_t));
+	view->precedingInsertCoverages = st_calloc(view->refLength+1, sizeof(int64_t *));
 	for(int64_t j=0; j<view->refLength+1; j++) {
 		int64_t maxIndelLength=0;
 		for(int64_t i=0; i<view->seqNo; i++) {
@@ -92,6 +106,13 @@ MsaView *msaView_construct(char *refSeq, char *refName,
 			}
 		}
 		view->maxPrecedingInsertLengths[j] = maxIndelLength;
+		view->precedingInsertCoverages[j] = st_calloc(maxIndelLength, sizeof(int64_t));
+		for(int64_t i=0; i<view->seqNo; i++) {
+			int64_t k=msaView_getPrecedingInsertLength(view, j, i);
+			for(int64_t l=0; l<k; l++) {
+				view->precedingInsertCoverages[j][l]++;
+			}
+		}
 	}
 
 	return view;
@@ -117,11 +138,17 @@ static void printSeqName(FILE *fh, char *seqName) {
 	fprintf(fh, " ");
 }
 
-static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, FILE *fh) {
+static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, int64_t minInsertCoverage, FILE *fh) {
+	// Calculate which indels to print
+	int64_t indelLengthsToPrint[length];
+	for(int64_t i=0; i<length; i++) {
+		indelLengthsToPrint[i] = msaView_getMaxPrecedingInsertLengthWithGivenCoverage(view, i+refStart, minInsertCoverage);
+	}
+
 	// Print the reference
 	printSeqName(fh, view->refSeqName == NULL ? "REF" : view->refSeqName);
 	for(int64_t i=refStart; i<refStart+length; i++) {
-		printRepeatChar(fh, '-', msaView_getMaxPrecedingInsertLength(view, i));
+		printRepeatChar(fh, '-', indelLengthsToPrint[i-refStart]);
 		fprintf(fh, "%c", view->refSeq[i]);
 	}
 	fprintf(fh, "\n");
@@ -139,13 +166,16 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, FILE
 		char *sequence = stList_get(view->seqs, j);
 		for(int64_t i=refStart; i<refStart+length; i++) {
 			int64_t indelLength = msaView_getPrecedingInsertLength(view, i, j);
+			if(indelLength > indelLengthsToPrint[i-refStart]) {
+				indelLength = indelLengthsToPrint[i-refStart];
+			}
 			if(indelLength > 0) {
 				int64_t indelStart = msaView_getPrecedingInsertStart(view, i, j);
 				for(int64_t k=0; k<indelLength; k++) {
 					fprintf(fh, "%c", sequence[indelStart+k]);
 				}
 			}
-			printRepeatChar(fh, '-', msaView_getMaxPrecedingInsertLength(view, i) - indelLength);
+			printRepeatChar(fh, '-', indelLengthsToPrint[i-refStart] - indelLength);
 
 			int64_t seqCoordinate = msaView_getSeqCoordinate(view, i, j);
 			if(seqCoordinate != -1) {
@@ -160,9 +190,9 @@ static void msaView_print2(MsaView *view, int64_t refStart, int64_t length, FILE
 	fprintf(fh, "\n");
 }
 
-void msaView_print(MsaView *view, FILE *fh) {
+void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh) {
 	int64_t width = 40;
 	for(int64_t i=0; i<view->refLength; i+=width) {
-		msaView_print2(view, i, (i+width < view->refLength) ? width : view->refLength-i, fh);
+		msaView_print2(view, i, (i+width < view->refLength) ? width : view->refLength-i, minInsertCoverage, fh);
 	}
 }

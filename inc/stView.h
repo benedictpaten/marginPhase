@@ -20,6 +20,7 @@ typedef struct _refMsaView {
 	// as aligned to the reference sequence
 	int64_t *maxPrecedingInsertLengths; // The maximum length of an insert in
 	// any of the sequences preceding the reference positions
+	int64_t **precedingInsertCoverages; // The number of sequences with each given indel position
 } MsaView;
 
 /*
@@ -46,6 +47,17 @@ int64_t msaView_getPrecedingInsertStart(MsaView *view, int64_t rightRefCoordinat
 int64_t msaView_getMaxPrecedingInsertLength(MsaView *view, int64_t rightRefCoordinate);
 
 /*
+ * Get the number of sequences with an insertion at a given position. IndelOffset if the position, from 0, of the
+ indel from left-to-right.
+ */
+int64_t msaView_getPrecedingCoverageDepth(MsaView *view, int64_t rightRefCoordinate, int64_t indelOffset);
+
+/*
+ * Get the maximum length of an insertion at a given position with a minimum of reads supporting it.
+ */ 
+int64_t msaView_getMaxPrecedingInsertLengthWithGivenCoverage(MsaView *view, int64_t rightRefCoordinate, int64_t minCoverage);
+
+/*
  * Builds an MSA view for the given reference and aligned sequences.
  * Does not copy the strings or string names, just holds references.
  */
@@ -57,6 +69,6 @@ void msaView_destruct(MsaView * view);
 /*
  * Prints a quick view of the MSA for debugging/browsing.
  */
-void msaView_print(MsaView *view, FILE *fh);
+void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh);
 
 #endif /* VIEW_H_ */
