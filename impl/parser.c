@@ -389,8 +389,8 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 
     // get probabilities
     stList* probabilityList = stList_construct3(0, free);
-    uint64_t firstReadPos = NULL;
-    uint64_t lastReadPos = NULL;
+    uint64_t firstReadPos = 0;
+    uint64_t lastReadPos = 0;
     int64_t randomSeed = st_randomInt64(0,3);
     while(!feof(fp)) {
         // Scan
@@ -401,17 +401,17 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
         refPos = atoi(refPosStr);
 
         // Check for gaps todo this might actually be a bug or something in signalAlign
-        while (firstReadPos != NULL && refPos > lastReadPos + 1) {
+        while (firstReadPos != 0 && refPos > lastReadPos + 1) {
             appendProbsToList(probabilityList, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB, ALPHABET_MIN_PROB,
                               ALPHABET_MIN_PROB, ALPHABET_MAX_PROB);
             lastReadPos++;
         }
 
         // Check for inserts
-        if (firstReadPos != NULL && refPos < lastReadPos + 1) continue;
+        if (firstReadPos != 0 && refPos < lastReadPos + 1) continue;
 
         // Update first and last read position
-        if (firstReadPos == NULL) firstReadPos = refPos;
+        if (firstReadPos == 0) firstReadPos = refPos;
         lastReadPos = refPos;
 
         // Get probabilities and save
@@ -613,7 +613,8 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
         }
 
         int64_t start_read = 0;
-        int64_t trueLength = getAlignedReadLength(aln, &start_read);
+        int64_t end_read = 0;
+        int64_t trueLength = getAlignedReadLength2(aln, &start_read, &end_read);
 
         if (trueLength <= 0) {
             filteredReads++;
@@ -707,11 +708,16 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
     return profileCount;
 }
 
-int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
-    // start read needs to be init'd to 0
-    if (*start_read != 0) {
-        st_errAbort("getAlignedReadLength invoked with improper start_read parameter");
-    }
+int64_t getAlignedReadLength(bam1_t *aln) {
+    int64_t start_softclip = 0;
+    int64_t end_softclip = 0;
+    return getAlignedReadLength2(aln, &start_softclip, &end_softclip);
+}
+
+int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip) {
+    // start read needs to be init'd to 0 (mostly this is to avoid misuse)
+    if (*start_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper start_softclip parameter");
+    if (*end_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper end_softclip parameter");
 
     // get relevant cigar info
     int64_t len = aln->core.l_qseq;
@@ -719,7 +725,6 @@ int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
 
     // data for tracking
     int64_t start_ref = 0;
-    int64_t end_read = 0;
     int64_t cig_idx = 0;
 
     // Find the correct starting locations on the read and reference sequence,
@@ -734,7 +739,7 @@ int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
             start_ref += cigarNum;
             cig_idx++;
         } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
-            if (start_read != NULL) *start_read += cigarNum;
+            *start_softclip += cigarNum;
             cig_idx++;
         } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
             cig_idx++;
@@ -748,7 +753,13 @@ int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
         int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
         int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
         if (lastCigarOp == BAM_CSOFT_CLIP) {
-            end_read += lastCigarNum;
+            *end_softclip += lastCigarNum;
+        } else if (lastCigarOp == BAM_CHARD_CLIP && aln->core.n_cigar > 2) {
+            lastCigarOp = cigar[aln->core.n_cigar-2] & BAM_CIGAR_MASK;
+            lastCigarNum = cigar[aln->core.n_cigar-2] >> BAM_CIGAR_SHIFT;
+            if (lastCigarOp == BAM_CSOFT_CLIP) {
+                *end_softclip += lastCigarNum;
+            }
         }
     }
 
@@ -756,7 +767,7 @@ int64_t getAlignedReadLength(bam1_t *aln, int64_t *start_read) {
     int64_t numInsertions = 0;
     int64_t numDeletions = 0;
     countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-    int64_t trueLength = len - *start_read - end_read + numDeletions - numInsertions;
+    int64_t trueLength = len - *start_softclip - *end_softclip + numDeletions - numInsertions;
 
     return trueLength;
 }
@@ -893,7 +904,7 @@ PolishParams *polishParams_readParams(FILE *fp) {
 
 void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
     //TODO
-    st_errAbort("Need to implement polishParams_printParameters");
+    st_logCritical("Need to implement polishParams_printParameters\n");
 }
 
 void polishParams_destruct(PolishParams *params) {

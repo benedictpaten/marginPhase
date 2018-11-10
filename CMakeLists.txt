@@ -333,6 +333,16 @@ add_executable(vcfCompare vcfCompare.c )
 target_link_libraries(vcfCompare margin)
 
 enable_testing()
+<<<<<<< HEAD
 add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c tests/polisherTest.c tests/viewTest.c )
+=======
+add_executable(allTests
+        tests/allTests.c
+        tests/marginPhaseTest.c
+        tests/stRPHmmTest.c
+        tests/parserTest.c
+        tests/polisherTest.c
+        tests/chunkingTest.c)
+>>>>>>> branch 'polisher' of git@github.com:benedictpaten/marginPhase.git
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)
