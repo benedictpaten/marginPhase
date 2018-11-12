@@ -163,7 +163,7 @@ void test_viewExamples(CuTest *testCase) {
 		fclose(fh);
 
 		// Generate alignment
-		//Poa *poa = poa_realign(reads, NULL, reference, polishParams);
+		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
 
 		// Generate final MEA read alignments to POA
@@ -187,8 +187,9 @@ void test_viewExamples(CuTest *testCase) {
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
 								   	      alignments, reads, seqNames);
+
 		if (st_getLogLevel() >= debug) {
-			msaView_print(view, 1, stderr);
+			msaView_print(view, 2, stderr);
 
 			if(rle) {
 				// Expand the RLE string
@@ -201,6 +202,13 @@ void test_viewExamples(CuTest *testCase) {
 				rleString_destruct(rleConsensusString);
 			}
 		}
+
+		int64_t indelLength = 0;
+		for(int64_t i=0; i<view->refLength; i++) {
+			indelLength += msaView_getMaxPrecedingInsertLength(view, i);
+		}
+
+		st_logInfo("Got %i indels\n", (int)indelLength);
 
 		// Simple stats
 		double totalMatches = calcSequenceMatches(poa->refString, trueReference);

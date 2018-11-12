@@ -174,7 +174,8 @@ int main(int argc, char *argv[]) {
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
 
 			// Do run-length decoding
-			consensusReferenceString = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			RleString *consensusReference = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			consensusReferenceString = rleString_expand(consensusReference);
 
 			// Generate final MEA alignments in RLE space
 			stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);

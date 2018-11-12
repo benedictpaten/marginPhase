@@ -238,7 +238,7 @@ int64_t getMaxCommonSuffixLength(char *str1, int64_t length1, char *str2, int64_
 	 * that is the same as a suffix of str.
 	 */
 	int64_t i=0;
-	while(length1-i-1 >= 0 && length2-i+1 >= 0) {
+	while(length1-i-1 >= 0 && length2-i-1 >= 0) {
 		if(str1[length1-1-i] != str2[length2-1-i]) {
 			break;
 		}
@@ -1036,29 +1036,16 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	// Alignments
 	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 
-	// Make alignment
+	// Make the MEA alignments
 	for(int64_t i=0; i<stList_length(reads); i++) {
 		char *read  = stList_get(reads, i);
 		stList *anchorAlignment = stList_get(anchorAlignments, i);
 
-		stList *alignedPairs, *gapXPairs, *gapYPairs;
-		getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, poa->refString, read, anchorAlignment,
-				polishParams->p, &alignedPairs, &gapXPairs, &gapYPairs,
-				0, 0);
-
 		double alignmentScore;
-		stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
-				stList_length(poa->nodes)-1, strlen(read),
-				&alignmentScore, polishParams->p);
-
-		// TODO: Left shifting alignment
+		stList *alignment = getShiftedMEAAlignment(poa->refString, read, anchorAlignment,
+				polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
 
 		stList_append(alignments, alignment);
-
-		// Cleanup
-		stList_destruct(gapXPairs);
-		stList_destruct(gapYPairs);
-		stList_destruct(alignedPairs);
 	}
 
 	// Cleanup

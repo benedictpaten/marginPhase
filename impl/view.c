@@ -203,7 +203,7 @@ void msaView_printP(MsaView *view, int64_t minInsertCoverage,
 				   char (*refCharFn)(int64_t refCoordinate, void *extraArg),
 				   char (*charFn)(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg),
 				   void *extraArg, FILE *fh) {
-	int64_t width = 40;
+	int64_t width = 30;
 	for(int64_t i=0; i<view->refLength; i+=width) {
 		msaView_printP2(view, i, (i+width < view->refLength) ? width : view->refLength-i, minInsertCoverage,
 					   refCharFn, charFn, extraArg, fh);
