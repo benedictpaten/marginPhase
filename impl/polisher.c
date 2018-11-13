@@ -238,7 +238,7 @@ int64_t getMaxCommonSuffixLength(char *str1, int64_t length1, char *str2, int64_
 	 * that is the same as a suffix of str.
 	 */
 	int64_t i=0;
-	while(length1-i-1 >= 0 && length2-i+1 >= 0) {
+	while(length1-i-1 >= 0 && length2-i-1 >= 0) {
 		if(str1[length1-1-i] != str2[length2-1-i]) {
 			break;
 		}
@@ -1036,29 +1036,16 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	// Alignments
 	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 
-	// Make alignment
+	// Make the MEA alignments
 	for(int64_t i=0; i<stList_length(reads); i++) {
 		char *read  = stList_get(reads, i);
 		stList *anchorAlignment = stList_get(anchorAlignments, i);
 
-		stList *alignedPairs, *gapXPairs, *gapYPairs;
-		getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, poa->refString, read, anchorAlignment,
-				polishParams->p, &alignedPairs, &gapXPairs, &gapYPairs,
-				0, 0);
-
 		double alignmentScore;
-		stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
-				stList_length(poa->nodes)-1, strlen(read),
-				&alignmentScore, polishParams->p);
-
-		// TODO: Left shifting alignment
+		stList *alignment = getShiftedMEAAlignment(poa->refString, read, anchorAlignment,
+				polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
 
 		stList_append(alignments, alignment);
-
-		// Cleanup
-		stList_destruct(gapXPairs);
-		stList_destruct(gapYPairs);
-		stList_destruct(alignedPairs);
 	}
 
 	// Cleanup
@@ -1131,7 +1118,19 @@ void rleString_destruct(RleString *rleString) {
 	free(rleString);
 }
 
-static char *expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
+char *rleString_expand(RleString *rleString) {
+	char *s = st_calloc(rleString->nonRleLength+1, sizeof(char));
+	int64_t j=0;
+	for(int64_t i=0; i<rleString->length; i++) {
+		for(int64_t k=0; k<rleString->repeatCounts[i]; k++) {
+			s[j++] = rleString->rleString[i];
+		}
+	}
+	s[rleString->nonRleLength] = '\0';
+	return s;
+}
+
+static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
 	// Pick the base
 	double maxBaseWeight = node->baseWeights[0];
 	int64_t maxBaseIndex = 0;
@@ -1145,28 +1144,33 @@ static char *expandRLEConsensus2(PoaNode *node, stList *rleReads, RepeatSubMatri
 
 	// Repeat count
 	double logProbability;
-	int64_t repeatCount = repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, maxBaseIndex, node->observations,
+	return repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, maxBaseIndex, node->observations,
 			rleReads, &logProbability);
-
-	// Make repeat string
-	char *str = st_calloc(repeatCount+1, sizeof(char));
-	for(int64_t j=0; j<repeatCount; j++) {
-		str[j] = base;
-	}
-	str[repeatCount] = '\0';
-
-	return str;
 }
 
-char *expandRLEConsensus(Poa *poa, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
-	stList *consensus = stList_construct3(0, free);
+RleString *expandRLEConsensus(Poa *poa, stList *rleReads, RepeatSubMatrix *repeatSubMatrix) {
+	RleString *rleString = st_calloc(1, sizeof(RleString));
+
+	rleString->length = stList_length(poa->nodes)-1;
+	rleString->rleString = stString_copy(poa->refString);
+	rleString->repeatCounts = st_calloc(rleString->length, sizeof(int64_t));
+	rleString->rleToNonRleCoordinateMap = st_calloc(rleString->length, sizeof(int64_t));
 	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
-		stList_append(consensus, expandRLEConsensus2(stList_get(poa->nodes, i),
-				rleReads, repeatSubMatrix));
+		int64_t repeatCount = expandRLEConsensus2(stList_get(poa->nodes, i), rleReads, repeatSubMatrix);
+		rleString->repeatCounts[i-1] = repeatCount;
+		rleString->rleToNonRleCoordinateMap[i-1] = rleString->nonRleLength;
+		rleString->nonRleLength += repeatCount;
 	}
-	char *consensusString = stString_join2("", consensus);
-	stList_destruct(consensus);
-	return consensusString;
+	rleString->nonRleToRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
+	int64_t j=0;
+	for(int64_t i=0; i<rleString->length; i++) {
+		for(int64_t k=0; k<rleString->repeatCounts[i]; k++) {
+			rleString->nonRleToRleCoordinateMap[j++] = i;
+		}
+	}
+	assert(rleString->nonRleLength == j);
+
+	return rleString;
 }
 
 stList *runLengthEncodeAlignment(stList *alignment,

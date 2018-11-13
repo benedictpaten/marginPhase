@@ -559,7 +559,7 @@ static const char *readArrayExample2[] = {
 static char *referenceExample2 =     "GATGTAAAAAAGAAATGATTTGCTAGAACAGAGCATAAATACACATCTGT";
 static char *trueReferenceExample2 = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT";
 
-static double calcSequenceMatches(char *seq1, char *seq2) {
+double calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
 	PolishParams *polishParams = polishParams_readParams(fh);
 	fclose(fh);
@@ -609,7 +609,9 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
 	// Look at non-rle comparison
-	char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, polishParams->repeatSubMatrix);
+	RleString *consensusRleString = expandRLEConsensus(poaRefined, rleStrings, polishParams->repeatSubMatrix);
+	char *nonRLEConsensusString = rleString_expand(consensusRleString);
+	rleString_destruct(consensusRleString);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(rleTrueReference->rleString, poaRefined->refString);
@@ -848,6 +850,8 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		const char *readFile = examples[example*2];
 		const char *trueRefFile = examples[example*2+1];
 
+		st_logInfo("Doing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
+
 		// Parse sequences
 		struct List *reads = readSequences((char *)readFile);
 		assert(reads->length > 1);
@@ -962,6 +966,10 @@ static void test_rleString_example(CuTest *testCase, const char *testStr,
 		CuAssertIntEquals(testCase, nonRleToRleCoordinateMap[i], rleString->nonRleToRleCoordinateMap[i]);
 	}
 
+	char *expandedRleString = rleString_expand(rleString);
+	CuAssertStrEquals(testCase, testStr, expandedRleString);
+
+	free(expandedRleString);
 	rleString_destruct(rleString);
 }
 
@@ -1107,10 +1115,7 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, bool
     return i;
 }
 
-
 void test_polish5kb(CuTest *testCase) {
-
-
     char *paramsFile = "../params/polish/polishParams.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = true;
@@ -1148,7 +1153,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
     SUITE_ADD_TEST(suite, test_polishParams);

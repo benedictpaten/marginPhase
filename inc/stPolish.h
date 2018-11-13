@@ -182,7 +182,7 @@ typedef struct _rleString {
 	int64_t *repeatCounts; // Count of repeat for each position in rleString
 	int64_t *rleToNonRleCoordinateMap; // For each position in the RLE string the corresponding, left-most position
 	// in the expanded non-RLE string
-	int64_t *nonRleToRleCoordinateMap; // For each position in the expanded non-RLE string the corresponding the position
+	int64_t *nonRleToRleCoordinateMap; // For each position in the expanded non-RLE string the corresponding position
 	// in the RLE string
 	int64_t length; // Length of the rleString
 	int64_t nonRleLength; // Length of the expanded non-rle string
@@ -191,6 +191,11 @@ typedef struct _rleString {
 RleString *rleString_construct(char *string);
 
 void rleString_destruct(RleString *rlString);
+
+/*
+ * Generates the expanded non-rle string.
+ */ 
+char *rleString_expand(RleString *rleString);
 
 // Data structure for storing log-probabilities of observing
 // one repeat count given another
@@ -206,8 +211,6 @@ struct _repeatSubMatrix {
 RepeatSubMatrix *repeatSubMatrix_constructEmpty();
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix);
-
-
 
 /*
  * Gets the log probability of observing a given repeat conditioned on an underlying repeat count and base.
@@ -234,10 +237,10 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 										 stList *observations, stList *rleReads, double *logProbability);
 
 /*
- * Takes a POA done in run-length space and returns an expanded consensus string in
- * non-run-length space.
+ * Takes a POA done in run-length space and returns the expanded consensus string in
+ * non-run-length space as an RleString.
  */
-char *expandRLEConsensus(Poa *poa, stList *rlReads, RepeatSubMatrix *repeatSubMatrix);
+RleString *expandRLEConsensus(Poa *poa, stList *rlReads, RepeatSubMatrix *repeatSubMatrix);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing 

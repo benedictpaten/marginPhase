@@ -10,6 +10,8 @@
 #include "stView.h"
 #include "randomSequences.h"
 
+double calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
+
 static char *polishParamsFile = "../params/polish/polishParams.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
@@ -87,7 +89,7 @@ void test_view(CuTest *testCase) {
 
 	// Print it
 	if (st_getLogLevel() >= debug) {
-		msaView_print(view, stderr);
+		msaView_print(view, 1, stderr);
 	}
 
 	// Cleanup
@@ -133,13 +135,18 @@ void test_viewExamples(CuTest *testCase) {
 		char *readFile = stString_print("%s/%i.fasta", path, (int)example);
 		char *trueRefFile = stString_print("%s/%i.ref.fasta", path, (int)example);
 
+		st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
+
 		// Parse reads & reference
 		struct List *r = readSequences((char *)readFile);
 		assert(r->length > 1);
+		RleString *rleReference = rleString_construct(r->list[0]);
 		char *reference = getString(r->list[0], rle);
 		stList *reads = stList_construct();
+		stList *rleReads = stList_construct();
 		for(int64_t i=1; i<r->length; i++) {
 			stList_append(reads, getString(r->list[i], rle));
+			stList_append(rleReads, rleString_construct(r->list[i]));
 		}
 		destructList(r);
 
@@ -147,16 +154,16 @@ void test_viewExamples(CuTest *testCase) {
 		struct List *trueReferenceList = readSequences((char *)trueRefFile);
 		assert(trueReferenceList->length == 1);
 		char *trueReference = getString(trueReferenceList->list[0], rle);
+		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
 		destructList(trueReferenceList);
 
 		// Polish params
 		FILE *fh = fopen(polishParamsFile, "r");
 		PolishParams *polishParams = polishParams_readParams(fh);
 		fclose(fh);
-		polishParams->p->diagonalExpansion = 20;
 
 		// Generate alignment
-		//Poa *poa = poa_realign(reads, NULL, reference, polishParams);
+		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
 
 		// Generate final MEA read alignments to POA
@@ -175,15 +182,41 @@ void test_viewExamples(CuTest *testCase) {
 
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(reads, trueReference);
+		stList_append(rleReads, rleTrueReference);
 
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
 								   	      alignments, reads, seqNames);
+
 		if (st_getLogLevel() >= debug) {
-			msaView_print(view, stderr);
+			msaView_print(view, 2, stderr);
+
+			if(rle) {
+				// Expand the RLE string
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, polishParams->repeatSubMatrix);
+				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+
+				msaView_printRepeatCounts(view, 1,
+						rleConsensusString, rleReads, stderr);
+
+				rleString_destruct(rleConsensusString);
+			}
 		}
 
+		int64_t indelLength = 0;
+		for(int64_t i=0; i<view->refLength; i++) {
+			indelLength += msaView_getMaxPrecedingInsertLength(view, i);
+		}
+
+		st_logInfo("Got %i indels\n", (int)indelLength);
+
+		// Simple stats
+		double totalMatches = calcSequenceMatches(poa->refString, trueReference);
+		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
+
 		// Cleanup
+		rleString_destruct(rleReference);
+		stList_destruct(rleReads);
 		free(readFile);
 		free(trueRefFile);
 		stList_destruct(reads);

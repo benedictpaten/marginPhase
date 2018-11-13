@@ -144,6 +144,7 @@ int main(int argc, char *argv[]) {
 		char *consensusReferenceString = NULL; // The polished reference string
 		stList *updatedAlignments = NULL; // TODO
 		Poa *poa = NULL; // The partial order alignment
+		stList *readToConsensusAlignments; // Final alignments of reads to reference
 
 		// Now run the polishing method
 
@@ -173,9 +174,11 @@ int main(int argc, char *argv[]) {
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
 
 			// Do run-length decoding
-			consensusReferenceString = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			RleString *consensusReference = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			consensusReferenceString = rleString_expand(consensusReference);
 
-			// Generate updated alignments in RLE space
+			// Generate final MEA alignments in RLE space
+			stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
 
 			// get anchor alignments
 			// get pairwise alignments with mea function
@@ -202,7 +205,7 @@ int main(int argc, char *argv[]) {
 			consensusReferenceString = stString_copy(poa->refString);
 
 			// Generate updated alignments
-			//TODO
+			readToConsensusAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
 
 			// Clean up
 			poa_destruct(poa);
