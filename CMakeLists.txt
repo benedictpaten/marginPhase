@@ -3,7 +3,7 @@ project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O0 --pedantic -g -fno-inline")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -O0 --pedantic -g -fno-inline -fpic")
 
 #include(FindOpenMP)
 #if(OPENMP_FOUND)
@@ -226,7 +226,7 @@ set(LASTZ_SOURCES
         externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/tweener.c
         externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/utilities.c
         )
-       
+
 set(CPECAN_SOURCES
         externalTools/cPecan/impl/multipleAligner.c
         externalTools/cPecan/impl/pairwiseAligner.c
@@ -324,4 +324,4 @@ add_executable(simpleConsensusTest tests/simpleConsensusTest.c ${SOURCE_FILES})
 target_link_libraries(simpleConsensusTest cpecan hts cpecan son jsmn)
 
 add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
-link_libraries(callConsensus cpecan son jsmn hts)
+target_link_libraries(callConsensus cpecan son jsmn hts)
