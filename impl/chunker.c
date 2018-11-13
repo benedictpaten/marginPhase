@@ -263,7 +263,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         int64_t alignedReadLength = 0;
 
         // iterate over cigar operations
-        for (uint32_t i = 0; i < alnReadLength; i++) {
+        for (uint32_t i = 0; i <= alnReadLength; i++) {
+            // handles cases where last alignment is an insert or last is match
+            if (cig_idx == aln->core.n_cigar) break;
 
             // do we need the next cigar operation?
             if (currPosInOp == 0) {
@@ -342,10 +344,21 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
 
         // modify end indices
         int64_t readEndIdx = readCurrIdx + seqLen;
+        if (alnEndPos < chunkEnd && includeSoftClip) {
+            // all other cases mean we don't need to handle softclip (by config or aln extends past chunk end)
+            if (alnEndPos + end_softclip <= chunkEnd) {
+                // all softclipped bases fit in chunk
+                readEndIdx += end_softclip;
+                seqLen += end_softclip;
+            } else {
+                // softclipping spands chunkEnd
+                int64_t includedSoftclippedBases = chunkEnd - alnEndPos;
+                seqLen += includedSoftclippedBases;
+                readEndIdx += includedSoftclippedBases;
+            }
+        }
 
-        //TODO fix end-softclipped reads spanning end of chunk
-
-        // get sequence
+        // get sequence - all data we need is encoded in readCurrIdx (start), readEnd idx, and seqLen
         char *seq = malloc((seqLen + 1) * sizeof(char));
         uint8_t *seqBits = bam_get_seq(aln);
         int64_t seqIdx = 0;
@@ -355,7 +368,6 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
             seqIdx++;
         }
         seq[seqLen] = '\0';
-
 
         // save
         stList_append(reads, seq);
