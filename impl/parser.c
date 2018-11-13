@@ -711,10 +711,12 @@ int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamF
 int64_t getAlignedReadLength(bam1_t *aln) {
     int64_t start_softclip = 0;
     int64_t end_softclip = 0;
-    return getAlignedReadLength2(aln, &start_softclip, &end_softclip);
+    return getAlignedReadLength3(aln, &start_softclip, &end_softclip, TRUE);
 }
-
 int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip) {
+    return getAlignedReadLength3(aln, start_softclip, end_softclip, TRUE);
+}
+int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip, bool boundaryAtMatch) {
     // start read needs to be init'd to 0 (mostly this is to avoid misuse)
     if (*start_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper start_softclip parameter");
     if (*end_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper end_softclip parameter");
@@ -736,9 +738,13 @@ int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end
         if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
             break;
         } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-            start_ref += cigarNum;
+            if (!boundaryAtMatch) break;
             cig_idx++;
-        } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+        } else if (cigarOp == BAM_CINS) {
+            if (!boundaryAtMatch) break;
+            *start_softclip += cigarNum;
+            cig_idx++;
+        } else if (cigarOp == BAM_CSOFT_CLIP) {
             *start_softclip += cigarNum;
             cig_idx++;
         } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
@@ -749,17 +755,27 @@ int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end
     }
 
     // Check for soft clipping at the end
-    if (aln->core.n_cigar > 1) {
-        int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-        int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
-        if (lastCigarOp == BAM_CSOFT_CLIP) {
-            *end_softclip += lastCigarNum;
-        } else if (lastCigarOp == BAM_CHARD_CLIP && aln->core.n_cigar > 2) {
-            lastCigarOp = cigar[aln->core.n_cigar-2] & BAM_CIGAR_MASK;
-            lastCigarNum = cigar[aln->core.n_cigar-2] >> BAM_CIGAR_SHIFT;
-            if (lastCigarOp == BAM_CSOFT_CLIP) {
-                *end_softclip += lastCigarNum;
-            }
+    cig_idx = aln->core.n_cigar - 1;
+    while (cig_idx > 0) {
+        int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+        int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+
+        if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+            break;
+        } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+            if (!boundaryAtMatch) break;
+            cig_idx--;
+        } else if (cigarOp == BAM_CINS) {
+            if (!boundaryAtMatch) break;
+            *end_softclip += cigarNum;
+            cig_idx--;
+        } else if (cigarOp == BAM_CSOFT_CLIP) {
+            *end_softclip += cigarNum;
+            cig_idx--;
+        } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+            cig_idx--;
+        } else {
+            st_errAbort("Unidentifiable cigar operation\n");
         }
     }
 

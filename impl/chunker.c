@@ -63,7 +63,7 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
 
         int64_t start_softclip = 0;
         int64_t end_softclip = 0;
-        int64_t readLength =  getAlignedReadLength2(aln, &start_softclip, &end_softclip);
+        int64_t readLength =  getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
         if (readLength <= 0) {
             continue;
         }
@@ -197,7 +197,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         char *chr = bamHdr->target_name[aln->core.tid];
         int64_t start_softclip = 0;
         int64_t end_softclip = 0;
-        int64_t alnReadLength = getAlignedReadLength2(aln, &start_softclip, &end_softclip);
+        int64_t alnReadLength = getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
         if (alnReadLength <= 0) continue;
         int64_t alnStartPos = aln->core.pos + 1;
         int64_t alnEndPos = alnStartPos + alnReadLength;
@@ -207,31 +207,8 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         if (alnStartPos >= chunkEnd) continue;
         if (alnEndPos <= chunkStart) continue;
 
-        // get sequence positions
-        int64_t seqLen = aln->core.l_qseq;
-        int64_t readCurrIdx = 0;
-        int64_t readEndIdx = seqLen;
-        if (!includeSoftClip) {
-            seqLen = aln->core.l_qseq - start_softclip - end_softclip;
-            readCurrIdx = start_softclip;
-            readEndIdx = start_softclip + seqLen;
-        }
-
-        // get sequence
-        char *seq = malloc((seqLen + 1) * sizeof(char));
-        uint8_t *seqBits = bam_get_seq(aln);
-        int64_t seqIdx = 0;
-        while (readCurrIdx < readEndIdx) {
-            seq[seqIdx] = seq_nt16_str[bam_seqi(seqBits, readCurrIdx)];
-            readCurrIdx++;
-            seqIdx++;
-        }
-        seq[seqLen] = '\0';
-
-        // get cigar
+        // get cigar and rep
         uint32_t *cigar = bam_get_cigar(aln);
-
-        // cigar representation
         stList *cigRepr = stList_construct();
 
         // Variables to keep track of position in sequence / cigar operations
@@ -239,8 +216,34 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         int64_t currPosInOp = 0;
         int64_t cigarOp = -1;
         int64_t cigarNum = -1;
-        int64_t cigarIdxInSeq = start_softclip;
+        int64_t cigarIdxInSeq = 0;
         int64_t cigarIdxInRef = alnStartPos;
+
+        // positional modifications
+        int64_t refCigarModification = -1 * chunkStart;
+        int64_t seqCigarModification;
+        int64_t firstReadIdxInChunk;
+        if (includeSoftClip) {
+            if (alnStartPos < chunkStart) {
+                firstReadIdxInChunk = -1; //need to find position of first alignment
+                seqCigarModification = start_softclip;
+            } else if (alnStartPos - start_softclip < chunkStart) {
+                seqCigarModification = chunkStart - (alnStartPos - start_softclip);
+                firstReadIdxInChunk = seqCigarModification;
+            } else {
+                firstReadIdxInChunk = 0;
+                seqCigarModification = start_softclip;
+            }
+        } else {
+            if (alnStartPos < chunkStart) {
+                firstReadIdxInChunk = -1;
+                seqCigarModification = 0;
+            } else {
+                firstReadIdxInChunk = 0;
+                seqCigarModification = 0;
+            }
+        }
+        int64_t alignedReadLength = 0;
 
         // iterate over cigar operations
         for (uint32_t i = 0; i < alnReadLength; i++) {
@@ -253,15 +256,22 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
 
             // handle current character
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                stList_append(cigRepr, stIntTuple_construct2(cigarIdxInSeq - (includeSoftClip ? 0 : start_softclip), cigarIdxInRef));
+                if (cigarIdxInRef >= chunkStart && cigarIdxInRef < chunkEnd) {
+                    stList_append(cigRepr, stIntTuple_construct2(cigarIdxInSeq + seqCigarModification,
+                                                                 cigarIdxInRef + refCigarModification));
+                    alignedReadLength++;
+                }
                 cigarIdxInSeq++;
                 cigarIdxInRef++;
             } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                //delete (no character in read here)
+                //delete
                 cigarIdxInRef++;
             } else if (cigarOp == BAM_CINS) {
-                //insert (the below code )
+                //insert
                 cigarIdxInSeq++;
+                if (cigarIdxInRef >= chunkStart && cigarIdxInRef < chunkEnd) {
+                    alignedReadLength++;
+                }
                 i--;
             } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
                 // nothing to do here. skip to next cigar operation
@@ -271,6 +281,13 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
                 st_logCritical("Unidentifiable cigar operation!\n");
             }
 
+            // document read index in the chunk (for reads that span chunk boundary, used in read construction)
+            if (firstReadIdxInChunk < 0 && cigarIdxInRef >= chunkStart) {
+                firstReadIdxInChunk = cigarIdxInSeq + seqCigarModification;
+                seqCigarModification = -1 * firstReadIdxInChunk;
+
+            }
+
             // have we finished this last cigar
             currPosInOp++;
             if (currPosInOp == cigarNum) {
@@ -278,11 +295,29 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
                 currPosInOp = 0;
             }
         }
-
         // sanity checks
         //TODO these may fail because of the existance of non-match end cigar operations
 //        assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
 //        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
+
+
+        // get sequence positions
+        int64_t seqLen = alignedReadLength;
+        int64_t readCurrIdx = firstReadIdxInChunk + (includeSoftClip ? 0 : start_softclip);
+        int64_t readEndIdx = readCurrIdx + alignedReadLength;
+        //TODO fix end-softclipped reads spanning end of chunk
+
+        // get sequence
+        char *seq = malloc((seqLen + 1) * sizeof(char));
+        uint8_t *seqBits = bam_get_seq(aln);
+        int64_t seqIdx = 0;
+        while (readCurrIdx < readEndIdx) {
+            seq[seqIdx] = seq_nt16_str[bam_seqi(seqBits, readCurrIdx)];
+            readCurrIdx++;
+            seqIdx++;
+        }
+        seq[seqLen] = '\0';
+
 
         // save
         stList_append(reads, seq);

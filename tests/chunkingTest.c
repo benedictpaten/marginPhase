@@ -157,8 +157,8 @@ static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
     while((chunk = bamChunker_getNext(chunker)) != NULL) {
-        if (!stString_eq(chunk->refSeqName, "contig_1") || (chunk->chunkBoundaryStart != 200000 &&
-                chunk->chunkBoundaryEnd != 4000000)) continue;
+        if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 200000 &&
+                                                             chunk->chunkBoundaryEnd == 300000)) continue;
         CuAssertTrue(testCase, !foundChunk);
         foundChunk = TRUE;
 
@@ -187,8 +187,8 @@ static void test_getReadsWithSoftClipping(CuTest *testCase) {
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
     while((chunk = bamChunker_getNext(chunker)) != NULL) {
-        if (!stString_eq(chunk->refSeqName, "contig_1") || (chunk->chunkBoundaryStart != 200000 &&
-            chunk->chunkBoundaryEnd != 4000000)) continue;
+        if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 200000 &&
+                                                            chunk->chunkBoundaryEnd == 300000)) continue;
         CuAssertTrue(testCase, !foundChunk);
         foundChunk = TRUE;
 
@@ -210,6 +210,167 @@ static void test_getReadsWithSoftClipping(CuTest *testCase) {
     bamChunker_destruct(chunker);
 }
 
+void assertAlignmentMatching(CuTest *testCase, stList *list1, int64_t* zerothValues, int64_t* onethValues, int len) {
+    CuAssertTrue(testCase, stList_length(list1) == len);
+    for (int i = 0; i < len; i++) {
+        stIntTuple *tup = (stIntTuple*) stList_get(list1, i);
+        CuAssertTrue(testCase, stIntTuple_get(tup, 0) == zerothValues[i]);
+        CuAssertTrue(testCase, stIntTuple_get(tup, 1) == onethValues[i]);
+    }
+}
+
+static void test_readAlignmentsWithoutSoftclipping(CuTest *testCase) {
+    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, FALSE);
+
+    // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
+    BamChunk *chunk = NULL;
+    bool foundChunk = FALSE;
+    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+        if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 400000 &&
+                                                             chunk->chunkBoundaryEnd == 500000)) continue;
+        CuAssertTrue(testCase, !foundChunk);
+        foundChunk = TRUE;
+
+        // analyze reads and alignments
+        stList *reads = stList_construct();
+        stList *alignments = stList_construct();
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
+        CuAssertTrue(testCase, readCount == 24);
+        for (int64_t i = 0; i < 24; i++) {
+            switch (i) {
+                case 0: //399996      8M        ACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
+                    break;
+                case 1: //399996      4M1D3M    ACGTCGT
+                    CuAssertTrue(testCase, stString_eq("CGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
+                    break;
+                case 2: //399996      4M1I4M    ACGTAACGT
+                    CuAssertTrue(testCase, stString_eq("AACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
+                    break;
+                case 3: //399996      4S8M      AAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
+                    break;
+                case 4: //399996      4S4M1D3M  AAAAACGTCGT
+                    CuAssertTrue(testCase, stString_eq("CGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
+                    break;
+                case 5: //399996      4S4M1I4M  AAAAACGTAACGT
+                    CuAssertTrue(testCase, stString_eq("AACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
+                    break;
+                case 6: //400000      8M        ACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
+                    break;
+                case 7: //400000      1D7M      CGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
+                    break;
+                case 8: //400000      1I8M      AACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
+                    break;
+                case 9: //400000      4S8M      AAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
+                    break;
+                case 10: //400000      4S1D7M    AAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
+                    break;
+                case 11: //400000      4S1I8M    AAAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
+                    break;
+                case 12: //400002      8M        ACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {2,3,4,5,6,7,8,9},8);
+                    break;
+                case 13: //400002      1D7M      CGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {3,4,5,6,7,8,9},7);
+                    break;
+                case 14: //400002      1I8M      AACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {2,3,4,5,6,7,8,9},8);
+                    break;
+                case 15: //400002      4S8M      AAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {2,3,4,5,6,7,8,9},8);
+                    break;
+                case 16: //400002      4S1D7M    AAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {3,4,5,6,7,8,9},7);
+                    break;
+                case 17: //400002      4S1I8M    AAAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {2,3,4,5,6,7,8,9},8);
+                    break;
+                case 18: //400008  8M      ACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {8,9,10,11,12,13,14,15},8);
+                    break;
+                case 19: //400008  1D7M    CGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {9,10,11,12,13,14,15},7);
+                    break;
+                case 20: //400008  1I8M    AACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {8,9,10,11,12,13,14,15},8);
+                    break;
+                case 21: //400008  4S8M    AAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("ACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {8,9,10,11,12,13,14,15},8);
+                    break;
+                case 22: //400008  4S1D7M  AAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("CGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {9,10,11,12,13,14,15},7);
+                    break;
+                case 23: //400008  4S1I8M  AAAAAACGTACGT
+                    CuAssertTrue(testCase, stString_eq("AACGTACGT", stList_get(reads, i)));
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
+                                            (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {8,9,10,11,12,13,14,15},8);
+                    break;
+                default:
+                    CuAssertTrue(testCase, FALSE);
+            }
+        }
+        stList_destruct(reads);
+        stList_destruct(alignments);
+    }
+    CuAssertTrue(testCase, foundChunk);
+    bamChunker_destruct(chunker);
+}
+
+
+
 
 CuSuite* chunkingTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
@@ -220,6 +381,7 @@ CuSuite* chunkingTestSuite(void) {
     SUITE_ADD_TEST(suite, test_getChunksWithoutBoundary);
     SUITE_ADD_TEST(suite, test_getReadsWithSoftClipping);
     SUITE_ADD_TEST(suite, test_getReadsWithoutSoftClipping);
+    SUITE_ADD_TEST(suite, test_readAlignmentsWithoutSoftclipping);
 
     return suite;
 }
