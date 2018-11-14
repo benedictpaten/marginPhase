@@ -206,7 +206,7 @@ static void test_getReadsWithSoftClipping(CuTest *testCase) {
     bamChunker_destruct(chunker);
 }
 
-void assertAlignmentMatching(CuTest *testCase, stList *list1, int64_t* zerothValues, int64_t* onethValues, int len) {
+void assertAlignmentMatching(CuTest *testCase, stList *list1, int64_t* onethValues, int64_t* zerothValues, int len) {
     CuAssertTrue(testCase, stList_length(list1) == len);
     for (int i = 0; i < len; i++) {
         stIntTuple *tup = (stIntTuple*) stList_get(list1, i);

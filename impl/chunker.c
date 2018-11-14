@@ -276,8 +276,8 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
             // handle current character
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 if (cigarIdxInRef >= chunkStart && cigarIdxInRef < chunkEnd) {
-                    stList_append(cigRepr, stIntTuple_construct2(cigarIdxInSeq + seqCigarModification,
-                                                                 cigarIdxInRef + refCigarModification));
+                    stList_append(cigRepr, stIntTuple_construct2(cigarIdxInRef + refCigarModification,
+                                                                 cigarIdxInSeq + seqCigarModification));
                     alignedReadLength++;
                 }
                 cigarIdxInSeq++;
