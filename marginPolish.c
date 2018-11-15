@@ -35,6 +35,9 @@ void usage() {
     fprintf(stderr, "\nDefault options:\n");
     fprintf(stderr, "    -h --help              : Print this help screen\n");
     fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
+    fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
+    fprintf(stderr, "    -r --region            : If set, will only compute for this region.\n");
+    fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -45,6 +48,7 @@ int main(int argc, char *argv[]) {
     char *paramsFile = NULL;
     char *referenceFastaFile = NULL;
     char *outputBase = stString_copy("output");
+    char *regionStr = NULL;
     int64_t verboseBitstring = -1;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
@@ -64,6 +68,7 @@ int main(int argc, char *argv[]) {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
                 { "outputBase", required_argument, 0, 'o'},
+                { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
                 { 0, 0, 0, 0 } };
 
@@ -85,6 +90,9 @@ int main(int argc, char *argv[]) {
         case 'o':
             free(outputBase);
             outputBase = stString_copy(optarg);
+            break;
+        case 'r':
+            regionStr = stString_copy(optarg);
             break;
         case 'v':
             verboseBitstring = atoi(optarg);
@@ -126,7 +134,8 @@ int main(int argc, char *argv[]) {
     free(referenceOutFile);
     free(bamOutFile);
 
-    BamChunker *bamChunker = bamChunker_construct(bamInFile);
+    BamChunker *bamChunker = (regionStr == NULL ? bamChunker_construct(bamInFile, params) :
+                              bamChunker_constructRegion(bamInFile, regionStr, params));
 
     // For each chunk of the BAM
     BamChunk *bamChunk = NULL;

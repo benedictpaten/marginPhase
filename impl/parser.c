@@ -852,6 +852,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	params->useRunLengthEncoding = 1;
 	params->referenceBasePenalty = 0.5;
 	params->minPosteriorProbForAlignmentAnchor = 0.9;
+    params->includeSoftClipping = FALSE; //todo add this in
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)

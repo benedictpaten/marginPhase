@@ -1095,14 +1095,16 @@ static void test_hmm(CuTest *testCase) {
 }*/
 
 
-int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, bool verbose) {
+int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
-    char *command = stString_print("./marginPolish %s %s %s %s", bamFile, referenceFile, paramsFile, logString);
+    char *regionStr = region == NULL ? "" : stString_print("--region %s", region);
+    char *command = stString_print("./marginPolish %s %s %s %s %s", bamFile, referenceFile, paramsFile, regionStr, logString);
     st_logInfo("> Running command: %s\n", command);
 
     int64_t i = st_system(command);
+    free(regionStr);
     free(command);
     return i;
 }
@@ -1113,9 +1115,10 @@ void test_polish5kb(CuTest *testCase) {
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = true;
     char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+	char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, paramsFile, verbose);
+    int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
     CuAssertTrue(testCase, i == 0);
 }
 
