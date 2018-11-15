@@ -924,14 +924,6 @@ static void test_poa_realign_examples_large(CuTest *testCase, int64_t exampleNo,
 	free(examples);
 }
 
-//void test_poa_realign_examples_very_large_rle(CuTest *testCase) {
-//	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 1);
-//}
-
-//void test_poa_realign_examples_very_large_no_rle(CuTest *testCase) {
-//	test_poa_realign_examples_large(testCase, 2000, TEST_POLISH_FILES_DIR"2000_random_windows_chr1_celegans_guppy", 0);
-//}
-
 void test_poa_realign_examples_large_rle(CuTest *testCase) {
 	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 1);
 }
@@ -1019,11 +1011,11 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
-	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 6, 0);
-	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 10, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 30, 0);
+	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 100000000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 100000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
 
@@ -1144,6 +1136,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_rleString_examples);
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
+    SUITE_ADD_TEST(suite, test_polishParams);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
@@ -1152,17 +1145,12 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
-    SUITE_ADD_TEST(suite, test_polishParams);
-
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_rle);
-    //SUITE_ADD_TEST(suite, test_poa_realign_examples_very_large_no_rle);
-
-    SUITE_ADD_TEST(suite, test_polish5kb);
+    //SUITE_ADD_TEST(suite, test_polish5kb);
 
     return suite;
 }
