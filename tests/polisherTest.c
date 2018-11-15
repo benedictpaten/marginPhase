@@ -1153,7 +1153,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
-    //SUITE_ADD_TEST(suite, test_polish5kb);
+    SUITE_ADD_TEST(suite, test_polish5kb);
 
     return suite;
 }
