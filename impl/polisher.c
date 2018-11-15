@@ -517,10 +517,18 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 	return anchorAlignments;
 }
 
+void adjustAnchors(stList *anchorPairs, int64_t index, int64_t adjustment) {
+	for(int64_t i=0; i<stList_length(anchorPairs); i++) {
+		stIntTuple *pair = stList_get(anchorPairs, i);
+		((int64_t *)pair)[index+1] += adjustment;
+	}
+}
+
 Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
 				 PolishParams *polishParams) {
 	// Build a reference graph with zero weights
 	Poa *poa = poa_getReferenceGraph(reference);
+	int64_t refLength = stList_length(poa->nodes)-1;
 
 	// For each read
 	for(int64_t i=0; i<stList_length(reads); i++) {
@@ -529,12 +537,54 @@ Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
+		time_t startTime = time(NULL);
+
 		if(anchorAlignments == NULL) {
 			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 		}
 		else {
 			stList *anchorPairs = stList_get(anchorAlignments, i); // An alignment anchoring the read to the reference
-			getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, reference, read, anchorPairs, polishParams->p, &matches, &deletes, &inserts, 0, 0);
+
+			// Crop reference, to avoid long unaligned prefix and suffix
+			// that generates a lot of delete pairs
+
+			// Get cropping coordinates
+			int64_t firstRefPosition, endRefPosition;
+			if(stList_length(anchorPairs) > 0) {
+				stIntTuple *fPair = stList_get(anchorPairs, 0);
+				firstRefPosition = stIntTuple_get(fPair, 0) - stIntTuple_get(fPair, 1);
+				firstRefPosition = firstRefPosition < 0 ? 0 : firstRefPosition;
+
+				stIntTuple *lPair = stList_peek(anchorPairs);
+				endRefPosition = 1 + stIntTuple_get(lPair, 0) + (strlen(read) - stIntTuple_get(lPair, 1));
+				endRefPosition = endRefPosition > refLength ? refLength : endRefPosition;
+			}
+			else {
+				firstRefPosition = 0;
+				endRefPosition = refLength;
+			}
+
+			// Adjust anchor positions
+			adjustAnchors(anchorPairs, 0, -firstRefPosition);
+
+			// Crop reference
+			char c = reference[endRefPosition];
+			reference[endRefPosition] = '\0';
+
+			// Get alignment
+			getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, &(reference[firstRefPosition]), read, anchorPairs, polishParams->p,
+					&matches, &deletes, &inserts, 0, 0);
+
+			// De-crop reference
+			reference[endRefPosition] = c;
+
+			// Adjust back anchors
+			adjustAnchors(anchorPairs, 0, firstRefPosition);
+
+			// Shift matches/inserts/deletes
+			adjustAnchors(matches, 1, firstRefPosition);
+			adjustAnchors(inserts, 1, firstRefPosition);
+			adjustAnchors(deletes, 1, firstRefPosition);
 		}
 
 		// Add weights, edges and nodes to the poa
@@ -1052,21 +1102,6 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	stList_destruct(anchorAlignments);
 
 	return alignments;
-}
-
-stList *getPairwiseMEAAlignment(char *stringX, char *stringY, stList *anchorAlignment,
-								PairwiseAlignmentParameters  *p, StateMachine *sM) {
-	stList *alignedPairs, *gapXPairs, *gapYPairs;
-	getAlignedPairsWithIndelsUsingAnchors(sM, stringX, stringY, anchorAlignment,
-									      p, &alignedPairs, &gapXPairs, &gapYPairs,
-										  0, 0);
-
-	double alignmentScore;
-	stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
-																     strlen(stringX), strlen(stringY),
-																	 &alignmentScore, p);
-
-	return alignment;
 }
 
 /*

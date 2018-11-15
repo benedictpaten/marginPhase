@@ -218,7 +218,7 @@ char refCharBaseFn(int64_t refCoordinate, void *extraArg) {
 char seqCharBaseFn(int64_t seq, int64_t seqCoordinate, int64_t refCoordinate, void *extraArg) {
 	MsaView *view = extraArg;
 	char *sequence = stList_get(view->seqs, seq);
-	return view->refSeq[refCoordinate] == sequence[seqCoordinate] ? '*' : sequence[seqCoordinate];
+	return (refCoordinate >= 0 && view->refSeq[refCoordinate] == sequence[seqCoordinate]) ? '*' : sequence[seqCoordinate];
 }
 
 void msaView_print(MsaView *view, int64_t minInsertCoverage, FILE *fh) {
