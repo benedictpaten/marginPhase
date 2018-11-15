@@ -177,8 +177,10 @@ void test_viewExamples(CuTest *testCase) {
 		stList_append(seqNames, stString_print("TRUE_REF"));
 
 		// Get an alignment between the inferred reference and the true reference and add it
-		stList *refToTrueRefAlignment = getPairwiseMEAAlignment(poa->refString, trueReference, NULL,
-													   	   	    polishParams->p, polishParams->sM);
+
+		double alignmentScore;
+		stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
+															   polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
 
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(reads, trueReference);

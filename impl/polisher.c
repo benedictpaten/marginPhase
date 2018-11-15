@@ -1054,21 +1054,6 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	return alignments;
 }
 
-stList *getPairwiseMEAAlignment(char *stringX, char *stringY, stList *anchorAlignment,
-								PairwiseAlignmentParameters  *p, StateMachine *sM) {
-	stList *alignedPairs, *gapXPairs, *gapYPairs;
-	getAlignedPairsWithIndelsUsingAnchors(sM, stringX, stringY, anchorAlignment,
-									      p, &alignedPairs, &gapXPairs, &gapYPairs,
-										  0, 0);
-
-	double alignmentScore;
-	stList * alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
-																     strlen(stringX), strlen(stringY),
-																	 &alignmentScore, p);
-
-	return alignment;
-}
-
 /*
  * Functions for run-length encoding/decoding with POAs
  */

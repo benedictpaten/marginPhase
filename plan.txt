@@ -1,7 +1,13 @@
 
 - Rename package from marginPhase to margin
-- Adapt to incorporate cPecan as external dependency, ensuring it is built properly
-- Create top level library functions for polishing and incorporate into Shasta
+
+- Make view data structure memory efficient
+- Add read + alignment to profileSeq function for integration with phase
+- Make alignment uncertainty view
+- Make phasing view
+- Tune pair hmm
+- Adapt signal-to-read hmm
+
 - Adapt so we have a common binary "margin" with subcommands "margin phase" and "margin polish"
 - Build margin polish top level script, which takes a bam file and outputs a bam with a polished assembly and reads aligned to it
 - Develop combined phasing / polish algorithms
