@@ -30,13 +30,13 @@ int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t
 }
 
 
-BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClip) {
+BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, PolishParams *params) {
     // the chunker we're building
     BamChunker *chunker = malloc(sizeof(BamChunker));
     chunker->bamFile = stString_copy(bamFile);
     chunker->chunkSize = chunkSize;
     chunker->chunkBoundary = chunkBoundary;
-    chunker->includeSoftClip = includeSoftClip;
+    chunker->params = params;
     chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
     chunker->chunkCount = 0;
     chunker->itorIdx = -1;
@@ -115,8 +115,34 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     return chunker;
 }
 
-BamChunker *bamChunker_construct(char *bamFile) {
-    return bamChunker_construct2(bamFile, UINT32_MAX, 0, FALSE);
+BamChunker *bamChunker_construct(char *bamFile, PolishParams *params) {
+    return bamChunker_construct2(bamFile, UINT32_MAX, 0, params);
+}
+
+
+BamChunker *bamChunker_constructRegion(char *bamFile, char *region, PolishParams *params) {
+
+    char refString[128] = "";
+    int chunkStart = 0;
+    int chunkEnd = 0;
+    int scanRet = sscanf(region, "%[^:]:%d-%d", refString, &chunkStart, &chunkEnd);
+    if (scanRet != 3 || strlen(refString) == 0) {
+        st_errAbort("Region in unexpected format (expected %%s:%%d-%%d): %s", region);
+    } else if (chunkStart <= 0 || chunkEnd <= 0 || chunkEnd <= chunkStart) {
+        st_errAbort("Start and end locations in region must be positive, start must be less than end: %s", region);
+    }
+
+    BamChunker *chunker = malloc(sizeof(BamChunker));
+    chunker->bamFile = stString_copy(bamFile);
+    chunker->chunkSize = (uint64_t) chunkEnd - chunkStart;
+    chunker->chunkBoundary = 0;
+    chunker->params = params;
+    chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
+    stList_append(chunker->chunks, bamChunk_construct2(refString, chunkStart, chunkStart, chunkEnd, chunkEnd, chunker));
+    chunker->chunkCount = 1;
+    chunker->itorIdx = -1;
+
+    return chunker;
 }
 
 void bamChunker_destruct(BamChunker *bamChunker) {
@@ -173,7 +199,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
     // prep
     int64_t chunkStart = bamChunk->chunkBoundaryStart;
     int64_t chunkEnd = bamChunk->chunkBoundaryEnd;
-    bool includeSoftClip = bamChunk->parent->includeSoftClip;
+    bool includeSoftClip = bamChunk->parent->params->includeSoftClipping;
     char *bamFile = bamChunk->parent->bamFile;
     char *contig = bamChunk->refSeqName;
     uint32_t savedAlignments = 0;

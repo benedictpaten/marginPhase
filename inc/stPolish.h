@@ -28,7 +28,9 @@ typedef struct _polishParams {
 	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
 	StateMachine *sM; // Statemachine derived from the hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
-	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix	
+	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
+	// chunking configuration
+	bool includeSoftClipping;
 } PolishParams;
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -278,9 +280,9 @@ typedef struct _bamChunker {
 	char *bamFile;
     // configuration
     uint64_t chunkSize;
-    uint64_t chunkBoundary;
-    bool includeSoftClip;
-    // internal data
+	uint64_t chunkBoundary;
+	PolishParams *params;
+	// internal data
     stList *chunks;
     uint64_t chunkCount;
     int64_t itorIdx;
@@ -296,8 +298,9 @@ typedef struct _bamChunk {
     BamChunker *parent;        // reference to parent (may not be needed)
 } BamChunk;
 
-BamChunker *bamChunker_construct(char *bamFile);
-BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClip);
+BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
+BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, PolishParams *params);
+BamChunker *bamChunker_constructRegion(char *bamFile, char *region, PolishParams *params);
 
 void bamChunker_destruct(BamChunker *bamChunker);
 
