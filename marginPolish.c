@@ -132,7 +132,10 @@ int main(int argc, char *argv[]) {
     BamChunk *bamChunk = NULL;
     while((bamChunk = bamChunker_getNext(bamChunker)) != NULL) {
     	// Get reference string for chunk of alignment
-    	char *referenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+    	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+        int64_t refLen = strlen(fullReferenceString);
+        char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
+            (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
 
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);

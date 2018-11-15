@@ -1115,6 +1115,7 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, bool
     return i;
 }
 
+
 void test_polish5kb(CuTest *testCase) {
     char *paramsFile = "../params/polish/polishParams.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
