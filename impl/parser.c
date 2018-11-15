@@ -889,6 +889,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	jsmntok_t tok = tokens[tokenIndex+1];
         	char *tokStr = stJson_token_tostr(js, &tok);
         	params->p = pairwiseAlignmentParameters_jsonParse(tokStr, strlen(tokStr));
+            if (params->p->diagonalExpansion % 2 != 0) {
+                st_errAbort("ERROR: pairwiseAlignmentParameters.diagonalExpansion must be even\n");
+            }
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
         }

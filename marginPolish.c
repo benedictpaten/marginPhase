@@ -205,7 +205,6 @@ int main(int argc, char *argv[]) {
 			stList_destruct(l);
 			stList_destruct(rleAlignments);
 			rleString_destruct(rleReference);
-			bamChunk_destruct(bamChunk);
 		}
 		else { // Non-run-length encoded polishing
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
