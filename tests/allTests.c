@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 	int i = marginPhaseTests();
 
 	//st_uglyf("Done\n");
-	//while(1);
+	while(1);
 
 	return i;
 }

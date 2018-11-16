@@ -124,6 +124,10 @@ MsaView *msaView_construct(char *refSeq, char *refName,
 }
 
 void msaView_destruct(MsaView * view) {
+	for(int64_t j=0; j<view->refLength+1; j++) {
+		free(view->precedingInsertCoverages[j]);
+	}
+	free(view->precedingInsertCoverages);
 	free(view->maxPrecedingInsertLengths);
 	free(view->seqCoordinates);
 	free(view);

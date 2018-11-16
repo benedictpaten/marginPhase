@@ -190,7 +190,7 @@ int main(int argc, char *argv[]) {
 			consensusReferenceString = rleString_expand(consensusReference);
 
 			// Generate final MEA alignments in RLE space
-			stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
+			//stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
 
 			// get anchor alignments
 			// get pairwise alignments with mea function

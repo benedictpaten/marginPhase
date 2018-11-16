@@ -142,8 +142,8 @@ void test_viewExamples(CuTest *testCase) {
 		assert(r->length > 1);
 		RleString *rleReference = rleString_construct(r->list[0]);
 		char *reference = getString(r->list[0], rle);
-		stList *reads = stList_construct();
-		stList *rleReads = stList_construct();
+		stList *reads = stList_construct3(0, free);
+		stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
 		for(int64_t i=1; i<r->length; i++) {
 			stList_append(reads, getString(r->list[i], rle));
 			stList_append(rleReads, rleString_construct(r->list[i]));
@@ -226,6 +226,8 @@ void test_viewExamples(CuTest *testCase) {
 		stList_destruct(alignments);
 		poa_destruct(poa);
 		stList_destruct(seqNames);
+		msaView_destruct(view);
+		polishParams_destruct(polishParams);
 	}
 }
 

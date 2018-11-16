@@ -472,7 +472,6 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
 	stSortedSet_destruct(matchesSet);
 }
 
-
 stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t noOfReads, PolishParams *pp) {
 
 	// Allocate anchor alignments
@@ -517,11 +516,58 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 	return anchorAlignments;
 }
 
-void adjustAnchors(stList *anchorPairs, int64_t index, int64_t adjustment) {
+static void adjustAnchors(stList *anchorPairs, int64_t index, int64_t adjustment) {
 	for(int64_t i=0; i<stList_length(anchorPairs); i++) {
 		stIntTuple *pair = stList_get(anchorPairs, i);
 		((int64_t *)pair)[index+1] += adjustment;
 	}
+}
+
+void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLength,
+		char *read, stList *anchorPairs,
+		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams) {
+	// Crop reference, to avoid long unaligned prefix and suffix
+	// that generates a lot of delete pairs
+
+	// Get cropping coordinates
+	int64_t firstRefPosition, endRefPosition;
+	if(stList_length(anchorPairs) > 0) {
+		stIntTuple *fPair = stList_get(anchorPairs, 0);
+		firstRefPosition = stIntTuple_get(fPair, 0) - stIntTuple_get(fPair, 1);
+		firstRefPosition = firstRefPosition < 0 ? 0 : firstRefPosition;
+
+		stIntTuple *lPair = stList_peek(anchorPairs);
+		endRefPosition = 1 + stIntTuple_get(lPair, 0) + (strlen(read) - stIntTuple_get(lPair, 1));
+		endRefPosition = endRefPosition > refLength ? refLength : endRefPosition;
+	}
+	else {
+		firstRefPosition = 0;
+		endRefPosition = refLength;
+	}
+	assert(firstRefPosition < refLength && firstRefPosition >= 0);
+	assert(endRefPosition <= refLength && endRefPosition >= 0);
+
+	// Adjust anchor positions
+	adjustAnchors(anchorPairs, 0, -firstRefPosition);
+
+	// Crop reference
+	char c = reference[endRefPosition];
+	reference[endRefPosition] = '\0';
+
+	// Get alignment
+	getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, &(reference[firstRefPosition]), read,
+										  anchorPairs, polishParams->p, matches, deletes, inserts, 0, 0);
+
+	// De-crop reference
+	reference[endRefPosition] = c;
+
+	// Adjust back anchors
+	adjustAnchors(anchorPairs, 0, firstRefPosition);
+
+	// Shift matches/inserts/deletes
+	adjustAnchors(*matches, 1, firstRefPosition);
+	adjustAnchors(*inserts, 1, firstRefPosition);
+	adjustAnchors(*deletes, 1, firstRefPosition);
 }
 
 Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
@@ -543,48 +589,9 @@ Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
 			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 		}
 		else {
-			stList *anchorPairs = stList_get(anchorAlignments, i); // An alignment anchoring the read to the reference
-
-			// Crop reference, to avoid long unaligned prefix and suffix
-			// that generates a lot of delete pairs
-
-			// Get cropping coordinates
-			int64_t firstRefPosition, endRefPosition;
-			if(stList_length(anchorPairs) > 0) {
-				stIntTuple *fPair = stList_get(anchorPairs, 0);
-				firstRefPosition = stIntTuple_get(fPair, 0) - stIntTuple_get(fPair, 1);
-				firstRefPosition = firstRefPosition < 0 ? 0 : firstRefPosition;
-
-				stIntTuple *lPair = stList_peek(anchorPairs);
-				endRefPosition = 1 + stIntTuple_get(lPair, 0) + (strlen(read) - stIntTuple_get(lPair, 1));
-				endRefPosition = endRefPosition > refLength ? refLength : endRefPosition;
-			}
-			else {
-				firstRefPosition = 0;
-				endRefPosition = refLength;
-			}
-
-			// Adjust anchor positions
-			adjustAnchors(anchorPairs, 0, -firstRefPosition);
-
-			// Crop reference
-			char c = reference[endRefPosition];
-			reference[endRefPosition] = '\0';
-
-			// Get alignment
-			getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, &(reference[firstRefPosition]), read, anchorPairs, polishParams->p,
-					&matches, &deletes, &inserts, 0, 0);
-
-			// De-crop reference
-			reference[endRefPosition] = c;
-
-			// Adjust back anchors
-			adjustAnchors(anchorPairs, 0, firstRefPosition);
-
-			// Shift matches/inserts/deletes
-			adjustAnchors(matches, 1, firstRefPosition);
-			adjustAnchors(inserts, 1, firstRefPosition);
-			adjustAnchors(deletes, 1, firstRefPosition);
+			getAlignedPairsWithIndelsCroppingReference(reference, refLength,
+					read, stList_get(anchorAlignments, i),
+					&matches, &inserts, &deletes, polishParams);
 		}
 
 		// Add weights, edges and nodes to the poa
@@ -1087,15 +1094,36 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 
 	// Make the MEA alignments
+	int64_t refLength = stList_length(poa->nodes)-1;
 	for(int64_t i=0; i<stList_length(reads); i++) {
 		char *read  = stList_get(reads, i);
 		stList *anchorAlignment = stList_get(anchorAlignments, i);
 
-		double alignmentScore;
-		stList *alignment = getShiftedMEAAlignment(poa->refString, read, anchorAlignment,
-				polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
+		// Generate the posterior alignment probabilities
+		stList *matches, *inserts, *deletes;
+		getAlignedPairsWithIndelsCroppingReference(poa->refString, stList_length(poa->nodes)-1, read,
+				anchorAlignment, &matches, &inserts, &deletes, polishParams);
 
-		stList_append(alignments, alignment);
+		// Get the MEA alignment
+		double alignmentScore;
+		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, inserts, deletes,
+				refLength, strlen(read), &alignmentScore, polishParams->p);
+
+		// Left shift the alignment
+		stList *leftShiftedAlignment = leftShiftAlignment(alignment, poa->refString, read);
+
+		// Cleanup
+		stList_destruct(inserts);
+		stList_destruct(deletes);
+		stList_destruct(matches);
+		stList_destruct(alignment);
+
+		// Mea alignment
+		//double alignmentScore;
+		//stList *alignment = getShiftedMEAAlignment(poa->refString, read, anchorAlignment,
+		//		polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
+
+		stList_append(alignments, leftShiftedAlignment);
 	}
 
 	// Cleanup
