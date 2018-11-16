@@ -125,13 +125,17 @@ int main(int argc, char *argv[]) {
     fclose(fh);
 
     // Open output files
-    char *referenceOutFile = stString_print("%s.fa", outputBase);
+    char *polishedReferenceOutFile = stString_print("%s.polished.fa", outputBase);
+    char *originalReferenceOutFile = stString_print("%s.original.fa", outputBase);
     char *bamOutFile = stString_print("%s.bam", outputBase);
-    st_logInfo("> Going to write polished reference in : %s\n", referenceOutFile);
+    st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
+    st_logInfo("> Going to write original reference in : %s\n", originalReferenceOutFile);
     st_logInfo("> Going to write polished bam file in : %s\n", bamOutFile);
-    FILE *referenceOutFh = fopen(referenceOutFile, "w");
+    FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
+    FILE *originalReferenceOutFh = fopen(originalReferenceOutFile, "w");
     FILE *bamOutFh = fopen(bamOutFile, "w");
-    free(referenceOutFile);
+    free(polishedReferenceOutFile);
+    free(originalReferenceOutFile);
     free(bamOutFile);
 
     // if regionStr is NULL, it will be ignored in construct2
@@ -234,7 +238,8 @@ int main(int argc, char *argv[]) {
 		// Output the finished sequence
         char *chunkIdentifier = stString_print("%s:%"PRIu64"-%"PRIu64, bamChunk->refSeqName,
                                                bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-		fastaWrite(consensusReferenceString, chunkIdentifier, referenceOutFh);
+		fastaWrite(consensusReferenceString, chunkIdentifier, polishedReferenceOutFh);
+		fastaWrite(referenceString, chunkIdentifier, originalReferenceOutFh);
         free(chunkIdentifier);
 
 		//TODO Write bam reads
@@ -246,7 +251,7 @@ int main(int argc, char *argv[]) {
 
     // Cleanup
     bamChunker_destruct(bamChunker);
-    fclose(referenceOutFh);
+    fclose(polishedReferenceOutFh);
     fclose(bamOutFh);
     stHash_destruct(referenceSequences);
     polishParams_destruct(params);
