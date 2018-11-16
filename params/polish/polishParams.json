@@ -28,7 +28,7 @@
 
   "useRunLengthEncoding" : true,
 
-  "includeSoftClipping" : true,
+  "includeSoftClipping" : false,
 
   "chunkSize" : 10000,
 
