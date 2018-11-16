@@ -30,12 +30,39 @@ int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t
 }
 
 
-BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, PolishParams *params) {
+BamChunker *bamChunker_construct(char *bamFile, PolishParams *params) {
+    return bamChunker_construct2(bamFile, NULL, params);
+}
+
+
+BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params) {
+
+    // are we doing region filtering?
+    bool filterByRegion = false;
+    char regionContig[128] = "";
+    int regionStart = 0;
+    int regionEnd = 0;
+    if (region != NULL) {
+        int scanRet = sscanf(region, "%[^:]:%d-%d", regionContig, &regionStart, &regionEnd);
+        if (scanRet != 3 || strlen(regionContig) == 0) {
+            st_errAbort("Region in unexpected format (expected %%s:%%d-%%d): %s", region);
+        } else if (regionStart < 0 || regionEnd <= 0 || regionEnd <= regionStart) {
+            st_errAbort("Start and end locations in region must be positive, start must be less than end: %s", region);
+        }
+        filterByRegion = true;
+    }
+
+    // standard parameters
+    uint64_t chunkSize = params->chunkSize;
+    uint64_t chunkBoundary = params->chunkBoundary;
+    bool includeSoftClip = params->includeSoftClipping;
+
     // the chunker we're building
     BamChunker *chunker = malloc(sizeof(BamChunker));
     chunker->bamFile = stString_copy(bamFile);
     chunker->chunkSize = chunkSize;
     chunker->chunkBoundary = chunkBoundary;
+    chunker->includeSoftClip = includeSoftClip;
     chunker->params = params;
     chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
     chunker->chunkCount = 0;
@@ -59,19 +86,26 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     // there is probably a better way (bai?) to find min and max aligned positions (which we need for chunk divisions)
     while(sam_read1(in,bamHdr,aln) > 0) {
 
-        // get aligned read length (and sanity check)
+        // basic filtering (no read length, no cigar)
+        if (aln->core.l_qseq <= 0) continue;
+        if (aln->core.n_cigar == 0) continue;
 
+        //data
+        char *chr = bamHdr->target_name[aln->core.tid];
         int64_t start_softclip = 0;
         int64_t end_softclip = 0;
-        int64_t readLength =  getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
-        if (readLength <= 0) {
+        int64_t alnReadLength = getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
+        int64_t alnStartPos = aln->core.pos + 1;
+        int64_t alnEndPos = alnStartPos + alnReadLength;
+
+        // does this belong in our chunk?
+        if (alnReadLength <= 0) continue;
+        if (filterByRegion && (!stString_eq(regionContig, chr) || alnStartPos >= regionEnd || alnEndPos <= regionStart))
             continue;
-        }
 
         // get start and stop position
         int64_t readStartPos = aln->core.pos + 1;           // Left most position of alignment
-        int64_t readEndPos = readStartPos + readLength;
-        //TODO extend by softclipping?
+        int64_t readEndPos = readStartPos + alnReadLength;
 
         // get contig
         char *contig = bamHdr->target_name[aln->core.tid];     // Contig name
@@ -86,7 +120,7 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
             contigStartPos = readStartPos < contigStartPos ? readStartPos : contigStartPos;
             contigEndPos = readEndPos > contigEndPos ? readEndPos : contigEndPos;
         } else {
-            // new contig
+            // new contig (this should never happen if we're filtering by region)
             int64_t savedChunkCount = saveContigChunks(chunker->chunks, chunker, currentContig,
                                                        contigStartPos, contigEndPos, chunkSize, chunkBoundary);
             chunker->chunkCount += savedChunkCount;
@@ -98,6 +132,10 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     }
     // save last contig's chunks
     if (currentContig != NULL) {
+        if (filterByRegion) {
+            contigStartPos = (contigStartPos < regionStart ? regionStart : contigStartPos);
+            contigEndPos = (contigEndPos > regionEnd ? regionEnd : contigEndPos);
+        }
         int64_t savedChunkCount = saveContigChunks(chunker->chunks, chunker, currentContig,
                                                    contigStartPos, contigEndPos, chunkSize, chunkBoundary);
         chunker->chunkCount += savedChunkCount;
@@ -111,36 +149,6 @@ BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t ch
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
-
-    return chunker;
-}
-
-BamChunker *bamChunker_construct(char *bamFile, PolishParams *params) {
-    return bamChunker_construct2(bamFile, UINT32_MAX, 0, params);
-}
-
-
-BamChunker *bamChunker_constructRegion(char *bamFile, char *region, PolishParams *params) {
-
-    char refString[128] = "";
-    int chunkStart = 0;
-    int chunkEnd = 0;
-    int scanRet = sscanf(region, "%[^:]:%d-%d", refString, &chunkStart, &chunkEnd);
-    if (scanRet != 3 || strlen(refString) == 0) {
-        st_errAbort("Region in unexpected format (expected %%s:%%d-%%d): %s", region);
-    } else if (chunkStart <= 0 || chunkEnd <= 0 || chunkEnd <= chunkStart) {
-        st_errAbort("Start and end locations in region must be positive, start must be less than end: %s", region);
-    }
-
-    BamChunker *chunker = malloc(sizeof(BamChunker));
-    chunker->bamFile = stString_copy(bamFile);
-    chunker->chunkSize = (uint64_t) chunkEnd - chunkStart;
-    chunker->chunkBoundary = 0;
-    chunker->params = params;
-    chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
-    stList_append(chunker->chunks, bamChunk_construct2(refString, chunkStart, chunkStart, chunkEnd, chunkEnd, chunker));
-    chunker->chunkCount = 1;
-    chunker->itorIdx = -1;
 
     return chunker;
 }

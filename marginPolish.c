@@ -134,8 +134,8 @@ int main(int argc, char *argv[]) {
     free(referenceOutFile);
     free(bamOutFile);
 
-    BamChunker *bamChunker = (regionStr == NULL ? bamChunker_construct(bamInFile, params) :
-                              bamChunker_constructRegion(bamInFile, regionStr, params));
+    // if regionStr is NULL, it will be ignored in construct2
+    BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params);
 
     // For each chunk of the BAM
     BamChunk *bamChunk = NULL;
@@ -232,7 +232,10 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Output the finished sequence
-		fastaWrite(bamChunk->refSeqName, consensusReferenceString, referenceOutFh);
+        char *chunkIdentifier = stString_print("%s:%"PRIu64"-%"PRIu64, bamChunk->refSeqName,
+                                               bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+		fastaWrite(consensusReferenceString, chunkIdentifier, referenceOutFh);
+        free(chunkIdentifier);
 
 		//TODO Write bam reads
 

@@ -22,12 +22,12 @@ int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseTestSuite());
+//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, polisherTestSuite());
-	CuSuiteAddSuite(suite, viewTestSuite());
-	CuSuiteAddSuite(suite, chunkingTestSuite());
+//	CuSuiteAddSuite(suite, viewTestSuite());
+//	CuSuiteAddSuite(suite, chunkingTestSuite());
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 	int i = marginPhaseTests();
 
 	//st_uglyf("Done\n");
-	while(1);
+//	while(1);
 
 	return i;
 }

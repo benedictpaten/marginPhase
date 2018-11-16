@@ -1111,15 +1111,28 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
 
 
 void test_polish5kb(CuTest *testCase) {
-    char *paramsFile = "../params/polish/polishParams.json";
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
-    bool verbose = true;
-    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+	char *paramsFile = "../params/polish/polishParams.json";
+	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+	bool verbose = true;
+	char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
 	char *region = "chr3:2150000-2155000";
 
-    st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
-    CuAssertTrue(testCase, i == 0);
+	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+	int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
+	CuAssertTrue(testCase, i == 0);
+}
+
+
+void test_polish100kb(CuTest *testCase) {
+	char *paramsFile = "../params/polish/polishParams.json";
+	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+	bool verbose = true;
+	char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
+	char *region = "chr3:8100000-8200000";
+
+	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+	int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
+	CuAssertTrue(testCase, i == 0);
 }
 
 
@@ -1154,6 +1167,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
 
     SUITE_ADD_TEST(suite, test_polish5kb);
+    SUITE_ADD_TEST(suite, test_polish100kb);
 
     return suite;
 }
