@@ -1027,73 +1027,64 @@ void test_polishParams(CuTest *testCase) {
 	polishParams_destruct(polishParams);
 }
 
-//char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
+void test_removeOverlapExample(CuTest *testCase) {
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
 
-/*
- // Crufty code used to generate an initial model for nanopore alignment
+	//Make prefix
+	char *prefixString = stString_copy("ACGTGATTTCA");
 
-typedef enum {
-    match = 0, shortGapX = 1, shortGapY = 2, longGapX = 3, longGapY = 4
-} State;
+	// Make sufix
+	char *suffixString = stString_copy("GATTTCAACGT");
 
-static inline double *hmm_getTransition2(Hmm *hmm, int64_t from, int64_t to) {
-    return &(hmm->transitions[from * hmm->stateNumber + to]);
+	int64_t approxOverlap = 10;
+
+	// Run overlap remover
+	int64_t prefixStringCropEnd, suffixStringCropStart;
+	removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
+				  &prefixStringCropEnd, &suffixStringCropStart);
+
+	CuAssertIntEquals(testCase, 5, prefixStringCropEnd);
+	CuAssertIntEquals(testCase, 1, suffixStringCropStart);
+
+	// Cleanup
+	polishParams_destruct(polishParams);
+	free(prefixString);
+	free(suffixString);
 }
 
-static inline double *hmm_getEmissionsExpectation2(Hmm *hmm, int64_t state, Symbol x, Symbol y) {
-    return &(hmm->emissions[state * SYMBOL_NUMBER_NO_N * SYMBOL_NUMBER_NO_N + x * SYMBOL_NUMBER_NO_N + y]);
+void test_removeOverlap_RandomExamples(CuTest *testCase) {
+	FILE *fh = fopen(polishParamsFile, "r");
+	PolishParams *polishParams = polishParams_readParams(fh);
+	fclose(fh);
+
+	for (int64_t test = 0; test < 100; test++) {
+		//Make prefix
+		char *prefixString = getRandomSequence(st_randomInt(1, 100));
+
+		// Make sufix
+		char *suffixString = getRandomSequence(st_randomInt(1, 100));
+
+		int64_t approxOverlap = st_randomInt(0, 100);
+
+		// Run overlap remover
+		int64_t prefixStringCropEnd, suffixStringCropStart;
+		removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
+					  &prefixStringCropEnd, &suffixStringCropStart);
+
+		CuAssertTrue(testCase, prefixStringCropEnd >= 0);
+		CuAssertTrue(testCase, prefixStringCropEnd <= strlen(prefixString));
+
+		CuAssertTrue(testCase, suffixStringCropStart >= 0);
+		CuAssertTrue(testCase, suffixStringCropStart <= strlen(suffixString));
+
+		free(prefixString);
+		free(suffixString);
+	}
+
+	polishParams_destruct(polishParams);
 }
-
-static void test_hmm(CuTest *testCase) {
-	Hmm *hmm = hmm_constructEmpty(0.0, threeState);
-
-	//                 000000   0000111111111122222222223333333333444 444444455555555556666666666777777 7777
-	//                 012345   6789012345678901234567890123456789012 345678901234567890123456789012345 6789
-	//reference =     "CATTTT   CTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAA TGCAGGGCAATAATGACCATAAAACGCATTTTT ATTT";
-	//trueReference = "CATTTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGGGGCATG  TGACCATAAAACGCATTTTTTATTT";
-
-	//reference =      GATGTAAAAAA   GAAATGATTT     GCTAGAACAGAGCATAAATACACATCTGT
-	//trueReference =  GATGTAAAAAAAAAGAAATGA   CGGAAGTTAGAACAGAGCATAAATACACATCTGT
-
-	hmm_getTransition2(hmm, match, match)[0] = 0.9;
-	hmm_getTransition2(hmm, match, shortGapX)[0] = 0.05;
-	hmm_getTransition2(hmm, match, shortGapY)[0] = 0.05;
-
-	hmm_getTransition2(hmm, shortGapX, match)[0] = 0.5;
-	hmm_getTransition2(hmm, shortGapX, shortGapX)[0] = 0.5;
-	hmm_getTransition2(hmm, shortGapX, shortGapY)[0] = 0.0;
-
-	hmm_getTransition2(hmm, shortGapY, match)[0] = 0.5;
-	hmm_getTransition2(hmm, shortGapY, shortGapX)[0] = 0.0;
-	hmm_getTransition2(hmm, shortGapY, shortGapY)[0] = 0.5;
-
-	for(int64_t i=0; i<SYMBOL_NUMBER_NO_N; i++) {
-		hmm_getEmissionsExpectation2(hmm, match, i, i)[0] = 0.98;
-		for(int64_t j=0; j<SYMBOL_NUMBER_NO_N; j++) {
-			if(j != i) {
-				hmm_getEmissionsExpectation2(hmm, match, i, j)[0] = 0.02/3;
-			}
-		}
-	}
-
-	// Gaps
-	for(int64_t i=0; i<SYMBOL_NUMBER_NO_N; i++) {
-		for(int64_t j=0; j<SYMBOL_NUMBER_NO_N; j++) {
-			hmm_getEmissionsExpectation2(hmm, shortGapX, i, j)[0] = 0.025;
-		}
-	}
-
-	for(int64_t i=0; i<SYMBOL_NUMBER_NO_N; i++) {
-		for(int64_t j=0; j<SYMBOL_NUMBER_NO_N; j++) {
-			hmm_getEmissionsExpectation2(hmm, shortGapY, i, j)[0] = 0.025;
-		}
-	}
-
-	FILE *fH = fopen("./threeStateNanopore.hmm", "w");
-	hmm_write(hmm, fH);
-	fclose(fH);
-}*/
-
 
 int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
 
@@ -1109,7 +1100,6 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
     return i;
 }
 
-
 void test_polish5kb(CuTest *testCase) {
     char *paramsFile = "../params/polish/polishParams.json";
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
@@ -1121,7 +1111,6 @@ void test_polish5kb(CuTest *testCase) {
     int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
     CuAssertTrue(testCase, i == 0);
 }
-
 
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
@@ -1140,6 +1129,8 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
     SUITE_ADD_TEST(suite, test_polishParams);
+    SUITE_ADD_TEST(suite, test_removeOverlapExample);
+    SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
 
     SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);

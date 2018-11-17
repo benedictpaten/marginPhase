@@ -1327,3 +1327,44 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	*logProbability = mlLogProb;
 	return mlRepeatLength;
 }
+
+void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,
+				   int64_t *prefixStringCropEnd, int64_t *suffixStringCropStart) {
+
+	// Align the overlapping suffix of the prefixString and the prefix of the suffix string
+	int64_t prefixStringLength = strlen(prefixString);
+	int64_t suffixStringLength = strlen(suffixString);
+
+	// Get coordinates of substrings to be aligned
+	int64_t i = (prefixStringLength - approxOverlap) < 0 ? 0 : prefixStringLength - approxOverlap;
+	int64_t j = approxOverlap < suffixStringLength ? approxOverlap : suffixStringLength;
+
+	// Crop suffix
+	char c = suffixString[j];
+	suffixString[j] = '\0';
+
+	// Run the alignment
+	stList *alignedPairs = getAlignedPairs(polishParams->sM, &(prefixString[i]), suffixString, polishParams->p, 1, 1);
+
+	// Remove the suffix crop
+	suffixString[j] = c;
+
+	// Pick the median point
+	stIntTuple *maxPair = NULL;
+	for(int64_t k=0; k<stList_length(alignedPairs); k++) {
+		stIntTuple *aPair = stList_get(alignedPairs, k);
+		if(maxPair == NULL || stIntTuple_get(aPair, 0) > stIntTuple_get(maxPair, 0)) {
+			maxPair = aPair;
+		}
+	}
+	if(maxPair == NULL) {
+		st_logCritical("Failed to find any aligned pairs between overlapping strings, not "
+				"doing any trimming (approx overlap: %i, len x: %i, len y: %i)\n", approxOverlap, prefixStringLength, suffixStringLength);
+		*prefixStringCropEnd = prefixStringLength;
+		*suffixStringCropStart = 0;
+	}
+	else {
+		*prefixStringCropEnd = stIntTuple_get(maxPair, 1) + i; // Exclusive
+		*suffixStringCropStart = stIntTuple_get(maxPair, 2);  // Inclusive
+	}
+}

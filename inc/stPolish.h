@@ -317,4 +317,10 @@ void bamChunk_destruct(BamChunk *bamChunk);
  */
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
 
+/*
+ * Remove overlap between two overlapping strings.
+ */
+void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams, 
+				      int64_t *prefixStringCropEnd, int64_t *suffixStringCropStart);
+
 #endif /* REALIGNER_H_ */

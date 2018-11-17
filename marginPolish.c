@@ -192,11 +192,6 @@ int main(int argc, char *argv[]) {
 			// Generate final MEA alignments in RLE space
 			//stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
 
-			// get anchor alignments
-			// get pairwise alignments with mea function
-			// do left shifts
-			//TODO
-
 			// Expand alignments into non-RLE space
 			//TODO
 
