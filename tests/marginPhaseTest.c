@@ -5,7 +5,7 @@
  */
 
 
-#include <htslib/vcf.h>
+//#include <htslib/vcf.h>
 #include "CuTest.h"
 #include "sonLib.h"
 

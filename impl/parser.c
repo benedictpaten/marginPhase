@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 #include <unistd.h>
-#include <htslib/sam.h>
+//#include <htslib/sam.h>
 #include <util.h>
 #include "stRPHmm.h"
 #include "jsmn.h"
@@ -465,17 +465,17 @@ void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
     params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
 }
 
-/*
- * Counts the number of insertions and deletions in a read, given its cigar string.
- */
-void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
-    for (uint32_t i = 0; i < ncigar; i++) {
-        int cigarOp = cigar[i] & BAM_CIGAR_MASK;
-        int cigarNum = cigar[i] >> BAM_CIGAR_SHIFT;
-        if (cigarOp == BAM_CINS) *numInsertions += cigarNum;
-        if (cigarOp == BAM_CDEL) *numDeletions += cigarNum;
-    }
-}
+///*
+// * Counts the number of insertions and deletions in a read, given its cigar string.
+// */
+//void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
+//    for (uint32_t i = 0; i < ncigar; i++) {
+//        int cigarOp = cigar[i] & BAM_CIGAR_MASK;
+//        int cigarNum = cigar[i] >> BAM_CIGAR_SHIFT;
+//        if (cigarOp == BAM_CINS) *numInsertions += cigarNum;
+//        if (cigarOp == BAM_CDEL) *numDeletions += cigarNum;
+//    }
+//}
 
 void appendProbsToList(stList *probabilityList, uint8_t pA, uint8_t pC, uint8_t pG, uint8_t pT, uint8_t pGap) {
     uint8_t *aPtr = calloc(1, sizeof(uint8_t));
@@ -664,237 +664,238 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 
 
 
-/* Parse reads within an input interval of a reference sequence of a bam file
- * and create a list of profile sequences by turning characters into profile probabilities.
- *
- * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
- * signal level alignments).
- * */
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
-    return parseReadsWithSingleNucleotideProbs(profileSequences, bamFile, baseMapper, params, NULL, false);
-}
+///* Parse reads within an input interval of a reference sequence of a bam file
+// * and create a list of profile sequences by turning characters into profile probabilities.
+// *
+// * In future, maybe use mapq scores to adjust profile (or posterior probabilities for
+// * signal level alignments).
+// * */
+//int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params) {
+//    return parseReadsWithSingleNucleotideProbs(profileSequences, bamFile, baseMapper, params, NULL, false);
+//}
 
-int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
-                                            stRPHmmParameters *params, char *singleNuclProbDirectory,
-                                            bool onlySingleNuclProb) {
-    if (singleNuclProbDirectory != NULL) {
-        st_logInfo("\tModifying probabilities from single nucleotide probability files in %s\n",
-                   singleNuclProbDirectory);
-    }
 
-    samFile *in = hts_open(bamFile, "r");
-    if (in == NULL) {
-        st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
-        return -1;
-    }
-    bam_hdr_t *bamHdr = sam_hdr_read(in);
-    bam1_t *aln = bam_init1();
-
-    int64_t readCount = 0;
-    int64_t singleNuclProbReadCount = 0;
-    int64_t bamReadCount = 0;
-    int64_t profileCount = 0;
-    int64_t missingSingleNuclProbReads = 0;
-    int64_t filteredReads = 0;
-    int64_t filteredReads_flag = 0;
-    int64_t filteredReads_mapq = 0;
-
-    while(sam_read1(in,bamHdr,aln) > 0) {
-        stProfileSeq *pSeq = NULL;
-
-        int64_t pos = aln->core.pos+1;                      // Left most position of alignment
-        char *chr = bamHdr->target_name[aln->core.tid] ;    // Contig name (chromosome)
-        int64_t len = aln->core.l_qseq;                     // Length of the read.
-        uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
-        char *readName = bam_get_qname(aln);
-        uint32_t *cigar = bam_get_cigar(aln);
-
-        if (aln->core.l_qseq <= 0) {
-            filteredReads++;
-            continue;
-        }
-
-        // Filter out any reads with specified flags
-        if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
-            filteredReads++;
-            filteredReads_flag++;
-            continue;
-        }
-
-        // If there isn't a cigar string, don't bother including the read, since we don't
-        // know how it aligns
-        if (aln->core.n_cigar == 0) {
-            filteredReads++;
-            continue;
-        }
-
-        // If the mapq score is less than the given threshold, filter it out
-        if (aln->core.qual < params->mapqFilter) {
-            filteredReads++;
-            filteredReads_mapq++;
-            continue;
-        }
-
-        // Tracks how many reads there were
-        readCount++;
-
-        // Should we read from the signalAlign directory?
-        if (singleNuclProbDirectory != NULL) {
-
-            // Get signalAlign file (if exists)
-            char *singleNuclProbReadLocation = stString_print("%s/%s.tsv", singleNuclProbDirectory, readName);
-            if (access(singleNuclProbReadLocation, F_OK) == -1) {
-                // Could not find the read file
-                missingSingleNuclProbReads++;
-            } else {
-                // Found the read file
-                pSeq = getProfileSequenceFromSingleNuclProbFile(singleNuclProbReadLocation, readName, baseMapper, params);
-                singleNuclProbReadCount++;
-
-                // We have a profile, so save it
-                stList_append(profileSequences, pSeq);
-                profileCount++;
-            }
-            free(singleNuclProbReadLocation);
-
-            // If we found a SA file or if we don't want missing reads
-            if (pSeq != NULL || onlySingleNuclProb) {
-                continue;
-            }
-        }
-
-        int64_t start_read = 0;
-        int64_t end_read = 0;
-        int64_t start_ref = pos;
-        int64_t cig_idx = 0;
-
-        // Find the correct starting locations on the read and reference sequence,
-        // to deal with things like inserts / deletions / soft clipping
-        while (cig_idx < aln->core.n_cigar) {
-            int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-            int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
-
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                break;
-            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                start_ref += cigarNum;
-                cig_idx++;
-            } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
-                start_read += cigarNum;
-                cig_idx++;
-            } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                cig_idx++;
-            } else {
-                st_errAbort("Unidentifiable cigar operation\n");
-            }
-        }
-
-        // Check for soft clipping at the end
-        if (aln->core.n_cigar > 1) {
-            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
-            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
-            if (lastCigarOp == BAM_CSOFT_CLIP) {
-                end_read += lastCigarNum;
-            }
-        }
-
-        // Count number of insertions & deletions in sequence
-        int64_t numInsertions = 0;
-        int64_t numDeletions = 0;
-        countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
-        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
-
-        if (trueLength <= 0) {
-            filteredReads++;
-            continue;
-        }
-
-        // Create empty profile sequence
-        pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
-
-        // Variables to keep track of position in sequence / cigar operations
-        cig_idx = 0;
-        int64_t currPosInOp = 0;
-        int64_t cigarOp = -1;
-        int64_t cigarNum = -1;
-        int64_t idxInSeq = start_read;
-
-        // For each position turn character into profile probability
-        // As is, this makes the probability 1 for the base read in, and 0 otherwise
-        for (uint32_t i = 0; i < trueLength; i++) {
-
-            if (currPosInOp == 0) {
-                cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
-                cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
-            }
-            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
-                int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
-                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
-                idxInSeq++;
-            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
-                // Only add a gap character when that param is on
-                if (params->gapCharactersForDeletions) {
-                    // This assumes gap character is the last character in the alphabet given
-                    pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
-                }
-            } else if (cigarOp == BAM_CINS) {
-                // Currently, ignore insertions
-                idxInSeq++;
-                i--;
-            } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
-                // Nothing really to do here. skip to next cigar operation
-                currPosInOp = cigarNum - 1;
-                i--;
-            } else {
-                st_logCritical("Unidentifiable cigar operation\n");
-            }
-
-            currPosInOp++;
-            if (currPosInOp == cigarNum) {
-                cig_idx++;
-                currPosInOp = 0;
-            }
-        }
-        bamReadCount++;
-
-        // Save profile seq
-        if (pSeq->length > 0) {
-            profileCount++;
-            stList_append(profileSequences, pSeq);
-        }
-
-    }
-
-    // Log signal align usage
-    if (singleNuclProbDirectory != NULL) {
-        if (missingSingleNuclProbReads > 0) {
-            st_logInfo("\t%d/%d reads were missing single nucleotide probability file\n", missingSingleNuclProbReads, readCount);
-        }
-        st_logInfo("\tOf %d total reads: %d were loaded from single nucleotide probability data, and %d were from the bam\n",
-                   profileCount, singleNuclProbReadCount, bamReadCount);
-
-    }
-
-    // Log filtering actions
-    if(st_getLogLevel() == debug) {
-        char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
-        st_logDebug("\tFiltered %" PRIi64 " reads with either missing cigar lines, "
-                            "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
-                            "\n\t\tand undesired sam flags "
-                            "(filtered %d reads with sam flags being filtered on: %s)\n",
-                filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
-        free(samFlagBitString);
-    }
-
-    // Sanity check (did we accidentally save profile sequences twice?)
-    assert(stList_length(profileSequences) <= readCount);
-
-    bam_hdr_destroy(bamHdr);
-    bam_destroy1(aln);
-    sam_close(in);
-
-    return profileCount;
-}
+//int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
+//                                            stRPHmmParameters *params, char *singleNuclProbDirectory,
+//                                            bool onlySingleNuclProb) {
+//    if (singleNuclProbDirectory != NULL) {
+//        st_logInfo("\tModifying probabilities from single nucleotide probability files in %s\n",
+//                   singleNuclProbDirectory);
+//    }
+//
+//    samFile *in = hts_open(bamFile, "r");
+//    if (in == NULL) {
+//        st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+//        return -1;
+//    }
+//    bam_hdr_t *bamHdr = sam_hdr_read(in);
+//    bam1_t *aln = bam_init1();
+//
+//    int64_t readCount = 0;
+//    int64_t singleNuclProbReadCount = 0;
+//    int64_t bamReadCount = 0;
+//    int64_t profileCount = 0;
+//    int64_t missingSingleNuclProbReads = 0;
+//    int64_t filteredReads = 0;
+//    int64_t filteredReads_flag = 0;
+//    int64_t filteredReads_mapq = 0;
+//
+//    while(sam_read1(in,bamHdr,aln) > 0) {
+//        stProfileSeq *pSeq = NULL;
+//
+//        int64_t pos = aln->core.pos+1;                      // Left most position of alignment
+//        char *chr = bamHdr->target_name[aln->core.tid] ;    // Contig name (chromosome)
+//        int64_t len = aln->core.l_qseq;                     // Length of the read.
+//        uint8_t *seq = bam_get_seq(aln);                    // DNA sequence
+//        char *readName = bam_get_qname(aln);
+//        uint32_t *cigar = bam_get_cigar(aln);
+//
+//        if (aln->core.l_qseq <= 0) {
+//            filteredReads++;
+//            continue;
+//        }
+//
+//        // Filter out any reads with specified flags
+//        if((aln->core.flag & params->filterAReadWithAnyOneOfTheseSamFlagsSet) > 0) {
+//            filteredReads++;
+//            filteredReads_flag++;
+//            continue;
+//        }
+//
+//        // If there isn't a cigar string, don't bother including the read, since we don't
+//        // know how it aligns
+//        if (aln->core.n_cigar == 0) {
+//            filteredReads++;
+//            continue;
+//        }
+//
+//        // If the mapq score is less than the given threshold, filter it out
+//        if (aln->core.qual < params->mapqFilter) {
+//            filteredReads++;
+//            filteredReads_mapq++;
+//            continue;
+//        }
+//
+//        // Tracks how many reads there were
+//        readCount++;
+//
+//        // Should we read from the signalAlign directory?
+//        if (singleNuclProbDirectory != NULL) {
+//
+//            // Get signalAlign file (if exists)
+//            char *singleNuclProbReadLocation = stString_print("%s/%s.tsv", singleNuclProbDirectory, readName);
+//            if (access(singleNuclProbReadLocation, F_OK) == -1) {
+//                // Could not find the read file
+//                missingSingleNuclProbReads++;
+//            } else {
+//                // Found the read file
+//                pSeq = getProfileSequenceFromSingleNuclProbFile(singleNuclProbReadLocation, readName, baseMapper, params);
+//                singleNuclProbReadCount++;
+//
+//                // We have a profile, so save it
+//                stList_append(profileSequences, pSeq);
+//                profileCount++;
+//            }
+//            free(singleNuclProbReadLocation);
+//
+//            // If we found a SA file or if we don't want missing reads
+//            if (pSeq != NULL || onlySingleNuclProb) {
+//                continue;
+//            }
+//        }
+//
+//        int64_t start_read = 0;
+//        int64_t end_read = 0;
+//        int64_t start_ref = pos;
+//        int64_t cig_idx = 0;
+//
+//        // Find the correct starting locations on the read and reference sequence,
+//        // to deal with things like inserts / deletions / soft clipping
+//        while (cig_idx < aln->core.n_cigar) {
+//            int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+//            int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+//
+//            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+//                break;
+//            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+//                start_ref += cigarNum;
+//                cig_idx++;
+//            } else if (cigarOp == BAM_CINS || cigarOp == BAM_CSOFT_CLIP) {
+//                start_read += cigarNum;
+//                cig_idx++;
+//            } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+//                cig_idx++;
+//            } else {
+//                st_errAbort("Unidentifiable cigar operation\n");
+//            }
+//        }
+//
+//        // Check for soft clipping at the end
+//        if (aln->core.n_cigar > 1) {
+//            int lastCigarOp = cigar[aln->core.n_cigar-1] & BAM_CIGAR_MASK;
+//            int lastCigarNum = cigar[aln->core.n_cigar-1] >> BAM_CIGAR_SHIFT;
+//            if (lastCigarOp == BAM_CSOFT_CLIP) {
+//                end_read += lastCigarNum;
+//            }
+//        }
+//
+//        // Count number of insertions & deletions in sequence
+//        int64_t numInsertions = 0;
+//        int64_t numDeletions = 0;
+//        countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
+//        int64_t trueLength = len - start_read - end_read + numDeletions - numInsertions;
+//
+//        if (trueLength <= 0) {
+//            filteredReads++;
+//            continue;
+//        }
+//
+//        // Create empty profile sequence
+//        pSeq = stProfileSeq_constructEmptyProfile(chr, readName, pos, trueLength);
+//
+//        // Variables to keep track of position in sequence / cigar operations
+//        cig_idx = 0;
+//        int64_t currPosInOp = 0;
+//        int64_t cigarOp = -1;
+//        int64_t cigarNum = -1;
+//        int64_t idxInSeq = start_read;
+//
+//        // For each position turn character into profile probability
+//        // As is, this makes the probability 1 for the base read in, and 0 otherwise
+//        for (uint32_t i = 0; i < trueLength; i++) {
+//
+//            if (currPosInOp == 0) {
+//                cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+//                cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+//            }
+//            if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+//                int64_t b = stBaseMapper_getValueForChar(baseMapper, seq_nt16_str[bam_seqi(seq, idxInSeq)]);
+//                pSeq->profileProbs[i * ALPHABET_SIZE + b] = ALPHABET_MAX_PROB;
+//                idxInSeq++;
+//            } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+//                // Only add a gap character when that param is on
+//                if (params->gapCharactersForDeletions) {
+//                    // This assumes gap character is the last character in the alphabet given
+//                    pSeq->profileProbs[i * ALPHABET_SIZE + (ALPHABET_SIZE - 1)] = ALPHABET_MAX_PROB;
+//                }
+//            } else if (cigarOp == BAM_CINS) {
+//                // Currently, ignore insertions
+//                idxInSeq++;
+//                i--;
+//            } else if (cigarOp == BAM_CSOFT_CLIP || cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+//                // Nothing really to do here. skip to next cigar operation
+//                currPosInOp = cigarNum - 1;
+//                i--;
+//            } else {
+//                st_logCritical("Unidentifiable cigar operation\n");
+//            }
+//
+//            currPosInOp++;
+//            if (currPosInOp == cigarNum) {
+//                cig_idx++;
+//                currPosInOp = 0;
+//            }
+//        }
+//        bamReadCount++;
+//
+//        // Save profile seq
+//        if (pSeq->length > 0) {
+//            profileCount++;
+//            stList_append(profileSequences, pSeq);
+//        }
+//
+//    }
+//
+//    // Log signal align usage
+//    if (singleNuclProbDirectory != NULL) {
+//        if (missingSingleNuclProbReads > 0) {
+//            st_logInfo("\t%d/%d reads were missing single nucleotide probability file\n", missingSingleNuclProbReads, readCount);
+//        }
+//        st_logInfo("\tOf %d total reads: %d were loaded from single nucleotide probability data, and %d were from the bam\n",
+//                   profileCount, singleNuclProbReadCount, bamReadCount);
+//
+//    }
+//
+//    // Log filtering actions
+//    if(st_getLogLevel() == debug) {
+//        char *samFlagBitString = intToBinaryString(params->filterAReadWithAnyOneOfTheseSamFlagsSet);
+//        st_logDebug("\tFiltered %" PRIi64 " reads with either missing cigar lines, "
+//                            "\n\t\tlow mapq scores (filtered %d reads with scores less than %d), "
+//                            "\n\t\tand undesired sam flags "
+//                            "(filtered %d reads with sam flags being filtered on: %s)\n",
+//                filteredReads, filteredReads_mapq, params->mapqFilter, filteredReads_flag, samFlagBitString);
+//        free(samFlagBitString);
+//    }
+//
+//    // Sanity check (did we accidentally save profile sequences twice?)
+//    assert(stList_length(profileSequences) <= readCount);
+//
+//    bam_hdr_destroy(bamHdr);
+//    bam_destroy1(aln);
+//    sam_close(in);
+//
+//    return profileCount;
+//}
 
 /*
  * Params object for polisher

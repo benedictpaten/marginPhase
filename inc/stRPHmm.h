@@ -13,9 +13,9 @@
 #include <math.h>
 #include <float.h>
 
-#include <htslib/vcf.h>
-#include <htslib/sam.h>
-#include <htslib/faidx.h>
+//#include <htslib/vcf.h>
+//#include <htslib/sam.h>
+//#include <htslib/faidx.h>
 
 #include "sonLib.h"
 
@@ -531,16 +531,16 @@ void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64
 #define LOG_FALSE_NEGATIVES 4
 void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
 
-/*
- * File writing methods
- */
-
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName,
-                      stBaseMapper *baseMapper, bool gvcf);
-
-bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
-
-void writeParamFile(char *outputFilename, stRPHmmParameters *params);
+///*
+// * File writing methods
+// */
+//
+//void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName,
+//                      stBaseMapper *baseMapper, bool gvcf);
+//
+//bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
+//
+//void writeParamFile(char *outputFilename, stRPHmmParameters *params);
 
 /*
  * _stGenotypeResults
