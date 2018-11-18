@@ -853,6 +853,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	params->referenceBasePenalty = 0.5;
 	params->minPosteriorProbForAlignmentAnchor = 0.9;
     params->includeSoftClipping = FALSE; //todo add this in
+    params->chunkSize = 0;
+    params->chunkBoundary = 0;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
@@ -894,6 +896,22 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
             }
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
+        }
+
+        else if (strcmp(keyString, "includeSoftClipping") == 0) {
+            params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "chunkSize") == 0) {
+            if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+                st_errAbort("ERROR: chunkSize parameter must be positive\n");
+            }
+            params->chunkSize = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+        }
+        else if (strcmp(keyString, "chunkBoundary") == 0) {
+            if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+                st_errAbort("ERROR: chunkBoundary parameter must be positive\n");
+            }
+            params->chunkBoundary = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);

@@ -1328,7 +1328,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	return mlRepeatLength;
 }
 
-void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,
+int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,
 				   int64_t *prefixStringCropEnd, int64_t *suffixStringCropStart) {
 
 	// Align the overlapping suffix of the prefixString and the prefix of the suffix string
@@ -1345,6 +1345,11 @@ void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap
 
 	// Run the alignment
 	stList *alignedPairs = getAlignedPairs(polishParams->sM, &(prefixString[i]), suffixString, polishParams->p, 1, 1);
+
+	if(stList_length(alignedPairs) == 0 && st_getLogLevel() >= info) {
+		st_logInfo("Failed to find good overlap. Suffix-string: %s\n", &(prefixString[i]));
+		st_logInfo("Failed to find good overlap. Prefix-string: %s\n", suffixString);
+	}
 
 	// Remove the suffix crop
 	suffixString[j] = c;
@@ -1367,4 +1372,6 @@ void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap
 		*prefixStringCropEnd = stIntTuple_get(maxPair, 1) + i; // Exclusive
 		*suffixStringCropStart = stIntTuple_get(maxPair, 2);  // Inclusive
 	}
+
+	return maxPair == NULL ? 0 : stIntTuple_get(maxPair, 0);
 }

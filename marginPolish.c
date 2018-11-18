@@ -14,6 +14,7 @@
 #include "margin_phase_version.h"
 #include "sonLib.h"
 #include "stPolish.h"
+#include "pairwiseAligner.h"
 
 /*
  * Main functions
@@ -36,7 +37,7 @@ void usage() {
     fprintf(stderr, "    -h --help              : Print this help screen\n");
     fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
     fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
-    fprintf(stderr, "    -r --region            : If set, will only compute for this region.\n");
+    fprintf(stderr, "    -r --region            : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 }
 
@@ -125,17 +126,20 @@ int main(int argc, char *argv[]) {
     fclose(fh);
 
     // Open output files
-    char *referenceOutFile = stString_print("%s.fa", outputBase);
-    char *bamOutFile = stString_print("%s.bam", outputBase);
-    st_logInfo("> Going to write polished reference in : %s\n", referenceOutFile);
-    st_logInfo("> Going to write polished bam file in : %s\n", bamOutFile);
-    FILE *referenceOutFh = fopen(referenceOutFile, "w");
-    FILE *bamOutFh = fopen(bamOutFile, "w");
-    free(referenceOutFile);
-    free(bamOutFile);
+    char *polishedReferenceOutFile = stString_print("%s.polished.fa", outputBase);
+    st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
 
-    BamChunker *bamChunker = (regionStr == NULL ? bamChunker_construct(bamInFile, params) :
-                              bamChunker_constructRegion(bamInFile, regionStr, params));
+    FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
+    free(polishedReferenceOutFile);
+
+    // if regionStr is NULL, it will be ignored in construct2
+    BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params);
+    st_logInfo("> Set up bam chunker with chunk size: %i and overlap %i (for region=%s)\n",
+    		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr);
+
+    stList *polishedReferenceStrings = NULL; // The polished reference strings, one
+    // for each chunk
+    char *referenceSequenceName = NULL;
 
     // For each chunk of the BAM
     BamChunk *bamChunk = NULL;
@@ -146,17 +150,18 @@ int main(int argc, char *argv[]) {
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
             (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
 
+        st_logInfo("> Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
+        		   bamChunk->refSeqName, (int)bamChunk->chunkBoundaryStart,
+				   (int)(refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
+
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
 		stList *reads = stList_construct3(0, free);
 		stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 		convertToReadsAndAlignments(bamChunk, reads, alignments);
 
-		// Output data structures
-		char *consensusReferenceString = NULL; // The polished reference string
-		stList *updatedAlignments = NULL; // TODO
-		Poa *poa = NULL; // The partial order alignment
-		stList *readToConsensusAlignments; // Final alignments of reads to reference
+		Poa *poa = NULL; // The poa alignment
+		char *polishedReferenceString = NULL; // The polished reference string
 
 		// Now run the polishing method
 
@@ -186,20 +191,15 @@ int main(int argc, char *argv[]) {
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
 
 			// Do run-length decoding
-			RleString *consensusReference = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
-			consensusReferenceString = rleString_expand(consensusReference);
-
-			// Generate final MEA alignments in RLE space
-			//stList *rleMEAAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
-
-			// Expand alignments into non-RLE space
-			//TODO
+			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			polishedReferenceString = rleString_expand(polishedRLEReference);
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleReads);
 			stList_destruct(l);
 			stList_destruct(rleAlignments);
 			rleString_destruct(rleReference);
+			rleString_destruct(polishedRLEReference);
 		}
 		else { // Non-run-length encoded polishing
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
@@ -207,14 +207,8 @@ int main(int argc, char *argv[]) {
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(reads, alignments, referenceString, params);
 
-			// Consensus is the final backbone of the POA
-			consensusReferenceString = stString_copy(poa->refString);
-
-			// Generate updated alignments
-			readToConsensusAlignments = poa_getReadAlignmentsToConsensus(poa, reads, params);
-
-			// Clean up
-			poa_destruct(poa);
+			// Polished string is the final backbone of the POA
+			polishedReferenceString = stString_copy(poa->refString);
 		}
 
 		// Log info about the POA
@@ -226,20 +220,76 @@ int main(int argc, char *argv[]) {
 			poa_print(poa, stderr, 5);
 		}
 
-		// Output the finished sequence
-		fastaWrite(bamChunk->refSeqName, consensusReferenceString, referenceOutFh);
+		// If there is no prior chunk
+		if(referenceSequenceName == NULL) {
+			polishedReferenceStrings = stList_construct3(0, free);
+			referenceSequenceName = stString_copy(bamChunk->refSeqName);
+		}
+		// Else, print the prior reference sequence if current chunk not part of that sequence
+		else if(!stString_eq(bamChunk->refSeqName, referenceSequenceName)) {
+			assert(stList_length(polishedReferenceStrings) > 0);
 
-		//TODO Write bam reads
+			// Write the previous polished reference string out
+			char *s = stString_join2("", polishedReferenceStrings);
+			fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
+
+			// Clean up
+			free(s);
+			stList_destruct(polishedReferenceStrings);
+			free(referenceSequenceName);
+
+			// Reset for next reference sequence
+			polishedReferenceStrings = stList_construct3(0, free);
+			referenceSequenceName = stString_copy(bamChunk->refSeqName);
+		}
+		// If there was a previous chunk then trim it's polished reference sequence
+		// to remove overlap with the current chunk's polished reference sequence
+		else if(stList_length(polishedReferenceStrings) > 0) {
+			char *previousPolishedReferenceString = stList_peek(polishedReferenceStrings);
+
+			// Trim the currrent and previous polished reference strings to remove overlap
+			int64_t prefixStringCropEnd, suffixStringCropStart;
+			int64_t overlapMatchWeight = removeOverlap(previousPolishedReferenceString, polishedReferenceString,
+													   bamChunker->chunkBoundary, params,
+													   &prefixStringCropEnd, &suffixStringCropStart);
+
+			st_logInfo("Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
+					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
+					strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
+
+			// Crop the suffix of the previous chunk's polished reference string
+			previousPolishedReferenceString[prefixStringCropEnd] = '\0';
+
+			// Crop the the prefix of the current chunk's polished reference string
+			char *c = polishedReferenceString;
+			polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
+			free(c);
+		}
+
+		// Add the polished sequence to the list of polished reference sequence chunks
+		stList_append(polishedReferenceStrings, polishedReferenceString);
 
 		// Cleanup
 		poa_destruct(poa);
-		free(consensusReferenceString);
     }
+
+    // Write out the last chunk
+    if(referenceSequenceName != NULL) {
+    	// Write the previous polished reference string out
+    	char *s = stString_join2("", polishedReferenceStrings);
+    	fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
+
+    	// Clean up
+    	free(s);
+    	stList_destruct(polishedReferenceStrings);
+    	free(referenceSequenceName);
+    }
+
+    st_logInfo("> Finished polishing.\n");
 
     // Cleanup
     bamChunker_destruct(bamChunker);
-    fclose(referenceOutFh);
-    fclose(bamOutFh);
+    fclose(polishedReferenceOutFh);
     stHash_destruct(referenceSequences);
     polishParams_destruct(params);
 

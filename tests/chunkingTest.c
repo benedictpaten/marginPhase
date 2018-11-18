@@ -9,30 +9,48 @@
 
 #define INPUT_BAM "../tests/chunkingTest.bam"
 
-static PolishParams* getParameters(bool includeSoftClipping) {
+static PolishParams* getParameters(uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClipping) {
     PolishParams *params = st_calloc(1, sizeof(PolishParams));
+    params->chunkSize = chunkSize;
+    params->chunkBoundary = chunkBoundary;
     params->includeSoftClipping = includeSoftClipping;
+
     return params;
 }
 
 static void test_getRegionChunker(CuTest *testCase) {
-    // prep
-    PolishParams *params = getParameters(FALSE);
-    BamChunker *chunker;
-
-    // test
-    chunker = bamChunker_constructRegion("", "chr1:1000-2000", params);
+    // test part of contig (less than chunk size)
+    PolishParams *params = getParameters(0,0,FALSE);
+    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, "contig_1:100000-110000", params);
     CuAssertTrue(testCase, chunker->chunkCount == 1);
-    CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 0))->refSeqName, "chr1"));
-    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryStart == 1000);
-    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryEnd == 2000);
+    CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 0))->refSeqName, "contig_1"));
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryStart == 100000);
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryEnd == 100008);
 
+    // test whole contig by region
+    chunker = bamChunker_construct2(INPUT_BAM, "contig_1:0-3000000", params);
+    CuAssertTrue(testCase, chunker->chunkCount == 1);
+    CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 0))->refSeqName, "contig_1"));
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryStart == 100000);
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryEnd == 2100008);
     free(chunker->params);
+
+    params = getParameters(100000,0,FALSE);
+    chunker = bamChunker_construct2(INPUT_BAM, "contig_1:100000-300000", params);
+    CuAssertTrue(testCase, chunker->chunkCount == 2);
+    CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 0))->refSeqName, "contig_1"));
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryStart == 100000);
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryEnd == 200000);
+    CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 1))->refSeqName, "contig_1"));
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 1))->chunkBoundaryStart == 200000);
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 1))->chunkBoundaryEnd == 300000);
+    free(chunker->params);
+
     bamChunker_destruct(chunker);
 }
 
 static void test_getChunksByChrom(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(0,0,FALSE));
     CuAssertTrue(testCase, chunker->chunkCount == 2);
     int itorCount = 0;
     while (bamChunker_getNext(chunker) != NULL) {
@@ -44,7 +62,7 @@ static void test_getChunksByChrom(CuTest *testCase) {
 }
 
 static void test_getChunksBy100kb(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(100000, 0, FALSE));
 
     // contig_1 alignments start at 100 000 and go to 2 100 008 (21 @ 100k size)
     // contig_2 alignments start at 100 000 and go to   100 032 ( 1 @ 100k size)
@@ -59,7 +77,7 @@ static void test_getChunksBy100kb(CuTest *testCase) {
 }
 
 static void test_getChunksWithBoundary(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 8, 4, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(8, 4, FALSE));
 
     // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
     int contig2ChunkCount = 0;
@@ -107,7 +125,7 @@ static void test_getChunksWithBoundary(CuTest *testCase) {
 
 
 static void test_getChunksWithoutBoundary(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 8, 0, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(8, 0, FALSE));
 
     // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
     int contig2ChunkCount = 0;
@@ -177,7 +195,7 @@ void assertClippingAlignmentMatchCount(CuTest *testCase, int64_t idx, stList *al
 }
 
 static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(100000, 0, FALSE));
 
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
@@ -206,7 +224,7 @@ static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
 }
 
 static void test_getReadsWithSoftClipping(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 100000, 0, getParameters(TRUE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(100000, 0, TRUE));
 
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
@@ -244,7 +262,7 @@ void assertAlignmentMatching(CuTest *testCase, stList *list1, int64_t* onethValu
 }
 
 static void test_readAlignmentsWithoutSoftclippingChunkStart(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 1000, 0, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(1000, 0, FALSE));
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
@@ -396,7 +414,7 @@ static void test_readAlignmentsWithoutSoftclippingChunkStart(CuTest *testCase) {
 
 
 static void test_readAlignmentsWithSoftclippingChunkStart(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 1000, 0, getParameters(TRUE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(1000, 0, TRUE));
 
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
@@ -548,7 +566,7 @@ static void test_readAlignmentsWithSoftclippingChunkStart(CuTest *testCase) {
 
 
 static void test_readAlignmentsWithoutSoftclippingChunkEnd(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 20, 0, getParameters(FALSE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(20, 0, FALSE));
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
@@ -686,7 +704,7 @@ static void test_readAlignmentsWithoutSoftclippingChunkEnd(CuTest *testCase) {
 
 
 static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
-    BamChunker *chunker = bamChunker_construct2(INPUT_BAM, 20, 0, getParameters(TRUE));
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(20, 0, TRUE));
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;

@@ -25,9 +25,15 @@
   			0.025000, 0.025000, 0.025000, 0.025000	
   		]
   },
-  
+
   "useRunLengthEncoding" : true,
-  
+
+  "includeSoftClipping" : false,
+
+  "chunkSize" : 10000,
+
+  "chunkBoundary" : 500,
+
   "referenceBasePenalty" : 0.5,
   
   "minPosteriorProbForAlignmentAnchor" : 0.9,

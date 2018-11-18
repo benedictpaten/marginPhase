@@ -31,6 +31,9 @@ typedef struct _polishParams {
 	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
 	// chunking configuration
 	bool includeSoftClipping;
+	uint64_t chunkSize;
+	uint64_t chunkBoundary;
+
 } PolishParams;
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -281,6 +284,7 @@ typedef struct _bamChunker {
     // configuration
     uint64_t chunkSize;
 	uint64_t chunkBoundary;
+	bool includeSoftClip;
 	PolishParams *params;
 	// internal data
     stList *chunks;
@@ -299,8 +303,7 @@ typedef struct _bamChunk {
 } BamChunk;
 
 BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
-BamChunker *bamChunker_construct2(char *bamFile, uint64_t chunkSize, uint64_t chunkBoundary, PolishParams *params);
-BamChunker *bamChunker_constructRegion(char *bamFile, char *region, PolishParams *params);
+BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params);
 
 void bamChunker_destruct(BamChunker *bamChunker);
 
@@ -318,9 +321,9 @@ void bamChunk_destruct(BamChunk *bamChunk);
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
 
 /*
- * Remove overlap between two overlapping strings.
+ * Remove overlap between two overlapping strings. Returns max weight of split point.
  */
-void removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams, 
+int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams, 
 				      int64_t *prefixStringCropEnd, int64_t *suffixStringCropStart);
 
 #endif /* REALIGNER_H_ */
