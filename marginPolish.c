@@ -250,11 +250,11 @@ int main(int argc, char *argv[]) {
 			// Trim the currrent and previous polished reference strings to remove overlap
 			int64_t prefixStringCropEnd, suffixStringCropStart;
 			int64_t overlapMatchWeight = removeOverlap(previousPolishedReferenceString, polishedReferenceString,
-													   bamChunker->chunkBoundary, params,
+													   bamChunker->chunkBoundary * 2, params,
 													   &prefixStringCropEnd, &suffixStringCropStart);
 
 			st_logInfo("Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
+					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary * 2, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
 					strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
 
 			// Crop the suffix of the previous chunk's polished reference string
