@@ -32,7 +32,7 @@
 
   "chunkSize" : 10000,
 
-  "chunkBoundary" : 500,
+  "chunkBoundary" : 50,
 
   "referenceBasePenalty" : 0.5,
   
@@ -42,11 +42,11 @@
 	    "threshold" : 0.01,
 	    "minDiagsBetweenTraceBack" : 10000,
 	    "traceBackDiagonals" : 40,
-	    "diagonalExpansion" : 30,
+	    "diagonalExpansion" : 10,
 	    "constraintDiagonalTrim" : 0,
 	    "anchorMatrixBiggerThanThis" : 250000,
 	    "repeatMaskMatrixBiggerThanThis" : 250000,
-	    "splitMatrixBiggerThanThis" : 100000,
+	    "splitMatrixBiggerThanThis" : 250000,
 	    "alignAmbiguityCharacters" : false,
 	    "gapGamma" : 0.5
   },
