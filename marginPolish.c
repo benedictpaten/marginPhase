@@ -41,6 +41,10 @@ void usage() {
     fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 }
 
+void transformReferenceMapNames(stHash *originalReferenceMap) {
+
+}
+
 int main(int argc, char *argv[]) {
 
     // Parameters / arguments
@@ -124,6 +128,22 @@ int main(int argc, char *argv[]) {
     fh = fopen(referenceFastaFile, "r");
     stHash *referenceSequences = fastaReadToMap(fh);
     fclose(fh);
+    // log names and provide transform
+    stList *refSeqNames = stHash_getKeys(referenceSequences);
+    int64_t origRefSeqLen = stList_length(refSeqNames);
+    st_logDebug("\tReference contigs: \n");
+    for (int i = 0; i < origRefSeqLen; ++i) {
+        char *fullRefSeqName = (char *) stList_get(refSeqNames, i);
+        st_logDebug("\t\t%s\n", fullRefSeqName);
+        char refSeqName[128] = "";
+        if (sscanf(fullRefSeqName, "%s", refSeqName) == 1 && !stString_eq(fullRefSeqName, refSeqName)) {
+            char *newKey = stString_copy(refSeqName);
+            char *refSeq = stHash_search(referenceSequences, fullRefSeqName);
+            stHash_insert(referenceSequences, newKey, refSeq);
+            stHash_removeAndFreeKey(referenceSequences, fullRefSeqName);
+            st_logDebug("\t\t\t-> %s\n", newKey);
+        }
+    }
 
     // Open output files
     char *polishedReferenceOutFile = stString_print("%s.polished.fa", outputBase);
@@ -146,6 +166,10 @@ int main(int argc, char *argv[]) {
     while((bamChunk = bamChunker_getNext(bamChunker)) != NULL) {
     	// Get reference string for chunk of alignment
     	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+        if (fullReferenceString == NULL) {
+            st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
+            continue;
+        }
         int64_t refLen = strlen(fullReferenceString);
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
             (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
