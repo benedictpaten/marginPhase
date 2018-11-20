@@ -9,10 +9,11 @@
 #include "stPolish.h"
 #include "stView.h"
 #include "randomSequences.h"
+#include "stParser.h"
 
 double calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
 
-static char *polishParamsFile = "../params/polish/polishParams.json";
+static char *polishParamsFile = "../params/allParams.np.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 stList *makeAlignmentList(const int64_t *anchorPairs, int64_t anchorPairNo) {
@@ -159,15 +160,15 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Polish params
 		FILE *fh = fopen(polishParamsFile, "r");
-		PolishParams *polishParams = polishParams_readParams(fh);
+		Params *params = params_readParams(fh);
 		fclose(fh);
 
 		// Generate alignment
 		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
+		Poa *poa = poa_realignIterative(reads, NULL, reference, params->polishParams);
 
 		// Generate final MEA read alignments to POA
-		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, polishParams);
+		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, params->polishParams);
 
 		// Make seq names
 		stList *seqNames = stList_construct3(0, free);
@@ -180,7 +181,7 @@ void test_viewExamples(CuTest *testCase) {
 
 		double alignmentScore;
 		stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
-															   polishParams->p, polishParams->sM, 0, 0, &alignmentScore);
+															   params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
 
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(reads, trueReference);
@@ -195,7 +196,7 @@ void test_viewExamples(CuTest *testCase) {
 
 			if(rle) {
 				// Expand the RLE string
-				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, polishParams->repeatSubMatrix);
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
 				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
 				msaView_printRepeatCounts(view, 1,
@@ -227,7 +228,7 @@ void test_viewExamples(CuTest *testCase) {
 		poa_destruct(poa);
 		stList_destruct(seqNames);
 		msaView_destruct(view);
-		polishParams_destruct(polishParams);
+		params_destruct(params);
 	}
 }
 

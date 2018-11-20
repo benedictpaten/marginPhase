@@ -9,6 +9,7 @@
 #include "stRPHmm.h"
 #include "sonLib.h"
 #include "stPolish.h"
+#include "stParser.h"
 
 /*
  * stBaseMapper constructor
@@ -952,4 +953,78 @@ void polishParams_destruct(PolishParams *params) {
 	pairwiseAlignmentBandingParameters_destruct(params->p);
 	free(params);
 }
+
+/*
+ * Global params objects
+ */
+
+Params *params_jsonParse(char *buf, size_t r) {
+	// Setup parser
+	jsmntok_t *tokens;
+	char *js;
+	int64_t tokenNumber = stJson_setupParser(buf, r, &tokens, &js);
+
+	// Make empty params object
+	Params *params = st_calloc(1, sizeof(Params));
+
+	// Parse tokens, starting at token 1
+	// (token 0 is entire object)
+	bool gotPolish = 0, gotPhase = 0;
+	for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
+		jsmntok_t key = tokens[tokenIndex];
+		char *keyString = stJson_token_tostr(js, &key);
+
+		if (strcmp(keyString, "polish") == 0) {
+			jsmntok_t tok = tokens[tokenIndex+1];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			params->polishParams = polishParams_jsonParse(tokStr, strlen(tokStr));
+			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
+			gotPolish = 1;
+		}
+		else if (strcmp(keyString, "phase") == 0) {
+			jsmntok_t tok = tokens[tokenIndex+1];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			params->baseMapper = stBaseMapper_construct();
+			params->phaseParams = parseParameters_fromJson(tokStr, strlen(tokStr), params->baseMapper);
+			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
+			gotPhase = 1;
+		}
+		else {
+			st_errAbort("ERROR: Unrecognised key in params json: %s\n", keyString);
+		}
+	}
+
+	if(!gotPolish) {
+		st_errAbort("ERROR: Did not find polish parameters in json params\n");
+	}
+	if(!gotPhase) {
+		st_errAbort("ERROR: Did not find phase parameters in json params\n");
+	}
+
+	// Cleanup
+	free(js);
+	free(tokens);
+
+	return params;
+}
+
+Params *params_readParams(FILE *fp) {
+	char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	return params_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
+}
+
+void params_destruct(Params *params) {
+	stRPHmmParameters_destruct(params->phaseParams);
+	polishParams_destruct(params->polishParams);
+	stBaseMapper_destruct(params->baseMapper);
+	free(params);
+}
+
+void params_printParameters(Params *params, FILE *fh) {
+	fprintf(fh, "Polish parameters:\n");
+	polishParams_printParameters(params->polishParams, fh);
+	fprintf(fh, "Phase parameters:\n");
+	stRPHmmParameters_printParameters(params->phaseParams, fh);
+}
+
 

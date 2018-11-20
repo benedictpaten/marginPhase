@@ -8,8 +8,9 @@
 #include "CuTest.h"
 #include "stPolish.h"
 #include "randomSequences.h"
+#include "stParser.h"
 
-static char *polishParamsFile = "../params/polish/polishParams.json";
+static char *polishParamsFile = "../params/allParams.np.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
@@ -231,8 +232,9 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	stList_append(reads, read);
 
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 	
 	// This test used the default state machine in cPecan
 	stateMachine_destruct(polishParams->sM);
@@ -346,7 +348,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	// L2 after ref 7
 	checkDeletes(testCase, poa, 8, 1, (const int64_t[]){ 2 }, (const double[]){ 0.87598 }, 1);
 
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 	poa_destruct(poa);
 	stList_destruct(reads);
 }
@@ -372,8 +374,9 @@ static void test_poa_realign(CuTest *testCase) {
 		}
 
 		FILE *fh = fopen(polishParamsFile, "r");
-		PolishParams *polishParams = polishParams_readParams(fh);
+		Params *params = params_readParams(fh);
 		fclose(fh);
+		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 
@@ -420,7 +423,7 @@ static void test_poa_realign(CuTest *testCase) {
 		free(reference);
 		stList_destruct(reads);
 		poa_destruct(poa);
-		polishParams_destruct(polishParams);
+		params_destruct(params);
 	}
 }
 
@@ -445,8 +448,9 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		}
 
 		FILE *fh = fopen(polishParamsFile, "r");
-		PolishParams *polishParams = polishParams_readParams(fh);
+		Params *params = params_readParams(fh);
 		fclose(fh);
+		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
 
@@ -460,7 +464,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		free(reference);
 		stList_destruct(reads);
 		poa_destruct(poa);
-		polishParams_destruct(polishParams);
+		params_destruct(params);
 	}
 }
 
@@ -561,8 +565,9 @@ static char *trueReferenceExample2 = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATA
 
 double calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	//Get identity
 	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
@@ -571,7 +576,7 @@ double calcSequenceMatches(char *seq1, char *seq2) {
 	double matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
 
 	// Cleanup
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 	stList_destruct(alignedPairs);
 
 	return matches;
@@ -598,8 +603,9 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	RleString *rleTrueReference = rleString_construct(trueReference);
 
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, polishParams);
 	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, polishParams);
@@ -664,7 +670,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	}
 
 	// Cleanup
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	poa_destruct(poaTrue);
@@ -683,8 +689,9 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	}
 
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, polishParams);
@@ -721,7 +728,7 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	}
 
 	// Cleanup
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	stList_destruct(reads);
@@ -1002,8 +1009,9 @@ void test_removeDelete(CuTest *testCase) {
 
 void test_polishParams(CuTest *testCase) {
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
 	CuAssertDblEquals(testCase, polishParams->referenceBasePenalty, 0.5, 0);
@@ -1011,7 +1019,7 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
-	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 30, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 10, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
@@ -1024,13 +1032,14 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, g, 0, 0), -0.037436114, 0);
 	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, t, 0, 0), -0.045324434, 0);
 
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 }
 
 void test_removeOverlapExample(CuTest *testCase) {
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	//Make prefix
 	char *prefixString = stString_copy("ACGTGATTTCA");
@@ -1049,15 +1058,16 @@ void test_removeOverlapExample(CuTest *testCase) {
 	CuAssertIntEquals(testCase, 1, suffixStringCropStart);
 
 	// Cleanup
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 	free(prefixString);
 	free(suffixString);
 }
 
 void test_removeOverlap_RandomExamples(CuTest *testCase) {
 	FILE *fh = fopen(polishParamsFile, "r");
-	PolishParams *polishParams = polishParams_readParams(fh);
+	Params *params = params_readParams(fh);
 	fclose(fh);
+	PolishParams *polishParams = params->polishParams;
 
 	for (int64_t test = 0; test < 100; test++) {
 		//Make prefix
@@ -1083,7 +1093,7 @@ void test_removeOverlap_RandomExamples(CuTest *testCase) {
 		free(suffixString);
 	}
 
-	polishParams_destruct(polishParams);
+	params_destruct(params);
 }
 
 int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
@@ -1101,27 +1111,24 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
 }
 
 void test_polish5kb(CuTest *testCase) {
-	char *paramsFile = "../params/polish/polishParams.json";
 	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 	bool verbose = false;
 	char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
 	char *region = "chr3:2150000-2155000";
 
 	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-	int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
+	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
 	CuAssertTrue(testCase, i == 0);
 }
 
-
 void test_polish100kb(CuTest *testCase) {
-	char *paramsFile = "../params/polish/polishParams.json";
 	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
 	bool verbose = false;
 	char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
 	char *region = "chr3:8100000-8200000";
 
 	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-	int64_t i = polishingTest(bamFile, referenceFile, paramsFile, region, verbose);
+	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
 	CuAssertTrue(testCase, i == 0);
 }
 

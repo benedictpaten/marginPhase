@@ -15,6 +15,7 @@
 #include "sonLib.h"
 #include "stPolish.h"
 #include "pairwiseAligner.h"
+#include "stParser.h"
 
 /*
  * Main functions
@@ -115,12 +116,12 @@ int main(int argc, char *argv[]) {
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     FILE *fh = fopen(paramsFile, "r");
-    PolishParams *params = polishParams_readParams(fh);
+    Params *params = params_readParams(fh);
     fclose(fh);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
-    	polishParams_printParameters(params, stderr);
+    	params_printParameters(params, stderr);
     }
 
     // Parse reference as map of header string to nucleotide sequences
@@ -153,7 +154,7 @@ int main(int argc, char *argv[]) {
     free(polishedReferenceOutFile);
 
     // if regionStr is NULL, it will be ignored in construct2
-    BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params);
+    BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
     st_logInfo("> Set up bam chunker with chunk size: %i and overlap %i (for region=%s)\n",
     		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr);
 
@@ -189,7 +190,7 @@ int main(int argc, char *argv[]) {
 
 		// Now run the polishing method
 
-		if(params->useRunLengthEncoding) {
+		if(params->polishParams->useRunLengthEncoding) {
 			st_logInfo("> Running polishing algorithm using run-length encoding\n");
 
 			// Run-length encoded polishing
@@ -212,10 +213,10 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params);
+			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->repeatSubMatrix);
+			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
 			// Now cleanup run-length stuff
@@ -229,7 +230,7 @@ int main(int argc, char *argv[]) {
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, alignments, referenceString, params);
+			poa = poa_realignIterative(reads, alignments, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
@@ -274,7 +275,7 @@ int main(int argc, char *argv[]) {
 			// Trim the currrent and previous polished reference strings to remove overlap
 			int64_t prefixStringCropEnd, suffixStringCropStart;
 			int64_t overlapMatchWeight = removeOverlap(previousPolishedReferenceString, polishedReferenceString,
-													   bamChunker->chunkBoundary * 2, params,
+													   bamChunker->chunkBoundary * 2, params->polishParams,
 													   &prefixStringCropEnd, &suffixStringCropStart);
 
 			st_logInfo("Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
@@ -315,7 +316,7 @@ int main(int argc, char *argv[]) {
     bamChunker_destruct(bamChunker);
     fclose(polishedReferenceOutFh);
     stHash_destruct(referenceSequences);
-    polishParams_destruct(params);
+    params_destruct(params);
 
     //while(1); // Use this for testing for memory leaks
 
