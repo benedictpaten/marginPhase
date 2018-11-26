@@ -327,7 +327,7 @@ int main(int argc, char *argv[]) {
     stHash_destruct(referenceSequences);
     params_destruct(params);
 
-    while(1); // Use this for testing for memory leaks
+    //while(1); // Use this for testing for memory leaks
 
     return 0;
 }
