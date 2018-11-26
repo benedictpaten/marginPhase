@@ -246,6 +246,7 @@ set(CPECAN_SOURCES
         )
 
 set(SOURCE_FILES
+        impl/callConsensus.c
         impl/chunker.c
         impl/column.c
         impl/coordination.c
@@ -344,3 +345,6 @@ add_executable(allTests
 
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)
+
+add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
+target_link_libraries(callConsensus cpecan son hts)
