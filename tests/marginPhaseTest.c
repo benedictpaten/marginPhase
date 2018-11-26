@@ -4,11 +4,8 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-
-#include <htslib/vcf.h>
 #include "CuTest.h"
-#include "sonLib.h"
-
+#include "margin.h"
 
 int64_t genotypingTest2(char *paramsFile, char *bamFile, char *outputBase, char *referenceFile, char *vcfReference,
                         char* singleNuclProbDir, bool verbose) {

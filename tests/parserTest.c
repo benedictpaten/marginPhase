@@ -5,8 +5,7 @@
  */
 
 #include "CuTest.h"
-#include "sonLib.h"
-#include "stRPHmm.h"
+#include "margin.h"
 
 /*
  * Test that a bam file is read in correctly.

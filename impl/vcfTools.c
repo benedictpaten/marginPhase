@@ -7,7 +7,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <htslib/vcf.h>
-#include "stRPHmm.h"
+#include "margin.h"
 
 void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs);
 void printTotalBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs1, stReferencePriorProbs *rProbs2);

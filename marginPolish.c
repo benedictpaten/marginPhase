@@ -12,10 +12,8 @@
 #include <unistd.h>
 
 #include "margin_phase_version.h"
-#include "sonLib.h"
-#include "stPolish.h"
-#include "pairwiseAligner.h"
-#include "stParser.h"
+#include "margin.h"
+
 
 /*
  * Main functions
@@ -133,7 +131,7 @@ int main(int argc, char *argv[]) {
     stList *refSeqNames = stHash_getKeys(referenceSequences);
     int64_t origRefSeqLen = stList_length(refSeqNames);
     st_logDebug("\tReference contigs: \n");
-    for (int i = 0; i < origRefSeqLen; ++i) {
+    for (int64_t i = 0; i < origRefSeqLen; ++i) {
         char *fullRefSeqName = (char *) stList_get(refSeqNames, i);
         st_logDebug("\t\t%s\n", fullRefSeqName);
         char refSeqName[128] = "";
@@ -145,6 +143,7 @@ int main(int argc, char *argv[]) {
             st_logDebug("\t\t\t-> %s\n", newKey);
         }
     }
+    stList_destruct(refSeqNames);
 
     // Open output files
     char *polishedReferenceOutFile = stString_print("%s.polished.fa", outputBase);
@@ -214,6 +213,12 @@ int main(int argc, char *argv[]) {
 
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params->polishParams);
+
+			// Now optionally do phasing and haplotype specific polishing
+
+			//stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
+			//stList *reads1, *reads2;
+			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
 
 			// Do run-length decoding
 			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
@@ -296,6 +301,10 @@ int main(int argc, char *argv[]) {
 
 		// Cleanup
 		poa_destruct(poa);
+		stList_destruct(reads);
+		stList_destruct(alignments);
+		free(referenceString);
+		//bamChunk_destruct(bamChunk);
     }
 
     // Write out the last chunk

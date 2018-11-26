@@ -5,7 +5,7 @@
  */
 
 #include "CuTest.h"
-#include "stPolish.h"
+#include "margin.h"
 
 #define INPUT_BAM "../tests/chunkingTest.bam"
 

@@ -4,12 +4,8 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <multipleAligner.h>
 #include "CuTest.h"
-#include "stPolish.h"
-#include "stView.h"
-#include "randomSequences.h"
-#include "stParser.h"
+#include "margin.h"
 
 double calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
 

@@ -4,10 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stPolish.h"
-#include <time.h>
-#include <htslib/sam.h>
-#include <stRPHmm.h>
+#include "margin.h"
 
 PoaBaseObservation *poaBaseObservation_construct(int64_t readNo, int64_t offset, double weight) {
 	PoaBaseObservation *poaBaseObservation = st_calloc(1, sizeof(PoaBaseObservation));
@@ -523,6 +520,10 @@ static void adjustAnchors(stList *anchorPairs, int64_t index, int64_t adjustment
 	}
 }
 
+/*
+ * Generates aligned pairs and indel probs, but first crops reference to only include sequence from first
+ * to last anchor position.
+ */
 void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLength,
 		char *read, stList *anchorPairs,
 		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams) {
@@ -1373,5 +1374,9 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 		*suffixStringCropStart = stIntTuple_get(maxPair, 2);  // Inclusive
 	}
 
-	return maxPair == NULL ? 0 : stIntTuple_get(maxPair, 0);
+	int64_t overlapWeight = maxPair == NULL ? 0 : stIntTuple_get(maxPair, 0);
+
+	stList_destruct(alignedPairs);
+
+	return overlapWeight;
 }

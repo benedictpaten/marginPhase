@@ -5,10 +5,7 @@
  */
 
 #include "CuTest.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include "sonLib.h"
+#include "margin.h"
 
 CuSuite *stRPHmmTestSuite(void);
 CuSuite *marginPhaseParserTestSuite(void);

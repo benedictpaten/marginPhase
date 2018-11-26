@@ -4,14 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <ctype.h>
-#include <htslib/vcf.h>
-#include <htslib/bgzf.h>
-#include <htslib/hts.h>
-#include <hashTableC.h>
-#include "stRPHmm.h"
-
-
+#include "margin.h"
 
 void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
                         char *marginPhaseTag) {

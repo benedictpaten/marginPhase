@@ -4,11 +4,8 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <multipleAligner.h>
 #include "CuTest.h"
-#include "stPolish.h"
-#include "randomSequences.h"
-#include "stParser.h"
+#include "margin.h"
 
 static char *polishParamsFile = "../params/allParams.np.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
@@ -614,6 +611,13 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
+	// Run phasing
+	stList *anchorAlignments = poa_getAnchorAlignments(poaRefined, NULL, stList_length(reads), params->polishParams);
+	stList *reads1, *reads2;
+	phaseReads(poaRefined->refString, strlen(poaRefined->refString), reads, anchorAlignments, &reads1, &reads2, params);
+	Poa *poaReads1 = poa_realignIterative(reads1, NULL, poaRefined->refString, polishParams);
+	Poa *poaReads2 = poa_realignIterative(reads2, NULL, poaRefined->refString, polishParams);
+
 	// Look at non-rle comparison
 	RleString *consensusRleString = expandRLEConsensus(poaRefined, rleStrings, polishParams->repeatSubMatrix);
 	char *nonRLEConsensusString = rleString_expand(consensusRleString);
@@ -624,6 +628,8 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	int64_t referenceMatches = calcSequenceMatches(rleTrueReference->rleString, rleReference->rleString);
 	int64_t nonRLEConsensusMatches = calcSequenceMatches(trueReference, nonRLEConsensusString);
 	int64_t nonRLEReferenceMatches = calcSequenceMatches(trueReference, reference);
+	int64_t consensusMatchesReads1 = calcSequenceMatches(rleTrueReference->rleString, poaReads1->refString);
+	int64_t consensusMatchesReads2 = calcSequenceMatches(rleTrueReference->rleString, poaReads2->refString);
 
 	// Update the running total alignment metrics
 	if(rleAlignmentMetrics != NULL) {
@@ -648,14 +654,23 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		st_logInfo("Reference:\t\t%s\n", rleReference->rleString);
 		st_logInfo("True-reference:\t\t%s\n", rleTrueReference->rleString);
 		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
+		st_logInfo("Consensus Reads1:\t%s\n", poaReads1->refString);
+		st_logInfo("Consensus Reads2:\t%s\n", poaReads2->refString);
 		st_logInfo("Reference stats\t");
 		poa_printSummaryStats(poa, stderr);
 		st_logInfo("Consensus stats\t");
 		poa_printSummaryStats(poaRefined, stderr);
+		st_logInfo("Reads 1 stats\t");
+		poa_printSummaryStats(poaReads1, stderr);
+		st_logInfo("Reads 2 stats\t");
+		poa_printSummaryStats(poaReads2, stderr);
 		st_logInfo("True-reference stats\t");
 		poa_printSummaryStats(poaTrue, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(rleTrueReference->length + strlen(poaRefined->refString)));
+		st_logInfo("Reads 1 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads1/(rleTrueReference->length + strlen(poaReads1->refString)));
+		st_logInfo("Reads 2 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads2/(rleTrueReference->length + strlen(poaReads2->refString)));
 		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(rleTrueReference->length + rleReference->length));
+		st_logInfo("Total reads: %i, # reads partition1: %i, # reads partition2: %i\n", (int)stList_length(reads), (int)stList_length(reads1), (int)stList_length(reads2));
 		// Non-RLE stats
 		st_logInfo("Non-RLE Reference:\t\t%s\n", reference);
 		st_logInfo("Non-RLE True-reference:\t\t%s\n", trueReference);
@@ -679,6 +694,11 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	rleString_destruct(rleReference);
 	stList_destruct(rleStrings);
 	free(nonRLEConsensusString);
+	poa_destruct(poaReads1);
+	poa_destruct(poaReads2);
+	stList_destruct(anchorAlignments);
+	stList_destruct(reads1);
+	stList_destruct(reads2);
 }
 
 static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, const char **readArray,
@@ -868,12 +888,10 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		// Run poa iterative realign
 		if(rle) {
 			test_poa_realign_example_rle(testCase, trueReferenceList->list[0], reads->list[0],
-							//(char **)(&reads->list[1]), reads->length-1 > 20 ? 20 : reads->length-1, rle, alignmentMetrics);
 							(const char **)(&reads->list[1]), reads->length-1, rleAlignmentMetrics, alignmentMetrics);
 		}
 		else {
 			test_poa_realign_example(testCase, trueReferenceList->list[0], reads->list[0],
-					//(char **)(&reads->list[1]), reads->length-1 > 20 ? 20 : reads->length-1, rle, alignmentMetrics);
 					(const char **)(&reads->list[1]), reads->length-1, alignmentMetrics);
 		}
 

@@ -3,13 +3,8 @@
  *
  * Released under the MIT license, see LICENSE.txt
  */
-#include <unistd.h>
-#include <htslib/sam.h>
-#include <util.h>
-#include "stRPHmm.h"
-#include "sonLib.h"
-#include "stPolish.h"
-#include "stParser.h"
+
+#include "margin.h"
 
 /*
  * stBaseMapper constructor

@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stRPHmm.h"
+#include "margin.h"
 
 // OpenMP
 #if defined(_OPENMP)
@@ -470,4 +470,114 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     stList_setDestructor(finalTilingPath, (void (*)(void *))stRPHmm_destruct2);
 
     return finalTilingPath;
+}
+
+void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
+				stList **readsPartition1, stList **readsPartition2, Params *params) {
+	/*
+	 * Runs phasing algorithm to split the reads (as char strings) into two partitions: readsPartition1 and readsPartition2.
+	 */
+
+	// Generate profile sequences
+	stList *profileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+	stHash *readToProfileSeq = stHash_construct();
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		char *read = stList_get(reads, i);
+		char *readName = stString_print("%i", i);
+		stList_append(profileSeqs, stProfileSeq_constructFromPosteriorProbs("ref", reference, referenceLength,
+				readName, read, stList_get(anchorAlignments, i), params));
+		free(readName);
+		stHash_insert(readToProfileSeq, read, stList_peek(profileSeqs));
+	}
+
+	// Get flat reference priors
+	//TODO: consider using more informative priors
+	stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSeqs);
+
+	// Setup a filter to ignore likely homozygous reference positions
+	if(params->phaseParams->filterLikelyHomozygousSites) {
+		int64_t totalPositions;
+		st_logInfo("> Filtering likely homozygous positions\n");
+		int64_t filteredPositions =
+				filterHomozygousReferencePositions(referenceNamesToReferencePriors, params->phaseParams, &totalPositions);
+		st_logInfo("\tFiltered %" PRIi64 " (%f) likely homozygous positions, \n\teach with fewer than %" PRIi64
+				" aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64
+				" (%f) positions of %" PRIi64
+				" total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
+				(int64_t)params->phaseParams->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
+				(double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
+	}
+
+	// Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
+	st_logInfo("> Filtering reads by coverage depth\n");
+	stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+	stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
+	filterReadsByCoverageDepth(profileSeqs, params->phaseParams, filteredProfileSeqs, discardedProfileSeqs,
+			referenceNamesToReferencePriors);
+	st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
+			" to achieve maximum coverage depth of %" PRIi64 "\n",
+			stList_length(discardedProfileSeqs), stList_length(profileSeqs),
+			params->phaseParams->maxCoverageDepth);
+	stList_setDestructor(profileSeqs, NULL);
+	stList_destruct(profileSeqs);
+	profileSeqs = filteredProfileSeqs;
+
+	// Run phasing
+	stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params->phaseParams);
+	stRPHmm *hmm = stList_pop(hmms);
+	assert(stList_length(hmms) == 0);
+	stList_destruct(hmms);
+
+	// Run the forward-backward algorithm
+	stRPHmm_forwardBackward(hmm);
+
+	// Now compute a high probability path through the hmm
+	stList *path = stRPHmm_forwardTraceBack(hmm);
+
+	// Compute the genome fragment
+	stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
+
+	// Get the reads which mapped to each path
+	stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
+	stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
+
+	// Refine the genome fragment by repartitoning the reads iteratively
+	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
+		stGenomeFragment_refineGenomeFragment(gF, reads1, reads2, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
+	}
+
+	// For reads that exceeded the coverage depth, add them back to the haplotype they fit best
+	while(stList_length(discardedProfileSeqs) > 0) {
+		stProfileSeq *pSeq = stList_pop(discardedProfileSeqs);
+		double i = getLogProbOfReadGivenHaplotype(gF->haplotypeString1, gF->refStart, gF->length, pSeq, params->phaseParams);
+		double j = getLogProbOfReadGivenHaplotype(gF->haplotypeString2, gF->refStart, gF->length, pSeq, params->phaseParams);
+		stSet_insert(i < j ? reads2 : reads2, pSeq);
+	}
+	stList_destruct(discardedProfileSeqs);
+
+	// Log information about the hmm
+	logHmm(hmm, reads1, reads2, gF);
+
+	// Now create the two read partitions of the orignal strings
+	*readsPartition1 = stList_construct();
+	*readsPartition2 = stList_construct();
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		char *read = stList_get(reads, i);
+		stProfileSeq *pSeq = stHash_search(readToProfileSeq, read);
+		stList_append(stSet_search(reads1, pSeq) ? *readsPartition1 : *readsPartition2, read);
+	}
+
+	// Cleanup
+	stRPHmm_destruct(hmm, 1);
+	stGenomeFragment_destruct(gF);
+	stSet_destruct(reads1);
+	stSet_destruct(reads2);
+	stList_destruct(path);
+	stHash_destruct(referenceNamesToReferencePriors);
+	stList_destruct(profileSeqs);
+	stHash_destruct(readToProfileSeq);
+
+	st_logInfo("> Phased reads. Of  %" PRIi64 " reads allocated %" PRIi64
+				" to haplotype 1 and % " PRIi64 " to haplotype 2\n",
+				stList_length(reads), stList_length(*readsPartition1), stList_length(*readsPartition2));
 }

@@ -5,7 +5,7 @@
  */
 
 #include <htslib/vcf.h>
-#include "stRPHmm.h"
+#include "margin.h"
 
 /*
  * Functions for reference prior probabilities

@@ -4,11 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stPolish.h"
-#include  "stView.h"
-#include <time.h>
-#include <htslib/sam.h>
-#include <stRPHmm.h>
+#include <margin.h>
 
 static int64_t *msaView_set(MsaView *view, int64_t refCoordinate, int64_t seqIndex) {
 	return &(view->seqCoordinates[(view->refLength+1) * seqIndex + refCoordinate]);

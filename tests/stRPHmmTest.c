@@ -5,12 +5,10 @@
  */
 
 #include "CuTest.h"
-#include "sonLib.h"
-#include "stRPHmm.h"
-#include <math.h>
-#include <time.h>
+#include "margin.h"
 
 #define RANDOM_TEST_NO 2
+static char *polishParamsFile = "../params/allParams.np.json";
 
 char stRPHmm_getRandomBase() {
     /*
@@ -1292,6 +1290,83 @@ void test_flipAReadsPartition(CuTest *testCase) {
 }
 
 
+void test_stProfileSeq_constructFromPosteriorProbs_example(CuTest *testCase) {
+	char *reference = stString_copy("GATACAGCGGG");
+	char *read = stString_copy("GATTACAGCG");
+
+	FILE *fh = fopen(polishParamsFile, "r");
+	Params *params = params_readParams(fh);
+	fclose(fh);
+
+	stList *anchorAlignment = stList_construct();
+
+	stProfileSeq *pSeq = stProfileSeq_constructFromPosteriorProbs("ref", reference, strlen(reference),
+														   	      "read", read, anchorAlignment, params);
+
+	fprintf(stderr, "Reference:\t%s\n", reference);
+	fprintf(stderr, "Read \t\t%s\n", read);
+	stProfileSeq_print(pSeq, stderr, 1);
+
+	// cleanup
+	stList_destruct(anchorAlignment);
+	stProfileSeq_destruct(pSeq);
+	params_destruct(params);
+	free(reference);
+	free(read);
+}
+
+void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
+	for(int64_t test=0; test<100; test++) {
+		st_logInfo("Starting test iteration: #%" PRIi64 "\n", test);
+
+		//Make true reference
+		char *reference = getRandomSequence(st_randomInt(1, 100));
+
+		// Make starting reference
+		char *read = evolveSequence(reference);
+
+		// Load params
+		FILE *fh = fopen(polishParamsFile, "r");
+		Params *params = params_readParams(fh);
+		fclose(fh);
+
+		// Anchor alignment
+		double alignmentScore;
+		stList *anchorAlignment = stList_construct();
+		stList *meaAlignment = getShiftedMEAAlignment(reference, read, anchorAlignment, params->polishParams->p, params->polishParams->sM, 1, 1, &alignmentScore);
+		for(int64_t i=0; i<stList_length(meaAlignment); i++) {
+			stIntTuple *aPair = stList_get(meaAlignment, i);
+			stList_append(anchorAlignment, stIntTuple_construct2(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2)));
+		}
+		stList_destruct(meaAlignment);
+
+		// Run method
+		stProfileSeq *pSeq = stProfileSeq_constructFromPosteriorProbs("ref", reference, strlen(reference),
+															   "read", read, anchorAlignment,
+															   params);
+
+		// Do checks
+		CuAssertTrue(testCase, pSeq->refStart >= 0);
+		CuAssertTrue(testCase, pSeq->length >= 0);
+		CuAssertTrue(testCase, pSeq->length + pSeq->refStart <= strlen(reference));
+		CuAssertStrEquals(testCase, pSeq->referenceName, "ref");
+
+		for(int64_t i=0; i<pSeq->length; i++) {
+			int64_t total=0;
+			for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+				total += pSeq->profileProbs[i*ALPHABET_SIZE + j];
+			}
+			CuAssertTrue(testCase, total < 260);
+			CuAssertTrue(testCase, total > 250);
+		}
+
+		// cleanup
+		stList_destruct(anchorAlignment);
+		stProfileSeq_destruct(pSeq);
+		params_destruct(params);
+	}
+}
+
 CuSuite *stRPHmmTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
@@ -1307,6 +1382,10 @@ CuSuite *stRPHmmTestSuite(void) {
     SUITE_ADD_TEST(suite, test_bitCountVectors);
     SUITE_ADD_TEST(suite, test_getOverlappingComponents);
     SUITE_ADD_TEST(suite, test_emissionLogProbability);
+
+    // Test method for creating posterior probs of reference matches
+    SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs_example);
+    SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs);
 
     return suite;
 }

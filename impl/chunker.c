@@ -4,8 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stRPHmm.h"
-#include <stPolish.h>
+#include "margin.h"
 
 int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t contigStartPos, int64_t contigEndPos,
                          uint64_t chunkSize, uint64_t chunkMargin) {
