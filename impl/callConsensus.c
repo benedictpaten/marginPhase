@@ -7,7 +7,7 @@
 //
 
 #include <multipleAligner.h>
-#include "stPolish.h"
+#include "margin.h"
 #include "randomSequences.h"
 #include <stdlib.h>
 #include <stdio.h>

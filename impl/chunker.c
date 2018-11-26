@@ -242,7 +242,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
 
         // get cigar and rep
         uint32_t *cigar = bam_get_cigar(aln);
-        stList *cigRepr = stList_construct();
+        stList *cigRepr = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
 
         // Variables to keep track of position in sequence / cigar operations
         int64_t cig_idx = 0;
