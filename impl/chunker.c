@@ -198,7 +198,29 @@ void bamChunk_destruct(BamChunk *bamChunk) {
 }
 
 
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
+BamChunkRead *bamChunkRead_construct() {
+    return bamChunkRead_construct2(NULL, NULL, NULL, TRUE, NULL);
+}
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, stList *alignment, bool forwardStrand, BamChunk *parent) {
+    BamChunkRead *r = malloc(sizeof(BamChunkRead));
+    r->readName = readName;
+    r->nucleotides = nucleotides;
+    r->alignment = alignment;
+    r->forwardStrand = forwardStrand;
+    r->parent = parent;
+
+    return r;
+}
+void bamChunkRead_destruct(BamChunkRead *r) {
+    free(r->readName);
+    free(r->nucleotides);
+    stList_destruct(r->alignment);
+    free(r);
+}
+
+
+
+uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads) {
     // sanity check
     assert(stList_length(reads) == 0);
     assert(stList_length(alignments) == 0);
@@ -402,9 +424,11 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         }
         seq[seqLen] = '\0';
 
-        // save
-        stList_append(reads, seq);
-        stList_append(alignments, cigRepr);
+        // save to read
+        char *readName = stString_copy(bam_get_qname(aln));
+        bool forwardStrand = !bam_is_rev(aln);
+        BamChunkRead *chunkRead = bamChunkRead_construct2(readName, seq, cigRepr, forwardStrand, bamChunk);
+        stList_append(reads, chunkRead);
         savedAlignments++;
     }
 

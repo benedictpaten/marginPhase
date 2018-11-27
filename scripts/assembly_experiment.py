@@ -238,13 +238,18 @@ def run_alignment_analysis(true_reference, polished_alignment):
     print("  Total reference bases:    {:12d}".format(total_reference_bases))
     print("  Total aligned bases:      {:12d}  {:.5f} of ref bases".format(total_summaries, 1.0 * total_summaries / total_reference_bases))
     print("  Total softclip:           {:12d}  {:.5f} of aln bases".format(total_softclip, 1.0 * total_softclip / total_summaries))
-
-
+    print("  Total non-softclip aln:   {:12d}  {:.5f} of ref bases".format(total_aln_nonsc, 1.0 * total_aln_nonsc / total_reference_bases))
+    print("")
     print("  Total exact match:        {:12d}  {:.5f} of non-softclip aln bases".format(total_match, 1.0 * total_match / total_aln_nonsc))
+    print("                                          {:.5f} of reference bases".format(1.0 * total_match / total_reference_bases))
     print("  Total mismatch:           {:12d}  {:.5f} of non-softclip aln bases".format(total_mismatch, 1.0 * total_mismatch / total_aln_nonsc))
+    print("                                          {:.5f} of reference bases".format(1.0 * total_mismatch / total_reference_bases))
     print("  Total insert:             {:12d}  {:.5f} of non-softclip aln bases".format(total_insert, 1.0 * total_insert / total_aln_nonsc))
+    print("                                          {:.5f} of reference bases".format(1.0 * total_insert / total_reference_bases))
     print("  Total delete:             {:12d}  {:.5f} of non-softclip aln bases".format(total_delete, 1.0 * total_delete / total_aln_nonsc))
-    print("  Total unconsidered cigop: {:12d}  {:.5f} of non-softclip aln bases".format(untracked_alignment_operations, 1.0 * untracked_alignment_operations / total_aln_nonsc))
+    print("                                          {:.5f} of reference bases".format(1.0 * total_delete / total_reference_bases))
+    if untracked_alignment_operations > 0:
+        print("  Total unconsidered cigop: {:12d}".format(untracked_alignment_operations))
     print("")
 
 

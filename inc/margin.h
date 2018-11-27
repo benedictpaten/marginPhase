@@ -800,8 +800,8 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
-			  	 PolishParams *polishParams);
+Poa *poa_realign(stList *reads, char *reference, PolishParams *polishParams);
+Poa *poa_realign2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignment);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -841,7 +841,8 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
  * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
  * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams);
+Poa *poa_realignIterative(stList *reads, char *reference, PolishParams *polishParams);
+Poa *poa_realignIterative2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignments);
 
 /*
  * Greedily evaluate the top scoring indels.
@@ -996,31 +997,40 @@ typedef struct _bamChunker {
 
 typedef struct _bamChunk {
 	char *refSeqName;          // name of contig
-    int64_t chunkBoundaryStart;  // the first 'position' where we have an aligned read
-    int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
-                               //  should be used to initialize the probabilities at chunkStart
-    int64_t chunkEnd;          // same for chunk end
-    int64_t chunkBoundaryEnd;    // no reads should start after this position
-    BamChunker *parent;        // reference to parent (may not be needed)
+	int64_t chunkBoundaryStart;  // the first 'position' where we have an aligned read
+	int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
+	//  should be used to initialize the probabilities at chunkStart
+	int64_t chunkEnd;          // same for chunk end
+	int64_t chunkBoundaryEnd;    // no reads should start after this position
+	BamChunker *parent;        // reference to parent (may not be needed)
 } BamChunk;
+
+typedef struct _bamChunkRead {
+	char *readName;          	// read name
+	char *nucleotides;			// nucleotide string
+	stList *alignment;			// matched pairs in alignment, chunk position to read position
+	bool forwardStrand;			// whether the alignment is matched to the forward strand
+	BamChunk *parent;        	// reference to parent chunk
+} BamChunkRead;
 
 BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
 BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params);
-
 void bamChunker_destruct(BamChunker *bamChunker);
-
 BamChunk *bamChunker_getNext(BamChunker *bamChunker);
 
 BamChunk *bamChunk_construct();
 BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int64_t chunkStart, int64_t chunkEnd,
                               int64_t chunkBoundaryEnd, BamChunker *parent);
-
 void bamChunk_destruct(BamChunk *bamChunk);
+
+BamChunkRead *bamChunkRead_construct();
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, stList *alignment, bool forwardStrand, BamChunk *parent);
+void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
+uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads);
 
 /*
  * Remove overlap between two overlapping strings. Returns max weight of split point.

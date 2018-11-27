@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
     stList_destruct(refSeqNames);
 
     // Open output files
-    char *polishedReferenceOutFile = stString_print("%s.polished.fa", outputBase);
+    char *polishedReferenceOutFile = stString_print("%s.fa", outputBase);
     st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
 
     FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
@@ -180,9 +180,8 @@ int main(int argc, char *argv[]) {
 
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
-		stList *reads = stList_construct3(0, free);
-		stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
-		convertToReadsAndAlignments(bamChunk, reads, alignments);
+		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
+		convertToReadsAndAlignments(bamChunk, reads);
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -192,6 +191,8 @@ int main(int argc, char *argv[]) {
 		if(params->polishParams->useRunLengthEncoding) {
 			st_logInfo("> Running polishing algorithm using run-length encoding\n");
 
+            st_errAbort("FIX MODIFIED READ/ALIGNMENT STRUCTURE FOR RLE");
+            /*
 			// Run-length encoded polishing
 
 			// Do run length encoding (RLE)
@@ -230,12 +231,13 @@ int main(int argc, char *argv[]) {
 			stList_destruct(rleAlignments);
 			rleString_destruct(rleReference);
 			rleString_destruct(polishedRLEReference);
+            */
 		}
 		else { // Non-run-length encoded polishing
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, alignments, referenceString, params->polishParams);
+			poa = poa_realignIterative(reads, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
@@ -302,7 +304,6 @@ int main(int argc, char *argv[]) {
 		// Cleanup
 		poa_destruct(poa);
 		stList_destruct(reads);
-		stList_destruct(alignments);
 		free(referenceString);
 		//bamChunk_destruct(bamChunk);
     }

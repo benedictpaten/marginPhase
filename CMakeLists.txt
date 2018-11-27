@@ -339,9 +339,10 @@ add_executable(allTests
         tests/marginPhaseTest.c
         tests/stRPHmmTest.c
         tests/parserTest.c
-        tests/polisherTest.c
         tests/chunkingTest.c
-        tests/viewTest.c)
+#        tests/polisherTest.c
+#        tests/viewTest.c
+        )
 
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)

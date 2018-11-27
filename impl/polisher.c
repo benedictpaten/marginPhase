@@ -571,32 +571,35 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	adjustAnchors(*deletes, 1, firstRefPosition);
 }
 
-Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
-				 PolishParams *polishParams) {
+
+Poa *poa_realign(stList *reads, char *reference, PolishParams *polishParams) {
+    return poa_realign2(reads, reference, polishParams, TRUE);
+}
+Poa *poa_realign2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignment) {
 	// Build a reference graph with zero weights
 	Poa *poa = poa_getReferenceGraph(reference);
 	int64_t refLength = stList_length(poa->nodes)-1;
 
 	// For each read
 	for(int64_t i=0; i<stList_length(reads); i++) {
-		char *read = stList_get(reads, i);
+        BamChunkRead *chunkRead = stList_get(reads, i);
 
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
 		time_t startTime = time(NULL);
 
-		if(anchorAlignments == NULL) {
-			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
+		if(!useReadAlignment) {
+			getAlignedPairsWithIndels(polishParams->sM, reference, chunkRead->nucleotides, polishParams->p,
+                                      &matches, &deletes, &inserts, 0, 0);
 		}
 		else {
-			getAlignedPairsWithIndelsCroppingReference(reference, refLength,
-					read, stList_get(anchorAlignments, i),
-					&matches, &inserts, &deletes, polishParams);
+			getAlignedPairsWithIndelsCroppingReference(reference, refLength, chunkRead->nucleotides, chunkRead->alignment,
+                                                       &matches, &inserts, &deletes, polishParams);
 		}
 
 		// Add weights, edges and nodes to the poa
-		poa_augment(poa, read, i, matches, inserts, deletes);
+		poa_augment(poa, chunkRead->nucleotides, i, matches, inserts, deletes);
 
 		// Cleanup
 		stList_destruct(matches);
@@ -951,8 +954,11 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 	return consensusString;
 }
 
-Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
-	Poa *poa = poa_realign(reads, anchorAlignments, reference, polishParams);
+Poa *poa_realignIterative(stList *reads, char *reference, PolishParams *polishParams) {
+	return poa_realignIterative2(reads, reference, polishParams, TRUE);
+}
+Poa *poa_realignIterative2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignments) {
+	Poa *poa = poa_realign2(reads, reference, polishParams, useReadAlignments);
 
 	time_t startTime = time(NULL);
 
@@ -974,7 +980,7 @@ Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *referen
 		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
 
 		// Generated updated poa
-		Poa *poa2 = poa_realign(reads, anchorAlignments, reference, polishParams);
+		Poa *poa2 = poa_realign2(reads, reference, polishParams, useReadAlignments);
 
 		// Cleanup
 		free(reference);
@@ -1070,7 +1076,7 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *pol
 		char *editRef = maxInsert->weight >= maxDelete->weight ? addInsert(poa->refString, maxInsert->insert, insertStart) :
 				removeDelete(poa->refString, maxDelete->length, deleteStart);
 		// TODO: Add anchor constraints
-		Poa *poa2 = poa_realign(reads, NULL, editRef, polishParams);
+		Poa *poa2 = poa_realign2(reads, editRef, polishParams, FALSE);
 		free(editRef);
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
