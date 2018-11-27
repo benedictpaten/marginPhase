@@ -1,11 +1,3 @@
-//
-// Created by ryan on 11/20/18.
-//
-
-//
-// Created by ryan on 10/30/18.
-//
-
 #include <multipleAligner.h>
 #include "margin.h"
 #include "randomSequences.h"
@@ -14,8 +6,8 @@
 #include <string.h>
 #include "sonLib.h"
 
-static char* paramsPath = "../params/polish/polishParams.json";
-#define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
+static char* paramsPath = "/home/ryan/code/polarbear_assembly/external/polisher_cpp/external/src/project_marginPolish/params/allParams.np.json";
+//#define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 void testPrint(){
     printf("working\n");
@@ -44,11 +36,14 @@ char* callConsensus(int readNo, char *readArray[], char *reference) {
      return "";
     }
 
-    PolishParams *p = polishParams_readParams(paramsFile);
+    Params *p = params_readParams(paramsFile);
 
-    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p);    // Now get a non-RLE (expanded) string
+    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p->polishParams);
 
-    char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, p->repeatSubMatrix);
+    // Now get a non-RLE (expanded) string
+    char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, p->polishParams->repeatSubMatrix);
+
+//    printf("%s\n", nonRLEConsensusString);
 
     return nonRLEConsensusString;
 }
