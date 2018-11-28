@@ -139,10 +139,12 @@ void test_viewExamples(CuTest *testCase) {
 		assert(r->length > 1);
 		RleString *rleReference = rleString_construct(r->list[0]);
 		char *reference = getString(r->list[0], rle);
-		stList *reads = stList_construct3(0, free);
+		stList *reads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+		stList *nucleotides = stList_construct3(0,free);
 		stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
 		for(int64_t i=1; i<r->length; i++) {
-			stList_append(reads, getString(r->list[i], rle));
+			stList_append(reads, bamChunkRead_construct2(NULL,getString(r->list[i], rle),NULL,TRUE,NULL));
+			stList_append(nucleotides, getString(r->list[i], rle));
 			stList_append(rleReads, rleString_construct(r->list[i]));
 		}
 		destructList(r);
@@ -161,7 +163,7 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Generate alignment
 		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-		Poa *poa = poa_realignIterative(reads, NULL, reference, params->polishParams);
+		Poa *poa = poa_realignIterative2(reads, reference, params->polishParams, FALSE);
 
 		// Generate final MEA read alignments to POA
 		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, params->polishParams);
@@ -179,13 +181,14 @@ void test_viewExamples(CuTest *testCase) {
 		stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
 															   params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
 
+		//TODO reads (BamChunkRead) has different length now.. does this matter?
 		stList_append(alignments, refToTrueRefAlignment);
-		stList_append(reads, trueReference);
+		stList_append(nucleotides, trueReference);
 		stList_append(rleReads, rleTrueReference);
 
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
-								   	      alignments, reads, seqNames);
+								   	      alignments, nucleotides, seqNames);
 
 		if (st_getLogLevel() >= debug) {
 			msaView_print(view, 2, stderr);
@@ -219,6 +222,7 @@ void test_viewExamples(CuTest *testCase) {
 		free(readFile);
 		free(trueRefFile);
 		stList_destruct(reads);
+		stList_destruct(nucleotides);
 		free(reference);
 		stList_destruct(alignments);
 		poa_destruct(poa);

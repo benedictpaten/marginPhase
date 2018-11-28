@@ -531,6 +531,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	// that generates a lot of delete pairs
 
 	// Get cropping coordinates
+	// TODO I think we want to extend refStart and refEnd by the length of the read before and after the first and last aligned positions
 	int64_t firstRefPosition, endRefPosition;
 	if(stList_length(anchorPairs) > 0) {
 		stIntTuple *fPair = stList_get(anchorPairs, 0);

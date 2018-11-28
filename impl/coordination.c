@@ -482,12 +482,13 @@ void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList 
 	stList *profileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
 	stHash *readToProfileSeq = stHash_construct();
 	for(int64_t i=0; i<stList_length(reads); i++) {
-		char *read = stList_get(reads, i);
-		char *readName = stString_print("%i", i);
+		BamChunkRead *read = stList_get(reads, i);
+        char *nucleotides = read->nucleotides;
+		char *readName = (read->readName == NULL ? stString_print("%i", i) : stString_copy(read->readName));
 		stList_append(profileSeqs, stProfileSeq_constructFromPosteriorProbs("ref", reference, referenceLength,
-				readName, read, stList_get(anchorAlignments, i), params));
+				readName, nucleotides, stList_get(anchorAlignments, i), params));
 		free(readName);
-		stHash_insert(readToProfileSeq, read, stList_peek(profileSeqs));
+		stHash_insert(readToProfileSeq, nucleotides, stList_peek(profileSeqs));
 	}
 
 	// Get flat reference priors
@@ -551,7 +552,8 @@ void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList 
 		stProfileSeq *pSeq = stList_pop(discardedProfileSeqs);
 		double i = getLogProbOfReadGivenHaplotype(gF->haplotypeString1, gF->refStart, gF->length, pSeq, params->phaseParams);
 		double j = getLogProbOfReadGivenHaplotype(gF->haplotypeString2, gF->refStart, gF->length, pSeq, params->phaseParams);
-		stSet_insert(i < j ? reads2 : reads2, pSeq);
+        //TODO is this right?  tpesout changed from (i < j ? reads2 : reads2)
+		stSet_insert(i < j ? reads2 : reads1, pSeq);
 	}
 	stList_destruct(discardedProfileSeqs);
 
@@ -562,8 +564,10 @@ void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList 
 	*readsPartition1 = stList_construct();
 	*readsPartition2 = stList_construct();
 	for(int64_t i=0; i<stList_length(reads); i++) {
-		char *read = stList_get(reads, i);
-		stProfileSeq *pSeq = stHash_search(readToProfileSeq, read);
+
+        BamChunkRead *read = stList_get(reads, i);
+        char *nucleotides = read->nucleotides;
+		stProfileSeq *pSeq = stHash_search(readToProfileSeq, nucleotides);
 		stList_append(stSet_search(reads1, pSeq) ? *readsPartition1 : *readsPartition2, read);
 	}
 

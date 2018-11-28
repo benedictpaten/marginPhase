@@ -218,12 +218,9 @@ void bamChunkRead_destruct(BamChunkRead *r) {
     free(r);
 }
 
-
-
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads) {
+uint32_t convertToBamChunkReads(BamChunk *bamChunk, stList *reads) {
     // sanity check
     assert(stList_length(reads) == 0);
-    assert(stList_length(alignments) == 0);
 
     // prep
     int64_t chunkStart = bamChunk->chunkBoundaryStart;

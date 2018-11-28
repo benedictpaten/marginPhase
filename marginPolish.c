@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
 		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-		convertToReadsAndAlignments(bamChunk, reads);
+        convertToBamChunkReads(bamChunk, reads);
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -191,8 +191,6 @@ int main(int argc, char *argv[]) {
 		if(params->polishParams->useRunLengthEncoding) {
 			st_logInfo("> Running polishing algorithm using run-length encoding\n");
 
-            st_errAbort("FIX MODIFIED READ/ALIGNMENT STRUCTURE FOR RLE");
-            /*
 			// Run-length encoded polishing
 
 			// Do run length encoding (RLE)
@@ -202,18 +200,20 @@ int main(int argc, char *argv[]) {
 
 			// Now RLE the reads
 			stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
-			stList *l = stList_construct(); // Just the rle nucleotide strings
-			stList *rleAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+			stList *oldNucleotides = stList_construct3(0, free); // Just the rle nucleotide strings
+			stList *oldAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 			for(int64_t j=0; j<stList_length(reads); j++) {
-				char *read = stList_get(reads, j);
-				RleString *rleRead = rleString_construct(read);
+				BamChunkRead *read = stList_get(reads, j);
+                stList_append(oldNucleotides, read->nucleotides);
+                stList_append(oldAlignments, read->alignment);
+				RleString *rleRead = rleString_construct(read->nucleotides);
 				stList_append(rleReads, rleRead);
-				stList_append(l, rleRead->rleString);
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleRead));
+				read->nucleotides = rleRead->rleString;
+				read->alignment = runLengthEncodeAlignment(read->alignment, rleReference, rleRead);
 			}
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params->polishParams);
+			poa = poa_realignIterative(reads, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -227,11 +227,10 @@ int main(int argc, char *argv[]) {
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleReads);
-			stList_destruct(l);
-			stList_destruct(rleAlignments);
+			stList_destruct(oldNucleotides);
+			stList_destruct(oldAlignments);
 			rleString_destruct(rleReference);
 			rleString_destruct(polishedRLEReference);
-            */
 		}
 		else { // Non-run-length encoded polishing
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
@@ -305,7 +304,7 @@ int main(int argc, char *argv[]) {
 		poa_destruct(poa);
 		stList_destruct(reads);
 		free(referenceString);
-		//bamChunk_destruct(bamChunk);
+		bamChunk_destruct(bamChunk);
     }
 
     // Write out the last chunk

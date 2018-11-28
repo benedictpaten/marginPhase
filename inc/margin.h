@@ -1030,7 +1030,7 @@ void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads);
+uint32_t convertToBamChunkReads(BamChunk *bamChunk, stList *reads);
 
 /*
  * Remove overlap between two overlapping strings. Returns max weight of split point.
