@@ -616,7 +616,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	stList *anchorAlignments = poa_getAnchorAlignments(poaRefined, NULL, stList_length(reads), params->polishParams);
 	stList *reads1, *reads2;
 	phaseReads(poaRefined->refString, strlen(poaRefined->refString), reads, anchorAlignments, &reads1, &reads2, params);
-	Poa *poaReads1 = poa_realignIterative2(reads1, poaRefined->refString, polishParams, TRUE);
+	Poa *poaReads1 = poa_realignIterative2(reads1, poaRefined->refString, polishParams, FALSE);
 	Poa *poaReads2 = poa_realignIterative2(reads2, poaRefined->refString, polishParams, FALSE);
 
 	// Look at non-rle comparison
@@ -1183,11 +1183,11 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
 
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
 
     SUITE_ADD_TEST(suite, test_polish5kb);
-//    SUITE_ADD_TEST(suite, test_polish100kb);
+    SUITE_ADD_TEST(suite, test_polish100kb);
 
     return suite;
 }

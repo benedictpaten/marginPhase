@@ -980,13 +980,30 @@ Poa *poa_realignIterative2(stList *reads, char *reference, PolishParams *polishP
 		// Get anchor alignments
 		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
 
+		// TODO when we write a new bam with alignments, we probably want to save this permanently.. ditto for phasing
+		// Temporarily save alignments to read objects
+		assert(stList_length(anchorAlignments) == stList_length(reads));
+		stList *oldAlignments = stList_construct();
+		for (int j = 0; j < stList_length(reads); j++) {
+			BamChunkRead *read = stList_get(reads, j);
+			stList_append(oldAlignments, read->alignment);
+			read->alignment = stList_get(anchorAlignments, j);
+		}
+
 		// Generated updated poa
 		Poa *poa2 = poa_realign2(reads, reference, polishParams, useReadAlignments);
+
+		// Put back old alignments
+		for (int j = 0; j < stList_length(reads); j++) {
+			BamChunkRead *read = stList_get(reads, j);
+			read->alignment = stList_get(oldAlignments, j);
+		}
 
 		// Cleanup
 		free(reference);
 		free(poaToConsensusMap);
 		stList_destruct(anchorAlignments);
+		stList_destruct(oldAlignments);
 
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
