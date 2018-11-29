@@ -6,7 +6,7 @@ import sys
 import os
 import numpy as np
 import pysam
-import math
+import datetime
 
 percent = lambda small, big: int(100.0 * small / big) if big != 0 else 0.0
 
@@ -26,6 +26,8 @@ def parse_args(args = None):
                         help='Name to use for output from marginPolish. ')
     parser.add_argument('--read_size', '-r', dest='read_size', default=10000, required=False, type=int,
                         help='Size to chunk reads into for post-polishing alignment')
+    parser.add_argument('--force_realign', '-R', dest='force_realign', default=False, required=False, action='store_true',
+                        help='Will force overwrite the post-polishing reads and alignment')
 
     parser.add_argument('--marginPolish_invocation', '-P', dest='marginPolish_invocation', default="./marginPolish",
                         required=False, type=str,
@@ -41,6 +43,20 @@ def parse_args(args = None):
 
 def log(msg):
     print(msg, file=sys.stderr)
+
+# I'm a bastard
+global_outfiles = None
+
+def log_result(msg, outfile=None):
+    print(msg)
+    global global_outfiles
+    if outfile is not None:
+        with open(outfile, 'a') as outstream:
+            print(msg, file=outstream)
+    elif global_outfiles is not None:
+        for go in global_outfiles:
+            with open(go, 'a') as outstream:
+                print(msg, file=outstream)
 
 
 def run_command(command, out_file=None, log_prefix=None, include_pmp=True):
@@ -152,10 +168,10 @@ def run_polished_read_alignment(true_reference, polished_reads, polished_alignme
 
     # runnit
     run_command(mm2_cmd, out_file=polished_alignment, log_prefix="{}.minimap2".format(
-        polished_alignment.replace(".polished.reads.bam", "")))
+        polished_alignment.replace(".reads.bam", "")))
 
 
-def run_alignment_analysis(true_reference, polished_alignment):
+def run_alignment_analysis(true_reference, polished_alignment, args, outfile=None, type_identifier=""):
     # get contig map
     reference = dict()
     reference_lengths = dict()
@@ -222,7 +238,6 @@ def run_alignment_analysis(true_reference, polished_alignment):
     finally:
         if bamfile is not None: bamfile.close()
 
-
     total_summaries = sum(all_alignment_summaries.values())
     total_match = all_alignment_summaries['=']
     total_mismatch = all_alignment_summaries['X']
@@ -230,27 +245,34 @@ def run_alignment_analysis(true_reference, polished_alignment):
     total_delete = all_alignment_summaries['D']
     total_softclip = all_alignment_summaries['S']
     total_aln_nonsc = total_summaries - total_softclip
-    print("")
-    print("Results:")
-    print("  Total reads:              {:12d}".format(total_reads))
-    print("  Total unaligned reads:    {:12d}  {:.5f} of total reads".format(unaligned_reads, 1.0 * unaligned_reads / total_reads))
-    print("")
-    print("  Total reference bases:    {:12d}".format(total_reference_bases))
-    print("  Total aligned bases:      {:12d}  {:.5f} of ref bases".format(total_summaries, 1.0 * total_summaries / total_reference_bases))
-    print("  Total softclip:           {:12d}  {:.5f} of aln bases".format(total_softclip, 1.0 * total_softclip / total_summaries))
-    print("  Total non-softclip aln:   {:12d}  {:.5f} of ref bases".format(total_aln_nonsc, 1.0 * total_aln_nonsc / total_reference_bases))
-    print("")
-    print("  Total exact match:        {:12d}  {:.5f} of non-softclip aln bases".format(total_match, 1.0 * total_match / total_aln_nonsc))
-    print("                                          {:.5f} of reference bases".format(1.0 * total_match / total_reference_bases))
-    print("  Total mismatch:           {:12d}  {:.5f} of non-softclip aln bases".format(total_mismatch, 1.0 * total_mismatch / total_aln_nonsc))
-    print("                                          {:.5f} of reference bases".format(1.0 * total_mismatch / total_reference_bases))
-    print("  Total insert:             {:12d}  {:.5f} of non-softclip aln bases".format(total_insert, 1.0 * total_insert / total_aln_nonsc))
-    print("                                          {:.5f} of reference bases".format(1.0 * total_insert / total_reference_bases))
-    print("  Total delete:             {:12d}  {:.5f} of non-softclip aln bases".format(total_delete, 1.0 * total_delete / total_aln_nonsc))
-    print("                                          {:.5f} of reference bases".format(1.0 * total_delete / total_reference_bases))
+
+    global global_outfiles
+    if outfile is not None: global_outfiles = [outfile]
+    log_result("")
+    log_result("############################")
+    log_result("Results {}: read_size {}, time {}".format(type_identifier, args.read_size, datetime.datetime.now()))
+    log_result("  Total reads:              {:12d}".format(total_reads))
+    log_result("  Total unaligned reads:    {:12d}  {:.5f} of total reads".format(unaligned_reads, 1.0 * unaligned_reads / total_reads))
+    log_result("")
+    log_result("  Total reference bases:    {:12d}".format(total_reference_bases))
+    log_result("  Total aligned bases:      {:12d}  {:.5f} of ref bases".format(total_summaries, 1.0 * total_summaries / total_reference_bases))
+    log_result("  Total softclip:           {:12d}  {:.5f} of aln bases".format(total_softclip, 1.0 * total_softclip / total_summaries))
+    log_result("  Total non-softclip aln:   {:12d}  {:.5f} of ref bases".format(total_aln_nonsc, 1.0 * total_aln_nonsc / total_reference_bases))
+    log_result("")
+    log_result("  Total exact match:        {:12d}  {:.5f} of non-softclip aln bases".format(total_match, 1.0 * total_match / total_aln_nonsc))
+    log_result("                                          {:.5f} of reference bases".format(1.0 * total_match / total_reference_bases))
+    log_result("  Total mismatch:           {:12d}  {:.5f} of non-softclip aln bases".format(total_mismatch, 1.0 * total_mismatch / total_aln_nonsc))
+    log_result("                                          {:.5f} of reference bases".format(1.0 * total_mismatch / total_reference_bases))
+    log_result("  Total insert:             {:12d}  {:.5f} of non-softclip aln bases".format(total_insert, 1.0 * total_insert / total_aln_nonsc))
+    log_result("                                          {:.5f} of reference bases".format(1.0 * total_insert / total_reference_bases))
+    log_result("  Total delete:             {:12d}  {:.5f} of non-softclip aln bases".format(total_delete, 1.0 * total_delete / total_aln_nonsc))
+    log_result("                                          {:.5f} of reference bases".format(1.0 * total_delete / total_reference_bases))
     if untracked_alignment_operations > 0:
-        print("  Total unconsidered cigop: {:12d}".format(untracked_alignment_operations))
-    print("")
+        log_result("  Total unconsidered cigop: {:12d}".format(untracked_alignment_operations))
+    log_result("")
+    global_outfiles = None
+
+    return 1.0 * total_match / total_aln_nonsc, 1.0 * total_match / total_reference_bases
 
 
 
@@ -273,8 +295,10 @@ def main(args = None):
             "\n\t".join(input_files_specified_but_missing)))
         sys.exit(1)
 
+    ### finding files ###
+
     # find polisher output files
-    polished_reference = "{}.polished.fa".format(args.output_name)
+    polished_reference = "{}.fa".format(args.output_name)
     polished_reference_exists = False
     if not os.path.isfile(polished_reference):
         log("Found no polished reference")
@@ -282,35 +306,64 @@ def main(args = None):
         log("Found polished reference: {}".format(polished_reference))
         polished_reference_exists = True
 
-    # find alignment reads
-    polished_reads = "{}.polished.reads.fq".format(args.output_name)
+    # find polished assembly reads
+    polished_reads = "{}.polished_assembly.fq".format(args.output_name)
     polished_reads_exists = False
     if not os.path.isfile(polished_reads):
         log("Found no polished reads")
     else:
         log("Found polished reads: {}".format(polished_reads))
         polished_reads_exists = True
+        if (args.force_realign):
+            log("  Will overwrite (--force_realign set)")
+            polished_reads_exists = False
 
-    # find alignment bam
-    polished_bam = "{}.polished.reads.bam".format(args.output_name)
+    # find polished assembly bam
+    polished_bam = "{}.polished_assembly.bam".format(args.output_name)
     polished_bam_exists = False
     if not os.path.isfile(polished_bam):
         log("Found no polished bam")
     else:
         log("Found polished bam: {}".format(polished_bam))
         polished_bam_exists = True
+        if (args.force_realign):
+            log("  Will overwrite (--force_realign set)")
+            polished_bam_exists = False
+
+    # find original assembly reads
+    orig_assmebly_reads = "{}.original_assembly.fq".format(args.output_name)
+    orig_assmebly_reads_exists = False
+    if not os.path.isfile(orig_assmebly_reads):
+        log("Found no original assembly reads")
+    else:
+        log("Found original assembly reads: {}".format(orig_assmebly_reads))
+        orig_assmebly_reads_exists = True
+        if (args.force_realign):
+            log("  Will overwrite (--force_realign set)")
+            orig_assmebly_reads_exists = False
+
+    # find original assembly bam
+    orig_assmebly_bam = "{}.original_assembly.bam".format(args.output_name)
+    orig_assmebly_bam_exists = False
+    if not os.path.isfile(orig_assmebly_bam):
+        log("Found no original assembly bam")
+    else:
+        log("Found original assembly bam: {}".format(orig_assmebly_bam))
+        orig_assmebly_bam_exists = True
+        if (args.force_realign):
+            log("  Will overwrite (--force_realign set)")
+            orig_assmebly_bam_exists = False
+
+
+    ### running process ###
 
     # the main process
     log("\nStarting execution")
 
     # polisher
     log("")
-    if polished_bam_exists:
-        log("Skipping polishing (alignment bam exists)")
-    elif polished_reads_exists:
-        log("Skipping polishing (alignment reads exists)")
-    elif polished_reference_exists:
-        log("Skipping polishing (polished reference exists)")
+    if polished_bam_exists or polished_reads_exists or polished_reference_exists:
+        log("Skipping polishing")
     elif input_files_not_specified:
         log("ERROR: Found no polishing output and missing polishing files!")
         sys.exit(1)
@@ -323,10 +376,8 @@ def main(args = None):
 
     # post-polishing: generate reads
     log("")
-    if polished_bam_exists:
-        log("Skipping post-polishing read generation (alignment bam exists)")
-    elif polished_reads_exists:
-        log("Skipping post-polishing read generation (alignment reads exists)")
+    if polished_bam_exists or polished_reads_exists:
+        log("Skipping post-polishing read generation")
     else:
         log("Running post-polshing read generation")
         run_polished_output_to_reads(polished_reference, polished_reads, args.read_size)
@@ -337,7 +388,7 @@ def main(args = None):
     # post-polishing: generate alignment
     log("")
     if polished_bam_exists:
-        log("Skipping post-polishing alignment (alignment bam exists)")
+        log("Skipping post-polishing alignment")
     else:
         log("Running post-polishing alignment")
         run_polished_read_alignment(true_reference, polished_reads, polished_bam, args.minimap2_invocation)
@@ -347,15 +398,57 @@ def main(args = None):
 
     # alignment analysis
     log("")
-    log("Analyzing alignment")
-    run_alignment_analysis(true_reference, polished_bam)
+    log("Analyzing polishing alignment")
+    polished_assembly_final_results = "{}.polished_assembly_results.txt".format(args.output_name)
+    polish_exact_match_nonscaln, polish_exact_match_ref = run_alignment_analysis(
+        true_reference, polished_bam, args, outfile=polished_assembly_final_results, type_identifier="polished assembly")
 
+    ### original assembly alignments ###
 
-    # fin
+    # generate original assembly reads
+    log("")
+    if orig_assmebly_bam_exists or orig_assmebly_reads_exists:
+        log("Skipping original assembly read generation")
+    else:
+        log("Running original assembly read generation")
+        run_polished_output_to_reads(assembly_fasta, orig_assmebly_reads, args.read_size)
+    if not os.path.exists(orig_assmebly_reads):
+        log("ERROR: Could not find original assembly reads: {}".format(orig_assmebly_reads))
+        sys.exit(1)
+
+    # generate original assembly alignment
+    log("")
+    if orig_assmebly_bam_exists:
+        log("Skipping original assembly alignment")
+    else:
+        log("Running original assembly alignment")
+        run_polished_read_alignment(true_reference, orig_assmebly_reads, orig_assmebly_bam, args.minimap2_invocation)
+    if not os.path.exists(orig_assmebly_bam):
+        log("ERROR: Could not find original assembly alignment: {}".format(orig_assmebly_bam))
+        sys.exit(1)
+
+    # alignment analysis
+    log("")
+    log("Analyzing original assembly alignment")
+    orig_assembly_final_results = "{}.original_assembly_results.txt".format(args.output_name)
+    orig_assembly_exact_match_nonscaln, orig_assembly_exact_match_ref = run_alignment_analysis(
+        true_reference, orig_assmebly_bam, args, outfile=orig_assembly_final_results, type_identifier="original assembly")
+
+    global global_outfiles
+    global_outfiles = [orig_assembly_final_results, polished_assembly_final_results]
+    log_result("Polishing difference (exact matches):")
+    log_result("  Non-softclip aligned bases:")
+    log_result("    Polished:    {}".format(polish_exact_match_nonscaln))
+    log_result("    Original:    {}".format(orig_assembly_exact_match_nonscaln))
+    log_result("    Difference:  {}".format(polish_exact_match_nonscaln - orig_assembly_exact_match_nonscaln))
+    log_result("  True reference bases:")
+    log_result("    Polished:    {}".format(polish_exact_match_ref))
+    log_result("    Original:    {}".format(orig_assembly_exact_match_ref))
+    log_result("    Difference:  {}".format(polish_exact_match_ref - orig_assembly_exact_match_ref))
+    log_result("")
+
+    ### fin ###
     log("Fin.")
-
-
-
 
 
 

@@ -200,8 +200,8 @@ int main(int argc, char *argv[]) {
 
 			// Now RLE the reads
 			stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
-			stList *oldNucleotides = stList_construct3(0, free); // Just the rle nucleotide strings
-			stList *oldAlignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+			stList *oldNucleotides = stList_construct(); // Just the rle nucleotide strings
+			stList *oldAlignments = stList_construct();
 			for(int64_t j=0; j<stList_length(reads); j++) {
 				BamChunkRead *read = stList_get(reads, j);
                 stList_append(oldNucleotides, read->nucleotides);
@@ -224,6 +224,14 @@ int main(int argc, char *argv[]) {
 			// Do run-length decoding
 			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
+
+            // Put back reads
+            // TODO this may not be necessary
+            for(int64_t j=0; j<stList_length(reads); j++) {
+                BamChunkRead *read = stList_get(reads, j);
+                read->nucleotides = stList_get(oldNucleotides, j);
+                read->alignment = stList_get(oldAlignments, j);
+            }
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleReads);
@@ -304,7 +312,6 @@ int main(int argc, char *argv[]) {
 		poa_destruct(poa);
 		stList_destruct(reads);
 		free(referenceString);
-		bamChunk_destruct(bamChunk);
     }
 
     // Write out the last chunk
