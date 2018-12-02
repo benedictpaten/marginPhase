@@ -15,7 +15,6 @@ void testPrint(){
     printf("\n");
 }
 
-/* TODO tpesout: is this unused? I'm not sure about the post-read-alignment-refactor logic here
 // Make RLEStrings representing reads and list of the RLE strings
 char* callConsensus(int readNo, char *readArray[], char *reference) {
     stList *reads = stList_construct();
@@ -48,7 +47,6 @@ char* callConsensus(int readNo, char *readArray[], char *reference) {
 
     return nonRleString;
 }
- */
 
 
 //int main(){

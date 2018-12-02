@@ -212,9 +212,9 @@ BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, stList 
     return r;
 }
 void bamChunkRead_destruct(BamChunkRead *r) {
-    free(r->readName);
-    free(r->nucleotides);
-    stList_destruct(r->alignment);
+    if (r->readName != NULL) free(r->readName);
+    if (r->nucleotides != NULL) free(r->nucleotides);
+    if (r->alignment != NULL) stList_destruct(r->alignment);
     free(r);
 }
 
@@ -420,6 +420,9 @@ uint32_t convertToBamChunkReads(BamChunk *bamChunk, stList *reads) {
             seqIdx++;
         }
         seq[seqLen] = '\0';
+
+        // sanity check
+        assert(stIntTuple_get((stIntTuple *)stList_peek(cigRepr), 1) < strlen(seq));
 
         // save to read
         char *readName = stString_copy(bam_get_qname(aln));

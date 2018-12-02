@@ -8,6 +8,7 @@
 #include "margin.h"
 
 static char *polishParamsFile = "../params/allParams.np.json";
+static char *polishParamsNoRleFile = "../params/allParams.np.no_rle.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
@@ -616,7 +617,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	stList *anchorAlignments = poa_getAnchorAlignments(poaRefined, NULL, stList_length(reads), params->polishParams);
 	stList *reads1, *reads2;
 	phaseReads(poaRefined->refString, strlen(poaRefined->refString), reads, anchorAlignments, &reads1, &reads2, params);
-	Poa *poaReads1 = poa_realignIterative2(reads1, poaRefined->refString, polishParams, TRUE);
+	Poa *poaReads1 = poa_realignIterative2(reads1, poaRefined->refString, polishParams, FALSE);
 	Poa *poaReads2 = poa_realignIterative2(reads2, poaRefined->refString, polishParams, FALSE);
 
 	// Look at non-rle comparison
@@ -1121,7 +1122,7 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
-    char *regionStr = region == NULL ? "" : stString_print("--region %s", region);
+    char *regionStr = region == NULL ? stString_print("") : stString_print("--region %s", region);
     char *command = stString_print("./marginPolish %s %s %s %s %s", bamFile, referenceFile, paramsFile, regionStr, logString);
     st_logInfo("> Running command: %s\n", command);
 
@@ -1131,15 +1132,36 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
     return i;
 }
 
-void test_polish5kb(CuTest *testCase) {
-	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
-	bool verbose = false;
-	char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
-	char *region = "chr3:2150000-2155000";
+void test_polish5kb_rle(CuTest *testCase) {
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    bool verbose = false;
+    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+    char *region = "chr3:2150000-2155000";
 
-	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
-	CuAssertTrue(testCase, i == 0);
+    st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
+    CuAssertTrue(testCase, i == 0);
+}
+
+void test_polish5kb_no_rle(CuTest *testCase) {
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    bool verbose = false;
+    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+    char *region = "chr3:2150000-2155000";
+
+    st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose);
+    CuAssertTrue(testCase, i == 0);
+}
+
+void test_polish5kb_no_region(CuTest *testCase) {
+    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    bool verbose = false;
+    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+
+    st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose);
+    CuAssertTrue(testCase, i == 0);
 }
 
 void test_polish100kb(CuTest *testCase) {
@@ -1183,11 +1205,13 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
 
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
 
-    SUITE_ADD_TEST(suite, test_polish5kb);
-//    SUITE_ADD_TEST(suite, test_polish100kb);
+    SUITE_ADD_TEST(suite, test_polish5kb_rle);
+    SUITE_ADD_TEST(suite, test_polish5kb_no_rle);
+    SUITE_ADD_TEST(suite, test_polish5kb_no_region);
+    SUITE_ADD_TEST(suite, test_polish100kb);
 
     return suite;
 }
