@@ -20,16 +20,15 @@
  */
 
 void usage() {
-    fprintf(stderr, "usage: marginPolish <SAM/BAM/CRAM> <REFERENCE_FASTA> <PARAMS> [options]\n");
+    fprintf(stderr, "usage: marginPolish <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
     fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
     fprintf(stderr, "Polishes an assembly using the reads in a BAM file and produces:\n");
     fprintf(stderr, "    1) a fasta file giving an updated reference.\n");
     fprintf(stderr, "    2) and (optionally) a SAM/BAM/CRAM file of the reads giving their alignment to the updated reference\n");
 
     fprintf(stderr, "\nRequired arguments:\n");
-    fprintf(stderr, "    SAM/BAM/CRAM is the alignment of reads.  All reads must be aligned to the same contig \n");
-    fprintf(stderr, "        and be in sam/bam/cram format.\n");
-    fprintf(stderr, "    REFERENCE_FASTA is the reference sequence for the SAM/BAM/CRAM's contig in fasta format.\n");
+    fprintf(stderr, "    BAM_FILE BAM_FILE is the alignment of reads to the assembly (or reference).\n");
+    fprintf(stderr, "    ASSEMBLY_FASTA is the reference sequence BAM file in fasta format.\n");
     fprintf(stderr, "    PARAMS is the file with marginPolish parameters.\n");
 
     fprintf(stderr, "\nDefault options:\n");
@@ -38,10 +37,6 @@ void usage() {
     fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
     fprintf(stderr, "    -r --region            : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
-}
-
-void transformReferenceMapNames(stHash *originalReferenceMap) {
-
 }
 
 int main(int argc, char *argv[]) {
