@@ -17,13 +17,13 @@ void testPrint(){
 
 // Make RLEStrings representing reads and list of the RLE strings
 char* callConsensus(int readNo, char *readArray[], char *reference) {
-    stList *reads = stList_construct();
+    stList *reads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
     stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
 
     for (int64_t i = 0; i < readNo; i++) {
         RleString *rleString = rleString_construct((char *) readArray[i]);
         stList_append(rleStrings, rleString);
-        stList_append(reads, rleString->rleString);
+        stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), rleString->rleString, TRUE, NULL));
     }
 
     // RLE reference (reference could be randomly chosen read)
@@ -38,12 +38,16 @@ char* callConsensus(int readNo, char *readArray[], char *reference) {
 
     Params *p = params_readParams(paramsFile);
 
-    Poa *poaRefined = poa_realignIterative2(reads, rleReference->rleString, p->polishParams, FALSE);
+    Poa *poaRefined = poa_realignIterative(reads, rleReference->rleString, p->polishParams, FALSE);
 
     // Now get a non-RLE (expanded) string
     RleString* rleConsensus = expandRLEConsensus(poaRefined, rleStrings, p->polishParams->repeatSubMatrix);
 
     char* nonRleString = rleString_expand(rleConsensus);
+
+    //cleanup
+    stList_destruct(rleStrings);
+    stList_destruct(reads);
 
     return nonRleString;
 }

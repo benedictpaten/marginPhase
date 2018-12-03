@@ -800,8 +800,7 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, char *reference, PolishParams *polishParams);
-Poa *poa_realign2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignment);
+Poa *poa_realign(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -841,8 +840,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
  * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
  * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, char *reference, PolishParams *polishParams);
-Poa *poa_realignIterative2(stList *reads, char *reference, PolishParams *polishParams, bool useReadAlignments);
+Poa *poa_realignIterative(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
 
 /*
  * Greedily evaluate the top scoring indels.
@@ -1008,7 +1006,7 @@ typedef struct _bamChunk {
 typedef struct _bamChunkRead {
 	char *readName;          	// read name
 	char *nucleotides;			// nucleotide string
-	stList *alignment;			// matched pairs in alignment, chunk position to read position
+	int64_t readLength;
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
 	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
@@ -1024,13 +1022,13 @@ BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int6
 void bamChunk_destruct(BamChunk *bamChunk);
 
 BamChunkRead *bamChunkRead_construct();
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, stList *alignment, bool forwardStrand, BamChunk *parent);
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool forwardStrand, BamChunk *parent);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
-uint32_t convertToBamChunkReads(BamChunk *bamChunk, stList *reads);
+uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
 
 /*
  * Remove overlap between two overlapping strings. Returns max weight of split point.

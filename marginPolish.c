@@ -176,7 +176,8 @@ int main(int argc, char *argv[]) {
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
 		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        convertToBamChunkReads(bamChunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+        convertToReadsAndAlignments(bamChunk, reads, alignments);
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -195,20 +196,20 @@ int main(int argc, char *argv[]) {
 
 			// Now RLE the reads
 			stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
-			stList *oldNucleotides = stList_construct(); // Just the rle nucleotide strings
-			stList *oldAlignments = stList_construct();
+            stList *rleAlignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+			stList *oldNucleotides = stList_construct();
 			for(int64_t j=0; j<stList_length(reads); j++) {
 				BamChunkRead *read = stList_get(reads, j);
                 stList_append(oldNucleotides, read->nucleotides);
-                stList_append(oldAlignments, read->alignment);
 				RleString *rleRead = rleString_construct(read->nucleotides);
 				stList_append(rleReads, rleRead);
 				read->nucleotides = rleRead->rleString;
-				read->alignment = runLengthEncodeAlignment(read->alignment, rleReference, rleRead);
+                read->readLength = strlen(read->nucleotides);
+				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleRead));
 			}
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, rleReference->rleString, params->polishParams);
+			poa = poa_realignIterative(reads, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -225,13 +226,13 @@ int main(int argc, char *argv[]) {
             for(int64_t j=0; j<stList_length(reads); j++) {
                 BamChunkRead *read = stList_get(reads, j);
                 read->nucleotides = stList_get(oldNucleotides, j);
-                read->alignment = stList_get(oldAlignments, j);
+                read->readLength = strlen(read->nucleotides);
             }
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleReads);
 			stList_destruct(oldNucleotides);
-			stList_destruct(oldAlignments);
+            stList_destruct(rleAlignments);
 			rleString_destruct(rleReference);
 			rleString_destruct(polishedRLEReference);
 		}
@@ -239,7 +240,7 @@ int main(int argc, char *argv[]) {
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, referenceString, params->polishParams);
+			poa = poa_realignIterative(reads, alignments, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
@@ -306,6 +307,7 @@ int main(int argc, char *argv[]) {
 		// Cleanup
 		poa_destruct(poa);
 		stList_destruct(reads);
+        stList_destruct(alignments);
 		free(referenceString);
     }
 
