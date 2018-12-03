@@ -6,20 +6,14 @@
 // Created by ryan on 10/30/18.
 //
 
-#include <multipleAligner.h>
 #include "margin.h"
-#include "randomSequences.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include "sonLib.h"
 
 static char* paramsPath = "../params/polish/polishParams.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 void testPrint(){
     printf("working\n");
-    printf(paramsPath);
+    printf("%s\n", paramsPath);
     printf("\n");
 }
 
@@ -27,6 +21,7 @@ void testPrint(){
 char* callConsensus(int readNo, char *readArray[], char *reference) {
     stList *reads = stList_construct();
     stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
+    bool *readStrandArray = st_calloc(readNo, sizeof(bool));
 
     for (int64_t i = 0; i < readNo; i++) {
         RleString *rleString = rleString_construct((char *) readArray[i]);
@@ -44,11 +39,14 @@ char* callConsensus(int readNo, char *readArray[], char *reference) {
      return "";
     }
 
-    PolishParams *p = polishParams_readParams(paramsFile);
+    Params *p = params_readParams(paramsFile);
 
-    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p);    // Now get a non-RLE (expanded) string
+    Poa *poaRefined = poa_realignIterative(reads, readStrandArray, NULL, rleReference->rleString, p->polishParams);    // Now get a non-RLE (expanded) string
 
-    char *nonRLEConsensusString = expandRLEConsensus(poaRefined, rleStrings, p->repeatSubMatrix);
+    RleString *rleConsensusString = expandRLEConsensus(poaRefined, rleStrings, readStrandArray, p->polishParams->repeatSubMatrix);
+    char *nonRLEConsensusString = rleString_expand(rleConsensusString);
+
+    // TODO: Cleanup memory!
 
     return nonRLEConsensusString;
 }

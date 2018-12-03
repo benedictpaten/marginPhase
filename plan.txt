@@ -2,7 +2,6 @@
 - Rename package from marginPhase to margin
 
 - Make view data structure memory efficient
-- Add read + alignment to profileSeq function for integration with phase
 - Make alignment uncertainty view
 - Make phasing view
 - Tune pair hmm
@@ -11,3 +10,27 @@
 - Adapt so we have a common binary "margin" with subcommands "margin phase" and "margin polish"
 - Build margin polish top level script, which takes a bam file and outputs a bam with a polished assembly and reads aligned to it
 - Develop combined phasing / polish algorithms
+
+
+
+Notes:
+
+
+
+# Script for munging repeat counts
+f = open("./base_matrices_2018_11_21_9_22_43_358477.fasta", 'r')
+l = f.readlines()
+f2 = open("./subMatrix.txt", 'w')
+for i in xrange(0, 16, 2):
+	f2.write('"repeatCountLogProbabilities_%s" : [ \n' % l[i][1:-1])
+	f2.write("\t" + ", ".join(l[i+1].split()) + "\n")
+	f2.write("],\n")
+
+# Script for renaming ryan's example files
+import os
+j = 0
+for i in os.listdir("./"):
+     if "ref.fasta" in i:
+     	os.rename(i, "%i.ref.fasta" % j)
+     	os.rename(i[:-10] + ".fasta", "%i.fasta" % j)
+     	j += 1

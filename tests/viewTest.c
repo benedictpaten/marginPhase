@@ -141,6 +141,8 @@ void test_viewExamples(CuTest *testCase) {
 		char *reference = getString(r->list[0], rle);
 		stList *reads = stList_construct3(0, free);
 		stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
+		// TODO: Get examples with strands specified
+		bool *readStrandArray = st_calloc(r->length-1, sizeof(bool));
 		for(int64_t i=1; i<r->length; i++) {
 			stList_append(reads, getString(r->list[i], rle));
 			stList_append(rleReads, rleString_construct(r->list[i]));
@@ -161,7 +163,7 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Generate alignment
 		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-		Poa *poa = poa_realignIterative(reads, NULL, reference, params->polishParams);
+		Poa *poa = poa_realignIterative(reads, readStrandArray, NULL, reference, params->polishParams);
 
 		// Generate final MEA read alignments to POA
 		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, params->polishParams);
@@ -192,7 +194,7 @@ void test_viewExamples(CuTest *testCase) {
 
 			if(rle) {
 				// Expand the RLE string
-				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, readStrandArray, params->polishParams->repeatSubMatrix);
 				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
 				msaView_printRepeatCounts(view, 1,
@@ -214,6 +216,7 @@ void test_viewExamples(CuTest *testCase) {
 		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
 
 		// Cleanup
+		free(readStrandArray);
 		rleString_destruct(rleReference);
 		stList_destruct(rleReads);
 		free(readFile);

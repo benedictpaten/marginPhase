@@ -764,12 +764,14 @@ struct _poaNode {
 
 struct _poaInsert {
 	char *insert; // String representing characters of insert e.g. "GAT", etc.
-	double weight;
+	double weightForwardStrand;
+	double weightReverseStrand;
 };
 
 struct _poaDelete {
 	int64_t length; // Length of delete
-	double weight;
+	double weightForwardStrand;
+	double weightReverseStrand;
 };
 
 struct _poaBaseObservation {
@@ -782,6 +784,10 @@ struct _poaBaseObservation {
  * Poa functions.
  */
 
+double poaInsert_getWeight(PoaInsert *insert);
+
+double poaDelete_getWeight(PoaDelete *delete);
+
 /*
  * Creates a POA representing the given reference sequence, with one node for each reference base and a
  * prefix 'N' base to represent place to add inserts/deletes that precede the first position of the reference.
@@ -792,7 +798,7 @@ Poa *poa_getReferenceGraph(char *reference);
  * Adds to given POA the matches, inserts and deletes from the alignment of the given read to the reference.
  * Adds the inserts and deletes so that they are left aligned.
  */
-void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *inserts, stList *deletes);
+void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *matches, stList *inserts, stList *deletes);
 
 /*
  * Creates a POA representing the reference and the expected inserts / deletes and substitutions from the
@@ -800,7 +806,7 @@ void poa_augment(Poa *poa, char *read, int64_t readNo, stList *matches, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference,
+Poa *poa_realign(stList *reads, bool *readStrandArray, stList *anchorAlignments, char *reference,
 			  	 PolishParams *polishParams);
 
 /*
@@ -822,7 +828,7 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 /*
  * Prints representation of the POA.
  */
-void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold);
+void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold, float strandBalanceRatio);
 
 /*
  * Prints some summary stats on the POA.
@@ -841,12 +847,12 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
  * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
  * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams);
+Poa *poa_realignIterative(stList *reads, bool *readStrandArray, stList *anchorAlignments, char *reference, PolishParams *polishParams);
 
 /*
  * Greedily evaluate the top scoring indels.
  */
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *polishParams);
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, bool *readStrandArray, PolishParams *polishParams);
 
 void poa_destruct(Poa *poa);
 
@@ -923,32 +929,32 @@ void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix);
 /*
  * Gets the log probability of observing a given repeat conditioned on an underlying repeat count and base.
  */
-double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base,
+double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand,
 								  int64_t observedRepeatCount, int64_t underlyingRepeatCount);
 
 /*
  * As gets, but returns the address.
  */
-double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, int64_t observedRepeatCount, int64_t underlyingRepeatCount);
+double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount);
 
 /*
  * Gets the log probability of observing a given set of repeat observations conditioned on an underlying repeat count and base.
  */
 double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
-												     stList *rleReads, int64_t underlyingRepeatCount);
+												     stList *rleReads, bool *readStrands, int64_t underlyingRepeatCount);
 
 /*
  * Gets the maximum likelihood underlying repeat count for a given set of observed read repeat counts.
  * Puts the ml log probility in *logProbabilty.
  */
 int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base,
-										 stList *observations, stList *rleReads, double *logProbability);
+										 stList *observations, stList *rleReads, bool *readStrands, double *logProbability);
 
 /*
  * Takes a POA done in run-length space and returns the expanded consensus string in
  * non-run-length space as an RleString.
  */
-RleString *expandRLEConsensus(Poa *poa, stList *rlReads, RepeatSubMatrix *repeatSubMatrix);
+RleString *expandRLEConsensus(Poa *poa, stList *rlReads, bool *readStrands, RepeatSubMatrix *repeatSubMatrix);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing

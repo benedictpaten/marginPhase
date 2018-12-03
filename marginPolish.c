@@ -45,7 +45,6 @@ void transformReferenceMapNames(stHash *originalReferenceMap) {
 }
 
 int main(int argc, char *argv[]) {
-
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
@@ -183,6 +182,7 @@ int main(int argc, char *argv[]) {
 		stList *reads = stList_construct3(0, free);
 		stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 		convertToReadsAndAlignments(bamChunk, reads, alignments);
+		bool *readStrandArray = st_calloc(stList_length(reads), sizeof(bool)); // TODO: Correctly populate
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -212,7 +212,7 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(l, rleAlignments, rleReference->rleString, params->polishParams);
+			poa = poa_realignIterative(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -221,7 +221,7 @@ int main(int argc, char *argv[]) {
 			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
 
 			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
+			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, readStrandArray, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
 			// Now cleanup run-length stuff
@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, alignments, referenceString, params->polishParams);
+			poa = poa_realignIterative(reads, readStrandArray, alignments, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
@@ -247,7 +247,7 @@ int main(int argc, char *argv[]) {
 			poa_printSummaryStats(poa, stderr);
 		}
 		if (st_getLogLevel() >= debug) {
-			poa_print(poa, stderr, 5);
+			poa_print(poa, stderr, 5, 5);
 		}
 
 		// If there is no prior chunk
@@ -304,6 +304,7 @@ int main(int argc, char *argv[]) {
 		stList_destruct(reads);
 		stList_destruct(alignments);
 		free(referenceString);
+		free(readStrandArray);
 		//bamChunk_destruct(bamChunk);
     }
 
