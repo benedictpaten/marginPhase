@@ -38,7 +38,7 @@ char* callConsensus(int readNo, char *readArray[], char *reference) {
 
     Params *p = params_readParams(paramsFile);
 
-    Poa *poaRefined = poa_realignIterative(reads, rleReference->rleString, p->polishParams, FALSE);
+    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p->polishParams);
 
     // Now get a non-RLE (expanded) string
     RleString* rleConsensus = expandRLEConsensus(poaRefined, rleStrings, p->polishParams->repeatSubMatrix);
