@@ -205,7 +205,7 @@ BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool fo
     BamChunkRead *r = malloc(sizeof(BamChunkRead));
     r->readName = readName;
     r->nucleotides = nucleotides;
-    r->readLength = strlen(nucleotides);
+    r->readLength = (nucleotides == NULL ? 0 : strlen(nucleotides));
     r->forwardStrand = forwardStrand;
     r->parent = parent;
 

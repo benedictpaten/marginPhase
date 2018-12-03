@@ -88,7 +88,8 @@ static void test_getChunksWithBoundary(CuTest *testCase) {
 
         // see how many reads there are
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == stList_length(reads));
 
         // all these should cover any read whose alignment overlaps (inclusive) with chunkMarginStart and (exclusive)
@@ -114,6 +115,7 @@ static void test_getChunksWithBoundary(CuTest *testCase) {
         // increment
         contig2ChunkCount++;
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, contig2ChunkCount == 5);
     free(chunker->params);
@@ -133,7 +135,8 @@ static void test_getChunksWithoutBoundary(CuTest *testCase) {
 
         // see how many reads there are
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == stList_length(reads));
 
         // all these should cover any read whose alignment overlaps (inclusive) with chunkMarginStart and (exclusive)
@@ -159,6 +162,7 @@ static void test_getChunksWithoutBoundary(CuTest *testCase) {
         // increment
         contig2ChunkCount++;
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, contig2ChunkCount == 5);
     free(chunker->params);
@@ -202,13 +206,15 @@ static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 10);
         for (int64_t i = 0; i < 10; i++) {
             // check the length of the cigar strings
-            assertClippingAlignmentMatchCount(testCase, i, ((BamChunkRead *)stList_get(reads, i))->alignment);
+            assertClippingAlignmentMatchCount(testCase, i, stList_get(alignments, i));
         }
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, foundChunk);
     free(chunker->params);
@@ -229,11 +235,12 @@ static void test_getReadsWithSoftClipping(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 10);
         for (int64_t i = 0; i < 10; i++) {
             // check the length of the cigar strings
-            assertClippingAlignmentMatchCount(testCase, i, ((BamChunkRead*)stList_get(reads, i))->alignment);
+            assertClippingAlignmentMatchCount(testCase, i, stList_get(alignments, i));
         }
         stList_destruct(reads);
     }
@@ -264,129 +271,130 @@ static void test_readAlignmentsWithoutSoftclippingChunkStart(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 24);
         for (int64_t i = 0; i < 24; i++) {
             BamChunkRead *read = stList_get(reads, i);
             switch (i) {
                 case 0: //399996      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 1: //399996      4M1D3M    ACGTCGT
                     CuAssertTrue(testCase, stString_eq("CGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
                     break;
                 case 2: //399996      4M1I4M    ACGTAACGT
                     CuAssertTrue(testCase, stString_eq("AACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 3: //399996      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 4: //399996      4S4M1D3M  AAAAACGTCGT
                     CuAssertTrue(testCase, stString_eq("CGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
                     break;
                 case 5: //399996      4S4M1I4M  AAAAACGTAACGT
                     CuAssertTrue(testCase, stString_eq("AACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 6: //400000      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 7: //400000      1D7M      CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
                     break;
                 case 8: //400000      1I8M      AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 9: //400000      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 10: //400000      4S1D7M    AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
                     break;
                 case 11: //400000      4S1I8M    AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 12: //400002      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 13: //400002      1D7M      CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {3,4,5,6,7,8,9},7);
                     break;
                 case 14: //400002      1I8M      AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 15: //400002      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 16: //400002      4S1D7M    AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {3,4,5,6,7,8,9},7);
                     break;
                 case 17: //400002      4S1I8M    AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 18: //400008  8M      ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 19: //400008  1D7M    CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {9,10,11,12,13,14,15},7);
                     break;
                 case 20: //400008  1I8M    AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 21: //400008  4S8M    AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 22: //400008  4S1D7M  AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {9,10,11,12,13,14,15},7);
                     break;
                 case 23: //400008  4S1I8M  AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 default:
@@ -394,6 +402,7 @@ static void test_readAlignmentsWithoutSoftclippingChunkStart(CuTest *testCase) {
             }
         }
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, foundChunk);
     free(chunker->params);
@@ -416,129 +425,130 @@ static void test_readAlignmentsWithSoftclippingChunkStart(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 24);
         for (int64_t i = 0; i < 24; i++) {
             BamChunkRead *read = stList_get(reads, i);
             switch (i) {
                 case 0: //399996      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 1: //399996      4M1D3M    ACGTCGT
                     CuAssertTrue(testCase, stString_eq("CGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
                     break;
                 case 2: //399996      4M1I4M    ACGTAACGT
                     CuAssertTrue(testCase, stString_eq("AACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 3: //399996      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 4: //399996      4S4M1D3M  AAAAACGTCGT
                     CuAssertTrue(testCase, stString_eq("CGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {1,2,3}, 3);
                     break;
                 case 5: //399996      4S4M1I4M  AAAAACGTAACGT
                     CuAssertTrue(testCase, stString_eq("AACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4},(int64_t[]) {0,1,2,3}, 4);
                     break;
                 case 6: //400000      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 7: //400000      1D7M      CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
                     break;
                 case 8: //400000      1I8M      AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 9: //400000      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 10: //400000      4S1D7M    AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {1,2,3,4,5,6,7}, 7);
                     break;
                 case 11: //400000      4S1I8M    AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {0,1,2,3,4,5,6,7}, 8);
                     break;
                 case 12: //400002      8M        ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 13: //400002      1D7M      CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {3,4,5,6,7,8,9},7);
                     break;
                 case 14: //400002      1I8M      AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 15: //400002      4S8M      AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 16: //400002      4S1D7M    AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8},(int64_t[]) {3,4,5,6,7,8,9},7);
                     break;
                 case 17: //400002      4S1I8M    AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {3,4,5,6,7,8,9,10},(int64_t[]) {2,3,4,5,6,7,8,9},8);
                     break;
                 case 18: //400008  8M      ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 19: //400008  1D7M    CGTACGT
                     CuAssertTrue(testCase, stString_eq("CGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {9,10,11,12,13,14,15},7);
                     break;
                 case 20: //400008  1I8M    AACGTACGT
                     CuAssertTrue(testCase, stString_eq("AACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {1,2,3,4,5,6,7,8},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 21: //400008  4S8M    AAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAAAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {4,5,6,7,8,9,10,11},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 case 22: //400008  4S1D7M  AAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {4,5,6,7,8,9,10},(int64_t[]) {9,10,11,12,13,14,15},7);
                     break;
                 case 23: //400008  4S1I8M  AAAAAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAAAAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {5,6,7,8,9,10,11,12},(int64_t[]) {8,9,10,11,12,13,14,15},8);
                     break;
                 default:
@@ -546,6 +556,7 @@ static void test_readAlignmentsWithSoftclippingChunkStart(CuTest *testCase) {
             }
         }
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, foundChunk);
     free(chunker->params);
@@ -566,114 +577,115 @@ static void test_readAlignmentsWithoutSoftclippingChunkEnd(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 21);
         for (int64_t i = 0; i < 21; i++) {
             BamChunkRead *read = stList_get(reads, i);
             switch (i) {
                 case 0: // 410010     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 1: // 410010     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 2: // 410010     4S8M4S   AAAAACGTACGTTTTT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 3: // 410012     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 4: // 410012     8M1I     ACGTACGTA
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 5: // 410012     8M1D     ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 6: // 410012     7M2I     ACGTACGAA
                     CuAssertTrue(testCase, stString_eq("ACGTACGAA", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 7: // 410012     7M1D     ACGTACG
                     CuAssertTrue(testCase, stString_eq("ACGTACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 8: // 410012     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 9: // 410012     2S8M1I2S         AAACGTACGTATT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 10: // 410012     2S8M1D2S         AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 11: // 410012    2S7M2I2S     AAACGTACGAATT
                     CuAssertTrue(testCase, stString_eq("ACGTACGAA", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 12:  // 410012    2S7M1D2S     AAACGTACGTT
                     CuAssertTrue(testCase, stString_eq("ACGTACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 13: // 410016     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 14: // 410016     3M1D4M   ACGACGT
                     CuAssertTrue(testCase, stString_eq("ACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {16,17,18}, 3);
                     break;
                 case 15: // 410016     3M2I4M   ACGCCTACG
                     CuAssertTrue(testCase, stString_eq("ACGCCT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,5},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 16: // 410016     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 17: // 410016     2S3M1D4M2S       AAACGACGTTT
                     CuAssertTrue(testCase, stString_eq("ACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {16,17,18}, 3);
                     break;
                 case 18: // 410016     2S3M2I4M2S       AAACGCCTACGTT
                     CuAssertTrue(testCase, stString_eq("ACGCCT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,5},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 19: // 410016     8M2S     ACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 20: // 410016     2S8M     AAACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 21: // 410020     8M       ACGTACGT
@@ -683,6 +695,7 @@ static void test_readAlignmentsWithoutSoftclippingChunkEnd(CuTest *testCase) {
             }
         }
         stList_destruct(reads);
+        stList_destruct(alignments);
     }
     CuAssertTrue(testCase, foundChunk);
     free(chunker->params);
@@ -703,114 +716,115 @@ static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
 
         // analyze reads and alignments
         stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        uint32_t readCount = convertToReadsAndAlignments(chunk, reads);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
         CuAssertTrue(testCase, readCount == 21);
         for (int64_t i = 0; i < 21; i++) {
             BamChunkRead *read = stList_get(reads, i);
             switch (i) {
                 case 0: // 410010     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 1: // 410010     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGTTT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 2: // 410010     4S8M4S   AAAAACGTACGTTTTT
                     CuAssertTrue(testCase, stString_eq("AAAAACGTACGTTT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {4,5,6,7,8,9,10,11},(int64_t[]) {10,11,12,13,14,15,16,17}, 8);
                     break;
                 case 3: // 410012     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 4: // 410012     8M1I     ACGTACGTA
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 5: // 410012     8M1D     ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6,7},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 6: // 410012     7M2I     ACGTACGAA
                     CuAssertTrue(testCase, stString_eq("ACGTACGAA", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 7: // 410012     7M1D     ACGTACG
                     CuAssertTrue(testCase, stString_eq("ACGTACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3,4,5,6},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 8: // 410012     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 9: // 410012     2S8M1I2S         AAACGTACGTATT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 10: // 410012     2S8M1D2S         AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {12,13,14,15,16,17,18,19}, 8);
                     break;
                 case 11: // 410012    2S7M2I2S     AAACGTACGAATT
                     CuAssertTrue(testCase, stString_eq("AAACGTACGAAT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8,9},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 12:  // 410012    2S7M1D2S     AAACGTACGTT
                     CuAssertTrue(testCase, stString_eq("AAACGTACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5,6,7,8},(int64_t[]) {12,13,14,15,16,17,18}, 7);
                     break;
                 case 13: // 410016     8M       ACGTACGT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 14: // 410016     3M1D4M   ACGACGT
                     CuAssertTrue(testCase, stString_eq("ACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2},(int64_t[]) {16,17,18}, 3);
                     break;
                 case 15: // 410016     3M2I4M   ACGCCTACG
                     CuAssertTrue(testCase, stString_eq("ACGCCT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,5},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 16: // 410016     2S8M2S   AAACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("AAACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 17: // 410016     2S3M1D4M2S       AAACGACGTTT
                     CuAssertTrue(testCase, stString_eq("AAACG", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4},(int64_t[]) {16,17,18}, 3);
                     break;
                 case 18: // 410016     2S3M2I4M2S       AAACGCCTACGTT
                     CuAssertTrue(testCase, stString_eq("AAACGCCT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,7},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 19: // 410016     8M2S     ACGTACGTTT
                     CuAssertTrue(testCase, stString_eq("ACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {0,1,2,3},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 20: // 410016     2S8M     AAACGTACGT
                     CuAssertTrue(testCase, stString_eq("AAACGT", read->nucleotides));
-                    assertAlignmentMatching(testCase, read->alignment,
+                    assertAlignmentMatching(testCase, stList_get(alignments, i),
                                             (int64_t[]) {2,3,4,5},(int64_t[]) {16,17,18,19}, 4);
                     break;
                 case 21: // 410020     8M       ACGTACGT
@@ -819,6 +833,7 @@ static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
                     CuAssertTrue(testCase, FALSE);
             }
         }
+        stList_destruct(alignments);
         stList_destruct(reads);
     }
     CuAssertTrue(testCase, foundChunk);

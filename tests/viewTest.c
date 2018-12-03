@@ -143,7 +143,7 @@ void test_viewExamples(CuTest *testCase) {
 		stList *nucleotides = stList_construct3(0,free);
 		stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
 		for(int64_t i=1; i<r->length; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL,getString(r->list[i], rle),NULL,TRUE,NULL));
+			stList_append(reads, bamChunkRead_construct2(NULL,getString(r->list[i], rle),TRUE,NULL));
 			stList_append(nucleotides, getString(r->list[i], rle));
 			stList_append(rleReads, rleString_construct(r->list[i]));
 		}
@@ -163,7 +163,7 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Generate alignment
 		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-		Poa *poa = poa_realignIterative2(reads, reference, params->polishParams, FALSE);
+		Poa *poa = poa_realignIterative(reads, NULL, reference, params->polishParams);
 
 		// Generate final MEA read alignments to POA
 		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, params->polishParams);
