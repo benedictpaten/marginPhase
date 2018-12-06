@@ -13,6 +13,8 @@ CuSuite *marginPhaseTestSuite(void);
 CuSuite* polisherTestSuite(void);
 CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
+CuSuite* callConsensusTestSuite(void);
+
 
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
@@ -25,6 +27,7 @@ int marginPhaseTests(void) {
 	CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
+	CuSuiteAddSuite(suite, callConsensusTestSuite());
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);

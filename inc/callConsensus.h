@@ -13,7 +13,7 @@ extern "C" {
 void testPrint();
 
 // iteratively construct a consensus sequence using profile HMM/POA
-char* callConsensus(int readNo, char *readArray[], char *reference);
+char* callConsensus(int readNo, char *readArray[], char *reference, char *paramsPath);
 
 #ifdef __cplusplus
 }
