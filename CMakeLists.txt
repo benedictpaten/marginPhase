@@ -309,10 +309,21 @@ target_link_libraries(hts pthread bz2 z curl)
 add_library(lastz ${LASTZ_SOURCES})
 target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
+# cPecanLastz
+add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
+        COMMAND cd ${PROJECT_SOURCE_DIR}/externalTools/sonLib && make
+        COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/cPecan/
+)
+add_custom_target(CPECANLASTZ DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
+
+
 # MISC
 add_library(son ${SONLIB_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
-add_dependencies(cpecan lastz)
+add_dependencies(cpecan lastz CPECANLASTZ)
+
 
 # Build MarginPhatever Library
 add_library(margin SHARED ${SOURCE_FILES})
@@ -328,6 +339,9 @@ target_link_libraries(marginPhase margin)
 #TODO uncomment after compilation errors are fixed
 add_executable(marginPolish marginPolish.c )
 target_link_libraries(marginPolish margin)
+
+file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(vcfCompare vcfCompare.c )
 target_link_libraries(vcfCompare margin)
