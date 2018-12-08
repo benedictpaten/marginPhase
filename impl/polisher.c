@@ -1424,3 +1424,200 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 
 	return overlapWeight;
 }
+
+// New polish algorithm
+
+char *getExistingHaplotype(Poa *poa, int64_t from, int64_t to) {
+	char *s = st_malloc(sizeof(char) * (to-from+1));
+	s[to-from] = '\0';
+	for(int64_t i=from; i<to; i++) {
+		PoaNode *node = stList_get(poa->nodes, i);
+		s[i-from] = node->base;
+	}
+	return s;
+}
+
+char getNextCandidateBase(PoaNode *node, int64_t *i, PolishParams *params) {
+	while(*i<SYMBOL_NUMBER_NO_N) {
+		if(node->baseWeights[(*i)++] > XX) {
+			return symbol_convertSymbolToChar((*i)-1);
+		}
+	}
+	return '-';
+}
+
+char *getNextCandidateInsert(PoaNode *node, int64_t *i, PolishParams *params) {
+	while((*i++) < stList_length(node->inserts)) {
+		PoaInsert *insert = stList_get(node->inserts, (*i)-1);
+		if(poaInsert_getWeight(insert) > XX) {
+			return insert->insert;
+		}
+	}
+	return NULL;
+}
+
+int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, PolishParams *params) {
+	while((*i++) < stList_length(node->deletes)) {
+		PoaDelete *delete = stList_get(node->deletes, (*i)-1);
+		if(poaDelete_getWeight(delete) > XX) {
+			return delete->length;
+		}
+	}
+	return -1;
+}
+
+stList *getCandidateHaplotypes(Poa *poa, int64_t from, int64_t to, PolishParams *params) {
+	// At each node get possible edit strings and jumps
+
+	// Get suffix haplotype strings
+	stList *haplotypes;
+	if(from < to) {
+		haplotypes = getCandidateHaplotypes(from+1, to, params);
+	}
+	else {
+		haplotypes = stList_construct3(0, free);
+		stList_append(haplotypes, stString_copy(""));
+	}
+
+	// Now extended by adding on prefix variants
+	stList *extendedHaplotypes = stList_construct3(0, free);
+
+	PoaNode *node = stList_get(poa->nodes, from);
+
+	int64_t i=0;
+	char base;
+	while((base = getNextCandidateBase(node, &i, params)) != '-') {
+
+		//
+		for(int64_t j=0; j<stList_length(haplotypes); j++) {
+			stString_print("%c%s", base, stList_get(haplotypes, j));
+		}
+
+		// Add inserts
+		int64_t k=0;
+		char *insert;
+		while((insert = getNextCandidateInsert(node, &k, params)) != NULL) {
+			for(int64_t j=0; j<stList_length(haplotypes); j++) {
+				stList_append(extendedHaplotypes, stString_print("%c%s%s", base, insert, stList_get(haplotypes, j)));
+			}
+		}
+
+		// Add deletes
+		k = 0;
+		int64_t deleteLength;
+		while((deleteLength = getNextCandidateDelete(node, &k, params)) > 0) {
+			for(int64_t j=0; j<stList_length(haplotypes); j++) {
+				char *suffixHaplotype = stList_get(haplotypes, j);
+				stList_append(extendedHaplotypes, stString_print("%c%s", base,
+							(strlen(suffixHaplotype) - deleteLength >= 0 ? suffixHaplotype[deleteLength] : "")));
+			}
+		}
+	}
+
+	// Clean up
+	stList_destruct(haplotypes);
+
+	return extendedHaplotypes;
+}
+
+double computeHaplotypeLikelihood(char *reference, stList *reads, PolishParams *params) {
+
+}
+
+char *getBestHaplotype(Poa *poa, stList *reads, int64_t from, int64_t to, PolishParams *params) {
+	// Enumerate candidate variants in interval building haplotype strings
+	stList *haplotypes = getCandidateHaplotypes(poa, from, to, params);
+	char *haplotype = stList_get(haplotypes, 0);
+
+	if(stList_length(haplotypes) > 1) {
+		// Get read substrings
+		stList *readSubstrings = getReadSubstrings(reads, poa, from, to);
+
+		// Assess likelihood of each haplotype
+		int64_t bestHaplotypeIndex = 0;
+		double maxLogProb = computeHaplotypeLikelihood(stList_get(haplotypes, 0), readSubstrings);
+		for(int64_t j=1; j<stList_length(haplotypes); j++) {
+			double logProb = computeHaplotypeLikelihood(stList_get(haplotypes, j), readSubstrings);
+			if(logProb > maxLogProb) {
+				maxLogProb = logProb;
+				bestHaplotypeIndex = j;
+			}
+		}
+
+		// Cleanup
+		stList_destruct(readSubstrings);
+	}
+	else { // Only the reference haplotype, so just keep it
+		stList_pop(haplotypes);
+	}
+
+	// Cleanup
+	stList_destruct(haplotypes);
+
+	return haplotype;
+}
+
+Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishParams) {
+	// Get anchor alignments
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), polishParams);
+
+	// Identify anchor points, represented as a binary array, one bit for each POA node
+	bool *anchors = getAnchorPairs(poa, anchorAlignments);
+
+	// Enumerate candidate variant combinations between anchors
+	int64_t pAnchor = 0;
+
+	// Map to track alignment between new consensus sequence and poa reference sequence
+	stList *consensusSubstrings = stList_construct3(0, free);
+	int64_t *poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
+	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
+		poaToConsensusMap[i] = -1;
+	}
+	int64_t j=0; // Length of the growing consensus substring
+
+	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+		if(anchors[i]) {
+			// Get best haplotype
+			char *haplotype = getBestHaplotype(poa, reads, pAnchor, i, params);
+
+			// Add new best haplotype to the growing new consensus string
+			stList_append(consensusSubstrings, haplotype);
+
+			// Now update the alignment between the existing and new consensus sequences
+
+			// Get existing haplotype
+			char *existingHaplotype = getExistingHaplotype(poa, pAnchor, i);
+
+			// Create alignment between new and old haplotype and update the map
+			stList *alignedPairs = getPairwiseAlignment(existingHaplotype, haplotype);
+
+			for(int64_t k=0; k<stList_length(alignedPairs); k++) {
+				stIntTuple *alignedPair = stList_get(alignedPairs, k);
+				if((double)stIntTuple_get(alignedPair, 0)/PAIR_ALIGNMENT_PROB_1 > polishParams->minPosteriorProbForAlignmentAnchor) {
+					poaToConsensusMap[pAnchor + stIntTuple_get(alignedPair, 1)] = j + stIntTuple_get(alignedPair, 2);
+				}
+			}
+
+			// Cleanup
+			free(existingHaplotype);
+			stList_destruct(alignedPairs);
+
+			// Update previous anchor
+			pAnchor = i;
+		}
+	}
+
+	// Build the new consensus string by concatenating the constituent pieces
+	char *newConsensusString = stString_join2("", consensusSubstrings);
+
+	// Get anchor alignments
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
+
+	// Generated updated poa
+	Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, newConsensusString, polishParams);
+
+	// Cleanup
+	stList_destruct(anchorAlignments);
+
+	return poa2;
+}
