@@ -1427,7 +1427,11 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 
 // New polish algorithm
 
-char *getExistingHaplotype(Poa *poa, int64_t from, int64_t to) {
+char *getExistingSubstring(Poa *poa, int64_t from, int64_t to) {
+	/*
+	 * Gets substring of the poa reference string from "from" (inclusive)
+	 * to "to" (exclusive).
+	 */
 	char *s = st_malloc(sizeof(char) * (to-from+1));
 	s[to-from] = '\0';
 	for(int64_t i=from; i<to; i++) {
@@ -1437,157 +1441,235 @@ char *getExistingHaplotype(Poa *poa, int64_t from, int64_t to) {
 	return s;
 }
 
-char getNextCandidateBase(PoaNode *node, int64_t *i, PolishParams *params) {
-	while(*i<SYMBOL_NUMBER_NO_N) {
-		if(node->baseWeights[(*i)++] > XX) {
-			return symbol_convertSymbolToChar((*i)-1);
+char getNextCandidateBase(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+	/*
+	 * Iterates through candidate bases for a reference position returning those with sufficient weight.
+	 * Always returns the reference base
+	 */
+	while(*i<SYMBOL_NUMBER) {
+		char base = symbol_convertSymbolToChar(*i);
+		if(node->baseWeights[(*i)++] > coverage * 0.2 || toupper(node->base) == base) {
+			return base;
 		}
 	}
 	return '-';
 }
 
-char *getNextCandidateInsert(PoaNode *node, int64_t *i, PolishParams *params) {
+char *getNextCandidateInsert(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+	/*
+	 * Iterates through candidate insertions for a reference position returning those with sufficient weight.
+	 */
 	while((*i++) < stList_length(node->inserts)) {
 		PoaInsert *insert = stList_get(node->inserts, (*i)-1);
-		if(poaInsert_getWeight(insert) > XX) {
+		if(poaInsert_getWeight(insert) > coverage * 0.2) {
 			return insert->insert;
 		}
 	}
 	return NULL;
 }
 
-int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, PolishParams *params) {
+int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+	/*
+	 * Iterates through candidate deletions for a reference position returning those with sufficient weight.
+	 */
 	while((*i++) < stList_length(node->deletes)) {
 		PoaDelete *delete = stList_get(node->deletes, (*i)-1);
-		if(poaDelete_getWeight(delete) > XX) {
+		if(poaDelete_getWeight(delete) > coverage * 0.2) {
 			return delete->length;
 		}
 	}
 	return -1;
 }
 
-stList *getCandidateHaplotypes(Poa *poa, int64_t from, int64_t to, PolishParams *params) {
-	// At each node get possible edit strings and jumps
+double getTotalWeight(PoaNode *node) {
+	double totalWeight = 0.0;
+	for(int64_t i=0; i<SYMBOL_NUMBER; i++) {
+		totalWeight += node->baseWeights[i];
+	}
+	return totalWeight;
+}
 
-	// Get suffix haplotype strings
-	stList *haplotypes;
+stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to, PolishParams *params) {
+	/*
+	 *  A candidate variant is an edit (either insert, delete or substitution) to the poa reference
+	 *  string with "high" weight. This function returns all possible combinations of candidate variants,
+	 *  each as a new consensus substring, for the interval of the reference string from "from" (inclusive)
+	 *  to "to" (exclusive). Returned list of strings always contains the reference string without edits (the no
+	 *  candidate variants string).
+	 */
+
+	// Function is recursive
+
+	// First get suffix substrings
+	stList *suffixes;
 	if(from < to) {
-		haplotypes = getCandidateHaplotypes(from+1, to, params);
+		suffixes = getCandidateConsensusSubstrings(poa, from+1, to, params);
 	}
 	else {
-		haplotypes = stList_construct3(0, free);
-		stList_append(haplotypes, stString_copy(""));
+		suffixes = stList_construct3(0, free);
+		stList_append(suffixes, stString_copy("")); // Start with the empty string
 	}
 
-	// Now extended by adding on prefix variants
-	stList *extendedHaplotypes = stList_construct3(0, free);
+	// Now extend by adding on prefix variants
+	stList *consensusSubstrings = stList_construct3(0, free);
 
 	PoaNode *node = stList_get(poa->nodes, from);
 
+	// Calculate average coverage, which is used to determine candidate variants
+	double avgCoverage = 0.0;
+	for(int64_t j=from; j<to; j++) {
+		avgCoverage += getTotalWeight(stList_get(poa->nodes, j));
+	}
+	avgCoverage /= (to-from);
+
 	int64_t i=0;
 	char base;
-	while((base = getNextCandidateBase(node, &i, params)) != '-') {
+	while((base = getNextCandidateBase(node, &i, avgCoverage, params)) != '-') { // Enumerate the possible bases at the reference node.
 
-		//
-		for(int64_t j=0; j<stList_length(haplotypes); j++) {
-			stString_print("%c%s", base, stList_get(haplotypes, j));
+		// Create the consensus substrings with no inserts or deletes starting at this node
+		for(int64_t j=0; j<stList_length(suffixes); j++) {
+			stList_append(consensusSubstrings, stString_print("%c%s", base, stList_get(suffixes, j)));
 		}
 
-		// Add inserts
+		// Now add insert cases
 		int64_t k=0;
 		char *insert;
-		while((insert = getNextCandidateInsert(node, &k, params)) != NULL) {
-			for(int64_t j=0; j<stList_length(haplotypes); j++) {
-				stList_append(extendedHaplotypes, stString_print("%c%s%s", base, insert, stList_get(haplotypes, j)));
+		while((insert = getNextCandidateInsert(node, &k, avgCoverage, params)) != NULL) {
+			for(int64_t j=0; j<stList_length(suffixes); j++) {
+				stList_append(consensusSubstrings, stString_print("%c%s%s", base, insert, stList_get(suffixes, j)));
 			}
 		}
 
-		// Add deletes
+		// Add then deletes
 		k = 0;
 		int64_t deleteLength;
-		while((deleteLength = getNextCandidateDelete(node, &k, params)) > 0) {
-			for(int64_t j=0; j<stList_length(haplotypes); j++) {
-				char *suffixHaplotype = stList_get(haplotypes, j);
-				stList_append(extendedHaplotypes, stString_print("%c%s", base,
-							(strlen(suffixHaplotype) - deleteLength >= 0 ? suffixHaplotype[deleteLength] : "")));
+		while((deleteLength = getNextCandidateDelete(node, &k, avgCoverage, params)) > 0) {
+			for(int64_t j=0; j<stList_length(suffixes); j++) {
+				char *suffixHaplotype = stList_get(suffixes, j);
+				stList_append(consensusSubstrings, stString_print("%c%s", base,
+							((int64_t)strlen(suffixHaplotype) - deleteLength >= 0) ? &(suffixHaplotype[deleteLength]) : ""));
 			}
 		}
 	}
 
 	// Clean up
-	stList_destruct(haplotypes);
+	stList_destruct(suffixes);
 
-	return extendedHaplotypes;
+	return consensusSubstrings;
 }
 
-double computeHaplotypeLikelihood(char *reference, stList *reads, PolishParams *params) {
+double computeLogLikelihoodOfConsensusString(char *reference, stList *reads, PolishParams *params) {
+	/*
+	 * Computes the log probability of the reference given the reads.
+	 */
+	double logProb = LOG_ONE;
+	stList *anchorPairs = stList_construct(); // Currently empty
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		char *read = stList_get(reads, i);
+		logProb += computeForwardProbability(reference, read, anchorPairs, params->p, params->sM, 0, 0);
+	}
 
+	// Cleanup
+	stList_destruct(anchorPairs);
+
+	return logProb;
+}
+
+int64_t *getAlignedPositions(PoaNode *poaNode, int64_t readNo) {
+	/*
+	 * Get an array giving, for each read, the most probably aligned position to the given
+	 * poaNode.
+	 */
+
+	int64_t *readPositions = st_calloc(readNo, sizeof(int64_t));
+
+	double *readPositionWeights = st_calloc(readNo, sizeof(double));
+	for(int64_t i=0; i<readNo; i++) {
+		readPositions[i] = -1;
+	}
+	for(int64_t i=0; i<stList_length(poaNode->observations); i++) {
+		PoaBaseObservation *baseOb = stList_get(poaNode->observations, i);
+		if(baseOb->weight > readPositionWeights[baseOb->readNo]) {
+			readPositionWeights[baseOb->readNo] = baseOb->weight;
+			readPositions[baseOb->readNo] = baseOb->offset;
+		}
+	}
+	free(readPositionWeights);
+
+	return readPositions;
 }
 
 stList *getReadSubstrings(stList *reads, Poa *poa, int64_t from, int64_t to) {
+	/*
+	 * Get the substrings of reads aligned to the interval from (inclusive) to to
+	 * (exclusive).
+	 */
 	stList *readSubstrings = stList_construct3(0, free);
 
-	PoaNode *fromNode = stList_get(poa->nodes, from);
-	PoaNode *toNode = stList_get(poa->nodes, to);
+	// For each read calculate the positioned most probably aligned to the from and to positions,
+	// or -1 if not aligned
+	int64_t *readStarts = getAlignedPositions(stList_get(poa->nodes, from), stList_length(reads));
+	int64_t *readEnds = getAlignedPositions(stList_get(poa->nodes, to), stList_length(reads));
 
-	int64_t readNo = stList_length(reads);
+	// For each read get the corresponding read substring
+	// skipping reads that are not aligned to readStart or readEnd
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		if(readStarts[i] != -1 && readEnds[i] != -1) {
+			char *read = stList_get(reads, i);
 
-	int64_t readStarts[readNo];
-	for(int64_t i=0; i<readNo; i++) {
-		readStarts[i] = -1;
-	}
-	for(int64_t i=0; i<stList_length(fromNode->observations); i++) {
-		PoaBaseObservation *baseOb = stList_get(fromNode->observations, i);
-		if(baseOb->weight > XX) {
-			readStart[baseOb->readNo] = baseOb->offset;
+			// Trim the read substring, copy it and add to the substrings list
+			char c = read[readEnds[i]];
+			read[readEnds[i]] = '\0';
+			stList_append(readSubstrings, stString_copy(&(read[readStarts[i]])));
+			read[readEnds[i]] = c;
 		}
 	}
 
-	for(int64_t i=0; i<stList_length(toNode->observations); i++) {
-		PoaBaseObservation *baseOb = stList_get(toNode->observations, i);
-		if(baseOb->weight > XX && readStart[baseOb->readNo] != -1) {
-			char *read = &(stList_get(reads, baseOb->readNo));
-			char c = read[baseOb->offset];
-			read[baseOb->offset] = '\0';
-			stList_append(readSubstrings, stString_copy(&(read[baseOb->readNo])));
-			read[baseOb->offset] = c;
-		}
-	}
+	// Cleanup
+	free(readStarts);
+	free(readEnds);
 
 	return readSubstrings;
 }
 
-char *getBestHaplotype(Poa *poa, stList *reads, int64_t from, int64_t to, PolishParams *params) {
-	// Enumerate candidate variants in interval building haplotype strings
-	stList *haplotypes = getCandidateHaplotypes(poa, from, to, params);
-	char *haplotype = stList_get(haplotypes, 0);
+char *getBestConsensusSubstring(Poa *poa, stList *reads, int64_t from, int64_t to, PolishParams *params) {
+	/*
+	 * Heuristically searches for the best consensus substring between from (inclusive) and to (exclusive).
+	 * Does so by enumerating candidate variants in interval and then building and test all possible resulting
+	 * consensus substrings
+	 */
 
-	if(stList_length(haplotypes) > 1) {
+	stList *consensusSubstrings = getCandidateConsensusSubstrings(poa, from, to, params);
+	char *consensusSubstring = stList_pop(consensusSubstrings);
+
+	if(stList_length(consensusSubstrings) > 0) {
 		// Get read substrings
 		stList *readSubstrings = getReadSubstrings(reads, poa, from, to);
 
-		// Assess likelihood of each haplotype
-		int64_t bestHaplotypeIndex = 0;
-		double maxLogProb = computeHaplotypeLikelihood(stList_get(haplotypes, 0), readSubstrings);
-		for(int64_t j=1; j<stList_length(haplotypes); j++) {
-			double logProb = computeHaplotypeLikelihood(stList_get(haplotypes, j), readSubstrings);
+		// Assess likelihood of each remaining substring in turn,
+		// keeping the most probable
+		double maxLogProb = computeLogLikelihoodOfConsensusString(consensusSubstring, readSubstrings, params);
+		while(stList_length(consensusSubstrings) > 0) {
+			char *c = stList_pop(consensusSubstrings);
+			double logProb = computeLogLikelihoodOfConsensusString(c, readSubstrings, params);
 			if(logProb > maxLogProb) {
 				maxLogProb = logProb;
-				bestHaplotypeIndex = j;
+				free(consensusSubstring);
+				consensusSubstring = c;
+			}
+			else {
+				free(c);
 			}
 		}
 
 		// Cleanup
 		stList_destruct(readSubstrings);
 	}
-	else { // Only the reference haplotype, so just keep it
-		stList_pop(haplotypes);
-	}
 
 	// Cleanup
-	stList_destruct(haplotypes);
+	stList_destruct(consensusSubstrings);
 
-	return haplotype;
+	return consensusSubstring;
 }
 
 bool *getAnchorPoints(Poa *poa, stList *anchorAlignments, double anchorWeight) {
@@ -1614,7 +1696,7 @@ bool *getAnchorPoints(Poa *poa, stList *anchorAlignments, double anchorWeight) {
 	return anchors;
 }
 
-Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishParams) {
+Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, char *reference, PolishParams *params) {
 	/*
 	 * "Polishes" the given POA reference string to create an new consensus reference string.
 	 * Algorithm starts by dividing the reference into anchor points - points where the majority
@@ -1626,12 +1708,11 @@ Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishPa
 	 * with the highest likelihood is then selected.
 	 */
 
-	// Get anchor alignments
-	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), polishParams);
-
 	// Identify anchor points, represented as a binary array, one bit for each POA node
-	double anchorWeight = stList_length(reads) * polishParams->minPosteriorProbForAlignmentAnchor;
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params);
+	double anchorWeight = stList_length(reads) * params->minPosteriorProbForAlignmentAnchor;
 	bool *anchors = getAnchorPoints(poa, anchorAlignments, anchorWeight);
+	stList_destruct(anchorAlignments);
 
 	// Map to track alignment between the new consensus sequence and the poa reference sequence
 	int64_t *poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
@@ -1645,11 +1726,11 @@ Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishPa
 
 	// Enumerate candidate variant combinations between anchors
 
-	int64_t pAnchor = 0; // Previous anchor
+	int64_t pAnchor = 0; // Previous anchor, starting from first position of POA, which is the prefix "N"
 	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
 		if(anchors[i]) { // If position i is an anchor
 			// Get best consensus substring
-			char *consensusSubstring = getBestConsensusSubString(poa, reads, pAnchor, i, params);
+			char *consensusSubstring = getBestConsensusSubstring(poa, reads, pAnchor, i, params);
 
 			// Add new best consensus substring to the growing new consensus string
 			stList_append(consensusSubstrings, consensusSubstring);
@@ -1660,11 +1741,15 @@ Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishPa
 			char *existingConsensusSubstring = getExistingSubstring(poa, pAnchor, i);
 
 			// Create alignment between new and old consensus strings and update the map
-			stList *alignedPairs = getPairwiseAlignment(existingConsensusSubstring, consensusSubstring);
+			double alignmentScore;
+			stList *l = stList_construct(); // Empty set of alignment anchors
+			stList *alignedPairs = getShiftedMEAAlignment(existingConsensusSubstring, consensusSubstring, l, params->p, params->sM,
+										   	   	   	   	   0, 0, &alignmentScore);
+			stList_destruct(l);
 
 			for(int64_t k=0; k<stList_length(alignedPairs); k++) {
 				stIntTuple *alignedPair = stList_get(alignedPairs, k);
-				if(((double)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1 > polishParams->minPosteriorProbForAlignmentAnchor) {
+				if(((double)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1 > params->minPosteriorProbForAlignmentAnchor) {
 					poaToConsensusMap[pAnchor + stIntTuple_get(alignedPair, 1)] = j + stIntTuple_get(alignedPair, 2);
 				}
 			}
@@ -1684,11 +1769,18 @@ Poa *poa_polish(Poa *poa, stList *reads, char *reference, PolishParams *polishPa
 	// Build the new consensus string by concatenating the constituent pieces
 	char *newConsensusString = stString_join2("", consensusSubstrings);
 
+	// Remove the prefix "N" character (which is the first position of any POA)
+	assert(strlen(newConsensusString) >= 1);
+	assert(newConsensusString[0] == 'N');
+	char *c = newConsensusString;
+	newConsensusString = stString_copy(&(newConsensusString[1]));
+	free(c);
+
 	// Get anchor alignments
-	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
+	anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), params);
 
 	// Generated updated poa
-	Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, newConsensusString, polishParams);
+	Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, newConsensusString, params);
 
 	// Cleanup
 	stList_destruct(consensusSubstrings);
