@@ -5,6 +5,7 @@
  */
 
 #include "margin.h"
+#include "bedidx.h"
 
 int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t contigStartPos, int64_t contigEndPos,
                          uint64_t chunkSize, uint64_t chunkMargin) {
@@ -69,10 +70,12 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
 
     // open bamfile
     samFile *in = hts_open(bamFile, "r");
-    if (in == NULL) {
+    if (in == NULL)
         st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
-        return NULL;
-    }
+    hts_idx_t *idx = sam_index_load(in, bamFile); // load index (just to verify early that it exists)
+    if (idx == NULL)
+        st_errAbort("ERROR: Missing index for bam file %s\n", bamFile);
+    hts_idx_destroy(idx);
     bam_hdr_t *bamHdr = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
 
@@ -217,6 +220,12 @@ void bamChunkRead_destruct(BamChunkRead *r) {
     free(r);
 }
 
+
+// This structure holds the bed information
+typedef struct samview_settings {
+    void* bed;
+} samview_settings_t;
+
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
     // sanity check
     assert(stList_length(reads) == 0);
@@ -230,17 +239,43 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
     char *contig = bamChunk->refSeqName;
     uint32_t savedAlignments = 0;
 
-    // get header, init align object
-    samFile *in = hts_open(bamFile, "r");
-    if (in == NULL) {
-        st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
-        return 0; //errAbort dies, this is not really a return value
+    // prep for index (not entirely sure what all this does.  see samtools/sam_view.c
+    int filter_state = ALL, filter_op = 0;
+    int result;
+    samview_settings_t settings = { .bed = NULL };
+    char* region[1] = {};
+    region[0] = stString_print("%s:%d-%d", bamChunk->refSeqName, bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+    settings.bed = bed_hash_regions(settings.bed, region, 0, 1, &filter_op); //insert(1) or filter out(0) the regions from the command line in the same hash table as the bed file
+    if (!filter_op) filter_state = FILTERED;
+    int regcount = 0;
+    hts_reglist_t *reglist = bed_reglist(settings.bed, filter_state, &regcount);
+    if(!reglist) {
+        st_errAbort("ERROR: Could not create list of regions for read conversion");
     }
-    bam_hdr_t *bamHdr = sam_hdr_read(in);
-    bam1_t *aln = bam_init1();
 
-    // read in alignments
-    while(sam_read1(in,bamHdr,aln) > 0) {
+    // file initialization
+    samFile *in = NULL;
+    hts_idx_t *idx = NULL;
+    hts_itr_multi_t *iter = NULL;
+    // bam file
+    if ((in = hts_open(bamFile, "r")) == 0) {
+        st_errAbort("ERROR: Cannot open bam file %s\n", bamFile);
+    }
+    // bam index
+    if ((idx = sam_index_load(in, bamFile)) == 0) {
+        st_errAbort("ERROR: Cannot open index for bam file %s\n", bamFile);
+    }
+    // header  //todo samFile *in = hts_open(bamFile, "r");
+    bam_hdr_t *bamHdr = sam_hdr_read(in);
+    // read object
+    bam1_t *aln = bam_init1();
+    // iterator for region
+    if ((iter = sam_itr_regions(idx, bamHdr, reglist, regcount)) == 0) {
+        st_errAbort("ERROR: Cannot open iterator for region %s for bam file %s\n", region[0], bamFile);
+    }
+
+    // fetch alignments //todo while(sam_read1(in,bamHdr,aln) > 0) {
+    while ((result = sam_itr_multi_next(in, iter, aln)) >= 0) {
         // basic filtering (no read length, no cigar)
         if (aln->core.l_qseq <= 0) continue;
         if (aln->core.n_cigar == 0) continue;
@@ -371,7 +406,6 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
 //        assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
 //        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
 
-
         // get sequence positions
         int64_t seqLen = alignedReadLength;
 
@@ -432,8 +466,16 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         stList_append(alignments, cigRepr);
         savedAlignments++;
     }
+    // the status from "get reads from iterator"
+    if (result < -1) {
+        st_errAbort("ERROR: Retrieval of region %d failed due to truncated file or corrupt BAM index file\n", iter->curr_tid);
+    }
 
     // close it all down
+    hts_itr_multi_destroy(iter);
+    hts_idx_destroy(idx);
+    free(region[0]);
+    bed_destroy(settings.bed);
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);

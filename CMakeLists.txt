@@ -37,6 +37,7 @@ set(CPECAN_HEADERS
         )
 
 include_directories(inc)
+include_directories(externalTools/samtools)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(${CPECAN_HEADERS})
@@ -261,6 +262,7 @@ set(SOURCE_FILES
         impl/profileSeq.c
         impl/referencePriorProbs.c
         impl/vcfTools.c
+        externalTools/samtools/bedidx.c
         )
 
 ###############################

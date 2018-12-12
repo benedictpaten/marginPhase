@@ -1119,6 +1119,11 @@ void test_removeOverlap_RandomExamples(CuTest *testCase) {
 }
 
 int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
+	// Ensure bai exists
+	char *indexCommand = stString_print("samtools index %s", bamFile);
+	st_logInfo("> Running command: %s\n", indexCommand);
+	st_system(indexCommand);
+	free(indexCommand);
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";

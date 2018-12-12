@@ -1098,21 +1098,22 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 	// Make the MEA alignments
 	int64_t refLength = stList_length(poa->nodes)-1;
 	for(int64_t i=0; i<stList_length(reads); i++) {
-		char *read  = stList_get(reads, i);
+		BamChunkRead* read = stList_get(reads, i);
+		char *nucleotides  = read->nucleotides;
 		stList *anchorAlignment = stList_get(anchorAlignments, i);
 
 		// Generate the posterior alignment probabilities
 		stList *matches, *inserts, *deletes;
-		getAlignedPairsWithIndelsCroppingReference(poa->refString, stList_length(poa->nodes)-1, read,
+		getAlignedPairsWithIndelsCroppingReference(poa->refString, stList_length(poa->nodes)-1, nucleotides,
 				anchorAlignment, &matches, &inserts, &deletes, polishParams);
 
 		// Get the MEA alignment
 		double alignmentScore;
 		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, inserts, deletes,
-				refLength, strlen(read), &alignmentScore, polishParams->p);
+				refLength, strlen(nucleotides), &alignmentScore, polishParams->p);
 
 		// Left shift the alignment
-		stList *leftShiftedAlignment = leftShiftAlignment(alignment, poa->refString, read);
+		stList *leftShiftedAlignment = leftShiftAlignment(alignment, poa->refString, nucleotides);
 
 		// Cleanup
 		stList_destruct(inserts);
