@@ -531,7 +531,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	// that generates a lot of delete pairs
 
 	// Get cropping coordinates
-	// TODO I think we want to extend refStart and refEnd by the length of the read before and after the first and last aligned positions
+	// TODO I think we may want to extend refStart and refEnd by the length of the read before and after the first and last aligned positions
 	int64_t firstRefPosition, endRefPosition;
 	if(stList_length(anchorPairs) > 0) {
 		stIntTuple *fPair = stList_get(anchorPairs, 0);
@@ -559,6 +559,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	// Get alignment
 	getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, &(reference[firstRefPosition]), read,
 										  anchorPairs, polishParams->p, matches, deletes, inserts, 0, 0);
+	//TODO are the delete and insert lists inverted here?
 
 	// De-crop reference
 	reference[endRefPosition] = c;
@@ -570,6 +571,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	adjustAnchors(*matches, 1, firstRefPosition);
 	adjustAnchors(*inserts, 1, firstRefPosition);
 	adjustAnchors(*deletes, 1, firstRefPosition);
+	//TODO sometimes these lists (either originally or by merit of this shifting) have "-1" as their positions: stIntTuple_get($TUPLE, (seqXNotSeqY ? 1 : 2))
 }
 
 Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
