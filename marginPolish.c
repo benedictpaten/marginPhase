@@ -40,7 +40,6 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
@@ -178,6 +177,8 @@ int main(int argc, char *argv[]) {
 		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
+        // TODO: remove
+//		bool *readStrandArray = st_calloc(stList_length(reads), sizeof(bool));
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -218,7 +219,7 @@ int main(int argc, char *argv[]) {
 			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
 
 			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
+			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, reads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
             // Put back reads
@@ -252,7 +253,7 @@ int main(int argc, char *argv[]) {
 			poa_printSummaryStats(poa, stderr);
 		}
 		if (st_getLogLevel() >= debug) {
-			poa_print(poa, stderr, 5);
+			poa_print(poa, stderr, 5, 5);
 		}
 
 		// If there is no prior chunk

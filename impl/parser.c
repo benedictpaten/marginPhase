@@ -788,9 +788,9 @@ int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end
  * Params object for polisher
  */
 
-int64_t repeatSubMatrix_parseLogProbabilities(RepeatSubMatrix *repeatSubMatrix, Symbol base, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
+int64_t repeatSubMatrix_parseLogProbabilities(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
 	int64_t maxRepeatCount = 51;
-	int64_t i = stJson_parseFloatArray(repeatSubMatrix_setLogProb(repeatSubMatrix, base, 0, 0), maxRepeatCount*maxRepeatCount, js, tokens, tokenIndex);
+	int64_t i = stJson_parseFloatArray(repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, 0, 0), maxRepeatCount*maxRepeatCount, js, tokens, tokenIndex);
 	return i;
 }
 
@@ -802,30 +802,21 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 
 	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty();
 
-	bool gotCountsA = 0, gotCountsC = 0, gotCountsG = 0, gotCountsT = 0;
 	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
 		jsmntok_t key = tokens[tokenIndex];
 		char *keyString = stJson_token_tostr(js, &key);
-
-		if (strcmp(keyString, "repeatCountLogProbabilities_A") == 0) {
-			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, a, js, tokens, tokenIndex+1);
-			gotCountsA = 1;
-		} else if (strcmp(keyString, "repeatCountLogProbabilities_C") == 0) {
-			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, c, js, tokens, tokenIndex+1);
-			gotCountsC = 1;
-		} else if (strcmp(keyString, "repeatCountLogProbabilities_G") == 0) {
-			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, g, js, tokens, tokenIndex+1);
-			gotCountsG = 1;
-		} else if (strcmp(keyString, "repeatCountLogProbabilities_T") == 0) {
-			tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, t, js, tokens, tokenIndex+1);
-			gotCountsT = 1;
-		} else {
+		if(strlen(keyString) != 31) {
 			st_errAbort("ERROR: Unrecognised key in repeat sub matrix json: %s\n", keyString);
 		}
-	}
-
-	if(!gotCountsA || !gotCountsC || !gotCountsG || !gotCountsT) {
-		st_errAbort("ERROR: Did not find all the probabilities in the repeat count json\n");
+		char base = keyString[28];
+		if(base != 'A' && base != 'C' && base != 'G' && base != 'T') {
+			st_errAbort("ERROR: Unrecognised base in repeat sub matrix json: %s, base=%c\n", keyString, base);
+		}
+		if(keyString[30] != 'F' && keyString[30] != 'R') {
+			st_errAbort("ERROR: Unrecognised strand in repeat sub matrix json: %s, strand:%c\n", keyString, keyString[30]);
+		}
+		bool strand = keyString[30] == 'F';
+		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, symbol_convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
 	}
 
 	// Cleanup

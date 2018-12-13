@@ -100,7 +100,7 @@ static void checkInserts(CuTest *testCase, Poa *poa, int64_t nodeIndex,
 	for(int64_t i=0; i<insertNumber; i++) {
 		PoaInsert *poaInsert = stList_get(node->inserts, i);
 		CuAssertStrEquals(testCase, inserts[i], poaInsert->insert);
-		CuAssertDblEquals(testCase, insertWeights[i], poaInsert->weight / (divideWeights ? PAIR_ALIGNMENT_PROB_1 : 1.0), 0.001);
+		CuAssertDblEquals(testCase, insertWeights[i], poaInsert_getWeight(poaInsert) / (divideWeights ? PAIR_ALIGNMENT_PROB_1 : 1.0), 0.001);
 	}
 }
 
@@ -113,7 +113,7 @@ static void checkDeletes(CuTest *testCase, Poa *poa, int64_t nodeIndex,
 	for(int64_t i=0; i<deleteNumber; i++) {
 		PoaDelete *poaDelete = stList_get(node->deletes, i);
 		CuAssertIntEquals(testCase, deleteLengths[i], poaDelete->length);
-		CuAssertDblEquals(testCase, deleteWeights[i], poaDelete->weight / (divideWeights ? PAIR_ALIGNMENT_PROB_1 : 1.0), 0.001);
+		CuAssertDblEquals(testCase, deleteWeights[i], poaDelete_getWeight(poaDelete) / (divideWeights ? PAIR_ALIGNMENT_PROB_1 : 1.0), 0.001);
 	}
 }
 
@@ -169,10 +169,10 @@ static void test_poa_augment_example(CuTest *testCase) {
 	stList_append(deletes, stIntTuple_construct3(50, 2, 1));
 	stList_append(deletes, stIntTuple_construct3(50, 3, 2));
 
-	poa_augment(poa, read, 0, matches, inserts, deletes);
+	poa_augment(poa, read, 1, 0, matches, inserts, deletes);
 
 	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0);
+		poa_print(poa, stderr, 0.0, 0.0);
 	}
 
 	// Check POA graph is what we expect
@@ -229,6 +229,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 
 	stList *reads = stList_construct3(0,(void (*)(void *))bamChunkRead_destruct);
 	stList_append(reads, read);
+	bool readStrand = 1;
 
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
@@ -289,7 +290,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	st_logInfo("Read:%s\n", read);
 	st_logInfo("Reference:%s\n", reference);
 	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0);
+		poa_print(poa, stderr, 0.0, 0.0);
 	}
 
 	// Check inserts
@@ -413,7 +414,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5);
+			poa_print(poa, stderr, 5, 5);
 		}
 
 		//Cleanup
@@ -443,7 +444,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		int64_t readNumber = st_randomInt(0, 20);
 		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
 		for(int64_t i=0; i<readNumber; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), TRUE, NULL));
+			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), st_random() > 0.5, NULL));
 		}
 
 		FILE *fh = fopen(polishParamsFile, "r");
@@ -455,7 +456,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5);
+			poa_print(poa, stderr, 5, 0);
 		}
 
 		//Cleanup
@@ -466,101 +467,6 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		params_destruct(params);
 	}
 }
-
-static const char *readArrayExample1[] = {
-		"CATTTTTCTCCTCCACCTGCAACAGAAGATAAAAACGCGCATCACAAACTACTTTATTG",
-		"CATTTTTCTCTCCGTCACGTAATAGGAAAACAGATGAAAATGTGCACCATAAAACGCATTTTTATTT",
-		"CATTTTCTCTCTCCGTCACGACAGGAAACAGATGAAAATGGGCACAAGACCACAAACGCATTTTGAT",
-		"CATTTTTCTCCGGTCATTTAATGAAAACAGATGGTACTGCGTATGTGACATAAACGCATTTTTATTT",
-		"CATTTCCTCCGTCACTGCACAGGAAAACAGATGAAAATGCAAGTATGGACCCACAAAACGCATTTTATTT",
-		"CATTTTTTCTCTCTCCGTCAGCTGCATTGAAAATGATGAAATGCGGGTATGACTATAAACGCATTTATTT",
-		"CATTTTTTTTCTCTCCTCCACACACAGGAAACAGATGAAAAATGTATGTGACCATAAAACGCATTTTATTT",
-		"TATTTTCTCCGTCATTGCAGGAAAACAGATGAAATGTAAAGTATGTGAATTACAAACGGTTTTTTTTATTT",
-		"CATTTTTCTCCTCCGTCATTGCACAGGAGTCAGATGAAAATGCGCATGTGACCATAACGCATTTTTTTATTT",
-		"CATTTTTCTCCTCCGTCATACCGTGAAACAGATGAAAAATGCGGGCATGGGACCATAAAACGCATTTTTATTT",
-		"CATTTTTCTCCTCCGTCATTGCACAGGAAAACAGATGAAAACGTGGGGCATGTGACCATAAACGCATTTTTATT",
-		"CATTTTCTCTCCTCGTGTTGCACAGGAAAACAGATGAAAAATGCGAGATATGTGATCCACAAACATTTTTATTT",
-		"CATTTTTCTCCTCCGTCATTGCACAGGAAAATGATGAAAATGCGGGGCATGTGACCATAAAACGCATTTTTATTT",
-		"CATTTTCTCTCTCCCTCGTCATTGCACAGGAAAACAGATGAAAATGCAGGGCATGTGACCATAAAACGCATTTTTT",
-		"CATTTTCTCTCCTCCACATTGCACAGGAAAACAGATGAAAATGCGGCATGTGACCATAAAACGCATTTCTTTATTT",
-		"CATTTTCTCCGTCAGTCAACAATATGAAAACAGATGAAACGCGGGCACGTGACCATAAAACGCATTTTTTTTATTT",
-		"CATTTTTCTCCTCCGTCATTGCATTGTGGAACAGATGAAAATGCGGGGTATGTGAATCATAAAACGCATTTTATTT",
-		"CATTTTTCTCTCCGTCATTGCATTAGAAAACAGGGATGAAAATGCGGGCATGTGACCATAAAAACGCATTTTTATTT",
-		"CATTTTTCTCTCTCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGCGTGACTATAAAACGCATTTTTATTTT",
-		"CATTTTCCTCTCCCTCCGTCATTTGCACAGGAAAACAGATGAAAAAATGCGGAATGGCTATTATAAACATTTTTAACT",
-		"CATTTTTTTCTCCTCTGTCATTGCACAGGAAAACAGATGAAAAATGCGTATGTGACCATAAAATCCATTTCTTTTATTT",
-		"CATTTTTCTCCTCCGTCATTGCACAGGAAAATGATGAAAAAATGCGGGCATGTGACCATAAAACGTGCATTTTTTATTT",
-		"CATTTTCTCTCTCCTCCGTGTTGCACAGGAAAACCAGATGAAAATGCGGAACATGTGTTCATAAAACGCATTTTTATTT",
-		"CATTTTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAATGCAGGGCAATAATGACCATAAAACGCATTTTTATTT",
-		"CATTTTCTCTCCTCTCGTCATTTGCACAGGAAGAGCAGATGAAAATGCAGGGCATGTGACCATAAAACGCATTTTTATTT",
-		"CCATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAAGCAGATGAAAAATGCGGGCATGTGACCATAAAACGCATTTTATTT",
-		"CATTTTTTTCTCTCCTGTCATTGCACAGGAAACAAAGAGATGAAAAATGCGGGCATGTGACCATAAAACGCATTTTTATTT",
-		"CATTTTTCTCTCCCTCCGTCATTGCATAGGAAAACAGATGAAAATGCGGGGTATGTGGACCATAAAACGCATTTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGGAAAACAGATGAAAATTGCGGGGCATGTGACCATAAAACGCATTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTTGCACAGGAAAACAGATGAAAAATGCGGGGCATGTGACCATAAAACGCATTTTTTATTT",
-		"CATTTTTCTCTCCCTCCGTCACTGCACAGGAAAAACAGATGAAAATGCGGGGCATGCATCATAAAACGTATTTTTATTGAATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATAAGAAAAATGCAGGGGCATGTGACCATAAAACGCATTTTTATTT",
-		"CATTTTTTCACTACTCTCCCTCCGTCGTACTGGAAAACAAACAGATAAATGCAGGGCATGTGACCATAAAACATTTTTTTATTT",
-		"CATTTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATAAAAAAAAATGCAGGGGCATGTGACCATAAAACATTTTTATTT",
-		"CATTTTTTCTCTCTCTCGTGTTGCACACAGGAAAACAGATGAAAAATGCCGGGGCATCATGACCATAAAACGCGTTTTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCAGGGGCGTAACTGACCATAAAACGCATTTTTTATTT",
-		"CATTTTTTCTCTCCTCCGTCATTGCACAGGAAAAATGTGATGAAAATGCGGGGTATGTGACCATAAAACGCATTTTTATGCTTCT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGAGGACATGTGACCATAAAACGCATTTTTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCCATTGCACAGGAAAACAGATATAAAAAATGCAGGGCATCAAACCATAAAACATTTTTTTTATTT",
-		"CATTTTTCTCTCCCTCCGTCATTGCAATAGGAAAACAGATATTTTGGTGTACCGCAAGTATGTGACCATAAAACGTATTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACCAGATAGAAAAAATACAGGGCATGTGTTCATAAAGCACGCATTTTTATTT",
-		"CATTTTTTTCTCTCTCCTCCGCTTTCACACACAGGAGTAAACAGATGAAAAATGTGGGCATGTGACCATAAAACGCATTTTTTATTT",
-		"CATTTTCTCTCTCCCTCAAAATCATTTGCACAGGAAAACAGATAGAAAAATGCAACGGGGCATGTGATATAAAACGCATTTTTTATTT",
-		"CATTTTCTACTCTCTCCCTCCGTCATTGCAGGAAAACAGATGAAAATGCAGGGAACATATATGACCATAAAACGCATTTTTTTTTATTT",
-		"CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAAAGAGCTGGCATGCGGGGCATGTGACCATAAAACGCATTTTTTTGT" };
-static char *referenceExample1 =     "CATTTTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAATGCAGGGCAATAATGACCATAAAACGCATTTTTATTT";
-static char *trueReferenceExample1 = "CATTTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGGGGCATGTGACCATAAAACGCATTTTTTATTT";
-
-static const char *readArrayExample2[] = {
-			"GATGTAAAAATGACTGAGTTAGAACAGGCATAAATACATCTGT",
-			"GATGTAAAAAAAAATGACAGAGAATAAAACTATCCTTATCTATT",
-			"GATGTAAAAAGAAGCGGAAGTTAGAACAGGCATAAATACATCTGT",
-			"GATGTAAAAAGAAATGACGGAAGAACAGAGCATAACACACATCTGT",
-			"GATGTAAAAAAAGAATGATTTAGTTGAACAGAGCATAAATATCTGT",
-			"GATGTAAAAAAAAGAAATGACGGAAGAACAGAGCATAACACATCTGT",
-			"GATGTAAAAGAAATGGAGGTTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAGAAATGATTTGGAAGAACAGAGCATAAATATCTGT",
-			"GATGTAAAAGAAATGACGGAAGTTAGAATATATATAACACACATCTGT",
-			"GATGTAAAAAAAGAATGGACGGTTAGAACAGAGCACAACACACATCTGT",
-			"GATGTAAAAAAGAATGATAAAGTTAGAATAGAGCATAAATAACATCTGT",
-			"GATGTAAAAGAAATGTGGAAGTTAGAACAGAGCATAAATACACATCTAT",
-			"GATGTAAAAAAAAAGAAATGAAGCTAGAACAGAGCATAAATACATCTGT",
-			"GATGTAAAAAAAAAATGACCCGGAAGTTGAACAGAGCATAATACATCTGT",
-			"GATGTAAAAAAGAAATGATTTAAAGGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAGTGACGGAAGTTAAGACAGGCATAAATACACATCTGT",
-			"GATGTAAAAAAGAAATGATTTGCTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAGAAATGATGGGTTAGAATAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAGAAATGACGAGTTAGAACCAGAGCACCATCTACATCAT"
-			"GATGTAAAAAAAAAAATGACGGAAGTTAGACAAGCATAAATACACATCTAT",
-			"GATGTAAAAAAAAGAATGATTTGAAGTTAGAACAGAGCATAACACATCTGT",
-			"GATGTAAAAGAAAATCGACTGAAGTTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAGAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAGAAATGACGGAGTTAGAACAGAGCATAAATACACATCTAT",
-			"GATGTAAAAAAAAAGAAATGTGTGAGTTAAGACAGAGCATAAATACATCTAT",
-			"GATGTAAAAAAGAAATGACGGAAGTTAAGACAGAGCATAAATACACATCTATT",
-			"GATGTAAAAAAAAAAATGTGGAAGTTAAAACAGAGCATAAATACACATCTATT",
-			"GATGCAAAAAAAAAGAAATGACGGAAGTTAAATTAGAGCATAAATACATCTGT",
-			"GATGTAAAAAAAAGAAATGATTTGGAAGTTACAGAGCATAAATACACATCTGT",
-			"GATGTAAAGAAAATGATTTTAGAAGTTAGAACAGAGCATAACACAATATCTGT",
-			"GATAAAAAAAAAGGAATGATTGGAAGCTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAGAAATGACGGAAGTTAAGACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAATGACGGAAGTTCTGAAACAGGCATAAATACACATCTGTAT",
-			"GATGTAAAAAGAATGATTTGAAGTTAGAACAGAGTATATTAAATACACATCTGT",
-			"GATGTAAAAAAAAAGAAATGACGGAAGTTAAGACAGAGCATAAATACACATCTATT",
-			"GATGTAAAAAAAAAGAAATGATTTGAAGCAGAACAGAGCATAAATACAAGATCTGT",
-			"GATGTAAAAAAAAGAAGAAATGACGGAAGTTAAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAAAGAAATGATTGAAGTTAGAAATATACATAAATACACATCTGT",
-			"GATGTAAAAAAAAAGAAATGATTTTAAAGTGAACAGAGCATAAATACACACCTTGGT",
-			"GATGTAAAAAAAAAAAAGAAATGACGGAAGTTGAACTAGGCTTATAAATACATCTGT",
-			"GATGCCAAAAAAAAAAAGAAATGGCCAGAGTTAGAACAGAGCATAAATACACATCTGT",
-			"GATGTAAAAAAAAAGAAATGCGGATTTGGAAGTTAGAACAGTATATAAAGCACACATCCGT" };
-static char *referenceExample2 =     "GATGTAAAAAAGAAATGATTTGCTAGAACAGAGCATAAATACACATCTGT";
-static char *trueReferenceExample2 = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT";
 
 double calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
@@ -589,14 +495,16 @@ typedef struct _alignmentMetrics {
 	int64_t totalTrueReferenceLength;
 } AlignmentMetrics;
 
-static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, char *reference, const char **readArray,
-										 int64_t readNo, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics) {
+static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, char *reference,
+		stList *originalReads, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics) {
 	stList *reads = stList_construct();
 	stList *rleStrings = stList_construct3(0, (void (*)(void *))rleString_destruct);
-	for(int64_t i=0; i<readNo; i++) {
-		RleString *rleString = rleString_construct((char *)readArray[i]);
+	for(int64_t i=0; i<stList_length(originalReads); i++) {
+		BamChunkRead* bcr = stList_get(originalReads, i);
+		RleString *rleString = rleString_construct(bcr->nucleotides);
 		stList_append(rleStrings, rleString);
-		stList_append(reads, bamChunkRead_construct2(NULL, rleString->rleString, TRUE, NULL));
+		stList_append(reads, bamChunkRead_construct2(stString_copy(bcr->readName), stString_copy(rleString->rleString),
+				bcr->forwardStrand, NULL));
 	}
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
@@ -614,14 +522,14 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
 	// Run phasing
-	stList *anchorAlignments = poa_getAnchorAlignments(poaRefined, NULL, stList_length(reads), params->polishParams);
-	stList *reads1, *reads2;
-	phaseReads(poaRefined->refString, strlen(poaRefined->refString), reads, anchorAlignments, &reads1, &reads2, params);
-	Poa *poaReads1 = poa_realignIterative(reads1, NULL, poaRefined->refString, polishParams);
-	Poa *poaReads2 = poa_realignIterative(reads2, NULL, poaRefined->refString, polishParams);
+	//stList *anchorAlignments = poa_getAnchorAlignments(poaRefined, NULL, stList_length(reads), params->polishParams);
+	//stList *reads1, *reads2;
+	//phaseReads(poaRefined->refString, strlen(poaRefined->refString), reads, anchorAlignments, &reads1, &reads2, params);
+	//Poa *poaReads1 = poa_realignIterative(reads1, NULL, poaRefined->refString, polishParams);
+	//Poa *poaReads2 = poa_realignIterative(reads2, NULL, poaRefined->refString, polishParams);
 
 	// Look at non-rle comparison
-	RleString *consensusRleString = expandRLEConsensus(poaRefined, rleStrings, polishParams->repeatSubMatrix);
+	RleString *consensusRleString = expandRLEConsensus(poaRefined, rleStrings, reads, polishParams->repeatSubMatrix);
 	char *nonRLEConsensusString = rleString_expand(consensusRleString);
 	rleString_destruct(consensusRleString);
 
@@ -630,8 +538,8 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	int64_t referenceMatches = calcSequenceMatches(rleTrueReference->rleString, rleReference->rleString);
 	int64_t nonRLEConsensusMatches = calcSequenceMatches(trueReference, nonRLEConsensusString);
 	int64_t nonRLEReferenceMatches = calcSequenceMatches(trueReference, reference);
-	int64_t consensusMatchesReads1 = calcSequenceMatches(rleTrueReference->rleString, poaReads1->refString);
-	int64_t consensusMatchesReads2 = calcSequenceMatches(rleTrueReference->rleString, poaReads2->refString);
+	//int64_t consensusMatchesReads1 = calcSequenceMatches(rleTrueReference->rleString, poaReads1->refString);
+	//int64_t consensusMatchesReads2 = calcSequenceMatches(rleTrueReference->rleString, poaReads2->refString);
 
 	// Update the running total alignment metrics
 	if(rleAlignmentMetrics != NULL) {
@@ -656,23 +564,23 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		st_logInfo("Reference:\t\t%s\n", rleReference->rleString);
 		st_logInfo("True-reference:\t\t%s\n", rleTrueReference->rleString);
 		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
-		st_logInfo("Consensus Reads1:\t%s\n", poaReads1->refString);
-		st_logInfo("Consensus Reads2:\t%s\n", poaReads2->refString);
+		//st_logInfo("Consensus Reads1:\t%s\n", poaReads1->refString);
+		//st_logInfo("Consensus Reads2:\t%s\n", poaReads2->refString);
 		st_logInfo("Reference stats\t");
 		poa_printSummaryStats(poa, stderr);
 		st_logInfo("Consensus stats\t");
 		poa_printSummaryStats(poaRefined, stderr);
-		st_logInfo("Reads 1 stats\t");
-		poa_printSummaryStats(poaReads1, stderr);
-		st_logInfo("Reads 2 stats\t");
-		poa_printSummaryStats(poaReads2, stderr);
+		//st_logInfo("Reads 1 stats\t");
+		//poa_printSummaryStats(poaReads1, stderr);
+		//st_logInfo("Reads 2 stats\t");
+		//poa_printSummaryStats(poaReads2, stderr);
 		st_logInfo("True-reference stats\t");
 		poa_printSummaryStats(poaTrue, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(rleTrueReference->length + strlen(poaRefined->refString)));
-		st_logInfo("Reads 1 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads1/(rleTrueReference->length + strlen(poaReads1->refString)));
-		st_logInfo("Reads 2 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads2/(rleTrueReference->length + strlen(poaReads2->refString)));
+		//st_logInfo("Reads 1 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads1/(rleTrueReference->length + strlen(poaReads1->refString)));
+		//st_logInfo("Reads 2 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads2/(rleTrueReference->length + strlen(poaReads2->refString)));
 		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(rleTrueReference->length + rleReference->length));
-		st_logInfo("Total reads: %i, # reads partition1: %i, # reads partition2: %i\n", (int)stList_length(reads), (int)stList_length(reads1), (int)stList_length(reads2));
+		//st_logInfo("Total reads: %i, # reads partition1: %i, # reads partition2: %i\n", (int)stList_length(reads), (int)stList_length(reads1), (int)stList_length(reads2));
 		// Non-RLE stats
 		st_logInfo("Non-RLE Reference:\t\t%s\n", reference);
 		st_logInfo("Non-RLE True-reference:\t\t%s\n", trueReference);
@@ -683,7 +591,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2);
+		poa_print(poaRefined, stderr, 2, 0);
 	}
 
 	// Cleanup
@@ -696,21 +604,15 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	rleString_destruct(rleReference);
 	stList_destruct(rleStrings);
 	free(nonRLEConsensusString);
-	poa_destruct(poaReads1);
-	poa_destruct(poaReads2);
-	stList_destruct(anchorAlignments);
-	stList_destruct(reads1);
-	stList_destruct(reads2);
+	//poa_destruct(poaReads1);
+	//poa_destruct(poaReads2);
+	//stList_destruct(anchorAlignments);
+	//stList_destruct(reads1);
+	//stList_destruct(reads2);
 }
 
-static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, const char **readArray,
-									int64_t readNo, AlignmentMetrics *alignmentMetrics) {
-	stList *reads = stList_construct();
-	for(int64_t i=0; i<readNo; i++) {
-        BamChunkRead *read = bamChunkRead_construct();
-        read->nucleotides = stString_copy((char *)readArray[i]);
-		stList_append(reads, read);
-	}
+static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *reads,
+		AlignmentMetrics *alignmentMetrics) {
 
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
@@ -748,128 +650,25 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	if (st_getLogLevel() >= debug && !stString_eq(trueReference, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2);
+		poa_print(poaRefined, stderr, 2, 5);
 	}
 
 	// Cleanup
 	params_destruct(params);
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
-	stList_destruct(reads);
 }
 
-static void test_poa_realign_example1(CuTest *testCase) {
-	//                 **                              *    *
-	//               00  00000000111111111122222222223333333333444444444455
-	//               01  23456789012345678901234567890123456789012345678901
-	//Reference:     CA  TCTCTCTCGTCATGCACAGACAGATGATGCAGCATATGACATACGCATAT
-	//True-reference:CATCTCTCTCTCGTCATGCACAGACAGATGATGC GCATGTGACATACGCATAT
-
-	test_poa_realign_example(testCase, trueReferenceExample1, referenceExample1, readArrayExample1, 45, NULL);
-}
-
-static void test_poa_realign_rle_example1(CuTest *testCase) {
-	//                 000000   0000111111111122222222223333333333444 444444455555555556666666666777777 7777
-	//                 012345   6789012345678901234567890123456789012 345678901234567890123456789012345 6789
-	//reference =     "CATTTT   CTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAA TGCAGGGCAATAATGACCATAAAACGCATTTTT ATTT";
-	//trueReference = "CATTTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGGGGCATG  TGACCATAAAACGCATTTTTTATTT";
-
-	test_poa_realign_example_rle(testCase, trueReferenceExample1, referenceExample1, readArrayExample1, 45, NULL, NULL);
-}
-
-static void test_poa_realign_example2(CuTest *testCase) {
-	//Reference:		    GATGTAAAAAA   GAAATGATTTGCTAGAACAGAGCATAAATACACATCTGT
-	//True-reference:		GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT
-	//Predicted reference:	GATGTAAAAAAAA GAAATGATGGAAGTTAGAACAGAGCATAAATACACATCTGT
-
-	test_poa_realign_example(testCase, trueReferenceExample2, referenceExample2, readArrayExample2, 41, NULL);
-}
-
-static void test_poa_realign_rle_example2(CuTest *testCase) {
-	//                           * **
-	//                000000000011111111112222222222333333333
-	//                012345678901234567890123456789012345678
-	//True-reference: GATGTAGATGACGAGTAGACAGAGCATATACACATCTGT
-	//Reference:      GATGTAGATGATG CTAGACAGAGCATATACACATCTGT
-
-	test_poa_realign_example_rle(testCase, trueReferenceExample2, referenceExample2, readArrayExample2, 41, NULL, NULL);
-}
-
-static int64_t exampleNo = 20;
-static const char *examples[] = {
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11396386_11396426.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11396386_11396426_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11614960_11614996.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_11614960_11614996_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_12932558_12932578.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_12932558_12932578_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13007488_13007541.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13007488_13007541_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13107718_13107792.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13107718_13107792_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_1343860_1343898.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_1343860_1343898_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13941170_13941228.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_13941170_13941228_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2318461_2318484.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2318461_2318484_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2730008_2730037.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_2730008_2730037_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3485131_3485192.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3485131_3485192_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3931232_3931306.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_3931232_3931306_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_4333072_4333143.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_4333072_4333143_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5398020_5398073.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5398020_5398073_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5525849_5525911.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_5525849_5525911_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_6769182_6769243.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_6769182_6769243_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_7599992_7600003.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_7599992_7600003_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8020725_8020765.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8020725_8020765_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8072702_8072725.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8072702_8072725_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8980246_8980274.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_8980246_8980274_ref.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_9712745_9712803.fasta",
-		TEST_POLISH_FILES_DIR"random_chr1_windows/NC_003279.8_9712745_9712803_ref.fasta"
-};
-
-static int64_t messyExampleNo = 8;
-static const char *messyExamples[] = {
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10029532_10029615.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10029532_10029615_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10031827_10031861.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10031827_10031861_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10037167_10037249.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10037167_10037249_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10039004_10039029.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10039004_10039029_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10040234_10040295.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10040234_10040295_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_1004298_1004407.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_1004298_1004407_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10044514_10044568.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_10044514_10044568_ref.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138.fasta",
-		TEST_POLISH_FILES_DIR"messy_windows/NC_003279.8_14952113_14952138_ref.fasta"
-};
-
-static struct List *readSequences(char *fastaFile) {
+static struct List *readSequences(char *fastaFile, struct List **headers) {
 	struct List *seqs = constructEmptyList(0, free);
 	struct List *seqLengths = constructEmptyList(0, free);
-	struct List *headers = constructEmptyList(0, free);
+	*headers = constructEmptyList(0, free);
 
 	FILE *fH = fopen(fastaFile, "r");
-	fastaRead(fH, seqs, seqLengths, headers);
+	fastaRead(fH, seqs, seqLengths, *headers);
 	fclose(fH);
 
 	destructList(seqLengths);
-	destructList(headers);
 
 	return seqs;
 }
@@ -884,24 +683,44 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		st_logInfo("Doing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
 
 		// Parse sequences
-		struct List *reads = readSequences((char *)readFile);
-		assert(reads->length > 1);
-		struct List *trueReferenceList = readSequences((char *)trueRefFile);
+		struct List *readHeaders;
+		struct List *nucleotides = readSequences((char *)readFile, &readHeaders);
+		assert(nucleotides->length > 1);
+		struct List *trueReferenceHeaders;
+		struct List *trueReferenceList = readSequences((char *)trueRefFile, &trueReferenceHeaders);
 		assert(trueReferenceList->length == 1);
+
+		// Parse strands (and create reads)
+		stList *reads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+		for(int64_t i=1; i<readHeaders->length; i++) {
+			char *header = readHeaders->list[i];
+			char strand = header[strlen(header)-1];
+			CuAssertTrue(testCase, strand == 'F' || strand == 'R');
+			stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i),
+					stString_copy(nucleotides->list[i]), strand == 'F', NULL));
+		}
+
+		//if(strlen(reads->list[0]) > strlen(trueReferenceList->list[0]) * 0.8 || reads->length < 30) {
+		//	fprintf(stderr, "Got short input ref:\n%s\n%s\n", reads->list[0], trueReferenceList->list[0]);
+		//	continue;
+		//}
 
 		// Run poa iterative realign
 		if(rle) {
-			test_poa_realign_example_rle(testCase, trueReferenceList->list[0], reads->list[0],
-							(const char **)(&reads->list[1]), reads->length-1, rleAlignmentMetrics, alignmentMetrics);
+			test_poa_realign_example_rle(testCase, trueReferenceList->list[0], nucleotides->list[0],
+							reads, rleAlignmentMetrics, alignmentMetrics);
 		}
 		else {
-			test_poa_realign_example(testCase, trueReferenceList->list[0], reads->list[0],
-					(const char **)(&reads->list[1]), reads->length-1, alignmentMetrics);
+			test_poa_realign_example(testCase, trueReferenceList->list[0], nucleotides->list[0],
+					reads, alignmentMetrics);
 		}
 
 		// Cleanup
-		destructList(reads);
+		destructList(nucleotides);
+		destructList(readHeaders);
 		destructList(trueReferenceList);
+		destructList(trueReferenceHeaders);
+		free(reads);
 	}
 
 	// Alignment metrics for set
@@ -918,22 +737,6 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 
 	free(alignmentMetrics);
 	free(rleAlignmentMetrics);
-}
-
-static void test_poa_realign_examples_no_rle(CuTest *testCase) {
-	test_poa_realign_examples(testCase, examples, exampleNo, 0);
-}
-
-static void test_poa_realign_examples_rle(CuTest *testCase) {
-	test_poa_realign_examples(testCase, examples, exampleNo, 1);
-}
-
-static void test_poa_realign_messy_examples_no_rle(CuTest *testCase) {
-	test_poa_realign_examples(testCase, messyExamples, messyExampleNo, 0);
-}
-
-static void test_poa_realign_messy_examples_rle(CuTest *testCase) {
-	test_poa_realign_examples(testCase, messyExamples, messyExampleNo, 1);
 }
 
 static void test_poa_realign_examples_large(CuTest *testCase, int64_t exampleNo, const char *path, bool rle) {
@@ -953,20 +756,20 @@ static void test_poa_realign_examples_large(CuTest *testCase, int64_t exampleNo,
 	free(examples);
 }
 
-void test_poa_realign_examples_large_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 1);
+void test_poa_realign_ecoli_examples_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"20_random_100bp_windows_directional_ecoli_guppy", 1);
 }
 
-void test_poa_realign_examples_large_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 200, TEST_POLISH_FILES_DIR"200_random_windows_chr1_celegans_guppy", 0);
+void test_poa_realign_ecoli_examples_no_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 20, TEST_POLISH_FILES_DIR"20_random_100bp_windows_directional_ecoli_guppy", 0);
 }
 
-void test_poa_realign_examples_long_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 1, TEST_POLISH_FILES_DIR"largeExamples", 1);
+void test_poa_realign_ecoli_many_examples_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 100, TEST_POLISH_FILES_DIR"500_random_100bp_windows_directional_ecoli_guppy", 1);
 }
 
-void test_poa_realign_examples_long_no_rle(CuTest *testCase) {
-	test_poa_realign_examples_large(testCase, 1, TEST_POLISH_FILES_DIR"largeExamples", 0);
+void test_poa_realign_ecoli_many_examples_no_rle(CuTest *testCase) {
+	test_poa_realign_examples_large(testCase, 100, TEST_POLISH_FILES_DIR"500_random_100bp_windows_directional_ecoli_guppy", 0);
 }
 
 static void test_rleString_example(CuTest *testCase, const char *testStr,
@@ -1041,18 +844,22 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
-	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 10, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 6, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 100000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
 
-	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, a, 0, 0), -0.067512716, 0);
-	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, c, 0, 0), -0.027735314, 0);
-	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, g, 0, 0), -0.037436114, 0);
-	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, t, 0, 0), -0.045324434, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, a, 0, 0, 0), -0.059686935, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, c, 0, 0, 0), -0.055418707, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, g, 0, 0, 0), -0.05438334, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, t, 0, 0, 0), -0.035762809, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, a, 1, 0, 0), -0.036856437, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, c, 1, 0, 0), -0.062816805, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, g, 1, 0, 0), -0.055853556, 0);
+	CuAssertDblEquals(testCase,  repeatSubMatrix_getLogProb(polishParams->repeatSubMatrix, t, 1, 0, 0), -0.065273937, 0);
 
 	params_destruct(params);
 }
@@ -1186,11 +993,11 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
-    SUITE_ADD_TEST(suite, test_poa_realign_example1);
-    SUITE_ADD_TEST(suite, test_poa_realign_example2);
-
-    SUITE_ADD_TEST(suite, test_poa_realign_rle_example1);
-    SUITE_ADD_TEST(suite, test_poa_realign_rle_example2);
+//    SUITE_ADD_TEST(suite, test_poa_realign_example1);
+//    SUITE_ADD_TEST(suite, test_poa_realign_example2);
+//
+//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example1);
+//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example2);
     SUITE_ADD_TEST(suite, test_poa_realign);
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
@@ -1201,22 +1008,27 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_removeOverlapExample);
     SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
 
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
-
-    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
-
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
+//
+//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
+//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
+//
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
+//
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
+//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
 
     SUITE_ADD_TEST(suite, test_polish5kb_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_region);
     SUITE_ADD_TEST(suite, test_polish100kb);
+
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
 
     return suite;
 }

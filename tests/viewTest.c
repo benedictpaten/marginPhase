@@ -141,11 +141,15 @@ void test_viewExamples(CuTest *testCase) {
 		char *reference = getString(r->list[0], rle);
 		stList *reads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
 		stList *nucleotides = stList_construct3(0,free);
-		stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
+		stList *rleReads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+		stList *rleNucleotides = stList_construct3(0, (void (*)(void *))rleString_destruct);
+		// TODO: Get examples with strands specified
 		for(int64_t i=1; i<r->length; i++) {
 			stList_append(reads, bamChunkRead_construct2(NULL,getString(r->list[i], rle),TRUE,NULL));
 			stList_append(nucleotides, getString(r->list[i], rle));
-			stList_append(rleReads, rleString_construct(r->list[i]));
+			RleString *rleNucl = rleString_construct(r->list[i]);
+			stList_append(rleNucleotides, rleNucl);
+			stList_append(rleReads, bamChunkRead_construct2(NULL, stString_copy(rleNucl->rleString), TRUE, NULL));
 		}
 		destructList(r);
 
@@ -184,7 +188,7 @@ void test_viewExamples(CuTest *testCase) {
 		//TODO reads (BamChunkRead) has different length now.. does this matter?
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(nucleotides, trueReference);
-		stList_append(rleReads, rleTrueReference);
+		stList_append(rleNucleotides, rleTrueReference);
 
 		// Print alignment
 		MsaView *view = msaView_construct(poa->refString, NULL,
@@ -195,11 +199,11 @@ void test_viewExamples(CuTest *testCase) {
 
 			if(rle) {
 				// Expand the RLE string
-				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, params->polishParams->repeatSubMatrix);
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleNucleotides, reads, params->polishParams->repeatSubMatrix);
 				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
 				msaView_printRepeatCounts(view, 1,
-						rleConsensusString, rleReads, stderr);
+						rleConsensusString, rleNucleotides, stderr);
 
 				rleString_destruct(rleConsensusString);
 			}
@@ -218,6 +222,7 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Cleanup
 		rleString_destruct(rleReference);
+		stList_destruct(rleNucleotides);
 		stList_destruct(rleReads);
 		free(readFile);
 		free(trueRefFile);
