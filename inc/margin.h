@@ -1029,6 +1029,7 @@ void bamChunk_destruct(BamChunk *bamChunk);
 
 BamChunkRead *bamChunkRead_construct();
 BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool forwardStrand, BamChunk *parent);
+BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*

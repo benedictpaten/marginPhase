@@ -214,6 +214,16 @@ BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool fo
 
     return r;
 }
+BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle) {
+    BamChunkRead *r = malloc(sizeof(BamChunkRead));
+    r->readName = read->readName ==  NULL ? NULL : stString_copy(read->readName);
+    r->nucleotides = stString_copy(rle->rleString);
+    r->readLength = rle->length;
+    r->forwardStrand = read->forwardStrand;
+    r->parent = read->parent;
+
+    return r;
+}
 void bamChunkRead_destruct(BamChunkRead *r) {
     if (r->readName != NULL) free(r->readName);
     if (r->nucleotides != NULL) free(r->nucleotides);

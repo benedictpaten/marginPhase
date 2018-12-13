@@ -196,17 +196,15 @@ int main(int argc, char *argv[]) {
 			RleString *rleReference = rleString_construct(referenceString);
 
 			// Now RLE the reads
-			stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
+			stList *rleNucleotides = stList_construct3(0, (void (*)(void *))rleString_destruct);
+			stList *rleReads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
             stList *rleAlignments = stList_construct3(0, (void (*)(void*))stList_destruct);
-			stList *oldNucleotides = stList_construct();
 			for(int64_t j=0; j<stList_length(reads); j++) {
 				BamChunkRead *read = stList_get(reads, j);
-                stList_append(oldNucleotides, read->nucleotides);
-				RleString *rleRead = rleString_construct(read->nucleotides);
-				stList_append(rleReads, rleRead);
-				read->nucleotides = rleRead->rleString;
-                read->readLength = strlen(read->nucleotides);
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleRead));
+				RleString *rleNucleotideString = rleString_construct(read->nucleotides);
+				stList_append(rleNucleotides, rleNucleotideString);
+				stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
+				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
 			}
 
 			// Generate partial order alignment (POA)
@@ -222,17 +220,9 @@ int main(int argc, char *argv[]) {
 			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, reads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
-            // Put back reads
-            // TODO this may not be necessary
-            for(int64_t j=0; j<stList_length(reads); j++) {
-                BamChunkRead *read = stList_get(reads, j);
-                read->nucleotides = stList_get(oldNucleotides, j);
-                read->readLength = strlen(read->nucleotides);
-            }
-
 			// Now cleanup run-length stuff
+			stList_destruct(rleNucleotides);
 			stList_destruct(rleReads);
-			stList_destruct(oldNucleotides);
             stList_destruct(rleAlignments);
 			rleString_destruct(rleReference);
 			rleString_destruct(polishedRLEReference);
