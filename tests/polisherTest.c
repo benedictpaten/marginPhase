@@ -519,6 +519,11 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	Poa *poaRefined = poa_realignIterative(reads, readStrandArray, NULL, rleReference->rleString, polishParams);
 
 	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
+	Poa *poaRefined2 = poa_polish(poaRefined, reads, readStrandArray, polishParams);
+	//Poa *poaRefined3 = poa_polish(poaRefined, reads, readStrandArray, polishParams);
+	poa_destruct(poaRefined);
+	//poa_destruct(poaRefined2);
+	poaRefined = poaRefined2;
 
 	Poa *poaTrue = poa_realign(reads, readStrandArray, NULL, rleTrueReference->rleString, polishParams);
 
@@ -969,7 +974,7 @@ void test_polish100kb(CuTest *testCase) {
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign);
@@ -982,12 +987,15 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_removeOverlapExample);
     SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
     SUITE_ADD_TEST(suite, test_polish5kb);
-    SUITE_ADD_TEST(suite, test_polish100kb);
+    SUITE_ADD_TEST(suite, test_polish100kb);*/
 
-    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
+    /*SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);*/
+
+    //SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
 
     return suite;
 }

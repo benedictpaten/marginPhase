@@ -1151,7 +1151,7 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 
 		// Get the MEA alignment
 		double alignmentScore;
-		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, inserts, deletes,
+		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, deletes, inserts,
 				refLength, strlen(read), &alignmentScore, polishParams->p);
 
 		// Left shift the alignment
@@ -1441,40 +1441,40 @@ char *getExistingSubstring(Poa *poa, int64_t from, int64_t to) {
 	return s;
 }
 
-char getNextCandidateBase(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+char getNextCandidateBase(PoaNode *node, int64_t *i, double candidateWeight, PolishParams *params) {
 	/*
 	 * Iterates through candidate bases for a reference position returning those with sufficient weight.
 	 * Always returns the reference base
 	 */
 	while(*i<SYMBOL_NUMBER) {
 		char base = symbol_convertSymbolToChar(*i);
-		if(node->baseWeights[(*i)++] > coverage * 0.2 || toupper(node->base) == base) {
+		if(node->baseWeights[(*i)++] > candidateWeight || toupper(node->base) == base) {
 			return base;
 		}
 	}
 	return '-';
 }
 
-char *getNextCandidateInsert(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+char *getNextCandidateInsert(PoaNode *node, int64_t *i, double candidateWeight, PolishParams *params) {
 	/*
 	 * Iterates through candidate insertions for a reference position returning those with sufficient weight.
 	 */
-	while((*i++) < stList_length(node->inserts)) {
+	while((*i)++ < stList_length(node->inserts)) {
 		PoaInsert *insert = stList_get(node->inserts, (*i)-1);
-		if(poaInsert_getWeight(insert) > coverage * 0.2) {
+		if(poaInsert_getWeight(insert) > candidateWeight) {
 			return insert->insert;
 		}
 	}
 	return NULL;
 }
 
-int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, double coverage, PolishParams *params) {
+int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, double candidateWeight, PolishParams *params) {
 	/*
 	 * Iterates through candidate deletions for a reference position returning those with sufficient weight.
 	 */
-	while((*i++) < stList_length(node->deletes)) {
+	while((*i)++ < stList_length(node->deletes)) {
 		PoaDelete *delete = stList_get(node->deletes, (*i)-1);
-		if(poaDelete_getWeight(delete) > coverage * 0.2) {
+		if(poaDelete_getWeight(delete) > candidateWeight) {
 			return delete->length;
 		}
 	}
@@ -1482,6 +1482,9 @@ int64_t getNextCandidateDelete(PoaNode *node, int64_t *i, double coverage, Polis
 }
 
 double getTotalWeight(PoaNode *node) {
+	/*
+	 * Returns the total base weight of reads aligned to the given node.
+	 */
 	double totalWeight = 0.0;
 	for(int64_t i=0; i<SYMBOL_NUMBER; i++) {
 		totalWeight += node->baseWeights[i];
@@ -1502,7 +1505,7 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to, Poli
 
 	// First get suffix substrings
 	stList *suffixes;
-	if(from < to) {
+	if(from+1 < to) {
 		suffixes = getCandidateConsensusSubstrings(poa, from+1, to, params);
 	}
 	else {
@@ -1521,10 +1524,11 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to, Poli
 		avgCoverage += getTotalWeight(stList_get(poa->nodes, j));
 	}
 	avgCoverage /= (to-from);
+	double candidateWeight = avgCoverage * 0.2;
 
 	int64_t i=0;
 	char base;
-	while((base = getNextCandidateBase(node, &i, avgCoverage, params)) != '-') { // Enumerate the possible bases at the reference node.
+	while((base = getNextCandidateBase(node, &i, candidateWeight, params)) != '-') { // Enumerate the possible bases at the reference node.
 
 		// Create the consensus substrings with no inserts or deletes starting at this node
 		for(int64_t j=0; j<stList_length(suffixes); j++) {
@@ -1534,7 +1538,7 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to, Poli
 		// Now add insert cases
 		int64_t k=0;
 		char *insert;
-		while((insert = getNextCandidateInsert(node, &k, avgCoverage, params)) != NULL) {
+		while((insert = getNextCandidateInsert(node, &k, candidateWeight, params)) != NULL) {
 			for(int64_t j=0; j<stList_length(suffixes); j++) {
 				stList_append(consensusSubstrings, stString_print("%c%s%s", base, insert, stList_get(suffixes, j)));
 			}
@@ -1543,7 +1547,7 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to, Poli
 		// Add then deletes
 		k = 0;
 		int64_t deleteLength;
-		while((deleteLength = getNextCandidateDelete(node, &k, avgCoverage, params)) > 0) {
+		while((deleteLength = getNextCandidateDelete(node, &k, candidateWeight, params)) > 0) {
 			for(int64_t j=0; j<stList_length(suffixes); j++) {
 				char *suffixHaplotype = stList_get(suffixes, j);
 				stList_append(consensusSubstrings, stString_print("%c%s", base,
@@ -1575,16 +1579,29 @@ double computeLogLikelihoodOfConsensusString(char *reference, stList *reads, Pol
 	return logProb;
 }
 
-int64_t *getAlignedPositions(PoaNode *poaNode, int64_t readNo) {
+int64_t *getAlignedPositions(Poa *poa, int64_t position, stList *reads) {
 	/*
 	 * Get an array giving, for each read, the most probably aligned position to the given
 	 * poaNode.
 	 */
+	int64_t *readPositions = st_calloc(stList_length(reads), sizeof(int64_t));
 
-	int64_t *readPositions = st_calloc(readNo, sizeof(int64_t));
+	// If first position, then we imagine read prefix is aligned
+	if(position == 0) {
+		return readPositions;
+	}
 
-	double *readPositionWeights = st_calloc(readNo, sizeof(double));
-	for(int64_t i=0; i<readNo; i++) {
+	// If last position of POA then we imaging read suffix is aligned
+	if(position == stList_length(poa->nodes)) {
+		for(int64_t i=0; i<stList_length(reads); i++) {
+			readPositions[i] = strlen(stList_get(reads, i));
+		}
+		return readPositions;
+	}
+
+	PoaNode *poaNode = stList_get(poa->nodes, position);
+	double *readPositionWeights = st_calloc(stList_length(reads), sizeof(double));
+	for(int64_t i=0; i<stList_length(reads); i++) {
 		readPositions[i] = -1;
 	}
 	for(int64_t i=0; i<stList_length(poaNode->observations); i++) {
@@ -1608,8 +1625,8 @@ stList *getReadSubstrings(stList *reads, Poa *poa, int64_t from, int64_t to) {
 
 	// For each read calculate the positioned most probably aligned to the from and to positions,
 	// or -1 if not aligned
-	int64_t *readStarts = getAlignedPositions(stList_get(poa->nodes, from), stList_length(reads));
-	int64_t *readEnds = getAlignedPositions(stList_get(poa->nodes, to), stList_length(reads));
+	int64_t *readStarts = getAlignedPositions(poa, from, reads);
+	int64_t *readEnds = getAlignedPositions(poa, to, reads);
 
 	// For each read get the corresponding read substring
 	// skipping reads that are not aligned to readStart or readEnd
@@ -1646,6 +1663,9 @@ char *getBestConsensusSubstring(Poa *poa, stList *reads, int64_t from, int64_t t
 		// Get read substrings
 		stList *readSubstrings = getReadSubstrings(reads, poa, from, to);
 
+		st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
+				stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
+
 		// Assess likelihood of each remaining substring in turn,
 		// keeping the most probable
 		double maxLogProb = computeLogLikelihoodOfConsensusString(consensusSubstring, readSubstrings, params);
@@ -1681,14 +1701,10 @@ bool *getAnchorPoints(Poa *poa, stList *anchorAlignments, double anchorWeight) {
 
 	// Calculate anchors
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-		PoaNode *node = stList_get(poa->nodes, i);
 
-		double nodeWeight = 0.0;
-		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-			nodeWeight += node->baseWeights[j];
-		}
+		double nodeWeight = getTotalWeight(stList_get(poa->nodes, i));
 
-		if(nodeWeight >= anchorWeight) {
+		if(nodeWeight/PAIR_ALIGNMENT_PROB_1 >= anchorWeight) {
 			anchors[i] = 1;
 		}
 	}
@@ -1696,9 +1712,51 @@ bool *getAnchorPoints(Poa *poa, stList *anchorAlignments, double anchorWeight) {
 	return anchors;
 }
 
-Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, char *reference, PolishParams *params) {
+void poa_polish2(Poa *poa, stList *reads, int64_t from, int64_t to,
+					stList *consensusSubstrings, int64_t *consensusStringLength,
+					int64_t *poaToConsensusMap, PolishParams *params) {
+	// Get existing reference string
+	char *existingConsensusSubstring = getExistingSubstring(poa, from, to);
+
+	// Get best consensus substring
+	char *consensusSubstring = getBestConsensusSubstring(poa, reads, from, to, params);
+
+	st_logDebug("In poa polish got anchors, from: %" PRIi64 " to: %" PRIi64
+			", \nexisting string:\t%s\nnew string:\t%s\n", from, to,
+			existingConsensusSubstring, consensusSubstring);
+
+	// Add new best consensus substring to the growing new consensus string
+	stList_append(consensusSubstrings, consensusSubstring);
+
+	// Now update the alignment between the existing reference substring and the new consensus sequences
+
+	// Create alignment between new and old consensus strings and update the map
+	double alignmentScore;
+	stList *l = stList_construct(); // Empty set of alignment anchors
+	stList *alignedPairs = getShiftedMEAAlignment(existingConsensusSubstring, consensusSubstring, l, params->p, params->sM,
+												   0, 0, &alignmentScore);
+	stList_destruct(l);
+
+	for(int64_t k=0; k<stList_length(alignedPairs); k++) {
+		stIntTuple *alignedPair = stList_get(alignedPairs, k);
+		if(((double)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1 > params->minPosteriorProbForAlignmentAnchor
+				&& from + stIntTuple_get(alignedPair, 1) > 0 && *consensusStringLength + stIntTuple_get(alignedPair, 2) > 0) {
+			// The > 0 checks are to avoid including alignments to the "N" prefix
+			poaToConsensusMap[from + stIntTuple_get(alignedPair, 1) - 1] = *consensusStringLength + stIntTuple_get(alignedPair, 2) - 1;
+		}
+	}
+
+	// Cleanup
+	free(existingConsensusSubstring);
+	stList_destruct(alignedPairs);
+
+	// Updare consensus string length
+	*consensusStringLength += strlen(consensusSubstring);
+}
+
+Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params) {
 	/*
-	 * "Polishes" the given POA reference string to create an new consensus reference string.
+	 * "Polishes" the given POA reference string to create a new consensus reference string.
 	 * Algorithm starts by dividing the reference into anchor points - points where the majority
 	 * of reads are confidently aligned. Then, between each pair of consecutive anchors it looks
 	 * for "candidate variants", variants (either substitutions, insertions or deletions) with
@@ -1710,9 +1768,19 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, char *reference, Pol
 
 	// Identify anchor points, represented as a binary array, one bit for each POA node
 	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params);
-	double anchorWeight = stList_length(reads) * params->minPosteriorProbForAlignmentAnchor;
+	double anchorWeight = stList_length(reads) * 0.95; //params->minPosteriorProbForAlignmentAnchor;
 	bool *anchors = getAnchorPoints(poa, anchorAlignments, anchorWeight);
 	stList_destruct(anchorAlignments);
+
+	// Log some stuff about the anchors
+	if(st_getLogLevel() >= debug) {
+		int64_t totalAnchorNo = 0;
+		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+			totalAnchorNo += anchors[i] ? 1 : 0;
+		}
+		st_logDebug("In poa_polish for anchor weight of %f with %" PRIi64 " reads got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases\n",
+					anchorWeight, stList_length(reads), totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo);
+	}
 
 	// Map to track alignment between the new consensus sequence and the poa reference sequence
 	int64_t *poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
@@ -1729,42 +1797,18 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, char *reference, Pol
 	int64_t pAnchor = 0; // Previous anchor, starting from first position of POA, which is the prefix "N"
 	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
 		if(anchors[i]) { // If position i is an anchor
-			// Get best consensus substring
-			char *consensusSubstring = getBestConsensusSubstring(poa, reads, pAnchor, i, params);
 
-			// Add new best consensus substring to the growing new consensus string
-			stList_append(consensusSubstrings, consensusSubstring);
-
-			// Now update the alignment between the existing reference substring and the new consensus sequences
-
-			// Get existing reference string
-			char *existingConsensusSubstring = getExistingSubstring(poa, pAnchor, i);
-
-			// Create alignment between new and old consensus strings and update the map
-			double alignmentScore;
-			stList *l = stList_construct(); // Empty set of alignment anchors
-			stList *alignedPairs = getShiftedMEAAlignment(existingConsensusSubstring, consensusSubstring, l, params->p, params->sM,
-										   	   	   	   	   0, 0, &alignmentScore);
-			stList_destruct(l);
-
-			for(int64_t k=0; k<stList_length(alignedPairs); k++) {
-				stIntTuple *alignedPair = stList_get(alignedPairs, k);
-				if(((double)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1 > params->minPosteriorProbForAlignmentAnchor) {
-					poaToConsensusMap[pAnchor + stIntTuple_get(alignedPair, 1)] = j + stIntTuple_get(alignedPair, 2);
-				}
-			}
-
-			// Cleanup
-			free(existingConsensusSubstring);
-			stList_destruct(alignedPairs);
+			poa_polish2(poa, reads, pAnchor, i,
+					    consensusSubstrings, &j, poaToConsensusMap, params);
 
 			// Update previous anchor
 			pAnchor = i;
-
-			// Update length of growing consensus substring
-			j += strlen(consensusSubstring);
 		}
 	}
+
+	// Deal with the suffix
+	poa_polish2(poa, reads, pAnchor, stList_length(poa->nodes),
+				consensusSubstrings, &j, poaToConsensusMap, params);
 
 	// Build the new consensus string by concatenating the constituent pieces
 	char *newConsensusString = stString_join2("", consensusSubstrings);
@@ -1783,6 +1827,8 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, char *reference, Pol
 	Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, newConsensusString, params);
 
 	// Cleanup
+	free(anchors);
+	free(newConsensusString);
 	stList_destruct(consensusSubstrings);
 	stList_destruct(anchorAlignments);
 

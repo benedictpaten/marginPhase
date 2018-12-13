@@ -849,6 +849,9 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
  */
 Poa *poa_realignIterative(stList *reads, bool *readStrandArray, stList *anchorAlignments, char *reference, PolishParams *polishParams);
 
+
+Poa *poa_polish(Poa *poa, stList *reads, bool *readStrandArray, PolishParams *params);
+
 /*
  * Greedily evaluate the top scoring indels.
  */
