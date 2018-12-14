@@ -318,8 +318,16 @@ int main(int argc, char *argv[]) {
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
-    stBaseMapper *baseMapper = stBaseMapper_construct();
-    stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    FILE *fh = fopen(paramsFile, "rb");
+    if (fh == NULL) {
+        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+    }
+    Params *fullParams = params_readParams2(fh, FALSE, TRUE);
+    fclose(fh);
+    stBaseMapper *baseMapper = fullParams->baseMapper;
+    stRPHmmParameters *params = fullParams->phaseParams;
+    assert(baseMapper != NULL);
+    assert(params != NULL);
     if (verboseBitstring >= 0) setVerbosity(params, verboseBitstring); //run this AFTER parameters, so CL args overwrite
 
     // Print a report of the parsed parameters
@@ -540,8 +548,7 @@ int main(int argc, char *argv[]) {
     stReadHaplotypePartitionTable_destruct(readHaplotypePartitions);
     stList_destruct(hmms);
 
-    stBaseMapper_destruct(baseMapper);
-    stRPHmmParameters_destruct(params);
+    params_destruct(fullParams);
     stHash_destruct(referenceNamesToReferencePriors);
 
     // TODO: only free these if they need to be

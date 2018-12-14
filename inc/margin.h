@@ -83,6 +83,7 @@ struct _params {
 };
 
 Params *params_readParams(FILE *fp);
+Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase);
 
 void params_destruct(Params *params);
 
@@ -577,8 +578,6 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 /*
  * Parsing methods
  */
-
-stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper);
 
 int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
 

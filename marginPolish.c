@@ -108,6 +108,9 @@ int main(int argc, char *argv[]) {
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     FILE *fh = fopen(paramsFile, "r");
+    if (fh == NULL) {
+        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+    }
     Params *params = params_readParams(fh);
     fclose(fh);
 

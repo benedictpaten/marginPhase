@@ -125,7 +125,7 @@ stRPHmmParameters *stRPHmmParameters_construct() {
 	return params;
 }
 
-stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *baseMapper) {
+stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseMapper) {
 	// Setup parser
 	jsmntok_t *tokens;
 	char *js;
@@ -288,17 +288,6 @@ stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r, stBaseMapper *b
     free(tokens);
 
     return params;
-}
-
-stRPHmmParameters *parseParameters(char *paramsFile, stBaseMapper *baseMapper) {
-	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
-	FILE *fh = fopen(paramsFile, "rb");
-	if (fh == NULL) {
-		st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
-	}
-	stRPHmmParameters *p =  parseParameters_fromJson(buf, fread(buf, sizeof(char), sizeof(buf), fh), baseMapper);
-	fclose(fh);
-	return p;
 }
 
 /*
@@ -922,11 +911,6 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     return params;
 }
 
-PolishParams *polishParams_readParams(FILE *fp) {
-	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
-	return polishParams_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
-}
-
 void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
     //TODO
     st_logCritical("Need to implement polishParams_printParameters\n");
@@ -943,8 +927,7 @@ void polishParams_destruct(PolishParams *params) {
 /*
  * Global params objects
  */
-
-Params *params_jsonParse(char *buf, size_t r) {
+Params *params_jsonParse(char *buf, size_t r, bool requirePolish, bool requirePhase) {
 	// Setup parser
 	jsmntok_t *tokens;
 	char *js;
@@ -961,29 +944,47 @@ Params *params_jsonParse(char *buf, size_t r) {
 		char *keyString = stJson_token_tostr(js, &key);
 
 		if (strcmp(keyString, "polish") == 0) {
-			jsmntok_t tok = tokens[tokenIndex+1];
-			char *tokStr = stJson_token_tostr(js, &tok);
-			params->polishParams = polishParams_jsonParse(tokStr, strlen(tokStr));
+		    if (requirePolish) {
+                jsmntok_t tok = tokens[tokenIndex + 1];
+                char *tokStr = stJson_token_tostr(js, &tok);
+                params->polishParams = polishParams_jsonParse(tokStr, strlen(tokStr));
+            }
 			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
 			gotPolish = 1;
 		}
 		else if (strcmp(keyString, "phase") == 0) {
-			jsmntok_t tok = tokens[tokenIndex+1];
-			char *tokStr = stJson_token_tostr(js, &tok);
-			params->baseMapper = stBaseMapper_construct();
-			params->phaseParams = parseParameters_fromJson(tokStr, strlen(tokStr), params->baseMapper);
+            if (requirePhase) {
+                jsmntok_t tok = tokens[tokenIndex + 1];
+                char *tokStr = stJson_token_tostr(js, &tok);
+                params->baseMapper = stBaseMapper_construct();
+                params->phaseParams = phaseParams_fromJson(tokStr, strlen(tokStr), params->baseMapper);
+            }
 			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
 			gotPhase = 1;
 		}
 		else {
-			st_errAbort("ERROR: Unrecognised key in params json: %s\n", keyString);
+		    // maybe we only need one of these?
+		    if (requirePolish && !requirePhase) {
+		        st_logInfo("WARN: parameters file missing 'polish' and 'phase' top-level entries.  Interpreting as 'polish'.\n");
+                params->polishParams = polishParams_jsonParse(buf, r);
+                tokenIndex = tokenNumber;
+                gotPolish = 1;
+		    } else if (requirePhase && ! requirePolish) {
+                st_logInfo("WARN: parameters file missing 'polish' and 'phase' top-level entries.  Interpreting as 'phase'.\n");
+                params->baseMapper = stBaseMapper_construct();
+                params->phaseParams = phaseParams_fromJson(buf, r, params->baseMapper);
+                tokenIndex = tokenNumber;
+		        gotPhase = 1;
+		    } else {
+                st_errAbort("ERROR: Unrecognised key in params json: %s\n", keyString);
+            }
 		}
 	}
 
-	if(!gotPolish) {
+	if(!gotPolish && requirePolish) {
 		st_errAbort("ERROR: Did not find polish parameters in json params\n");
 	}
-	if(!gotPhase) {
+	if(!gotPhase && requirePhase) {
 		st_errAbort("ERROR: Did not find phase parameters in json params\n");
 	}
 
@@ -995,14 +996,17 @@ Params *params_jsonParse(char *buf, size_t r) {
 }
 
 Params *params_readParams(FILE *fp) {
-	char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
-	return params_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
+    params_readParams2(fp, TRUE, TRUE);
+}
+Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase) {
+    char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+    return params_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp), requirePolish, requirePhase);
 }
 
 void params_destruct(Params *params) {
-	stRPHmmParameters_destruct(params->phaseParams);
-	polishParams_destruct(params->polishParams);
-	stBaseMapper_destruct(params->baseMapper);
+	if (params->phaseParams != NULL) stRPHmmParameters_destruct(params->phaseParams);
+    if (params->polishParams != NULL) polishParams_destruct(params->polishParams);
+    if (params->baseMapper != NULL) stBaseMapper_destruct(params->baseMapper);
 	free(params);
 }
 
