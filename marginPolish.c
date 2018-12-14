@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, rleAlignments, rleReference->rleString, params->polishParams);
+			poa = poa_realignIterative(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -217,7 +217,7 @@ int main(int argc, char *argv[]) {
 			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
 
 			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleReads, reads, params->polishParams->repeatSubMatrix);
+			RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
 			// Now cleanup run-length stuff

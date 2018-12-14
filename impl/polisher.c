@@ -1154,7 +1154,7 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 
 		// Get the MEA alignment
 		double alignmentScore;
-		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, inserts, deletes,
+		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, deletes, inserts,
 				refLength, strlen(nucleotides), &alignmentScore, polishParams->p);
 
 		// Left shift the alignment

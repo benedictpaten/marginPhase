@@ -110,7 +110,7 @@ static struct List *readSequences(char *fastaFile) {
 
 	return seqs;
 }
-
+/*
 char *getString(char *string, bool rle) {
 	if(rle) {
 		RleString *r = rleString_construct(string);
@@ -122,11 +122,11 @@ char *getString(char *string, bool rle) {
 	}
 	return string;
 }
+*/
 
 void test_viewExamples(CuTest *testCase) {
 	char *path=TEST_POLISH_FILES_DIR"largeExamples";
 	int64_t exampleNo = 1;
-	bool rle = 1;
 
 	for(int64_t example=0; example<exampleNo; example++) {
 		char *readFile = stString_print("%s/%i.fasta", path, (int)example);
@@ -138,25 +138,26 @@ void test_viewExamples(CuTest *testCase) {
 		struct List *r = readSequences((char *)readFile);
 		assert(r->length > 1);
 		RleString *rleReference = rleString_construct(r->list[0]);
-		char *reference = getString(r->list[0], rle);
-		stList *reads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+		char *reference = stString_copy(r->list[0]);
 		stList *nucleotides = stList_construct3(0,free);
-		stList *rleReads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
 		stList *rleNucleotides = stList_construct3(0, (void (*)(void *))rleString_destruct);
+		stList *reads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+		stList *rleReads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
 		// TODO: Get examples with strands specified
 		for(int64_t i=1; i<r->length; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL,getString(r->list[i], rle),TRUE,NULL));
-			stList_append(nucleotides, getString(r->list[i], rle));
+			BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i),stString_copy(r->list[i]),TRUE,NULL);
+			stList_append(reads, bcr);
+			stList_append(nucleotides, stString_copy(r->list[i]));
 			RleString *rleNucl = rleString_construct(r->list[i]);
 			stList_append(rleNucleotides, rleNucl);
-			stList_append(rleReads, bamChunkRead_construct2(NULL, stString_copy(rleNucl->rleString), TRUE, NULL));
+			stList_append(rleReads, bamChunkRead_constructRLECopy(bcr, rleNucl));
 		}
 		destructList(r);
 
 		// Parse reference
 		struct List *trueReferenceList = readSequences((char *)trueRefFile);
 		assert(trueReferenceList->length == 1);
-		char *trueReference = getString(trueReferenceList->list[0], rle);
+		char *trueReference = stString_copy(trueReferenceList->list[0]);
 		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
 		destructList(trueReferenceList);
 
@@ -197,16 +198,14 @@ void test_viewExamples(CuTest *testCase) {
 		if (st_getLogLevel() >= debug) {
 			msaView_print(view, 2, stderr);
 
-			if(rle) {
-				// Expand the RLE string
-				RleString *rleConsensusString = expandRLEConsensus(poa, rleNucleotides, reads, params->polishParams->repeatSubMatrix);
-				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+			// Expand the RLE string
+			RleString *rleConsensusString = expandRLEConsensus(poa, rleNucleotides, reads, params->polishParams->repeatSubMatrix);
+			CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
-				msaView_printRepeatCounts(view, 1,
-						rleConsensusString, rleNucleotides, stderr);
+			msaView_printRepeatCounts(view, 1,
+					rleConsensusString, rleNucleotides, stderr);
 
-				rleString_destruct(rleConsensusString);
-			}
+			rleString_destruct(rleConsensusString);
 		}
 
 		int64_t indelLength = 0;
