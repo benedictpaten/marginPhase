@@ -39,6 +39,14 @@
 		  
 		  "minPosteriorProbForAlignmentAnchor" : 0.9,
 		  
+		  "candidateVariantWeight" : 0.2,
+		  
+		  "columnAnchorWeight" : 1.0,
+		  
+		  "columnAnchorTrim" : 5,
+		  
+		  "maxConsensusStrings" : 100,
+		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,

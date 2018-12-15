@@ -214,6 +214,11 @@ int main(int argc, char *argv[]) {
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
 
+			// Run the realignment polish step
+			Poa *poa2 = poa_polish(poa, l, readStrandArray, params->polishParams);
+			poa_destruct(poa);
+			poa = poa2;
+
 			// Now optionally do phasing and haplotype specific polishing
 
 			//stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
@@ -236,6 +241,11 @@ int main(int argc, char *argv[]) {
 
 			// Generate partial order alignment (POA)
 			poa = poa_realignIterative(reads, readStrandArray, alignments, referenceString, params->polishParams);
+
+			// Run the realignment polish step
+			Poa *poa2 = poa_polish(poa, reads, readStrandArray, params->polishParams);
+			poa_destruct(poa);
+			poa = poa2;
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
