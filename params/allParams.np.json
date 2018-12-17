@@ -31,7 +31,7 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 500000,
+		  "chunkSize" : 100000,
 		
 		  "chunkBoundary" : 50,
 		
@@ -41,8 +41,6 @@
 		  
 		  "candidateVariantWeight" : 0.2,
 		  
-		  "columnAnchorWeight" : 1.0,
-		  
 		  "columnAnchorTrim" : 5,
 		  
 		  "maxConsensusStrings" : 100,
@@ -51,7 +49,7 @@
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,
 			    "traceBackDiagonals" : 40,
-			    "diagonalExpansion" : 6,
+			    "diagonalExpansion" : 10,
 			    "constraintDiagonalTrim" : 0,
 			    "anchorMatrixBiggerThanThis" : 250000,
 			    "repeatMaskMatrixBiggerThanThis" : 250000,

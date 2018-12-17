@@ -843,7 +843,6 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->chunkSize = 0;
     params->chunkBoundary = 0;
     params->candidateVariantWeight = 0.2;
-    params->columnAnchorWeight = 1.0;
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
 
@@ -908,11 +907,6 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: candidateVariantWeight parameter must be positive\n");
 			}
 			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "columnAnchorWeight") == 0) {
-			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
-				st_errAbort("ERROR: columnAnchorWeight parameter must be positive\n");
-			}
-			params->columnAnchorWeight = stJson_parseFloat(js, tokens, tokenIndex);
 		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: columnAnchorTrim parameter must be positive\n");

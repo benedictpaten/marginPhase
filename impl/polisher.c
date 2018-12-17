@@ -618,8 +618,6 @@ Poa *poa_realign(stList *reads, bool *readStrands, stList *anchorAlignments, cha
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
-		time_t startTime = time(NULL);
-
 		if(anchorAlignments == NULL) {
 			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 		}
@@ -1002,6 +1000,8 @@ Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignm
 
 	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
 
+	st_logInfo("Starting realignment with score: %f\n", score/PAIR_ALIGNMENT_PROB_1);
+
 	int64_t i=0;
 	while(1) {
 		int64_t *poaToConsensusMap;
@@ -1017,6 +1017,8 @@ Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignm
 		// Get anchor alignments
 		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
 
+		time_t realignStartTime = time(NULL);
+
 		// Generated updated poa
 		Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, reference, polishParams);
 
@@ -1027,6 +1029,9 @@ Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignm
 
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
+		st_logInfo("Took %f seconds to do round %" PRIi64 " of realignment, Have score: %f (%f score diff)\n",
+					(float)(time(NULL) - realignStartTime), i+1, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
+
 		// Stop if score decreases (greedy stopping)
 		if(score2 <= score) {
 			poa_destruct(poa2);
@@ -1036,9 +1041,15 @@ Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignm
 		poa_destruct(poa);
 		poa = poa2;
 		score = score2;
+
+		//if(++i >= 2) {
+		//	break;
+		//}
+		i++;
 	}
 
-	//fprintf(stderr, "Took %f seconds to run iterate\n", (float)(time(NULL) - startTime));
+	st_logInfo("Took %f seconds to realign iterative through %" PRIi64 " iterations, got final score : %f\n",
+			(float)(time(NULL) - startTime), i+1, score/PAIR_ALIGNMENT_PROB_1);
 
 	return poa;
 }
@@ -1323,12 +1334,16 @@ RepeatSubMatrix *repeatSubMatrix_constructEmpty() {
 
 double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
 												     stList *rleReads, bool *readStrands, int64_t underlyingRepeatCount) {
+	assert(underlyingRepeatCount < repeatSubMatrix->maximumRepeatLength);
 	double logProb = LOG_ONE;
 	for(int64_t i=0; i<stList_length(observations); i++) {
 		PoaBaseObservation *observation = stList_get(observations, i);
 		RleString *read = stList_get(rleReads, observation->readNo);
 		int64_t observedRepeatCount = read->repeatCounts[observation->offset];
-		assert(underlyingRepeatCount < repeatSubMatrix->maximumRepeatLength);
+
+		// Be robust to over-long repeat count observations
+		observedRepeatCount = observedRepeatCount >= repeatSubMatrix->maximumRepeatLength ? repeatSubMatrix->maximumRepeatLength-1 : observedRepeatCount;
+
 		logProb += repeatSubMatrix_getLogProb(repeatSubMatrix, base, readStrands[observation->readNo], observedRepeatCount, underlyingRepeatCount) * observation->weight;
 	}
 
@@ -1356,7 +1371,8 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 		}
 	}
 	if(maxRepeatLength >= repeatSubMatrix->maximumRepeatLength) {
-		st_errAbort("Got overlong repeat count: %i\n", (int)maxRepeatLength);
+		st_logCritical("Got overlong repeat observation: %" PRIi64 ", ignoring this and cutting off overlong repeat counts to max\n", maxRepeatLength);
+		maxRepeatLength = repeatSubMatrix->maximumRepeatLength-1;
 	}
 
 	// Calc the range of repeat observations
@@ -1797,26 +1813,6 @@ char *getBestConsensusSubstring(Poa *poa, stList *reads, int64_t from, int64_t t
 
 // Code to create anchors
 
-bool *getAnchorPoints(Poa *poa, double anchorWeight) {
-	/*
-	 * Returns an boolean for each poaNode (as an array) indicating if the node has sufficient
-	 * alignment weight to be considered and anchor point.
-	 */
-	bool *anchors = st_calloc(stList_length(poa->nodes), sizeof(bool));
-
-	// Calculate anchors
-	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-
-		double nodeWeight = getTotalWeight(stList_get(poa->nodes, i));
-
-		if(nodeWeight >= anchorWeight) {
-			anchors[i] = 1;
-		}
-	}
-
-	return anchors;
-}
-
 bool *getCandidateVariantOverlapPositions(Poa *poa, double candidateWeight) {
 	/*
 	 * Return a boolean for each poaNode (as an array) indicating if the node is a candidate variant
@@ -1868,20 +1864,18 @@ bool *expand(bool *b, int64_t length, int64_t expansion) {
 	return b2;
 }
 
-bool *getFilteredAnchorPositions(Poa *poa, double anchorWeight, double candidateWeight, int64_t columnAnchorTrim) {
+bool *getFilteredAnchorPositions(Poa *poa, double candidateWeight, int64_t columnAnchorTrim) {
 	/*
-	 * Create set of anchor positions, using high confidence alignment positions not close to candidate variants
+	 * Create set of anchor positions, using positions not close to candidate variants
 	 */
-	// Identify candidate anchor points, represented as a binary array, one bit for each POA node
-	bool *anchors = getAnchorPoints(poa, anchorWeight);
-
 	// Identity sites that overlap candidate variants, and expand to surrounding positions
 	bool *candidateVariantPositions = getCandidateVariantOverlapPositions(poa, candidateWeight);
 	bool *expandedCandidateVariantPositions = expand(candidateVariantPositions, stList_length(poa->nodes), columnAnchorTrim);
 
-	// Filter anchors to remove those that are also expanded candidate variant positions
+	// Anchors are those that are not close to expanded candidate variant positions
+	bool *anchors = st_calloc(stList_length(poa->nodes), sizeof(bool));
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-		anchors[i] = anchors[i] && !expandedCandidateVariantPositions[i];
+		anchors[i] = !expandedCandidateVariantPositions[i];
 	}
 
 	// Cleanup
@@ -1894,8 +1888,8 @@ bool *getFilteredAnchorPositions(Poa *poa, double anchorWeight, double candidate
 		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 			totalAnchorNo += anchors[i] ? 1 : 0;
 		}
-		st_logDebug("In poa_polish for anchor weight of %f, got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases\n",
-					anchorWeight/PAIR_ALIGNMENT_PROB_1, totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo);
+		st_logDebug("In poa_polish got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases\n",
+					totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo);
 	}
 
 	return anchors;
@@ -1969,16 +1963,17 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	 * with the highest likelihood is then selected.
 	 */
 
+	time_t startTime = time(NULL);
+
 	// Setup
 	double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
-	double anchorWeight = avgCoverage * params->columnAnchorWeight;
 	double candidateWeight = avgCoverage * params->candidateVariantWeight;
 
 	// Sort the base observations to make the getReadSubstrings function work
 	sortBaseObservations(poa);
 
 	// Identify anchor points, represented as a binary array, one bit for each POA node
-	bool *anchors = getFilteredAnchorPositions(poa, anchorWeight, candidateWeight, params->columnAnchorTrim);
+	bool *anchors = getFilteredAnchorPositions(poa, candidateWeight, params->columnAnchorTrim);
 
 	// Map to track alignment between the new consensus sequence and the poa reference sequence
 	int64_t *poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
@@ -2038,6 +2033,14 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	free(newConsensusString);
 	stList_destruct(consensusSubstrings);
 	stList_destruct(anchorAlignments);
+	free(poaToConsensusMap);
+
+	if(st_getLogLevel() >= info) {
+		double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
+		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
+		st_logInfo("Took %f seconds to do a round of polishing, got score: %f, a diff: %f \n",
+					(float)(time(NULL) - startTime), score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
+	}
 
 	return poa2;
 }

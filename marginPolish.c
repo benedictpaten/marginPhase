@@ -212,12 +212,15 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Generate partial order alignment (POA)
+			//poa = poa_realign(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
 			poa = poa_realignIterative(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Run the realignment polish step
-			Poa *poa2 = poa_polish(poa, l, readStrandArray, params->polishParams);
-			poa_destruct(poa);
-			poa = poa2;
+			for(int64_t j=0; j<3; j++) {
+				Poa *poa2 = poa_polish(poa, l, readStrandArray, params->polishParams);
+				poa_destruct(poa);
+				poa = poa2;
+			}
 
 			// Now optionally do phasing and haplotype specific polishing
 
