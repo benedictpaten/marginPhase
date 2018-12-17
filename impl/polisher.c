@@ -1315,12 +1315,20 @@ stList *runLengthEncodeAlignment(stList *alignment,
  */
 
 double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
-	return &(repeatSubMatrix->logProbabilities[(2 * base + (strand ? 1 : 0)) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
-											 underlyingRepeatCount * repeatSubMatrix->maximumRepeatLength + observedRepeatCount]);
+    if (base == SYMBOL_NUMBER_NO_N) {
+        st_errAbort("[repeatSubMatrix_setLogProb] base 'Nn' not supported for repeat estimation\n");
+    }
+    int64_t idx = (2 * base + (strand ? 1 : 0)) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
+            underlyingRepeatCount * repeatSubMatrix->maximumRepeatLength +
+            observedRepeatCount;
+    assert(idx < repeatSubMatrix->maxEntry);
+	return &(repeatSubMatrix->logProbabilities[idx]);
 }
 
 double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
-	return *repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, observedRepeatCount, underlyingRepeatCount);
+	double *loc = repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, observedRepeatCount, underlyingRepeatCount);
+//	printf("%p\n", loc);
+	return *loc;
 }
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix) {
@@ -1331,7 +1339,8 @@ void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix) {
 RepeatSubMatrix *repeatSubMatrix_constructEmpty() {
 	RepeatSubMatrix *repeatSubMatrix = st_calloc(1, sizeof(RepeatSubMatrix));
 	repeatSubMatrix->maximumRepeatLength = 51;
-	repeatSubMatrix->logProbabilities = st_calloc(2 * SYMBOL_NUMBER_NO_N * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength, sizeof(double));
+	repeatSubMatrix->maxEntry = 2 * SYMBOL_NUMBER_NO_N * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
+	repeatSubMatrix->logProbabilities = st_calloc(repeatSubMatrix->maxEntry, sizeof(double));
 	return repeatSubMatrix;
 }
 
@@ -1341,7 +1350,7 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
 	double logProb = LOG_ONE;
 	for(int64_t i=0; i<stList_length(observations); i++) {
 		PoaBaseObservation *observation = stList_get(observations, i);
-		BamChunkRead *read = stList_get(rleReads, observation->readNo);
+		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
 		RleString *rleRead = stList_get(rleReads, observation->readNo);
 		int64_t observedRepeatCount = rleRead->repeatCounts[observation->offset];
 //		assert(underlyingRepeatCount < repeatSubMatrix->maximumRepeatLength);
@@ -1350,10 +1359,10 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
 //		        observedRepeatCount, underlyingRepeatCount) * observation->weight;
 
 		// Be robust to over-long repeat count observations
-		observedRepeatCount = observedRepeatCount >= repeatSubMatrix->maximumRepeatLength ? 
+		observedRepeatCount = observedRepeatCount >= repeatSubMatrix->maximumRepeatLength ?
 		        repeatSubMatrix->maximumRepeatLength-1 : observedRepeatCount;
 
-		logProb += repeatSubMatrix_getLogProb(repeatSubMatrix, base, read->forwardStrand, 
+		logProb += repeatSubMatrix_getLogProb(repeatSubMatrix, base, read->forwardStrand,
 		        observedRepeatCount, underlyingRepeatCount) * observation->weight;
 	}
 

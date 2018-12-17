@@ -789,7 +789,7 @@ int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end
  */
 
 int64_t repeatSubMatrix_parseLogProbabilities(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
-	int64_t maxRepeatCount = 51;
+	int64_t maxRepeatCount = repeatSubMatrix->maximumRepeatLength;
 	int64_t i = stJson_parseFloatArray(repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, 0, 0), maxRepeatCount*maxRepeatCount, js, tokens, tokenIndex);
 	return i;
 }

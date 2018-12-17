@@ -920,6 +920,7 @@ char *rleString_expand(RleString *rleString);
 struct _repeatSubMatrix {
 	double *logProbabilities;
 	int64_t maximumRepeatLength;
+	int64_t maxEntry;
 };
 
 /*
