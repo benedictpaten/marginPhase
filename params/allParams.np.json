@@ -10,10 +10,10 @@
 		  		],
 		  		
 		  		"emissions": [
-		  			0.980000, 0.006667, 0.006667, 0.006667, 
-		  			0.006667, 0.980000, 0.006667, 0.006667, 
-		  			0.006667, 0.006667, 0.980000, 0.006667, 
-		  			0.006667, 0.006667, 0.006667, 0.980000, 
+		  			0.8, 0.066666, 0.066666, 0.066666,
+		  			0.066666, 0.8, 0.066666, 0.066666,
+		  			0.066666, 0.066666, 0.8, 0.066666,
+		  			0.066666, 0.066666, 0.066666, 0.8, 
 		  			
 		  			0.025000, 0.025000, 0.025000, 0.025000, 
 		  			0.025000, 0.025000, 0.025000, 0.025000, 
@@ -31,7 +31,7 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 500000,
+		  "chunkSize" : 100000,
 		
 		  "chunkBoundary" : 50,
 		
@@ -39,11 +39,17 @@
 		  
 		  "minPosteriorProbForAlignmentAnchor" : 0.9,
 		  
+		  "candidateVariantWeight" : 0.2,
+		  
+		  "columnAnchorTrim" : 5,
+		  
+		  "maxConsensusStrings" : 100,
+		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,
 			    "traceBackDiagonals" : 40,
-			    "diagonalExpansion" : 6,
+			    "diagonalExpansion" : 10,
 			    "constraintDiagonalTrim" : 0,
 			    "anchorMatrixBiggerThanThis" : 250000,
 			    "repeatMaskMatrixBiggerThanThis" : 250000,

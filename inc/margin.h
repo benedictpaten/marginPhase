@@ -736,7 +736,9 @@ struct _polishParams {
 	bool includeSoftClipping;
 	uint64_t chunkSize;
 	uint64_t chunkBoundary;
-
+	double candidateVariantWeight; // The fraction (from 0 to 1) of the average position coverage needed to define a candidate variant
+	uint64_t columnAnchorTrim; // The min distance between a column anchor and a candidate variant
+	uint64_t maxConsensusStrings; // The maximum number of different consensus strings to consider for a substring.
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -847,6 +849,9 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
  * for the given reads and the starting reference.
  */
 Poa *poa_realignIterative(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
+
+
+Poa *poa_polish(Poa *poa, stList *reads, PolishParams *params);
 
 /*
  * Greedily evaluate the top scoring indels.

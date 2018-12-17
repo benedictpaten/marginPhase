@@ -842,6 +842,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->includeSoftClipping = FALSE; //todo add this in
     params->chunkSize = 0;
     params->chunkBoundary = 0;
+    params->candidateVariantWeight = 0.2;
+    params->columnAnchorTrim = 5;
+    params->maxConsensusStrings = 100;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
@@ -884,7 +887,6 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
         }
-
         else if (strcmp(keyString, "includeSoftClipping") == 0) {
             params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
         }
@@ -900,6 +902,22 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
             }
             params->chunkBoundary = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
+        else if (strcmp(keyString, "candidateVariantWeight") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: candidateVariantWeight parameter must be positive\n");
+			}
+			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: columnAnchorTrim parameter must be positive\n");
+			}
+			params->columnAnchorTrim = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "maxConsensusStrings") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxConsensusStrings parameter must be positive\n");
+			}
+			params->maxConsensusStrings = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
@@ -1012,5 +1030,3 @@ void params_printParameters(Params *params, FILE *fh) {
 	fprintf(fh, "Phase parameters:\n");
 	stRPHmmParameters_printParameters(params->phaseParams, fh);
 }
-
-

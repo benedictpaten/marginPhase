@@ -518,6 +518,23 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, polishParams);
 
 	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
+	for(int64_t i=0; i<3; i++) {
+		Poa *poaRefined2 = poa_polish(poaRefined, reads, polishParams);
+
+		//double score = poa_getReferenceNodeTotalMatchWeight(poaRefined) - poa_getTotalErrorWeight(poaRefined);
+		//double score2 = poa_getReferenceNodeTotalMatchWeight(poaRefined2) - poa_getTotalErrorWeight(poaRefined2);
+
+		//if(score > score2 + 15*PAIR_ALIGNMENT_PROB_1) {
+		//	poa_destruct(poaRefined2);
+		//	break;
+		//}
+
+		//Poa *poaRefined3 = poa_polish(poaRefined, reads, readStrandArray, polishParams);
+		poa_destruct(poaRefined);
+		//poa_destruct(poaRefined2);
+		poaRefined = poaRefined2;
+	}
+	//poaRefined = poa_realignIterative(reads, readStrandArray, NULL, poaRefined->refString, polishParams);
 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
@@ -621,6 +638,7 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, polishParams);
+	poaRefined = poa_polish(poaRefined, reads, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
@@ -880,11 +898,11 @@ void test_removeOverlapExample(CuTest *testCase) {
 
 	// Run overlap remover
 	int64_t prefixStringCropEnd, suffixStringCropStart;
-	removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
-				  &prefixStringCropEnd, &suffixStringCropStart);
+	double overlapWeight = removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
+				  	  	  &prefixStringCropEnd, &suffixStringCropStart);
 
-	CuAssertIntEquals(testCase, 5, prefixStringCropEnd);
-	CuAssertIntEquals(testCase, 1, suffixStringCropStart);
+	CuAssertIntEquals(testCase, 7, prefixStringCropEnd);
+	CuAssertIntEquals(testCase, 3, suffixStringCropStart);
 
 	// Cleanup
 	params_destruct(params);
