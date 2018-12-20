@@ -892,31 +892,52 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         }
         else if (strcmp(keyString, "chunkSize") == 0) {
             if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-                st_errAbort("ERROR: chunkSize parameter must be positive\n");
+                st_errAbort("ERROR: chunkSize parameter must zero or greater\n");
             }
             params->chunkSize = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else if (strcmp(keyString, "chunkBoundary") == 0) {
             if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-                st_errAbort("ERROR: chunkBoundary parameter must be positive\n");
+                st_errAbort("ERROR: chunkBoundary parameter must zero or greater\n");
             }
             params->chunkBoundary = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else if (strcmp(keyString, "candidateVariantWeight") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
-				st_errAbort("ERROR: candidateVariantWeight parameter must be positive\n");
+				st_errAbort("ERROR: candidateVariantWeight parameter must zero or greater\n");
 			}
 			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
 		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-				st_errAbort("ERROR: columnAnchorTrim parameter must be positive\n");
+				st_errAbort("ERROR: columnAnchorTrim parameter must zero or greater\n");
 			}
 			params->columnAnchorTrim = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
 		} else if (strcmp(keyString, "maxConsensusStrings") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-				st_errAbort("ERROR: maxConsensusStrings parameter must be positive\n");
+				st_errAbort("ERROR: maxConsensusStrings parameter must zero or greater\n");
 			}
 			params->maxConsensusStrings = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
+		else if (strcmp(keyString, "maxPoaConsensusIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxPoaConsensusIterations parameter must zero or greater\n");
+			}
+			params->maxPoaConsensusIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "minPoaConsensusIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minPoaConsensusIterations parameter must zero or greater\n");
+			}
+			params->minPoaConsensusIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "maxRealignmentPolishIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxRealignmentPolishIterations parameter must zero or greater\n");
+			}
+			params->maxRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "minRealignmentPolishIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minRealignmentPolishIterations parameter must zero or greater\n");
+			}
+			params->minRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
 		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);

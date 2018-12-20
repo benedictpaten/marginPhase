@@ -45,6 +45,14 @@
 		  
 		  "maxConsensusStrings" : 100,
 		  
+		  "maxPoaConsensusIterations" : 0, 
+		  
+		  "minPoaConsensusIterations" : 0,
+			
+		  "maxRealignmentPolishIterations" : 1,
+			
+		  "minRealignmentPolishIterations" : 1, 
+		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,

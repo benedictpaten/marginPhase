@@ -993,67 +993,6 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 	return consensusString;
 }
 
-Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
-	Poa *poa = poa_realign(reads, readStrands, anchorAlignments, reference, polishParams);
-
-	time_t startTime = time(NULL);
-
-	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
-
-	st_logInfo("Starting realignment with score: %f\n", score/PAIR_ALIGNMENT_PROB_1);
-
-	int64_t i=0;
-	while(1) {
-		int64_t *poaToConsensusMap;
-		reference = poa_getConsensus(poa, &poaToConsensusMap, polishParams);
-
-		// Stop in case consensus string is same as old reference (i.e. greedy convergence)
-		if(stString_eq(reference, poa->refString)) {
-			free(reference);
-			free(poaToConsensusMap);
-			break;
-		}
-
-		// Get anchor alignments
-		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
-
-		time_t realignStartTime = time(NULL);
-
-		// Generated updated poa
-		Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, reference, polishParams);
-
-		// Cleanup
-		free(reference);
-		free(poaToConsensusMap);
-		stList_destruct(anchorAlignments);
-
-		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
-
-		st_logInfo("Took %f seconds to do round %" PRIi64 " of realignment, Have score: %f (%f score diff)\n",
-					(float)(time(NULL) - realignStartTime), i+1, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
-
-		// Stop if score decreases (greedy stopping)
-		if(score2 <= score) {
-			poa_destruct(poa2);
-			break;
-		}
-
-		poa_destruct(poa);
-		poa = poa2;
-		score = score2;
-
-		//if(++i >= 2) {
-		//	break;
-		//}
-		i++;
-	}
-
-	st_logInfo("Took %f seconds to realign iterative through %" PRIi64 " iterations, got final score : %f\n",
-			(float)(time(NULL) - startTime), i+1, score/PAIR_ALIGNMENT_PROB_1);
-
-	return poa;
-}
-
 char *addInsert(char *string, char *insertString, int64_t editStart) {
 	int64_t insertLength = strlen(insertString);
 	int64_t stringLength = strlen(string);
@@ -1767,6 +1706,9 @@ char *getBestConsensusSubstring(Poa *poa, stList *reads, int64_t from, int64_t t
 	 * Does so by enumerating candidate variants in interval and then building and test all possible resulting
 	 * consensus substrings
 	 */
+	if(to-from > 1000) { // If region to be anchored is too long give up
+		return getExistingSubstring(poa, from, to);
+	}
 
 	// Get consensus substrings, ensuring we use a candidate weight that does not cause us to evaluate more than
 	// a maximum number of strings.
@@ -1888,8 +1830,8 @@ bool *getFilteredAnchorPositions(Poa *poa, double candidateWeight, int64_t colum
 		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 			totalAnchorNo += anchors[i] ? 1 : 0;
 		}
-		st_logDebug("In poa_polish got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases\n",
-					totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo);
+		st_logDebug("In poa_polish got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases, using candidate weight of: %f\n",
+					totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo, candidateWeight/PAIR_ALIGNMENT_PROB_1);
 	}
 
 	return anchors;
@@ -1897,7 +1839,7 @@ bool *getFilteredAnchorPositions(Poa *poa, double candidateWeight, int64_t colum
 
 // Core polishing logic functions
 
-void poa_polish2(Poa *poa, stList *reads, int64_t from, int64_t to,
+void poa_polishP(Poa *poa, stList *reads, int64_t from, int64_t to,
 					stList *consensusSubstrings, int64_t *consensusStringLength,
 					int64_t *poaToConsensusMap, double candidateWeight, PolishParams *params) {
 	// Get existing reference string
@@ -1951,23 +1893,19 @@ void poa_polish2(Poa *poa, stList *reads, int64_t from, int64_t to,
 	*consensusStringLength += strlen(consensusSubstring);
 }
 
-Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params) {
+char *poa_polish2(Poa *poa, stList *reads, bool *readStrands, PolishParams *params,
+				  int64_t **poaToConsensusMap) {
 	/*
-	 * "Polishes" the given POA reference string to create a new consensus reference string.
-	 * Algorithm starts by dividing the reference into anchor points - points where the majority
-	 * of reads are confidently aligned. Then, between each pair of consecutive anchors it looks
-	 * for "candidate variants", variants (either substitutions, insertions or deletions) with
-	 * significant weight. For every combination of candidate variants between the two anchor points
-	 * a candidate string is constructed and all the read substrings mapping between the two anchor points
-	 * are aligned to it. The candidate string, including the current reference substring,
-	 * with the highest likelihood is then selected.
+	 * As pao_polish, but returns the polished reference string and a
+	 * map back to the input poa reference sequence.
 	 */
-
-	time_t startTime = time(NULL);
 
 	// Setup
 	double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
 	double candidateWeight = avgCoverage * params->candidateVariantWeight;
+
+	st_logDebug("Got avg. coverage: %f for region of length: %" PRIi64 " and candidate weight of: %f\n",
+			avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes), candidateWeight/PAIR_ALIGNMENT_PROB_1);
 
 	// Sort the base observations to make the getReadSubstrings function work
 	sortBaseObservations(poa);
@@ -1976,9 +1914,9 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	bool *anchors = getFilteredAnchorPositions(poa, candidateWeight, params->columnAnchorTrim);
 
 	// Map to track alignment between the new consensus sequence and the poa reference sequence
-	int64_t *poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
+	*poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
 	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
-		poaToConsensusMap[i] = -1;
+		(*poaToConsensusMap)[i] = -1;
 	}
 
 	// Substrings of the consensus string that when concatenated form the overall consensus string
@@ -1994,13 +1932,13 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 			if(i-pAnchor == 1)  {
 				stList_append(consensusSubstrings, stString_print("%c", ((PoaNode *)stList_get(poa->nodes, pAnchor))->base));
 				if(i > 0 && j > 0) {
-					poaToConsensusMap[i-1] = j-1;
+					(*poaToConsensusMap)[i-1] = j-1;
 				}
 				j++;
 			}
 			else {
-				poa_polish2(poa, reads, pAnchor, i,
-							consensusSubstrings, &j, poaToConsensusMap, candidateWeight, params);
+				poa_polishP(poa, reads, pAnchor, i,
+							consensusSubstrings, &j, *poaToConsensusMap, candidateWeight, params);
 			}
 
 			// Update previous anchor
@@ -2009,8 +1947,8 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	}
 
 	// Deal with the suffix
-	poa_polish2(poa, reads, pAnchor, stList_length(poa->nodes),
-				consensusSubstrings, &j, poaToConsensusMap, candidateWeight, params);
+	poa_polishP(poa, reads, pAnchor, stList_length(poa->nodes),
+				consensusSubstrings, &j, *poaToConsensusMap, candidateWeight, params);
 
 	// Build the new consensus string by concatenating the constituent pieces
 	char *newConsensusString = stString_join2("", consensusSubstrings);
@@ -2022,6 +1960,30 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	newConsensusString = stString_copy(&(newConsensusString[1]));
 	free(c);
 
+	// Cleanup
+	free(anchors);
+	stList_destruct(consensusSubstrings);
+
+	return newConsensusString;
+}
+
+Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params) {
+	/*
+	 * "Polishes" the given POA reference string to create a new consensus reference string.
+	 * Algorithm starts by dividing the reference into anchor points - points where the majority
+	 * of reads are confidently aligned. Then, between each pair of consecutive anchors it looks
+	 * for "candidate variants", variants (either substitutions, insertions or deletions) with
+	 * significant weight. For every combination of candidate variants between the two anchor points
+	 * a candidate string is constructed and all the read substrings mapping between the two anchor points
+	 * are aligned to it. The candidate string, including the current reference substring,
+	 * with the highest likelihood is then selected.
+	 */
+
+	time_t startTime = time(NULL);
+
+	int64_t *poaToConsensusMap;
+	char *newConsensusString = poa_polish2(poa, reads, readStrands, params, &poaToConsensusMap);
+
 	// Get anchor alignments
 	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), params);
 
@@ -2029,9 +1991,7 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, newConsensusString, params);
 
 	// Cleanup
-	free(anchors);
 	free(newConsensusString);
-	stList_destruct(consensusSubstrings);
 	stList_destruct(anchorAlignments);
 	free(poaToConsensusMap);
 
@@ -2043,4 +2003,96 @@ Poa *poa_polish(Poa *poa, stList *reads, bool *readStrands, PolishParams *params
 	}
 
 	return poa2;
+}
+
+// Functions to iteratively polish a sequence
+
+Poa *poa_realignIterative3(Poa *poa, stList *reads, bool *readStrands,
+						   PolishParams *polishParams, bool hmmMNotRealign,
+						   int64_t minIterations, int64_t maxIterations) {
+	assert(maxIterations >= 0);
+	assert(minIterations <= maxIterations);
+
+	time_t startTime = time(NULL);
+
+	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
+
+	st_logInfo("Starting realignment with score: %f\n", score/PAIR_ALIGNMENT_PROB_1);
+
+	int64_t i=0;
+	while(i < maxIterations) {
+		i++;
+
+		time_t consensusFindingStartTime = time(NULL);
+
+		int64_t *poaToConsensusMap;
+		char *reference = hmmMNotRealign ? poa_getConsensus(poa, &poaToConsensusMap, polishParams) :
+				poa_polish2(poa, reads, readStrands, polishParams, &poaToConsensusMap);
+
+		st_logInfo("Took %f seconds to do round %" PRIi64 " of consensus finding using algorithm %s\n",
+				(float)(time(NULL) - consensusFindingStartTime), i, hmmMNotRealign ? "consensus" : "polish");
+
+		// Stop in case consensus string is same as old reference (i.e. greedy convergence)
+		if(stString_eq(reference, poa->refString)) {
+			free(reference);
+			free(poaToConsensusMap);
+			break;
+		}
+
+		// Get anchor alignments
+		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
+
+		time_t realignStartTime = time(NULL);
+
+		// Generated updated poa
+		Poa *poa2 = poa_realign(reads, readStrands, anchorAlignments, reference, polishParams);
+
+		// Cleanup
+		free(reference);
+		free(poaToConsensusMap);
+		stList_destruct(anchorAlignments);
+
+		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
+
+		st_logInfo("Took %f seconds to do round %" PRIi64 " of realignment, Have score: %f (%f score diff)\n",
+					(float)(time(NULL) - realignStartTime), i, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
+
+		// Stop if score decreases (greedy stopping)
+		if(score2 <= score && i >= minIterations) {
+			poa_destruct(poa2);
+			break;
+		}
+
+		poa_destruct(poa);
+		poa = poa2;
+		score = score2;
+	}
+
+	st_logInfo("Took %f seconds to realign iterative using algorithm: %s through %" PRIi64 " iterations, got final score : %f\n",
+			(float)(time(NULL) - startTime), hmmMNotRealign ? "consensus" : "polish", i, score/PAIR_ALIGNMENT_PROB_1);
+
+	return poa;
+}
+
+Poa *poa_realignIterative2(stList *reads, bool *readStrands,
+						   stList *anchorAlignments, char *reference,
+						   PolishParams *polishParams, bool hmmMNotRealign,
+						   int64_t minIterations, int64_t maxIterations) {
+	time_t startTime = time(NULL);
+	Poa *poa = poa_realign(reads, readStrands, anchorAlignments, reference, polishParams);
+	st_logInfo("Took %f seconds to generate initial POA\n", (float)(time(NULL) - startTime));
+	return maxIterations == 0 ? poa : poa_realignIterative3(poa, reads, readStrands, polishParams, hmmMNotRealign, minIterations, maxIterations);
+}
+
+Poa *poa_realignIterative(stList *reads, bool *readStrands, stList *anchorAlignments, char *reference,
+						  PolishParams *polishParams) {
+	return poa_realignIterative2(reads, readStrands, anchorAlignments, reference, polishParams, 1, 0, (int64_t)10000000);
+}
+
+Poa *poa_realignAll(stList *reads, bool *readStrands, stList *anchorAlignments, char *reference,
+						  PolishParams *polishParams) {
+	Poa *poa = poa_realignIterative2(reads, readStrands, anchorAlignments, reference, polishParams, 1,
+									 polishParams->minPoaConsensusIterations, polishParams->maxPoaConsensusIterations);
+	return poa_realignIterative3(poa, reads, readStrands, polishParams, 0,
+			polishParams->minRealignmentPolishIterations, polishParams->maxRealignmentPolishIterations);
 }

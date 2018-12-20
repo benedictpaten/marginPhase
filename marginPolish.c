@@ -211,16 +211,9 @@ int main(int argc, char *argv[]) {
 				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleRead));
 			}
 
-			// Generate partial order alignment (POA)
-			//poa = poa_realign(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
-			poa = poa_realignIterative(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
+			// Generate partial order alignment (POA) (destroys rleAlignments in the process)
 
-			// Run the realignment polish step
-			for(int64_t j=0; j<3; j++) {
-				Poa *poa2 = poa_polish(poa, l, readStrandArray, params->polishParams);
-				poa_destruct(poa);
-				poa = poa2;
-			}
+			poa = poa_realignAll(l, readStrandArray, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -234,8 +227,8 @@ int main(int argc, char *argv[]) {
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleReads);
-			stList_destruct(l);
 			stList_destruct(rleAlignments);
+			stList_destruct(l);
 			rleString_destruct(rleReference);
 			rleString_destruct(polishedRLEReference);
 		}
@@ -243,12 +236,7 @@ int main(int argc, char *argv[]) {
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, readStrandArray, alignments, referenceString, params->polishParams);
-
-			// Run the realignment polish step
-			Poa *poa2 = poa_polish(poa, reads, readStrandArray, params->polishParams);
-			poa_destruct(poa);
-			poa = poa2;
+			poa = poa_realignAll(reads, readStrandArray, alignments, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
