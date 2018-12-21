@@ -1146,17 +1146,17 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *pol
 	}
 }
 
-stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *polishParams) {
+stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, PolishParams *polishParams) {
 	// Generate anchor alignments
-	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), polishParams);
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(bamChunkReads), polishParams);
 
 	// Alignments
 	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 
 	// Make the MEA alignments
 	int64_t refLength = stList_length(poa->nodes)-1;
-	for(int64_t i=0; i<stList_length(reads); i++) {
-		BamChunkRead* read = stList_get(reads, i);
+	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
+		BamChunkRead* read = stList_get(bamChunkReads, i);
 		char *nucleotides  = read->nucleotides;
 		stList *anchorAlignment = stList_get(anchorAlignments, i);
 

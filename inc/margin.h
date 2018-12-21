@@ -828,7 +828,7 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
  * Generates a set of maximal expected alignments for the reads aligned to the the POA reference sequence.
  * Unlike the draft anchor alignments, these are designed to be complete, high quality alignments.
  */
-stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *polishParams);
+stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, PolishParams *polishParams);
 
 /*
  * Prints representation of the POA.
