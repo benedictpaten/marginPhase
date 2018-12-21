@@ -607,14 +607,14 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	adjustAnchors(*deletes, 1, firstRefPosition);
 }
 
-Poa *poa_realign(stList *reads, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
+Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
 	// Build a reference graph with zero weights
 	Poa *poa = poa_getReferenceGraph(reference);
 	int64_t refLength = stList_length(poa->nodes)-1;
 
 	// For each read
-	for(int64_t i=0; i<stList_length(reads); i++) {
-        BamChunkRead *chunkRead = stList_get(reads, i);
+	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
+        BamChunkRead *chunkRead = stList_get(bamChunkReads, i);
 
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
@@ -1089,7 +1089,7 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart) {
 	return editedString;
 }
 
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *polishParams) {
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishParams *polishParams) {
 	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
 
 	while(1) {
@@ -1129,7 +1129,7 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *pol
 		char *editRef = poaInsert_getWeight(maxInsert) >= poaDelete_getWeight(maxDelete) ? addInsert(poa->refString, maxInsert->insert, insertStart) :
 				removeDelete(poa->refString, maxDelete->length, deleteStart);
 		// TODO: Add anchor constraints
-		Poa *poa2 = poa_realign(reads, NULL, editRef, polishParams);
+		Poa *poa2 = poa_realign(bamChunkReads, NULL, editRef, polishParams);
 		free(editRef);
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 

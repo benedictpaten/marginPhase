@@ -812,7 +812,7 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
+Poa *poa_realign(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -850,7 +850,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *poli
 
 Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params);
 
-char *poa_polish2(Poa *poa, stList *reads, PolishParams *params,
+char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 				  int64_t **poaToConsensusMap);
 
 /*
@@ -886,7 +886,7 @@ Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *refer
 /*
  * Greedily evaluate the top scoring indels.
  */
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *polishParams);
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishParams *polishParams);
 
 void poa_destruct(Poa *poa);
 
