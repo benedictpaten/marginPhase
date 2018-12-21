@@ -43,7 +43,7 @@ static void test_getRegionChunker(CuTest *testCase) {
     CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 0))->chunkBoundaryEnd == 200000);
     CuAssertTrue(testCase, stString_eq(((BamChunk*)stList_get(chunker->chunks, 1))->refSeqName, "contig_1"));
     CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 1))->chunkBoundaryStart == 200000);
-    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 1))->chunkBoundaryEnd == 300000);
+    CuAssertTrue(testCase, ((BamChunk*)stList_get(chunker->chunks, 1))->chunkBoundaryEnd == 210020); //end pos stops at last aligned pos
     free(chunker->params);
 
     bamChunker_destruct(chunker);
