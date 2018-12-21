@@ -515,26 +515,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	PolishParams *polishParams = params->polishParams;
 
 	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, polishParams);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, polishParams);
-
-	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
-	for(int64_t i=0; i<3; i++) {
-		Poa *poaRefined2 = poa_polish(poaRefined, reads, polishParams);
-
-		//double score = poa_getReferenceNodeTotalMatchWeight(poaRefined) - poa_getTotalErrorWeight(poaRefined);
-		//double score2 = poa_getReferenceNodeTotalMatchWeight(poaRefined2) - poa_getTotalErrorWeight(poaRefined2);
-
-		//if(score > score2 + 15*PAIR_ALIGNMENT_PROB_1) {
-		//	poa_destruct(poaRefined2);
-		//	break;
-		//}
-
-		//Poa *poaRefined3 = poa_polish(poaRefined, reads, readStrandArray, polishParams);
-		poa_destruct(poaRefined);
-		//poa_destruct(poaRefined2);
-		poaRefined = poaRefined2;
-	}
-	//poaRefined = poa_realignIterative(reads, readStrandArray, NULL, poaRefined->refString, polishParams);
+	Poa *poaRefined = poa_realignAll(reads, NULL, rleReference->rleString, polishParams);
 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
