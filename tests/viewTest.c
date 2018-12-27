@@ -161,13 +161,14 @@ void test_viewExamples(CuTest *testCase) {
 		Params *params = params_readParams(fh);
 		fclose(fh);
 
+		// Set parameters
+		params->polishParams->maxPoaConsensusIterations = 100;
+		params->polishParams->minPoaConsensusIterations = 0;
+		params->polishParams->maxRealignmentPolishIterations = 3;
+		params->polishParams->minRealignmentPolishIterations = 3;
+
 		// Generate alignment
 		Poa *poa = poa_realignAll(reads, readStrandArray, NULL, reference, params->polishParams);
-		//Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-		//Poa *poa = poa_realignIterative(reads, readStrandArray, NULL, reference, params->polishParams);
-		//Poa *poa2 = poa_polish(poa, reads, readStrandArray, params->polishParams);
-		//poa_destruct(poa);
-		//poa = poa2;
 
 		// Generate final MEA read alignments to POA
 		stList *alignments = poa_getReadAlignmentsToConsensus(poa, reads, params->polishParams);

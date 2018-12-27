@@ -170,10 +170,6 @@ static void test_poa_augment_example(CuTest *testCase) {
 
 	poa_augment(poa, read, 1, 0, matches, inserts, deletes);
 
-	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0, 0.0);
-	}
-
 	// Check POA graph is what we expect
 
 	CuAssertTrue(testCase, stList_length(poa->nodes) == 8); // Length + prefix node
@@ -288,7 +284,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	st_logInfo("Read:%s\n", read);
 	st_logInfo("Reference:%s\n", reference);
 	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0, 0.0);
+		poa_print(poa, stderr, reads, &readStrand, 0.0, 0.0);
 	}
 
 	// Check inserts
@@ -413,7 +409,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5, 5);
+			poa_print(poa, stderr, reads, readStrandArray, 5, 5);
 		}
 
 		//Cleanup
@@ -458,7 +454,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5, 0);
+			poa_print(poa, stderr, reads, readStrandArray, 5, 0);
 		}
 
 		//Cleanup
@@ -515,10 +511,15 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
 
+	// Set parameters
+	params->polishParams->maxPoaConsensusIterations = 100;
+	params->polishParams->minPoaConsensusIterations = 0;
+	params->polishParams->maxRealignmentPolishIterations = 3;
+	params->polishParams->minRealignmentPolishIterations = 3;
+
+	// Generate alignments
 	Poa *poa = poa_realign(reads, readStrandArray, NULL, rleReference->rleString, polishParams);
-
 	Poa *poaRefined = poa_realignAll(reads, readStrandArray, NULL, rleReference->rleString, polishParams);
-
 	Poa *poaTrue = poa_realign(reads, readStrandArray, NULL, rleTrueReference->rleString, polishParams);
 
 	// Run phasing
@@ -591,7 +592,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2, 0);
+		poa_print(poaRefined, stderr, reads, readStrandArray, 2, 0);
 	}
 
 	// Cleanup
@@ -623,11 +624,15 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
 
+	// Set parameters
+	params->polishParams->maxPoaConsensusIterations = 100;
+	params->polishParams->minPoaConsensusIterations = 0;
+	params->polishParams->maxRealignmentPolishIterations = 3;
+	params->polishParams->minRealignmentPolishIterations = 3;
+
+	// Generate alignment
 	Poa *poa = poa_realign(reads, readStrandArray, NULL, reference, polishParams);
 	Poa *poaRefined = poa_realignAll(reads, readStrandArray, NULL, reference, polishParams);
-			//poa_realignIterative(reads, readStrandArray, NULL, reference, polishParams);
-	//poaRefined = poa_polish(poaRefined, reads, readStrandArray, polishParams);
-	//poaRefined = poa_polish(poaRefined, reads, readStrandArray, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
@@ -657,7 +662,7 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	if (st_getLogLevel() >= debug && !stString_eq(trueReference, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2, 5);
+		poa_print(poaRefined, stderr, reads, readStrandArray, 2, 5);
 	}
 
 	// Cleanup

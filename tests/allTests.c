@@ -26,6 +26,8 @@ int marginPhaseTests(void) {
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
 
+	//CuSuiteAddSuite(suite, polisherTestSuite());
+
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
 	CuSuiteDetails(suite, output);

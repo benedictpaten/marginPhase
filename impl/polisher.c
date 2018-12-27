@@ -728,23 +728,52 @@ double poa_getTotalErrorWeight(Poa *poa)  {
 	return poa_getDeleteTotalWeight(poa) + poa_getInsertTotalWeight(poa) + poa_getReferenceNodeTotalDisagreementWeight(poa);
 }
 
-void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold, float strandBalanceRatio) {
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *reads,
+											 bool *readStrandArray, double *totalWeight) {
+	/*
+	 * Calculate strand specific base weights.
+	 */
+	*totalWeight = 0.0;
+	double *baseWeights = st_calloc(SYMBOL_NUMBER*2, sizeof(double));
+	for(int64_t i=0; i<stList_length(node->observations); i++) {
+		PoaBaseObservation *baseObs = stList_get(node->observations, i);
+		*totalWeight += baseObs->weight;
+		char *read = stList_get(reads, baseObs->readNo);
+		char base = read[baseObs->offset];
+		bool strand = readStrandArray[baseObs->readNo];
+		baseWeights[symbol_convertCharToSymbol(base) * 2 + (strand ? 1 : 0)] += baseObs->weight;
+	}
+
+	return baseWeights;
+}
+
+
+void poa_print(Poa *poa, FILE *fH,
+		stList *reads, bool *readStrandArray,
+		float indelSignificanceThreshold, float strandBalanceRatio) {
 	// Print info for each base in reference in turn
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
 		fprintf(fH, "%" PRIi64 "\t%c", i, node->base);
 
-		// Bases
-		double totalWeight = 0.0;
+		// Calculate strand specific base weights
+		double totalWeight;
+		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, reads, readStrandArray, &totalWeight);
+
 		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-			totalWeight += node->baseWeights[j];
-		}
-		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-			if(node->baseWeights[j]/totalWeight > 0.25) {
-				fprintf(fH, "\t%c:%f (%f)", symbol_convertSymbolToChar(j), (float)node->baseWeights[j]/PAIR_ALIGNMENT_PROB_1, node->baseWeights[j]/totalWeight);
+			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
+			double negativeStrandBaseWeight = baseWeights[j*2 + 0];
+			double totalBaseWeight = positiveStrandBaseWeight + negativeStrandBaseWeight;
+
+			if(totalBaseWeight/totalWeight > 0.25) {
+				fprintf(fH, "\t%c:%f (%f) +str:%f, -str:%f,", symbol_convertSymbolToChar(j),
+						(float)node->baseWeights[j]/PAIR_ALIGNMENT_PROB_1, node->baseWeights[j]/totalWeight,
+						positiveStrandBaseWeight/PAIR_ALIGNMENT_PROB_1, negativeStrandBaseWeight/PAIR_ALIGNMENT_PROB_1);
 			}
 		}
 		fprintf(fH, "\tTotal-weight:%f\n", (float)totalWeight/PAIR_ALIGNMENT_PROB_1);
+
+		free(baseWeights);
 
 		// Inserts
 		for(int64_t j=0; j<stList_length(node->inserts); j++) {

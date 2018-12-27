@@ -836,7 +836,9 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *
 /*
  * Prints representation of the POA.
  */
-void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold, float strandBalanceRatio);
+void poa_print(Poa *poa, FILE *fH,
+			   stList *reads, bool *readStrandArrqy,
+			   float indelSignificanceThreshold, float strandBalanceRatio);
 
 /*
  * Prints some summary stats on the POA.
@@ -892,6 +894,9 @@ Poa *poa_realignAll(stList *reads, bool *readStrands, stList *anchorAlignments, 
 Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, bool *readStrandArray, PolishParams *polishParams);
 
 void poa_destruct(Poa *poa);
+
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *reads,
+											 bool *readStrandArray, double *totalWeight);
 
 /*
  * Finds shift, expressed as a reference coordinate, that the given substring str can
