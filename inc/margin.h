@@ -726,8 +726,10 @@ void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 struct _polishParams {
 	bool useRunLengthEncoding;
 	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
-	double minPosteriorProbForAlignmentAnchor; // used by by poa_getAnchorAlignments to determine which alignment pairs
-	// to use for alignment anchors during poa_realignIterative
+	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
+	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
+	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
+	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
 	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
 	StateMachine *sM; // Statemachine derived from the hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning

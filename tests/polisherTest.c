@@ -624,8 +624,9 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	PolishParams *polishParams = params->polishParams;
 
 	Poa *poa = poa_realign(reads, readStrandArray, NULL, reference, polishParams);
-	Poa *poaRefined = poa_realignIterative(reads, readStrandArray, NULL, reference, polishParams);
-	poaRefined = poa_polish(poaRefined, reads, readStrandArray, polishParams);
+	Poa *poaRefined = poa_realignAll(reads, readStrandArray, NULL, reference, polishParams);
+			//poa_realignIterative(reads, readStrandArray, NULL, reference, polishParams);
+	//poaRefined = poa_polish(poaRefined, reads, readStrandArray, polishParams);
 	//poaRefined = poa_polish(poaRefined, reads, readStrandArray, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
@@ -846,7 +847,15 @@ void test_polishParams(CuTest *testCase) {
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
 	CuAssertDblEquals(testCase, polishParams->referenceBasePenalty, 0.5, 0);
-	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchor, 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchorsLength, 6, 0);
+
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[0], 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[1], 10, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[2], 0.95, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[3], 4, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[4], 0.99, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[5], 0, 0);
+
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
