@@ -1336,7 +1336,7 @@ void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
 		stList *meaAlignment = getShiftedMEAAlignment(reference, read, anchorAlignment, params->polishParams->p, params->polishParams->sM, 1, 1, &alignmentScore);
 		for(int64_t i=0; i<stList_length(meaAlignment); i++) {
 			stIntTuple *aPair = stList_get(meaAlignment, i);
-			stList_append(anchorAlignment, stIntTuple_construct2(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2)));
+			stList_append(anchorAlignment, stIntTuple_construct3(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2), params->polishParams->p->diagonalExpansion));
 		}
 		stList_destruct(meaAlignment);
 
