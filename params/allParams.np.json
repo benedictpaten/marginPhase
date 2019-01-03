@@ -6,7 +6,7 @@
 		  		"transitions": [ 
 		  			0.900000, 0.050000, 0.050000, 
 		  			0.500000, 0.500000, 0.000000, 
-		  			0.500000, 0.000000, 0.500000 
+		  			0.500000, 0.000000, 0.500000, 
 		  		],
 		  		
 		  		"emissions": [
@@ -37,21 +37,21 @@
 		
 		  "referenceBasePenalty" : 0.5,
 		  
-		  "minPosteriorProbForAlignmentAnchor" : 0.9,
+		  "minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
 		  
-		  "candidateVariantWeight" : 0.2,
+		  "candidateVariantWeight" : 0.18,
 		  
 		  "columnAnchorTrim" : 5,
 		  
 		  "maxConsensusStrings" : 100,
 		  
-		  "maxPoaConsensusIterations" : 0, 
+		  "maxPoaConsensusIterations" : 100, 
 		  
 		  "minPoaConsensusIterations" : 0,
 			
-		  "maxRealignmentPolishIterations" : 1,
-			
-		  "minRealignmentPolishIterations" : 1, 
+		  "maxRealignmentPolishIterations" : 3,
+		
+		  "minRealignmentPolishIterations" : 3, 
 		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
@@ -63,6 +63,7 @@
 			    "repeatMaskMatrixBiggerThanThis" : 250000,
 			    "splitMatrixBiggerThanThis" : 250000,
 			    "alignAmbiguityCharacters" : false,
+			    "dynamicAnchorExpansion" : true,
 			    "gapGamma" : 0.5
 		  },
 		  

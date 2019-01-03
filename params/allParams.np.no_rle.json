@@ -37,7 +37,7 @@
 
 		"referenceBasePenalty" : 0.5,
 
-		"minPosteriorProbForAlignmentAnchor" : 0.9,
+		"minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
 
 		"pairwiseAlignmentParameters" : {
 			"threshold" : 0.01,

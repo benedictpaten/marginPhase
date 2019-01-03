@@ -838,7 +838,10 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	// Intelligent defaults
 	params->useRunLengthEncoding = 1;
 	params->referenceBasePenalty = 0.5;
-	params->minPosteriorProbForAlignmentAnchor = 0.9;
+	params->minPosteriorProbForAlignmentAnchors = st_calloc(2, sizeof(double));
+	params->minPosteriorProbForAlignmentAnchors[0] = 0.9;
+	params->minPosteriorProbForAlignmentAnchors[0] = 10;
+	params->minPosteriorProbForAlignmentAnchorsLength = 2;
     params->includeSoftClipping = FALSE; //todo add this in
     params->chunkSize = 0;
     params->chunkBoundary = 0;
@@ -859,8 +862,26 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         else if (strcmp(keyString, "referenceBasePenalty") == 0) {
         	params->referenceBasePenalty = stJson_parseFloat(js, tokens, ++tokenIndex);
         }
-        else if (strcmp(keyString, "minPosteriorProbForAlignmentAnchor") == 0) {
-        	params->minPosteriorProbForAlignmentAnchor = stJson_parseFloat(js, tokens, ++tokenIndex);
+        else if (strcmp(keyString, "minPosteriorProbForAlignmentAnchors") == 0) {
+        	free(params->minPosteriorProbForAlignmentAnchors); //Cleanup the old one
+        	int64_t arraySize = tokens[tokenIndex+1].size;
+        	if(arraySize % 2 != 0 && arraySize > 0) {
+        		st_errAbort("ERROR: length of minPosteriorProbForAlignmentAnchors must be even and greater than zero\n");
+        	}
+        	params->minPosteriorProbForAlignmentAnchors = st_calloc(arraySize, sizeof(double));
+        	params->minPosteriorProbForAlignmentAnchorsLength = arraySize;
+        	tokenIndex = stJson_parseFloatArray(params->minPosteriorProbForAlignmentAnchors,
+        			 	 	 	 	 	 	 	 arraySize, js, tokens, ++tokenIndex);
+        	double pValue = 0.0;
+        	for(int64_t i=0; i<params->minPosteriorProbForAlignmentAnchorsLength; i+=2) {
+        		if(params->minPosteriorProbForAlignmentAnchors[i] < pValue || params->minPosteriorProbForAlignmentAnchors[i] > 1) {
+        			st_errAbort("ERROR: minPosteriorProbForAlignmentAnchors must be even, greater than zero and increasing\n");
+        		}
+        		pValue = params->minPosteriorProbForAlignmentAnchors[i];
+        		if(params->minPosteriorProbForAlignmentAnchors[i+1] < 0 || ((int64_t)params->minPosteriorProbForAlignmentAnchors[i+1]) % 2 != 0) {
+        			st_errAbort("ERROR: minPosteriorProbForAlignmentAnchors diagonal expansion must be, greater than zero and even\n");
+        		}
+        	}
         }
         else if (strcmp(keyString, "repeatCountSubstitutionMatrix") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];

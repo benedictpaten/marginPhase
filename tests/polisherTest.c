@@ -468,7 +468,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 	}
 }
 
-double calcSequenceMatches(char *seq1, char *seq2) {
+int64_t calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
 	fclose(fh);
@@ -478,7 +478,7 @@ double calcSequenceMatches(char *seq1, char *seq2) {
 	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
 	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, 0.0);
 
-	double matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
+	int64_t matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
 
 	// Cleanup
 	params_destruct(params);
@@ -609,7 +609,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	//stList_destruct(reads2);
 }
 
-static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *reads,
+static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *bamChunkReads,
 		AlignmentMetrics *alignmentMetrics) {
 
 	FILE *fh = fopen(polishParamsFile, "r");
@@ -617,9 +617,10 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
 
-	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, polishParams);
-	poaRefined = poa_polish(poaRefined, reads, polishParams);
+	Poa *poa = poa_realign(bamChunkReads, NULL, reference, polishParams);
+	Poa *poaRefined = poa_realignIterative(bamChunkReads, NULL, reference, polishParams);
+//	poaRefined = poa_polish(poaRefined, bamChunkReads, polishParams);
+//	poaRefined = poa_polish(poaRefined, bamChunkReads, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
@@ -839,7 +840,15 @@ void test_polishParams(CuTest *testCase) {
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
 	CuAssertDblEquals(testCase, polishParams->referenceBasePenalty, 0.5, 0);
-	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchor, 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchorsLength, 6, 0);
+
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[0], 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[1], 10, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[2], 0.95, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[3], 4, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[4], 0.99, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[5], 0, 0);
+
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);

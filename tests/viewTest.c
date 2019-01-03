@@ -124,15 +124,130 @@ char *getString(char *string, bool rle) {
 }
 
 void test_viewExamples(CuTest *testCase) {
-    char *path=TEST_POLISH_FILES_DIR"largeExamples";
-    int64_t exampleNo = 1;
-    bool rle = 1;
+//<<<<<<< HEAD
+//    char *path=TEST_POLISH_FILES_DIR"largeExamples";
+//    int64_t exampleNo = 1;
+//    bool rle = 1;
+//
+//    for(int64_t example=0; example<exampleNo; example++) {
+//        char *readFile = stString_print("%s/%i.fasta", path, (int)example);
+//        char *trueRefFile = stString_print("%s/%i.ref.fasta", path, (int)example);
+//
+//        st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
+//
+//        // Parse reads & reference
+//        struct List *r = readSequences((char *)readFile);
+//        assert(r->length > 1);
+//        RleString *rleReference = rleString_construct(r->list[0]);
+//        char *reference = getString(r->list[0], rle);
+//        stList *nucleotides = stList_construct3(0, free);
+//        stList *bamChunkReads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
+//        stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
+//        // TODO: Get examples with strands specified
+//        for(int64_t i=1; i<r->length; i++) {
+//            bool forwardStrand = TRUE;
+//            char *nucl = getString(r->list[i], rle);
+//            BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(nucl),forwardStrand,NULL);
+//            stList_append(nucleotides, nucl);
+//            stList_append(bamChunkReads, bcr);
+//            stList_append(rleReads, rleString_construct(r->list[i]));
+//        }
+//        destructList(r);
+//
+//        // Parse reference
+//        struct List *trueReferenceList = readSequences((char *)trueRefFile);
+//        assert(trueReferenceList->length == 1);
+//        char *trueReference = getString(trueReferenceList->list[0], rle);
+//        RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
+//        destructList(trueReferenceList);
+//
+//        // Polish params
+//        FILE *fh = fopen(polishParamsFile, "r");
+//        Params *params = params_readParams(fh);
+//        fclose(fh);
+//
+//        // Generate alignment
+//        //Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
+//        Poa *poa = poa_realignIterative(bamChunkReads, NULL, reference, params->polishParams);
+//        Poa *poa2 = poa_polish(poa, bamChunkReads, params->polishParams);
+//        poa_destruct(poa);
+//        poa = poa2;
+//
+//        // Generate final MEA read alignments to POA
+//        stList *alignments = poa_getReadAlignmentsToConsensus(poa, bamChunkReads, params->polishParams);
+//
+//        // Make seq names
+//        stList *seqNames = stList_construct3(0, free);
+//        for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
+//            stList_append(seqNames, stString_print("SEQ:%i", (int)i));
+//        }
+//        stList_append(seqNames, stString_print("TRUE_REF"));
+//
+//        // Get an alignment between the inferred reference and the true reference and add it
+//
+//        double alignmentScore;
+//        stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
+//                                                               params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
+//
+//        stList_append(alignments, refToTrueRefAlignment);
+//        stList_append(nucleotides, trueReference);
+//        stList_append(rleReads, rleTrueReference);
+//
+//        // Print alignment
+//        MsaView *view = msaView_construct(poa->refString, NULL,
+//                                          alignments, nucleotides, seqNames);
+//
+//        if (st_getLogLevel() >= debug) {
+//            msaView_print(view, 2, stderr);
+//
+//            if(rle) {
+//                // Expand the RLE string
+//                RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, bamChunkReads,
+//                        params->polishParams->repeatSubMatrix);
+//                CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+//
+//                msaView_printRepeatCounts(view, 1,
+//                                          rleConsensusString, rleReads, stderr);
+//
+//                rleString_destruct(rleConsensusString);
+//            }
+//        }
+//
+//        int64_t indelLength = 0;
+//        for(int64_t i=0; i<view->refLength; i++) {
+//            indelLength += msaView_getMaxPrecedingInsertLength(view, i);
+//        }
+//
+//        st_logInfo("Got %i indels\n", (int)indelLength);
+//
+//        // Simple stats
+//        double totalMatches = calcSequenceMatches(poa->refString, trueReference);
+//        st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
+//
+//        // Cleanup
+//        rleString_destruct(rleReference);
+//        stList_destruct(rleReads);
+//        free(readFile);
+//        free(trueRefFile);
+//        stList_destruct(nucleotides);
+//        stList_destruct(bamChunkReads);
+//        free(reference);
+//        stList_destruct(alignments);
+//        poa_destruct(poa);
+//        stList_destruct(seqNames);
+//        msaView_destruct(view);
+//        params_destruct(params);
+//    }
+//=======
+	char *path=TEST_POLISH_FILES_DIR"largeExamples";
+	int64_t exampleNo = 1;
+	bool rle = 1;
 
-    for(int64_t example=0; example<exampleNo; example++) {
-        char *readFile = stString_print("%s/%i.fasta", path, (int)example);
-        char *trueRefFile = stString_print("%s/%i.ref.fasta", path, (int)example);
+	for(int64_t example=0; example<exampleNo; example++) {
+		char *readFile = stString_print("%s/%i.fasta", path, (int)example);
+		char *trueRefFile = stString_print("%s/%i.ref.fasta", path, (int)example);
 
-        st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
+		st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
 
         // Parse reads & reference
         struct List *r = readSequences((char *)readFile);
@@ -153,90 +268,91 @@ void test_viewExamples(CuTest *testCase) {
         }
         destructList(r);
 
-        // Parse reference
-        struct List *trueReferenceList = readSequences((char *)trueRefFile);
-        assert(trueReferenceList->length == 1);
-        char *trueReference = getString(trueReferenceList->list[0], rle);
-        RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
-        destructList(trueReferenceList);
+		// Parse reference
+		struct List *trueReferenceList = readSequences((char *)trueRefFile);
+		assert(trueReferenceList->length == 1);
+		char *trueReference = getString(trueReferenceList->list[0], rle);
+		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
+		destructList(trueReferenceList);
 
-        // Polish params
-        FILE *fh = fopen(polishParamsFile, "r");
-        Params *params = params_readParams(fh);
-        fclose(fh);
+		// Polish params
+		FILE *fh = fopen(polishParamsFile, "r");
+		Params *params = params_readParams(fh);
+		fclose(fh);
 
-        // Generate alignment
-        //Poa *poa = poa_realign(reads, NULL, trueReference, polishParams);
-        Poa *poa = poa_realignIterative(bamChunkReads, NULL, reference, params->polishParams);
-        Poa *poa2 = poa_polish(poa, bamChunkReads, params->polishParams);
-        poa_destruct(poa);
-        poa = poa2;
+		// Generate alignment
+		Poa *poa = poa_realignAll(bamChunkReads, NULL, reference, params->polishParams);
+		//Poa *poa = poa_realign(bamChunkReads, NULL, trueReference, polishParams);
+		//Poa *poa = poa_realignIterative(bamChunkReads, NULL, reference, params->polishParams);
+		//Poa *poa2 = poa_polish(poa, bamChunkReads, params->polishParams);
+		//poa_destruct(poa);
+		//poa = poa2;
 
-        // Generate final MEA read alignments to POA
-        stList *alignments = poa_getReadAlignmentsToConsensus(poa, bamChunkReads, params->polishParams);
+		// Generate final MEA read alignments to POA
+		stList *alignments = poa_getReadAlignmentsToConsensus(poa, bamChunkReads, params->polishParams);
 
-        // Make seq names
-        stList *seqNames = stList_construct3(0, free);
-        for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
-            stList_append(seqNames, stString_print("SEQ:%i", (int)i));
-        }
-        stList_append(seqNames, stString_print("TRUE_REF"));
+		// Make seq names
+		stList *seqNames = stList_construct3(0, free);
+		for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
+			stList_append(seqNames, stString_print("SEQ:%i", (int)i));
+		}
+		stList_append(seqNames, stString_print("TRUE_REF"));
 
-        // Get an alignment between the inferred reference and the true reference and add it
+		// Get an alignment between the inferred reference and the true reference and add it
 
-        double alignmentScore;
-        stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
-                                                               params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
+		double alignmentScore;
+		stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
+															   params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
 
-        stList_append(alignments, refToTrueRefAlignment);
-        stList_append(nucleotides, trueReference);
-        stList_append(rleReads, rleTrueReference);
+		stList_append(alignments, refToTrueRefAlignment);
+		stList_append(nucleotides, trueReference);
+		stList_append(rleReads, rleTrueReference);
 
-        // Print alignment
-        MsaView *view = msaView_construct(poa->refString, NULL,
-                                          alignments, nucleotides, seqNames);
+		// Print alignment
+		//TODO msaView_construct takes in nucleotides, not BCRs
+		MsaView *view = msaView_construct(poa->refString, NULL,
+								   	      alignments, nucleotides, seqNames);
 
-        if (st_getLogLevel() >= debug) {
-            msaView_print(view, 2, stderr);
+		if (st_getLogLevel() >= debug) {
+			msaView_print(view, 2, stderr);
 
-            if(rle) {
-                // Expand the RLE string
-                RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, bamChunkReads,
-                        params->polishParams->repeatSubMatrix);
-                CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+			if(rle) {
+				// Expand the RLE string
+				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, bamChunkReads, params->polishParams->repeatSubMatrix);
+				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
-                msaView_printRepeatCounts(view, 1,
-                                          rleConsensusString, rleReads, stderr);
+				msaView_printRepeatCounts(view, 1,
+						rleConsensusString, rleReads, stderr);
 
-                rleString_destruct(rleConsensusString);
-            }
-        }
+				rleString_destruct(rleConsensusString);
+			}
+		}
 
-        int64_t indelLength = 0;
-        for(int64_t i=0; i<view->refLength; i++) {
-            indelLength += msaView_getMaxPrecedingInsertLength(view, i);
-        }
+		int64_t indelLength = 0;
+		for(int64_t i=0; i<view->refLength; i++) {
+			indelLength += msaView_getMaxPrecedingInsertLength(view, i);
+		}
 
-        st_logInfo("Got %i indels\n", (int)indelLength);
+		st_logInfo("Got %i indels\n", (int)indelLength);
 
-        // Simple stats
-        double totalMatches = calcSequenceMatches(poa->refString, trueReference);
-        st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
+		// Simple stats
+		double totalMatches = calcSequenceMatches(poa->refString, trueReference);
+		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
 
-        // Cleanup
-        rleString_destruct(rleReference);
-        stList_destruct(rleReads);
-        free(readFile);
-        free(trueRefFile);
-        stList_destruct(nucleotides);
-        stList_destruct(bamChunkReads);
-        free(reference);
-        stList_destruct(alignments);
-        poa_destruct(poa);
-        stList_destruct(seqNames);
-        msaView_destruct(view);
-        params_destruct(params);
-    }
+		// Cleanup
+		rleString_destruct(rleReference);
+		stList_destruct(rleReads);
+		free(readFile);
+		free(trueRefFile);
+		stList_destruct(bamChunkReads);
+		free(reference);
+		stList_destruct(alignments);
+		poa_destruct(poa);
+		stList_destruct(seqNames);
+		msaView_destruct(view);
+		params_destruct(params);
+	}
+//>>>>>>> 30e466b3bd7c48c97cc0f22dd8e8bd01b431d9db
 }
 
 CuSuite* viewTestSuite(void) {
