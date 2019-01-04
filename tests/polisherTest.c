@@ -559,20 +559,20 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	// Log some stuff
 	if (st_getLogLevel() >= info) {
-		st_logInfo("Reference:\t\t%s\n", rleReference->rleString);
-		st_logInfo("True-reference:\t\t%s\n", rleTrueReference->rleString);
-		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
+		st_logInfo("Reference:      \t\t%s\n", rleReference->rleString);
+		st_logInfo("True-reference: \t\t%s\n", rleTrueReference->rleString);
+		st_logInfo("Consensus:      \t\t%s\n", poaRefined->refString);
 		//st_logInfo("Consensus Reads1:\t%s\n", poaReads1->refString);
 		//st_logInfo("Consensus Reads2:\t%s\n", poaReads2->refString);
-		st_logInfo("Reference stats\t");
+		st_logInfo("Reference stats:     \t");
 		poa_printSummaryStats(poa, stderr);
-		st_logInfo("Consensus stats\t");
+		st_logInfo("Consensus stats:     \t");
 		poa_printSummaryStats(poaRefined, stderr);
 		//st_logInfo("Reads 1 stats\t");
 		//poa_printSummaryStats(poaReads1, stderr);
 		//st_logInfo("Reads 2 stats\t");
 		//poa_printSummaryStats(poaReads2, stderr);
-		st_logInfo("True-reference stats\t");
+		st_logInfo("True-reference stats:\t");
 		poa_printSummaryStats(poaTrue, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(rleTrueReference->length + strlen(poaRefined->refString)));
 		//st_logInfo("Reads 1 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads1/(rleTrueReference->length + strlen(poaReads1->refString)));
@@ -580,11 +580,11 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(rleTrueReference->length + rleReference->length));
 		//st_logInfo("Total reads: %i, # reads partition1: %i, # reads partition2: %i\n", (int)stList_length(reads), (int)stList_length(reads1), (int)stList_length(reads2));
 		// Non-RLE stats
-		st_logInfo("Non-RLE Reference:\t\t%s\n", reference);
+		st_logInfo("Non-RLE Reference:     \t\t%s\n", reference);
 		st_logInfo("Non-RLE True-reference:\t\t%s\n", trueReference);
-		st_logInfo("Non-RLE Consensus:\t\t%s\n", nonRLEConsensusString);
+		st_logInfo("Non-RLE Consensus:     \t\t%s\n", nonRLEConsensusString);
 		st_logInfo("Non-RLE Consensus : true-ref identity: %f\n", 2.0*nonRLEConsensusMatches/(strlen(trueReference) + strlen(nonRLEConsensusString)));
-		st_logInfo("Non-RLE Start-ref : true-ref identity: %f\n", 2.0*nonRLEReferenceMatches/(strlen(trueReference) + strlen(reference)));
+		st_logInfo("Non-RLE Start-ref : true-ref identity: %f\n\n", 2.0*nonRLEReferenceMatches/(strlen(trueReference) + strlen(reference)));
 	}
 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
@@ -637,15 +637,15 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	// Log some stuff
 	if (st_getLogLevel() >= info) {
-		st_logInfo("Reference:\t\t%s\n", reference);
+		st_logInfo("Reference:     \t\t%s\n", reference);
 		st_logInfo("True-reference:\t\t%s\n", trueReference);
-		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
+		st_logInfo("Consensus:     \t\t%s\n", poaRefined->refString);
 		st_logInfo("Reference stats\t");
 		poa_printSummaryStats(poa, stderr);
 		st_logInfo("Consensus stats\t");
 		poa_printSummaryStats(poaRefined, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(strlen(trueReference) + strlen(poaRefined->refString)));
-		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(strlen(trueReference) + strlen(reference)));
+		st_logInfo("Start-ref : true-ref identity: %f\n\n", 2.0*referenceMatches/(strlen(trueReference) + strlen(reference)));
 	}
 
 	if (st_getLogLevel() >= debug && !stString_eq(trueReference, poaRefined->refString)) {
@@ -680,7 +680,7 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		const char *readFile = examples[example*2];
 		const char *trueRefFile = examples[example*2+1];
 
-		st_logInfo("Doing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
+		st_logInfo("\nDoing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
 
 		// Parse sequences
 		struct List *readHeaders;
@@ -1001,11 +1001,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_example2);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example2);
     SUITE_ADD_TEST(suite, test_poa_realign);
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
@@ -1015,18 +1010,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_polishParams);
     SUITE_ADD_TEST(suite, test_removeOverlapExample);
     SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
-
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
 
     SUITE_ADD_TEST(suite, test_polish5kb_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_rle);
