@@ -330,7 +330,7 @@ int main(int argc, char *argv[]) {
     // Parse reads for interval
     st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
     stList *profileSequences = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-    int64_t readCount = NULL;
+    int64_t readCount = 0;
     if (singleNucleotideProbabilityDirectory == NULL) {
         readCount = parseReads(profileSequences, bamInFile, baseMapper, params);
     } else {
