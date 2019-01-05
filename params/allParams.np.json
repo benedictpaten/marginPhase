@@ -60,8 +60,8 @@
 			    "diagonalExpansion" : 10,
 			    "constraintDiagonalTrim" : 0,
 			    "anchorMatrixBiggerThanThis" : 250000,
-			    "repeatMaskMatrixBiggerThanThis" : 250000,
-			    "splitMatrixBiggerThanThis" : 250000,
+			    "repeatMaskMatrixBiggerThanThis" : 250000000,
+			    "splitMatrixBiggerThanThis" : 250000000,
 			    "alignAmbiguityCharacters" : false,
 			    "dynamicAnchorExpansion" : true,
 			    "gapGamma" : 0.5
