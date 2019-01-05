@@ -45,13 +45,13 @@
 		  
 		  "maxConsensusStrings" : 100,
 		  
-		  "maxPoaConsensusIterations" : 100, 
+		  "maxPoaConsensusIterations" : 0, 
 		  
 		  "minPoaConsensusIterations" : 0,
 			
-		  "maxRealignmentPolishIterations" : 3,
+		  "maxRealignmentPolishIterations" : 2,
 		
-		  "minRealignmentPolishIterations" : 3, 
+		  "minRealignmentPolishIterations" : 2, 
 		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,

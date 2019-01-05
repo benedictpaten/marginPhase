@@ -220,6 +220,15 @@ int main(int argc, char *argv[]) {
 			RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
 
+			// Log info about the POA
+			if (st_getLogLevel() >= info) {
+				st_logInfo("Summary stats for POA:\t");
+				poa_printSummaryStats(poa, stderr);
+			}
+			if (st_getLogLevel() >= debug) {
+				poa_print(poa, stderr, rleReads, 5, 5);
+			}
+
 			// Now cleanup run-length stuff
 			stList_destruct(rleNucleotides);
 			stList_destruct(rleReads);
@@ -235,15 +244,15 @@ int main(int argc, char *argv[]) {
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
-		}
-
-		// Log info about the POA
-		if (st_getLogLevel() >= info) {
-			st_logInfo("Summary stats for POA:\t");
-			poa_printSummaryStats(poa, stderr);
-		}
-		if (st_getLogLevel() >= debug) {
-			poa_print(poa, stderr, 5, 5);
+		
+			// Log info about the POA
+			if (st_getLogLevel() >= info) {
+				st_logInfo("Summary stats for POA:\t");
+				poa_printSummaryStats(poa, stderr);
+			}
+			if (st_getLogLevel() >= debug) {
+				poa_print(poa, stderr, reads, 5, 5);
+			}
 		}
 
 		// If there is no prior chunk
