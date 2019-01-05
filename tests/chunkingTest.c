@@ -848,11 +848,6 @@ static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
 CuSuite* chunkingTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    char *cmd = stString_print("samtools index %s", INPUT_BAM);
-    st_logInfo("> Running command: %s\n", cmd);
-    st_system(cmd);
-    free(cmd);
-
     SUITE_ADD_TEST(suite, test_getRegionChunker);
     SUITE_ADD_TEST(suite, test_getChunksByChrom);
     SUITE_ADD_TEST(suite, test_getChunksBy100kb);

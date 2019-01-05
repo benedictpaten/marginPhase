@@ -12,7 +12,6 @@ Makefile
 vcfCompare
 marginPhase.cbp
 libjsmn.a
-*.bai
 venv
 s3am
 *.pyc

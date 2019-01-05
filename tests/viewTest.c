@@ -7,7 +7,7 @@
 #include "CuTest.h"
 #include "margin.h"
 
-double calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
+int64_t calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
 
 static char *polishParamsFile = "../params/allParams.np.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
@@ -222,7 +222,7 @@ void test_viewExamples(CuTest *testCase) {
 		st_logInfo("Got %i indels\n", (int)indelLength);
 
 		// Simple stats
-		double totalMatches = calcSequenceMatches(poa->refString, trueReference);
+        int64_t totalMatches = calcSequenceMatches(poa->refString, trueReference);
 		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
 
 		// Cleanup
