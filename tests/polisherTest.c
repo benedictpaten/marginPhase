@@ -861,8 +861,8 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 10, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
 
