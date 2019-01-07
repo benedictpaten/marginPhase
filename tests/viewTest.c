@@ -207,8 +207,8 @@ void test_viewExamples(CuTest *testCase) {
 				RleString *rleConsensusString = expandRLEConsensus(poa, rleReads, bamChunkReads, params->polishParams->repeatSubMatrix);
 				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
 
-				msaView_printRepeatCounts(view, 1,
-						rleConsensusString, rleReads, stderr);
+				//msaView_printRepeatCounts(view, 1,
+				//		rleConsensusString, rleReads, stderr);
 
 				rleString_destruct(rleConsensusString);
 			}

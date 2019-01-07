@@ -1857,15 +1857,24 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 		// Get read substrings
 		stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, from, to);
 
-		st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
-				stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
+		if(st_getLogLevel() >= debug) {
+			st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
+						stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
+			for(int64_t i=0; i<stList_length(readSubstrings); i++) {
+				st_logDebug("\tGot read substring: %s\n", stList_get(readSubstrings, i));
+			}
+		}
 
 		// Assess likelihood of each remaining substring in turn,
 		// keeping the most probable
 		double maxLogProb = computeLogLikelihoodOfConsensusString(consensusSubstring, readSubstrings, params);
+
+		st_logDebug("\tFor consensus-string %s got log-prob: %f\n", consensusSubstring, maxLogProb);
+
 		while(stList_length(consensusSubstrings) > 0) {
 			char *c = stList_pop(consensusSubstrings);
 			double logProb = computeLogLikelihoodOfConsensusString(c, readSubstrings, params);
+			st_logDebug("\tFor consensus-string %s got log-prob: %f\n", c, logProb);
 			if(logProb > maxLogProb) {
 				maxLogProb = logProb;
 				free(consensusSubstring);
