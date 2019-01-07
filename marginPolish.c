@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:h", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -122,9 +122,9 @@ int main(int argc, char *argv[]) {
     // Parse reference as map of header string to nucleotide sequences
     st_logInfo("> Parsing reference sequences from file: %s\n", referenceFastaFile);
     fh = fopen(referenceFastaFile, "r");
-    stHash *referenceSequences = fastaReadToMap(fh);
+    stHash *referenceSequences = fastaReadToMap(fh);  //valgrind says blocks from this allocation are "still reachable"
     fclose(fh);
-    // log names and provide transform
+    // log names and transform (if necessary)
     stList *refSeqNames = stHash_getKeys(referenceSequences);
     int64_t origRefSeqLen = stList_length(refSeqNames);
     st_logDebug("\tReference contigs: \n");
@@ -133,6 +133,8 @@ int main(int argc, char *argv[]) {
         st_logDebug("\t\t%s\n", fullRefSeqName);
         char refSeqName[128] = "";
         if (sscanf(fullRefSeqName, "%s", refSeqName) == 1 && !stString_eq(fullRefSeqName, refSeqName)) {
+            // this transformation is necessary for cases where the reference has metadata after the contig name:
+            // >contig001 length=1000 date=1999-12-31
             char *newKey = stString_copy(refSeqName);
             char *refSeq = stHash_search(referenceSequences, fullRefSeqName);
             stHash_insert(referenceSequences, newKey, refSeq);
@@ -180,8 +182,6 @@ int main(int argc, char *argv[]) {
 		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
-        // TODO: remove
-//		bool *readStrandArray = st_calloc(stList_length(reads), sizeof(bool));
 
 		Poa *poa = NULL; // The poa alignment
 		char *polishedReferenceString = NULL; // The polished reference string
@@ -210,8 +210,8 @@ int main(int argc, char *argv[]) {
 				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
 			}
 
-			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
+			// Generate partial order alignment (POA) (destroys rleAlignments in the process)
+			poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
 
 			// Now optionally do phasing and haplotype specific polishing
 
@@ -222,6 +222,15 @@ int main(int argc, char *argv[]) {
 			// Do run-length decoding
 			RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads, params->polishParams->repeatSubMatrix);
 			polishedReferenceString = rleString_expand(polishedRLEReference);
+
+			// Log info about the POA
+			if (st_getLogLevel() >= info) {
+				st_logInfo("Summary stats for POA:\t");
+				poa_printSummaryStats(poa, stderr);
+			}
+			if (st_getLogLevel() >= debug) {
+				poa_print(poa, stderr, rleReads, 5, 5);
+			}
 
 			// Now cleanup run-length stuff
 			stList_destruct(rleNucleotides);
@@ -234,19 +243,19 @@ int main(int argc, char *argv[]) {
 			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
 			// Generate partial order alignment (POA)
-			poa = poa_realignIterative(reads, alignments, referenceString, params->polishParams);
+			poa = poa_realignAll(reads, alignments, referenceString, params->polishParams);
 
 			// Polished string is the final backbone of the POA
 			polishedReferenceString = stString_copy(poa->refString);
-		}
-
-		// Log info about the POA
-		if (st_getLogLevel() >= info) {
-			st_logInfo("Summary stats for POA:\t");
-			poa_printSummaryStats(poa, stderr);
-		}
-		if (st_getLogLevel() >= debug) {
-			poa_print(poa, stderr, 5, 5);
+		
+			// Log info about the POA
+			if (st_getLogLevel() >= info) {
+				st_logInfo("Summary stats for POA:\t");
+				poa_printSummaryStats(poa, stderr);
+			}
+			if (st_getLogLevel() >= debug) {
+				poa_print(poa, stderr, reads, 5, 5);
+			}
 		}
 
 		// If there is no prior chunk
@@ -316,12 +325,11 @@ int main(int argc, char *argv[]) {
     	stList_destruct(polishedReferenceStrings);
     	free(referenceSequenceName);
     }
-
-    st_logInfo("> Finished polishing.\n");
+    fclose(polishedReferenceOutFh);
 
     // Cleanup
+    st_logInfo("> Finished polishing.\n");
     bamChunker_destruct(bamChunker);
-    fclose(polishedReferenceOutFh);
     stHash_destruct(referenceSequences);
     params_destruct(params);
 

@@ -6,14 +6,14 @@
 		  		"transitions": [ 
 		  			0.900000, 0.050000, 0.050000, 
 		  			0.500000, 0.500000, 0.000000, 
-		  			0.500000, 0.000000, 0.500000 
+		  			0.500000, 0.000000, 0.500000, 
 		  		],
 		  		
 		  		"emissions": [
-		  			0.980000, 0.006667, 0.006667, 0.006667, 
-		  			0.006667, 0.980000, 0.006667, 0.006667, 
-		  			0.006667, 0.006667, 0.980000, 0.006667, 
-		  			0.006667, 0.006667, 0.006667, 0.980000, 
+		  			0.8, 0.066666, 0.066666, 0.066666,
+		  			0.066666, 0.8, 0.066666, 0.066666,
+		  			0.066666, 0.066666, 0.8, 0.066666,
+		  			0.066666, 0.066666, 0.066666, 0.8, 
 		  			
 		  			0.025000, 0.025000, 0.025000, 0.025000, 
 		  			0.025000, 0.025000, 0.025000, 0.025000, 
@@ -31,24 +31,39 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 500000,
+		  "chunkSize" : 100000,
 		
 		  "chunkBoundary" : 50,
 		
 		  "referenceBasePenalty" : 0.5,
 		  
-		  "minPosteriorProbForAlignmentAnchor" : 0.9,
+		  "minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
+		  
+		  "candidateVariantWeight" : 0.18,
+		  
+		  "columnAnchorTrim" : 5,
+		  
+		  "maxConsensusStrings" : 100,
+		  
+		  "maxPoaConsensusIterations" : 0, 
+		  
+		  "minPoaConsensusIterations" : 0,
+			
+		  "maxRealignmentPolishIterations" : 2,
+		
+		  "minRealignmentPolishIterations" : 2, 
 		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,
 			    "traceBackDiagonals" : 40,
-			    "diagonalExpansion" : 6,
+			    "diagonalExpansion" : 10,
 			    "constraintDiagonalTrim" : 0,
 			    "anchorMatrixBiggerThanThis" : 250000,
-			    "repeatMaskMatrixBiggerThanThis" : 250000,
-			    "splitMatrixBiggerThanThis" : 250000,
+			    "repeatMaskMatrixBiggerThanThis" : 250000000,
+			    "splitMatrixBiggerThanThis" : 250000000,
 			    "alignAmbiguityCharacters" : false,
+			    "dynamicAnchorExpansion" : true,
 			    "gapGamma" : 0.5
 		  },
 		  

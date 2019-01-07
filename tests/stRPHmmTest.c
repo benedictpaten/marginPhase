@@ -221,7 +221,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
      */
 
     // Print info about test parameters
-    fprintf(stderr, " System test parameters:\n"
+    fprintf(stderr, "\nstRPHMMTest:\n"
+                    " System test parameters:\n"
             "\tminReferenceSequenceNumber: %" PRIi64 "\n"
             "\tmaxReferenceSequenceNumber: %" PRIi64 "\n"
             "\tminReferenceLength: %" PRIi64 "\n"
@@ -1316,8 +1317,10 @@ void test_stProfileSeq_constructFromPosteriorProbs_example(CuTest *testCase) {
 }
 
 void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
-	for(int64_t test=0; test<100; test++) {
-		st_logInfo("Starting test iteration: #%" PRIi64 "\n", test);
+    int64_t testIterations = 100;
+    st_logInfo("Starting test with %" PRIi64 "iterations\n", testIterations);
+    for(int64_t test=0; test<testIterations; test++) {
+		st_logInfo(" Starting test iteration: #%" PRIi64 "\n", test);
 
 		//Make true reference
 		char *reference = getRandomSequence(st_randomInt(1, 100));
@@ -1336,7 +1339,7 @@ void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
 		stList *meaAlignment = getShiftedMEAAlignment(reference, read, anchorAlignment, params->polishParams->p, params->polishParams->sM, 1, 1, &alignmentScore);
 		for(int64_t i=0; i<stList_length(meaAlignment); i++) {
 			stIntTuple *aPair = stList_get(meaAlignment, i);
-			stList_append(anchorAlignment, stIntTuple_construct2(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2)));
+			stList_append(anchorAlignment, stIntTuple_construct3(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2), params->polishParams->p->diagonalExpansion));
 		}
 		stList_destruct(meaAlignment);
 
@@ -1385,6 +1388,7 @@ CuSuite *stRPHmmTestSuite(void) {
 
     // Test method for creating posterior probs of reference matches
     SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs_example);
+
     SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs);
 
     return suite;

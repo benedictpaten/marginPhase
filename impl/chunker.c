@@ -21,8 +21,13 @@ int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t
     // specific chunk size
     int64_t chunkCount = 0;
     for (int64_t i = contigStartPos; i < contigEndPos; i += chunkSize) {
-        BamChunk *chunk = bamChunk_construct2(contig, (chunkMargin > i ? 0 : i - chunkMargin), i, i + chunkSize,
-                                              i + chunkSize + chunkMargin, parent);
+        int64_t chunkEndPos = i + chunkSize;
+        chunkEndPos = (chunkEndPos > contigEndPos ? contigEndPos : chunkEndPos);
+        int64_t chunkMarginEndPos = chunkEndPos + chunkMargin;
+        chunkMarginEndPos = (chunkMarginEndPos > contigEndPos ? contigEndPos : chunkMarginEndPos);
+
+        BamChunk *chunk = bamChunk_construct2(contig, (chunkMargin > i ? 0 : i - chunkMargin), i, chunkEndPos,
+                                              chunkMarginEndPos, parent);
         stList_append(dest, chunk);
         chunkCount++;
     }
@@ -123,6 +128,7 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
             contigEndPos = readEndPos > contigEndPos ? readEndPos : contigEndPos;
         } else {
             // new contig (this should never happen if we're filtering by region)
+            assert(!filterByRegion);
             int64_t savedChunkCount = saveContigChunks(chunker->chunks, chunker, currentContig,
                                                        contigStartPos, contigEndPos, chunkSize, chunkBoundary);
             chunker->chunkCount += savedChunkCount;

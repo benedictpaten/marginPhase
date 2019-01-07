@@ -18,13 +18,18 @@ Notes:
 
 
 # Script for munging repeat counts
-f = open("./base_matrices_2018_11_21_9_22_43_358477.fasta", 'r')
+f = open("./frequency_matrices_ecoli_guppy_directional.csv", 'r')
 l = f.readlines()
 f2 = open("./subMatrix.txt", 'w')
 for i in xrange(0, 16, 2):
 	f2.write('"repeatCountLogProbabilities_%s" : [ \n' % l[i][1:-1])
-	f2.write("\t" + ", ".join(l[i+1].split()) + "\n")
+	f2.write("\t" + ", ".join([ "%.5f" % float(z) for z in l[i+1].split() ]) + "\n")
 	f2.write("],\n")
+	print "boo", len(l[i+1].split())
+
+f2.close()
+f.close()
+
 
 # Script for renaming ryan's example files
 import os

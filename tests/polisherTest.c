@@ -171,10 +171,6 @@ static void test_poa_augment_example(CuTest *testCase) {
 
 	poa_augment(poa, read, 1, 0, matches, inserts, deletes);
 
-	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0, 0.0);
-	}
-
 	// Check POA graph is what we expect
 
 	CuAssertTrue(testCase, stList_length(poa->nodes) == 8); // Length + prefix node
@@ -290,7 +286,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	st_logInfo("Read:%s\n", read);
 	st_logInfo("Reference:%s\n", reference);
 	if (st_getLogLevel() >= info) {
-		poa_print(poa, stderr, 0.0, 0.0);
+		poa_print(poa, stderr, reads, 0.0, 0.0);
 	}
 
 	// Check inserts
@@ -414,7 +410,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5, 5);
+			poa_print(poa, stderr, reads, 5, 5);
 		}
 
 		//Cleanup
@@ -456,7 +452,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 
 		st_logInfo("True-reference:%s\n", trueReference);
 		if (st_getLogLevel() >= info) {
-			poa_print(poa, stderr, 5, 0);
+			poa_print(poa, stderr, reads, 5, 0);
 		}
 
 		//Cleanup
@@ -468,7 +464,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 	}
 }
 
-double calcSequenceMatches(char *seq1, char *seq2) {
+int64_t calcSequenceMatches(char *seq1, char *seq2) {
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
 	fclose(fh);
@@ -478,7 +474,7 @@ double calcSequenceMatches(char *seq1, char *seq2) {
 	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
 	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, 0.0);
 
-	double matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
+	int64_t matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
 
 	// Cleanup
 	params_destruct(params);
@@ -513,11 +509,15 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	Params *params = params_readParams(fh);
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
+	
+	// Set parameters
+	params->polishParams->maxPoaConsensusIterations = 100;
+	params->polishParams->minPoaConsensusIterations = 0;
+	params->polishParams->maxRealignmentPolishIterations = 3;
+	params->polishParams->minRealignmentPolishIterations = 3;
 
 	Poa *poa = poa_realign(reads, NULL, rleReference->rleString, polishParams);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, polishParams);
-
-	//poaRefined = poa_checkMajorIndelEditsGreedily(poaRefined, reads, sM, p);
+	Poa *poaRefined = poa_realignAll(reads, NULL, rleReference->rleString, polishParams);
 
 	Poa *poaTrue = poa_realign(reads, NULL, rleTrueReference->rleString, polishParams);
 
@@ -561,20 +561,20 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 	// Log some stuff
 	if (st_getLogLevel() >= info) {
-		st_logInfo("Reference:\t\t%s\n", rleReference->rleString);
-		st_logInfo("True-reference:\t\t%s\n", rleTrueReference->rleString);
-		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
+		st_logInfo("Reference:      \t\t%s\n", rleReference->rleString);
+		st_logInfo("True-reference: \t\t%s\n", rleTrueReference->rleString);
+		st_logInfo("Consensus:      \t\t%s\n", poaRefined->refString);
 		//st_logInfo("Consensus Reads1:\t%s\n", poaReads1->refString);
 		//st_logInfo("Consensus Reads2:\t%s\n", poaReads2->refString);
-		st_logInfo("Reference stats\t");
+		st_logInfo("Reference stats:     \t");
 		poa_printSummaryStats(poa, stderr);
-		st_logInfo("Consensus stats\t");
+		st_logInfo("Consensus stats:     \t");
 		poa_printSummaryStats(poaRefined, stderr);
 		//st_logInfo("Reads 1 stats\t");
 		//poa_printSummaryStats(poaReads1, stderr);
 		//st_logInfo("Reads 2 stats\t");
 		//poa_printSummaryStats(poaReads2, stderr);
-		st_logInfo("True-reference stats\t");
+		st_logInfo("True-reference stats:\t");
 		poa_printSummaryStats(poaTrue, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(rleTrueReference->length + strlen(poaRefined->refString)));
 		//st_logInfo("Reads 1 consensus : true-ref identity: %f\n", 2.0*consensusMatchesReads1/(rleTrueReference->length + strlen(poaReads1->refString)));
@@ -582,16 +582,16 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(rleTrueReference->length + rleReference->length));
 		//st_logInfo("Total reads: %i, # reads partition1: %i, # reads partition2: %i\n", (int)stList_length(reads), (int)stList_length(reads1), (int)stList_length(reads2));
 		// Non-RLE stats
-		st_logInfo("Non-RLE Reference:\t\t%s\n", reference);
+		st_logInfo("Non-RLE Reference:     \t\t%s\n", reference);
 		st_logInfo("Non-RLE True-reference:\t\t%s\n", trueReference);
-		st_logInfo("Non-RLE Consensus:\t\t%s\n", nonRLEConsensusString);
+		st_logInfo("Non-RLE Consensus:     \t\t%s\n", nonRLEConsensusString);
 		st_logInfo("Non-RLE Consensus : true-ref identity: %f\n", 2.0*nonRLEConsensusMatches/(strlen(trueReference) + strlen(nonRLEConsensusString)));
-		st_logInfo("Non-RLE Start-ref : true-ref identity: %f\n", 2.0*nonRLEReferenceMatches/(strlen(trueReference) + strlen(reference)));
+		st_logInfo("Non-RLE Start-ref : true-ref identity: %f\n\n", 2.0*nonRLEReferenceMatches/(strlen(trueReference) + strlen(reference)));
 	}
 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2, 0);
+		poa_print(poaRefined, stderr, reads, 2, 0);
 	}
 
 	// Cleanup
@@ -611,16 +611,22 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	//stList_destruct(reads2);
 }
 
-static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *reads,
+static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *bamChunkReads,
 		AlignmentMetrics *alignmentMetrics) {
 
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
+	
+	// Set parameters
+	params->polishParams->maxPoaConsensusIterations = 100;
+	params->polishParams->minPoaConsensusIterations = 0;
+	params->polishParams->maxRealignmentPolishIterations = 3;
+	params->polishParams->minRealignmentPolishIterations = 3;
 
-	Poa *poa = poa_realign(reads, NULL, reference, polishParams);
-	Poa *poaRefined = poa_realignIterative(reads, NULL, reference, polishParams);
+	Poa *poa = poa_realign(bamChunkReads, NULL, reference, polishParams);
+	Poa *poaRefined = poa_realignIterative(bamChunkReads, NULL, reference, polishParams);
 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
@@ -637,20 +643,20 @@ static void test_poa_realign_example(CuTest *testCase, char *trueReference, char
 
 	// Log some stuff
 	if (st_getLogLevel() >= info) {
-		st_logInfo("Reference:\t\t%s\n", reference);
+		st_logInfo("Reference:     \t\t%s\n", reference);
 		st_logInfo("True-reference:\t\t%s\n", trueReference);
-		st_logInfo("Consensus:\t\t%s\n", poaRefined->refString);
+		st_logInfo("Consensus:     \t\t%s\n", poaRefined->refString);
 		st_logInfo("Reference stats\t");
 		poa_printSummaryStats(poa, stderr);
 		st_logInfo("Consensus stats\t");
 		poa_printSummaryStats(poaRefined, stderr);
 		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(strlen(trueReference) + strlen(poaRefined->refString)));
-		st_logInfo("Start-ref : true-ref identity: %f\n", 2.0*referenceMatches/(strlen(trueReference) + strlen(reference)));
+		st_logInfo("Start-ref : true-ref identity: %f\n\n", 2.0*referenceMatches/(strlen(trueReference) + strlen(reference)));
 	}
 
 	if (st_getLogLevel() >= debug && !stString_eq(trueReference, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, 2, 5);
+		poa_print(poaRefined, stderr, bamChunkReads, 2, 5);
 	}
 
 	// Cleanup
@@ -680,7 +686,7 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		const char *readFile = examples[example*2];
 		const char *trueRefFile = examples[example*2+1];
 
-		st_logInfo("Doing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
+		st_logInfo("\nDoing polish test with %s read files and %s true ref file\n", readFile, trueRefFile);
 
 		// Parse sequences
 		struct List *readHeaders;
@@ -840,15 +846,23 @@ void test_polishParams(CuTest *testCase) {
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
 	CuAssertDblEquals(testCase, polishParams->referenceBasePenalty, 0.5, 0);
-	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchor, 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchorsLength, 6, 0);
+
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[0], 0.9, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[1], 10, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[2], 0.95, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[3], 4, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[4], 0.99, 0);
+	CuAssertDblEquals(testCase, polishParams->minPosteriorProbForAlignmentAnchors[5], 0, 0);
+
 	CuAssertDblEquals(testCase, polishParams->p->threshold, 0.01, 0);
 	CuAssertDblEquals(testCase, polishParams->p->minDiagsBetweenTraceBack, 10000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
-	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 6, 0);
+	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 10, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
 	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000000, 0);
+	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);
 
@@ -880,11 +894,11 @@ void test_removeOverlapExample(CuTest *testCase) {
 
 	// Run overlap remover
 	int64_t prefixStringCropEnd, suffixStringCropStart;
-	removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
-				  &prefixStringCropEnd, &suffixStringCropStart);
+	double overlapWeight = removeOverlap(prefixString, suffixString, approxOverlap, polishParams,
+				  	  	  &prefixStringCropEnd, &suffixStringCropStart);
 
-	CuAssertIntEquals(testCase, 5, prefixStringCropEnd);
-	CuAssertIntEquals(testCase, 1, suffixStringCropStart);
+	CuAssertIntEquals(testCase, 7, prefixStringCropEnd);
+	CuAssertIntEquals(testCase, 3, suffixStringCropStart);
 
 	// Cleanup
 	params_destruct(params);
@@ -926,11 +940,6 @@ void test_removeOverlap_RandomExamples(CuTest *testCase) {
 }
 
 int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
-	// Ensure bai exists
-	char *indexCommand = stString_print("samtools index %s", bamFile);
-	st_logInfo("> Running command: %s\n", indexCommand);
-	st_system(indexCommand);
-	free(indexCommand);
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
@@ -993,11 +1002,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_example2);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example1);
-//    SUITE_ADD_TEST(suite, test_poa_realign_rle_example2);
     SUITE_ADD_TEST(suite, test_poa_realign);
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
@@ -1007,18 +1011,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_polishParams);
     SUITE_ADD_TEST(suite, test_removeOverlapExample);
     SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
-
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_messy_examples_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_large_rle);
-//
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_no_rle);
-//    SUITE_ADD_TEST(suite, test_poa_realign_examples_long_rle);
 
     SUITE_ADD_TEST(suite, test_polish5kb_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_rle);

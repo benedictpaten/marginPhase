@@ -515,6 +515,7 @@ struct _stGenomeFragment {
     // each between 0 and 1, for the corresponding genotypes
     // in the genotype string
     float *genotypeProbs;
+    float **genotypeLikelihoods;
 
     // Strings representing the predicted haplotypes, where each element is an alphabet character
     // index in [0, ALPHABET_SIZE)
@@ -571,7 +572,7 @@ void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
 
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
 
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value);
+char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value);
 
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
@@ -725,8 +726,10 @@ void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 struct _polishParams {
 	bool useRunLengthEncoding;
 	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
-	double minPosteriorProbForAlignmentAnchor; // used by by poa_getAnchorAlignments to determine which alignment pairs
-	// to use for alignment anchors during poa_realignIterative
+	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
+	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
+	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
+	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
 	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
 	StateMachine *sM; // Statemachine derived from the hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
@@ -735,7 +738,13 @@ struct _polishParams {
 	bool includeSoftClipping;
 	uint64_t chunkSize;
 	uint64_t chunkBoundary;
-
+	double candidateVariantWeight; // The fraction (from 0 to 1) of the average position coverage needed to define a candidate variant
+	uint64_t columnAnchorTrim; // The min distance between a column anchor and a candidate variant
+	uint64_t maxConsensusStrings; // The maximum number of different consensus strings to consider for a substring.
+	uint64_t maxPoaConsensusIterations; // Maximum number of poa_consensus / realignment iterations
+	uint64_t minPoaConsensusIterations; // Minimum number of poa_consensus / realignment iterations
+	uint64_t maxRealignmentPolishIterations; // Maximum number of poa_polish iterations
+	uint64_t minRealignmentPolishIterations; // Minimum number of poa_polish iterations
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -805,7 +814,7 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
+Poa *poa_realign(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -821,12 +830,14 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
  * Generates a set of maximal expected alignments for the reads aligned to the the POA reference sequence.
  * Unlike the draft anchor alignments, these are designed to be complete, high quality alignments.
  */
-stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *reads, PolishParams *polishParams);
+stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, PolishParams *polishParams);
 
 /*
  * Prints representation of the POA.
  */
-void poa_print(Poa *poa, FILE *fH, float indelSignificanceThreshold, float strandBalanceRatio);
+void poa_print(Poa *poa, FILE *fH,
+			  stList *bamChunkReads,
+			  float indelSignificanceThreshold, float strandBalanceRatio);
 
 /*
  * Prints some summary stats on the POA.
@@ -841,18 +852,49 @@ void poa_printSummaryStats(Poa *poa, FILE *fH);
  */
 char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
+Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params);
+
+char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
+				  int64_t **poaToConsensusMap);
+
 /*
  * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
  * for the given reads and the starting reference.
  */
-Poa *poa_realignIterative(stList *reads, stList *alignments, char *reference, PolishParams *polishParams);
+Poa *poa_realignIterative(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
+
+/*
+ * Ad poa_realignIterative, but allows the specification of the min and max number of realignment cycles,
+ * also, can switch between the "poa_polish" and the "poa_consensus" algorithm using hmmNotRealign (poa_consensus
+ * if non-zero).
+ */
+Poa *poa_realignIterative2(stList *bamChunkReads,
+						   stList *anchorAlignments, char *reference,
+						   PolishParams *polishParams, bool hmmNotRealign,
+						   int64_t minIterations, int64_t maxIterations);
+
+/*
+ * As poa_realignIterative, but takes a starting poa. Input poa is destroyed by function.
+ */
+Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
+						   PolishParams *polishParams, bool hmmMNotRealign,
+						   int64_t minIterations, int64_t maxIterations);
+
+/*
+ * Convenience function that iteratively polishes sequence using poa_consensus and then poa_polish for
+ * a specified number of iterations.
+ */
+Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *reference,
+						  PolishParams *polishParams);
 
 /*
  * Greedily evaluate the top scoring indels.
  */
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *reads, PolishParams *polishParams);
+Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishParams *polishParams);
 
 void poa_destruct(Poa *poa);
+
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads, double *totalWeight);
 
 /*
  * Finds shift, expressed as a reference coordinate, that the given substring str can
@@ -914,6 +956,7 @@ char *rleString_expand(RleString *rleString);
 struct _repeatSubMatrix {
 	double *logProbabilities;
 	int64_t maximumRepeatLength;
+	int64_t maxEntry;
 };
 
 /*

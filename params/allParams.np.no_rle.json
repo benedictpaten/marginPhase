@@ -1,56 +1,56 @@
 {
 	"polish": {
-		  "hmm" : {
-		  		"type" : 2, 
-		  		
-		  		"transitions": [ 
-		  			0.900000, 0.050000, 0.050000, 
-		  			0.500000, 0.500000, 0.000000, 
-		  			0.500000, 0.000000, 0.500000 
-		  		],
-		  		
-		  		"emissions": [
-		  			0.980000, 0.006667, 0.006667, 0.006667, 
-		  			0.006667, 0.980000, 0.006667, 0.006667, 
-		  			0.006667, 0.006667, 0.980000, 0.006667, 
-		  			0.006667, 0.006667, 0.006667, 0.980000, 	
-		  			
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000, 
-		  			0.025000, 0.025000, 0.025000, 0.025000	
-		  		]
-		  },
-		
-		  "useRunLengthEncoding" : false,
-		
-		  "includeSoftClipping" : false,
-		
-		  "chunkSize" : 10000,
-		
-		  "chunkBoundary" : 50,
-		
-		  "referenceBasePenalty" : 0.5,
-		  
-		  "minPosteriorProbForAlignmentAnchor" : 0.9,
-		  
-		  "pairwiseAlignmentParameters" : {
-			    "threshold" : 0.01,
-			    "minDiagsBetweenTraceBack" : 10000,
-			    "traceBackDiagonals" : 40,
-			    "diagonalExpansion" : 10,
-			    "constraintDiagonalTrim" : 0,
-			    "anchorMatrixBiggerThanThis" : 250000,
-			    "repeatMaskMatrixBiggerThanThis" : 250000,
-			    "splitMatrixBiggerThanThis" : 250000,
-			    "alignAmbiguityCharacters" : false,
-			    "gapGamma" : 0.5
-		  },
+		"hmm" : {
+			"type" : 2,
+
+			"transitions": [
+				0.900000, 0.050000, 0.050000,
+				0.500000, 0.500000, 0.000000,
+				0.500000, 0.000000, 0.500000
+			],
+
+			"emissions": [
+				0.980000, 0.006667, 0.006667, 0.006667,
+				0.006667, 0.980000, 0.006667, 0.006667,
+				0.006667, 0.006667, 0.980000, 0.006667,
+				0.006667, 0.006667, 0.006667, 0.980000,
+
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000,
+
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000,
+				0.025000, 0.025000, 0.025000, 0.025000
+			]
+		},
+
+		"useRunLengthEncoding" : false,
+
+		"includeSoftClipping" : false,
+
+		"chunkSize" : 10000,
+
+		"chunkBoundary" : 50,
+
+		"referenceBasePenalty" : 0.5,
+
+		"minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
+
+		"pairwiseAlignmentParameters" : {
+			"threshold" : 0.01,
+			"minDiagsBetweenTraceBack" : 10000,
+			"traceBackDiagonals" : 40,
+			"diagonalExpansion" : 10,
+			"constraintDiagonalTrim" : 0,
+			"anchorMatrixBiggerThanThis" : 250000,
+			"repeatMaskMatrixBiggerThanThis" : 250000,
+			"splitMatrixBiggerThanThis" : 250000,
+			"alignAmbiguityCharacters" : false,
+			"gapGamma" : 0.5
+		},
 
 		"repeatCountSubstitutionMatrix" : {
 			"repeatCountLogProbabilities_A_R" : [

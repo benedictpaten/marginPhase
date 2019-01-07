@@ -23,6 +23,13 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
     gF->referenceSequence = st_calloc(gF->length, sizeof(uint8_t));
 
+    // Keep track of all potential genotype likelihoods for each spot
+    // TODO reduce this size?
+    gF->genotypeLikelihoods = st_calloc(gF->length, sizeof(float*));
+    for(int64_t i = 0; i < gF->length; i++) {
+        gF->genotypeLikelihoods[i] = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(float));
+    }
+
     // Allocate depth and count arrays
     gF->hap1Depth = st_calloc(gF->length, sizeof(uint8_t));
     gF->hap2Depth = st_calloc(gF->length, sizeof(uint8_t));
@@ -202,6 +209,10 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Genotypes
     free(genomeFragment->genotypeString);
     free(genomeFragment->genotypeProbs);
+    for(int64_t i = 0; i < genomeFragment->length; i++) {
+        free(genomeFragment->genotypeLikelihoods[i]);
+    }
+    free(genomeFragment->genotypeLikelihoods);
 
     // Haplotypes
     free(genomeFragment->haplotypeString1);

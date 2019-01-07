@@ -391,13 +391,13 @@ uint64_t getMLHapChar(double *characterProbsHap,
     /*
      * Return the haplotype character with maximum probability.
      */
-    int64_t maxProbHapChar = 0;
+    uint64_t maxProbHapChar = 0;
 
     double maxHapProb = characterProbsHap[0] +
                         *getSubstitutionProbSlow(params->hetSubModelSlow,
                                                  rootChar, 0);
 
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
+    for(uint64_t i=1; i<ALPHABET_SIZE; i++) {
         double hapProb = characterProbsHap[i] +
                          *getSubstitutionProbSlow(params->hetSubModelSlow,
                                                   rootChar, i);
@@ -500,10 +500,12 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
     gF->haplotypeString2[j] = hapChar2;
 
     // Calculate haplotype probabilities
-    gF->haplotypeProbs1[j] = exp(getHaplotypeProb(characterProbsHap1[hapChar1],
-                                                  hapChar1, rootCharacterProbsHap2, params, rProbs) - logColumnProbSum);
-    gF->haplotypeProbs2[j] = exp(getHaplotypeProb(characterProbsHap2[hapChar2],
-                                                  hapChar2, rootCharacterProbsHap1, params, rProbs) - logColumnProbSum);
+    gF->haplotypeProbs1[j] = (float) exp(getHaplotypeProb(characterProbsHap1[hapChar1],
+                                                          hapChar1, rootCharacterProbsHap2, params, rProbs)
+                                         - logColumnProbSum);
+    gF->haplotypeProbs2[j] = (float) exp(getHaplotypeProb(characterProbsHap2[hapChar2],
+                                                          hapChar2, rootCharacterProbsHap1, params, rProbs)
+                                         - logColumnProbSum);
 
     // Get combined genotype
     gF->genotypeString[j] = hapChar1 < hapChar2 ? hapChar1 * ALPHABET_SIZE + hapChar2 :
@@ -518,10 +520,28 @@ void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
                                      *getSubstitutionProbSlow(params->hetSubModelSlow, i, hapChar2) +
                                      invertScaleToLogIntegerSubMatrix(rProbs[i]));
     }
-    gF->genotypeProbs[j] = exp(genotypeProb - logColumnProbSum);
+    gF->genotypeProbs[j] = (float) exp(genotypeProb - logColumnProbSum);
+
+    // Fill in genotype likelihoods array
+    for (int64_t c1=0; c1<ALPHABET_SIZE; c1++) {
+        for (int64_t c2=0; c2<ALPHABET_SIZE; c2++) {
+            double genotypeProbability = ST_MATH_LOG_ZERO;
+            for (int64_t i=0; i<ALPHABET_SIZE; i++) {
+                genotypeProbability = stMath_logAdd(genotypeProbability,
+                                                   characterProbsHap1[c1] + characterProbsHap2[c2] +
+                                                   *getSubstitutionProbSlow(params->hetSubModelSlow, i, c1) +
+                                                   *getSubstitutionProbSlow(params->hetSubModelSlow, i, c2) +
+                                                   invertScaleToLogIntegerSubMatrix(rProbs[i]));
+            }
+            float genotypeLikelihood = -10 * log10f((float) exp(genotypeProbability - logColumnProbSum));
+            if (genotypeLikelihood > 1000) genotypeLikelihood = 1000;
+            if (genotypeLikelihood <= 0) genotypeLikelihood = 0;
+            gF->genotypeLikelihoods[j][c1*ALPHABET_SIZE+c2] = genotypeLikelihood;
+        }
+    }
 
     // Update reference sequence and read depth info
-    gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
+     gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
     gF->hap1Depth[j] = getReadDepth(bitCountVectors, column->depth, partition, index);
     gF->hap2Depth[j] = getReadDepth(bitCountVectors, column->depth, ~partition, index);
     gF->alleleCountsHap1[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, partition, index, hapChar1) / ALPHABET_MAX_PROB;
@@ -550,7 +570,7 @@ void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
 
     assert(column->length > 0);
 
-    for(int64_t i=0; i<column->length; i++) {
+    for(uint64_t i=0; i<column->length; i++) {
         fillInPredictedGenomePosition(gF, partition, column, params,
                                       referencePriorProbs, bitCountVectors, i);
     }

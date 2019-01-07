@@ -68,7 +68,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
 /*
  * Given the numeric value for a base, return the char.
  */
-char stBaseMapper_getCharForValue(stBaseMapper *bm, int value) {
+char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value) {
     char base = bm->numToChar[value];
     if (base >= 0) return base;
     st_errAbort("Value '%d' not specified in alphabet", value);
@@ -778,7 +778,7 @@ int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end
  */
 
 int64_t repeatSubMatrix_parseLogProbabilities(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, char *js, jsmntok_t *tokens, int64_t tokenIndex) {
-	int64_t maxRepeatCount = 51;
+	int64_t maxRepeatCount = repeatSubMatrix->maximumRepeatLength;
 	int64_t i = stJson_parseFloatArray(repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, 0, 0), maxRepeatCount*maxRepeatCount, js, tokens, tokenIndex);
 	return i;
 }
@@ -827,10 +827,16 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	// Intelligent defaults
 	params->useRunLengthEncoding = 1;
 	params->referenceBasePenalty = 0.5;
-	params->minPosteriorProbForAlignmentAnchor = 0.9;
+	params->minPosteriorProbForAlignmentAnchors = st_calloc(2, sizeof(double));
+	params->minPosteriorProbForAlignmentAnchors[0] = 0.9;
+	params->minPosteriorProbForAlignmentAnchors[0] = 10;
+	params->minPosteriorProbForAlignmentAnchorsLength = 2;
     params->includeSoftClipping = FALSE; //todo add this in
     params->chunkSize = 0;
     params->chunkBoundary = 0;
+    params->candidateVariantWeight = 0.2;
+    params->columnAnchorTrim = 5;
+    params->maxConsensusStrings = 100;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
@@ -845,8 +851,26 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         else if (strcmp(keyString, "referenceBasePenalty") == 0) {
         	params->referenceBasePenalty = stJson_parseFloat(js, tokens, ++tokenIndex);
         }
-        else if (strcmp(keyString, "minPosteriorProbForAlignmentAnchor") == 0) {
-        	params->minPosteriorProbForAlignmentAnchor = stJson_parseFloat(js, tokens, ++tokenIndex);
+        else if (strcmp(keyString, "minPosteriorProbForAlignmentAnchors") == 0) {
+        	free(params->minPosteriorProbForAlignmentAnchors); //Cleanup the old one
+        	int64_t arraySize = tokens[tokenIndex+1].size;
+        	if(arraySize % 2 != 0 && arraySize > 0) {
+        		st_errAbort("ERROR: length of minPosteriorProbForAlignmentAnchors must be even and greater than zero\n");
+        	}
+        	params->minPosteriorProbForAlignmentAnchors = st_calloc(arraySize, sizeof(double));
+        	params->minPosteriorProbForAlignmentAnchorsLength = arraySize;
+        	tokenIndex = stJson_parseFloatArray(params->minPosteriorProbForAlignmentAnchors,
+        			 	 	 	 	 	 	 	 arraySize, js, tokens, ++tokenIndex);
+        	double pValue = 0.0;
+        	for(int64_t i=0; i<params->minPosteriorProbForAlignmentAnchorsLength; i+=2) {
+        		if(params->minPosteriorProbForAlignmentAnchors[i] < pValue || params->minPosteriorProbForAlignmentAnchors[i] > 1) {
+        			st_errAbort("ERROR: minPosteriorProbForAlignmentAnchors must be even, greater than zero and increasing\n");
+        		}
+        		pValue = params->minPosteriorProbForAlignmentAnchors[i];
+        		if(params->minPosteriorProbForAlignmentAnchors[i+1] < 0 || ((int64_t)params->minPosteriorProbForAlignmentAnchors[i+1]) % 2 != 0) {
+        			st_errAbort("ERROR: minPosteriorProbForAlignmentAnchors diagonal expansion must be, greater than zero and even\n");
+        		}
+        	}
         }
         else if (strcmp(keyString, "repeatCountSubstitutionMatrix") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
@@ -873,22 +897,58 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
         }
-
         else if (strcmp(keyString, "includeSoftClipping") == 0) {
             params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
         }
         else if (strcmp(keyString, "chunkSize") == 0) {
             if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-                st_errAbort("ERROR: chunkSize parameter must be positive\n");
+                st_errAbort("ERROR: chunkSize parameter must zero or greater\n");
             }
             params->chunkSize = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else if (strcmp(keyString, "chunkBoundary") == 0) {
             if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
-                st_errAbort("ERROR: chunkBoundary parameter must be positive\n");
+                st_errAbort("ERROR: chunkBoundary parameter must zero or greater\n");
             }
             params->chunkBoundary = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
+        else if (strcmp(keyString, "candidateVariantWeight") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: candidateVariantWeight parameter must zero or greater\n");
+			}
+			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: columnAnchorTrim parameter must zero or greater\n");
+			}
+			params->columnAnchorTrim = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "maxConsensusStrings") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxConsensusStrings parameter must zero or greater\n");
+			}
+			params->maxConsensusStrings = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
+		else if (strcmp(keyString, "maxPoaConsensusIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxPoaConsensusIterations parameter must zero or greater\n");
+			}
+			params->maxPoaConsensusIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "minPoaConsensusIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minPoaConsensusIterations parameter must zero or greater\n");
+			}
+			params->minPoaConsensusIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "maxRealignmentPolishIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: maxRealignmentPolishIterations parameter must zero or greater\n");
+			}
+			params->maxRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "minRealignmentPolishIterations") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minRealignmentPolishIterations parameter must zero or greater\n");
+			}
+			params->minRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
@@ -1016,5 +1076,3 @@ void params_printParameters(Params *params, FILE *fh) {
 	fprintf(fh, "Phase parameters:\n");
 	stRPHmmParameters_printParameters(params->phaseParams, fh);
 }
-
-
