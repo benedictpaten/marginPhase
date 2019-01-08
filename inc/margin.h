@@ -1055,6 +1055,7 @@ typedef struct _bamChunkRead {
 	char *readName;          	// read name
 	char *nucleotides;			// nucleotide string
 	int64_t readLength;
+	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length readLength
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
 	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
@@ -1070,7 +1071,7 @@ BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int6
 void bamChunk_destruct(BamChunk *bamChunk);
 
 BamChunkRead *bamChunkRead_construct();
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool forwardStrand, BamChunk *parent);
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, BamChunk *parent);
 BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 

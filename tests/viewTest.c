@@ -146,7 +146,8 @@ void test_viewExamples(CuTest *testCase) {
         for(int64_t i=1; i<r->length; i++) {
             bool forwardStrand = TRUE;
             char *nucl = getString(r->list[i], rle);
-            BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(nucl),forwardStrand,NULL);
+            BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(nucl),
+                    NULL, forwardStrand, NULL);
             stList_append(nucleotides, nucl);
             stList_append(bamChunkReads, bcr);
             stList_append(rleReads, rleString_construct(r->list[i]));

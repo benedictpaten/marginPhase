@@ -1345,7 +1345,7 @@ stList *runLengthEncodeAlignment(stList *alignment,
 		int64_t y2 = seqY->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 1)];
 
 		if(x2 > x && y2 > y) {
-			stList_append(rleAlignment, stIntTuple_construct3(x2, y2, 10));
+			stList_append(rleAlignment, stIntTuple_construct3(x2, y2, stIntTuple_get(alignedPair, 2)));
 			x = x2; y = y2;
 		}
 	}

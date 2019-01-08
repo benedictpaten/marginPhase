@@ -76,6 +76,76 @@ static void test_getChunksBy100kb(CuTest *testCase) {
     bamChunker_destruct(chunker);
 }
 
+static void test_getQualityScores(CuTest *testCase) {
+    BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(10000, 0, FALSE));
+
+    // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
+    BamChunk *chunk = NULL;
+    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+        // margin testing is on contig_2
+        if (!stString_eq(chunk->refSeqName, "contig_2")) continue;
+
+        // see how many reads there are
+        stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
+        stList *alignments = stList_construct3(0, (void (*)(void*))stList_destruct);
+        uint32_t readCount = convertToReadsAndAlignments(chunk, reads, alignments);
+        CuAssertTrue(testCase, readCount == stList_length(reads));
+        CuAssertTrue(testCase, readCount == 9);
+
+        for (int64_t i = 0; i < 9; i++) {
+            BamChunkRead *read = stList_get(reads, i);
+            switch (i) {
+                case 0:
+                    CuAssertTrue(testCase, read->qualities != NULL);
+                    for (uint8_t j = 0; j < 8; j++) {
+                        CuAssertTrue(testCase, read->qualities[j] == 15+j);
+                    }
+                    break;
+                case 1:
+                    CuAssertTrue(testCase, read->qualities != NULL);
+                    for (uint8_t j = 0; j < 8; j++) {
+                        CuAssertTrue(testCase, read->qualities[j] == 22-j);
+                    }
+                    break;
+                case 2:
+                    CuAssertTrue(testCase, read->qualities != NULL);
+                    for (uint8_t j = 0; j < 8; j++) {
+                        CuAssertTrue(testCase, read->qualities[j] == 32+j);
+                    }
+                    break;
+                case 3:
+                    CuAssertTrue(testCase, read->qualities != NULL);
+                    for (uint8_t j = 0; j < 8; j++) {
+                        CuAssertTrue(testCase, read->qualities[j] == 0);
+                    }
+                    break;
+                case 4:
+                    CuAssertTrue(testCase, read->qualities != NULL);
+                    for (uint8_t j = 0; j < 8; j++) {
+                        CuAssertTrue(testCase, read->qualities[j] == 9);
+                    }
+                    break;
+                case 5:
+                case 6:
+                case 7:
+                case 8:
+                    CuAssertTrue(testCase, read->qualities == NULL);
+                    break;
+                default:
+                    CuAssertTrue(testCase, FALSE);
+            }
+        }
+
+
+        // increment
+        stList_destruct(reads);
+        stList_destruct(alignments);
+    }
+    free(chunker->params);
+    bamChunker_destruct(chunker);
+
+}
+
 static void test_getChunksWithBoundary(CuTest *testCase) {
     BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(8, 4, FALSE));
 
@@ -851,6 +921,7 @@ CuSuite* chunkingTestSuite(void) {
     SUITE_ADD_TEST(suite, test_getRegionChunker);
     SUITE_ADD_TEST(suite, test_getChunksByChrom);
     SUITE_ADD_TEST(suite, test_getChunksBy100kb);
+    SUITE_ADD_TEST(suite, test_getQualityScores);
     SUITE_ADD_TEST(suite, test_getChunksWithBoundary);
     SUITE_ADD_TEST(suite, test_getChunksWithoutBoundary);
     SUITE_ADD_TEST(suite, test_getReadsWithSoftClipping);
