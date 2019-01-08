@@ -60,11 +60,11 @@ read_1_be	0	contig_1	410016	50	2S8M	*	0	0	AAACGTACGT	*
 read_1_be	0	contig_1	410020	50	8M	*	0	0	ACGTACGT	*
 read_1_be	0	contig_1	410020	50	2S8M2S	*	0	0	AAACGTACGTTT	*
 read_1_z	0	contig_1	2100000	50	8M	*	0	0	ACGTACGT	*
-read_2_0	0	contig_2	100000	50	8M	*	0	0	ACGTACGT	*
-read_2_1	0	contig_2	100004	50	8M	*	0	0	ACGTACGT	*
-read_2_2	0	contig_2	100008	50	8M	*	0	0	ACGTACGT	*
-read_2_3	0	contig_2	100012	50	8M	*	0	0	ACGTACGT	*
-read_2_4	0	contig_2	100016	50	8M	*	0	0	ACGTACGT	*
+read_2_0	0	contig_2	100000	50	8M	*	0	0	ACGTACGT	01234567
+read_2_1	0	contig_2	100004	50	8M	*	0	0	ACGTACGT	76543210
+read_2_2	0	contig_2	100008	50	8M	*	0	0	ACGTACGT	ABCDEFGH
+read_2_3	0	contig_2	100012	50	8M	*	0	0	ACGTACGT	!!!!!!!!
+read_2_4	0	contig_2	100016	50	8M	*	0	0	ACGTACGT	********
 read_2_5	0	contig_2	100020	50	8M	*	0	0	ACGTACGT	*
 read_2_6	0	contig_2	100024	50	8M	*	0	0	ACGTACGT	*
 read_2_7	0	contig_2	100028	50	8M	*	0	0	ACGTACGT	*
