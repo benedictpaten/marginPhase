@@ -592,6 +592,10 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
 		poa_print(poaRefined, stderr, reads, 2, 0);
+
+		poa_printTSV(poa, stderr, reads, 2, 0);
+
+		poa_printRepeatCounts(poa, stderr, rleStrings, reads);
 	}
 
 	// Cleanup
