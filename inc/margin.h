@@ -207,6 +207,20 @@ struct _stReferencePriorProbs {
     bool *referencePositionsIncluded;
 };
 
+
+stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
+
+void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
+
+stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
+
+
+int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
+
+double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
+
+
+
 /*
  * Emission probabilities methods
  */

@@ -53,21 +53,8 @@ void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartit
 void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
                     char *marginPhaseTag);
 
-
-
-stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
-
-void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
-
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
-
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
                                           stBaseMapper *baseMapper, stRPHmmParameters *params);
-
-int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
-
-double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
-
 
 #define MARGINPHASE_HTS_INTEGRATION_H
 #endif //MARGINPHASE_HTS_INTEGRATION_H

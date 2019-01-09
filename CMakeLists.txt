@@ -245,7 +245,7 @@ set(CPECAN_SOURCES
         externalTools/cPecan/tests/pairwiseAlignerTest.c
         )
 
-set(SOURCE_FILES
+set(CORE_SOURCE_FILES
         impl/callConsensus.c
         impl/chunker.c
         impl/column.c
@@ -253,15 +253,19 @@ set(SOURCE_FILES
         impl/emissions.c
         impl/genomeFragment.c
         impl/hmm.c
-        impl/htsIntegration.c
         impl/mergeColumn.c
         impl/outputWriter.c
         impl/parser.c
         impl/partitions.c
         impl/polisher.c
-        impl/view.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
+        impl/view.c
+        )
+
+
+set(SOURCE_FILES
+        impl/htsIntegration.c
         impl/vcfComparison.c
         externalTools/samtools/bedidx.c
         )
@@ -294,6 +298,30 @@ if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(FATAL_ERROR "Couldn't find the 'curl' library")
 endif()
 
+# LASTZ
+add_library(lastz ${LASTZ_SOURCES})
+target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
+
+# cPecanLastz
+add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
+        COMMAND cd ${PROJECT_SOURCE_DIR}/externalTools/sonLib && make
+        COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/cPecan/
+)
+add_custom_target(CPECANLASTZ DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
+
+# MISC
+add_library(son ${SONLIB_SOURCES})
+add_library(cpecan ${CPECAN_SOURCES})
+add_dependencies(cpecan lastz CPECANLASTZ)
+
+
+# Build MarginCore Library
+add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
+target_link_libraries(MarginCore cpecan son)
+
+
 # HTSLIB
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
@@ -308,29 +336,11 @@ add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
 target_link_libraries(hts pthread bz2 z curl)
 
-# LASTZ
-add_library(lastz ${LASTZ_SOURCES})
-target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
 
-# cPecanLastz
-add_custom_command(
-        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
-        COMMAND cd ${PROJECT_SOURCE_DIR}/externalTools/sonLib && make
-        COMMAND make
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/cPecan/
-)
-add_custom_target(CPECANLASTZ DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
+# Build MarginCore Library
+add_library(margin ${SOURCE_FILES})
+target_link_libraries(margin MarginCore hts)
 
-
-# MISC
-add_library(son ${SONLIB_SOURCES})
-add_library(cpecan ${CPECAN_SOURCES})
-add_dependencies(cpecan lastz CPECANLASTZ)
-
-
-# Build MarginPhatever Library
-add_library(margin SHARED ${SOURCE_FILES})
-target_link_libraries(margin cpecan son hts)
 
 ###############################
 ######### EXECUTABLES #########
@@ -339,12 +349,8 @@ target_link_libraries(margin cpecan son hts)
 add_executable(marginPhase marginPhase.c )
 target_link_libraries(marginPhase margin)
 
-#TODO uncomment after compilation errors are fixed
 add_executable(marginPolish marginPolish.c )
 target_link_libraries(marginPolish margin)
-
-file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(vcfCompare vcfCompare.c )
 target_link_libraries(vcfCompare margin)
