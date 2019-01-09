@@ -5,7 +5,7 @@
  */
 
 #include <htslib/vcf.h>
-#include "margin.h"
+#include "htsIntegration.h"
 
 /*
  * Functions for reference prior probabilities

@@ -6,6 +6,7 @@
 
 #include "CuTest.h"
 #include "margin.h"
+#include "htsIntegration.h"
 
 #define RANDOM_TEST_NO 2
 static char *polishParamsFile = "../params/allParams.np.json";

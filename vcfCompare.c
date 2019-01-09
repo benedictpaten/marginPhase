@@ -9,7 +9,7 @@
 #include <ctype.h>
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
-#include "margin.h"
+#include "vcfComparison.h"
 #include "sam.h"
 #include "bgzf.h"
 

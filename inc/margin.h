@@ -21,12 +21,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <htslib/vcf.h>
-#include <htslib/sam.h>
-#include <htslib/faidx.h>
-#include <htslib/bgzf.h>
-#include <htslib/hts.h>
-
 #include "sonLib.h"
 #include "hashTableC.h"
 #include "pairwiseAligner.h"
@@ -50,7 +44,6 @@ typedef struct _stRPMergeCell stRPMergeCell;
 typedef struct _stGenomeFragment stGenomeFragment;
 typedef struct _stReferencePriorProbs stReferencePriorProbs;
 typedef struct _stBaseMapper stBaseMapper;
-typedef struct _stGenotypeResults stGenotypeResults;
 typedef struct _stReferencePositionFilter stReferencePositionFilter;
 /*
  * Polisher structs
@@ -213,19 +206,6 @@ struct _stReferencePriorProbs {
     // Filter array of positions in the reference, used to ignore some columns in the alignment
     bool *referencePositionsIncluded;
 };
-
-stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
-
-void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
-
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
-
-stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
-        stBaseMapper *baseMapper, stRPHmmParameters *params);
-
-int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
-
-double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
 /*
  * Emission probabilities methods
@@ -576,20 +556,6 @@ char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value);
 
 uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
 
-/*
- * Parsing methods
- */
-
-int64_t parseReads(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper, stRPHmmParameters *params);
-
-int64_t parseReadsWithSingleNucleotideProbs(stList *profileSequences, char *bamFile, stBaseMapper *baseMapper,
-                                            stRPHmmParameters *params, char *signalAlignDirectory, bool onlySignalAlign);
-
-int64_t getAlignedReadLength(bam1_t *aln);
-int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip);
-int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip, bool boundaryAtMatch);
-
-void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions);
 
 // Verbosity for what's printed.  To add more verbose options, you need to update:
 //  usage, setVerbosity, struct _stRPHmmParameters, stRPHmmParameters_printParameters, writeParamFile
@@ -602,69 +568,8 @@ void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
  * File writing methods
  */
 
-void writeVcfFragment(vcfFile *out, bcf_hdr_t *bcf_hdr, stGenomeFragment *gF, char *referenceName,
-                      stBaseMapper *baseMapper, bool gvcf);
-
-bcf_hdr_t* writeVcfHeader(vcfFile *out, stList *genomeFragments, char *referenceName);
-
 void writeParamFile(char *outputFilename, stRPHmmParameters *params);
 
-/*
- * _stGenotypeResults
- * Struct which stores information about relevant test results.
- */
-struct _stGenotypeResults {
-
-    // Variants in reference
-    int64_t negatives;
-    int64_t positives;
-    int64_t homozygousVariantsInRef;
-    int64_t homozygousVariantsInRef_Insertions;
-    int64_t homozygousVariantsInRef_Deletions;
-    int64_t hetsInRef;
-    int64_t hetsInRef_Insertions;
-    int64_t hetsInRef_Deletions;
-
-    // Variants in evaluated vcf
-    int64_t truePositives;
-    int64_t falsePositives;
-    int64_t trueNegatives;
-    int64_t falseNegatives;
-
-    // Stats for specific types of variants
-    int64_t truePositiveIndels;
-    int64_t falsePositiveIndels;
-    int64_t truePositiveHomozygous;
-    int64_t truePositiveHet;
-    int64_t truePositiveHomozygousIndels;
-    int64_t truePositiveHetIndels;
-
-    // Types of errors
-    int64_t error_missedHet;
-    int64_t error_missedHet_Insertions;
-    int64_t error_missedHet_Deletions;
-    int64_t error_homozygousInRef;
-    int64_t error_homozygous_Insertions;
-    int64_t error_homozygous_Deletions;
-
-    // Phasing
-    int64_t switchErrors;
-    float switchErrorDistance;
-    int64_t uncertainPhasing;
-};
-void printGenotypeResults(stGenotypeResults *results);
-
-/*
- * VCF comparison methods
- */
-
-void compareVCFs(FILE *fh, stList *hmms, char *vcf_toEval, char *vcf_ref,
-                 stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
-
-void compareVCFsBasic(FILE *fh, char *vcf_toEval, char *vcf_ref, stGenotypeResults *results);
-
-void compareVCFs_debugWithBams(char *vcf_toEval, char *vcf_ref, char *bamFile1, char *bamFile2, char *referenceFasta,
-                               stBaseMapper *baseMapper, stGenotypeResults *results, stRPHmmParameters *params);
 
 // Tag definitions (for haplotype output)
 #define HAPLOTYPE_TAG "ht"
@@ -706,12 +611,6 @@ void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
 void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
                                          stList *path);
 
-// Output file writing methods
-void writeHaplotypedSam(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
-                        char *marginPhaseTag);
-
-void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionTable *readHaplotypePartitions,
-                    char *marginPhaseTag);
 
 void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
@@ -1029,26 +928,26 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 
 typedef struct _bamChunker {
     // file locations
-	char *bamFile;
+    char *bamFile;
     // configuration
     uint64_t chunkSize;
-	uint64_t chunkBoundary;
-	bool includeSoftClip;
-	PolishParams *params;
-	// internal data
+    uint64_t chunkBoundary;
+    bool includeSoftClip;
+    PolishParams *params;
+    // internal data
     stList *chunks;
     uint64_t chunkCount;
     int64_t itorIdx;
 } BamChunker;
 
 typedef struct _bamChunk {
-	char *refSeqName;          // name of contig
-	int64_t chunkBoundaryStart;  // the first 'position' where we have an aligned read
-	int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
-	//  should be used to initialize the probabilities at chunkStart
-	int64_t chunkEnd;          // same for chunk end
-	int64_t chunkBoundaryEnd;    // no reads should start after this position
-	BamChunker *parent;        // reference to parent (may not be needed)
+    char *refSeqName;          // name of contig
+    int64_t chunkBoundaryStart;  // the first 'position' where we have an aligned read
+    int64_t chunkStart;        // the actual boundary of the chunk, calculations from chunkMarginStart to chunkStart
+    //  should be used to initialize the probabilities at chunkStart
+    int64_t chunkEnd;          // same for chunk end
+    int64_t chunkBoundaryEnd;    // no reads should start after this position
+    BamChunker *parent;        // reference to parent (may not be needed)
 } BamChunk;
 
 typedef struct _bamChunkRead {
@@ -1060,25 +959,11 @@ typedef struct _bamChunkRead {
 	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
 
-BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
-BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params);
-void bamChunker_destruct(BamChunker *bamChunker);
-BamChunk *bamChunker_getNext(BamChunker *bamChunker);
-
-BamChunk *bamChunk_construct();
-BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int64_t chunkStart, int64_t chunkEnd,
-                              int64_t chunkBoundaryEnd, BamChunker *parent);
-void bamChunk_destruct(BamChunk *bamChunk);
 
 BamChunkRead *bamChunkRead_construct();
 BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, BamChunk *parent);
 BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
-
-/*
- * Converts chunk of aligned reads into list of reads and alignments.
- */
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
 
 /*
  * Remove overlap between two overlapping strings. Returns max weight of split point.

@@ -10,9 +10,12 @@
 #include <memory.h>
 #include <hashTableC.h>
 #include <unistd.h>
+#include "vcf.h"
 
 #include "margin.h"
-#include "margin_phase_version.h"
+#include "marginVersion.h"
+#include "vcfComparison.h"
+#include "htsIntegration.h"
 #include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*

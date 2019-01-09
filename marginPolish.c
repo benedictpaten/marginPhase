@@ -11,8 +11,9 @@
 #include <hashTableC.h>
 #include <unistd.h>
 
-#include "margin_phase_version.h"
+#include "marginVersion.h"
 #include "margin.h"
+#include "htsIntegration.h"
 
 
 /*

@@ -253,6 +253,7 @@ set(SOURCE_FILES
         impl/emissions.c
         impl/genomeFragment.c
         impl/hmm.c
+        impl/htsIntegration.c
         impl/mergeColumn.c
         impl/outputWriter.c
         impl/parser.c
@@ -261,7 +262,7 @@ set(SOURCE_FILES
         impl/view.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
-        impl/vcfTools.c
+        impl/vcfComparison.c
         externalTools/samtools/bedidx.c
         )
 

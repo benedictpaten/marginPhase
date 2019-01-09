@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <htslib/vcf.h>
+#include "vcfComparison.h"
 #include "margin.h"
 
 void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs);
@@ -1808,3 +1809,126 @@ void compareVCFs_debugWithBams(char *vcf_toEval,
     stList_destruct(profileSequences1);
     stList_destruct(profileSequences2);
 }
+
+
+/*
+ * Prints information contained in genotypeResults struct.
+ */
+void printGenotypeResults(stGenotypeResults *results) {
+    // Variables
+    int64_t hetsInRefIndels = results->hetsInRef_Insertions + results->hetsInRef_Deletions;
+    int64_t homozygousVariantsInRefIndels = results->homozygousVariantsInRef_Insertions + results->homozygousVariantsInRef_Deletions;
+
+    st_logInfo("\n----- RESULTS -----\n");
+
+    // Sensitivity
+    st_logInfo("\nSensitivity / recall (fraction of true positives compared to reference): \n");
+    st_logInfo("\tOverall: %.4f \t\t\t(%d out of %d)\n",
+               (float)results->truePositives/results->positives,
+               results->truePositives,
+               results->positives);
+    st_logInfo("\tSNVs: %.4f \t\t\t\t(%d out of %d)\n",
+               (float) (results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels)/
+               (results->positives-hetsInRefIndels-homozygousVariantsInRefIndels),
+               results->truePositives-results->truePositiveIndels-results->truePositiveHomozygousIndels,
+               results->positives-hetsInRefIndels-homozygousVariantsInRefIndels);
+    st_logInfo("\t\tHets: %.4f \t\t\t(%d out of %d)\n",
+               (float) (results->truePositiveHet - results->truePositiveHetIndels)
+               / (results->hetsInRef-hetsInRefIndels),
+               results->truePositiveHet - results->truePositiveHetIndels,
+               results->hetsInRef-hetsInRefIndels);
+    st_logInfo("\t\tHomozygous alts: %.4f \t(%d out of %d)\n",
+               (float) (results->truePositiveHomozygous - results->truePositiveHomozygousIndels)
+               /(results->homozygousVariantsInRef-homozygousVariantsInRefIndels),
+               results->truePositiveHomozygous - results->truePositiveHomozygousIndels,
+               results->homozygousVariantsInRef - homozygousVariantsInRefIndels);
+    st_logInfo("\tIndels: %.4f \t\t\t\t(%d out of %d)\n",
+               (float)results->truePositiveIndels/
+               (homozygousVariantsInRefIndels + hetsInRefIndels),
+               results->truePositiveIndels,
+               hetsInRefIndels + homozygousVariantsInRefIndels);
+    st_logInfo("\t\tHets: %.4f \t\t\t(%d out of %d)\n",
+               (float) results->truePositiveHetIndels / hetsInRefIndels,
+               results->truePositiveHetIndels,
+               hetsInRefIndels);
+    st_logInfo("\t\tHomozygous alts: %.4f \t(%d out of %d)\n",
+               (float) results->truePositiveHomozygousIndels/homozygousVariantsInRefIndels,
+               results->truePositiveHomozygousIndels,
+               homozygousVariantsInRefIndels);
+
+    // Specificity
+    st_logInfo("\nSpecificity (fraction of true negatives compared to reference): \n");
+    st_logInfo("\tOverall: %.4f \t\t(%" PRIi64 " out of %"PRIi64 ")\n",
+               (float)results->trueNegatives/results->negatives,
+               results->trueNegatives, results->negatives);
+
+    // Precision
+    st_logInfo("\nPrecision (fraction of true positives compared to all calls):\n");
+    st_logInfo("\tOverall: %.4f \t(%d out of %d)\n",
+               (float)results->truePositives/(results->truePositives+results->falsePositives),
+               results->truePositives, results->truePositives+results->falsePositives);
+    st_logInfo("\tSNVs: %.4f \t\t(%d out of %d)\n",
+               (float) (results->truePositives-results->truePositiveIndels) /
+               (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels),
+               (results->truePositives - results->truePositiveIndels),
+               (results->truePositives + results->falsePositives - results->truePositiveIndels - results->falsePositiveIndels));
+    st_logInfo("\tIndels: %.4f \t\t(%d out of %d)\n",
+               (float)results->truePositiveIndels / (results->truePositiveIndels + results->falsePositiveIndels),
+               results->truePositiveIndels, results->truePositiveIndels + results->falsePositiveIndels);
+
+    // False positives
+    st_logInfo("\nFalse positives:\n");
+    st_logInfo("\tOverall: %" PRIi64 "\n", results->falsePositives);
+    st_logInfo("\tSNVs: %" PRIi64 "\n", results->falsePositives - results->falsePositiveIndels);
+    st_logInfo("\tIndels: %" PRIi64 "\n", results->falsePositiveIndels);
+
+
+    // More detailed numbers about errors
+    st_logInfo("\nFalse negatives:\n");
+    st_logInfo("\tOverall: %" PRIi64 "\n", results->falseNegatives);
+    st_logInfo("\tSNV - Missed hets: %" PRIi64 "\n", results->error_missedHet -
+                                                     results->error_missedHet_Deletions - results->error_missedHet_Insertions);
+    st_logInfo("\tSNV - Incorrect homozygous variants: %" PRIi64 "\n",
+               results->error_homozygousInRef -
+               results->error_homozygous_Insertions - results->error_homozygous_Deletions);
+
+    st_logInfo("\tIndels - Missed hets: %" PRIi64 "\n",
+               results->error_missedHet_Insertions + results->error_missedHet_Deletions);
+    st_logInfo("\t\tInsertions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_missedHet_Insertions,
+               results->hetsInRef_Insertions - results->error_missedHet_Insertions,
+               results->hetsInRef_Insertions,
+               (float)(results->hetsInRef_Insertions - results->error_missedHet_Insertions) /
+               results->hetsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_missedHet_Deletions,
+               results->hetsInRef_Deletions - results->error_missedHet_Deletions,
+               results->hetsInRef_Deletions,
+               (float)(results->hetsInRef_Deletions - results->error_missedHet_Deletions) /
+               results->hetsInRef_Deletions);
+
+    st_logInfo("\tIndels - Incorrect homozygous variants: %" PRIi64 "\n",
+               results->error_homozygous_Insertions + results->error_homozygous_Deletions);
+    st_logInfo("\t\tInsertions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_homozygous_Insertions,
+               results->homozygousVariantsInRef_Insertions - results->error_homozygous_Insertions,
+               results->homozygousVariantsInRef_Insertions,
+               (float)(results->homozygousVariantsInRef_Insertions -
+                       results->error_homozygous_Insertions) /
+               results->homozygousVariantsInRef_Insertions);
+    st_logInfo("\t\tDeletions: %d \t(found %d out of %d, %.3f)\n",
+               results->error_homozygous_Deletions,
+               results->homozygousVariantsInRef_Deletions - results->error_homozygous_Deletions,
+               results->homozygousVariantsInRef_Deletions,
+               (float)(results->homozygousVariantsInRef_Deletions -
+                       results->error_homozygous_Deletions) /
+               results->homozygousVariantsInRef_Deletions);
+
+    // Phasing
+    st_logInfo("\nPhasing:\n");
+    st_logInfo("\tSwitch error rate: %.4f \t (%" PRIi64 " out of %"PRIi64 ", ", (float)results->switchErrors/(results->truePositives-results->uncertainPhasing), results->switchErrors, results->truePositives-results->uncertainPhasing);
+    st_logInfo("fraction correct: %.4f)\n", 1.0 - (float)results->switchErrors/(results->truePositives-results->uncertainPhasing));
+    st_logInfo("\tAverage distance between switch errors: %.2f\n", results->switchErrorDistance);
+    st_logInfo("\tUncertain phasing spots: %" PRIi64 "\n\n", results->uncertainPhasing);
+}
+
