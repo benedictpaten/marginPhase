@@ -9,7 +9,7 @@
 
 static char *polishParamsFile = "../params/allParams.np.json";
 static char *polishParamsNoRleFile = "../params/allParams.np.no_rle.json";
-#define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
+#define TEST_POLISH_FILES_DIR "../tests/data/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
 	/*
@@ -954,9 +954,9 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
 }
 
 void test_polish5kb_rle(CuTest *testCase) {
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
@@ -965,9 +965,9 @@ void test_polish5kb_rle(CuTest *testCase) {
 }
 
 void test_polish5kb_no_rle(CuTest *testCase) {
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
@@ -976,9 +976,9 @@ void test_polish5kb_no_rle(CuTest *testCase) {
 }
 
 void test_polish5kb_no_region(CuTest *testCase) {
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
     int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose);
@@ -986,9 +986,9 @@ void test_polish5kb_no_region(CuTest *testCase) {
 }
 
 void test_polish100kb(CuTest *testCase) {
-	char *referenceFile = "../tests/hg19.chr3.9mb.fa";
+	char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
 	bool verbose = false;
-	char *bamFile = "../tests/NA12878.np.chr3.100kb.4.bam";
+	char *bamFile = "../tests/data/NA12878.np.chr3.100kb.4.bam";
 	char *region = "chr3:8100000-8200000";
 
 	st_logInfo("\n\nTesting polishing on %s\n", bamFile);

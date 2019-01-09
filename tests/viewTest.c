@@ -10,7 +10,7 @@
 int64_t calcSequenceMatches(char *seq1, char *seq2); // in polisherTest
 
 static char *polishParamsFile = "../params/allParams.np.json";
-#define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
+#define TEST_POLISH_FILES_DIR "../tests/data/polishTestExamples/"
 
 stList *makeAlignmentList(const int64_t *anchorPairs, int64_t anchorPairNo) {
     stList *alignmentPairs = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);

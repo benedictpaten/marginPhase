@@ -19,8 +19,8 @@
  */
 void test_bamReadParsing(CuTest *testCase) {
 
-    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
-    char *paramsFile = "../tests/parsingTest.json";
+    char *bamFile = "../tests/data/NA12878.pb.chr3.5kb.bam";
+    char *paramsFile = "../tests/data/parsingTest.json";
 
     FILE *fh = fopen(paramsFile, "rb");
     Params *fullParams = params_readParams2(fh, FALSE, TRUE);
@@ -173,7 +173,7 @@ void test_bamReadParsing(CuTest *testCase) {
 
 void test_jsmnParsing(CuTest *testCase) {
 
-    char *paramsFiles[2] = {"../tests/parsingTest.json", "../tests/parsingTest.allParams.json"};
+    char *paramsFiles[2] = {"../tests/data/parsingTest.json", "../tests/data/parsingTest.allParams.json"};
 
     for (int p = 0; p < 2; p++) {
         char *paramsFile = paramsFiles[p];
