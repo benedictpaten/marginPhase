@@ -366,7 +366,7 @@ static void test_poa_realign(CuTest *testCase) {
 		int64_t readNumber = st_randomInt(0, 20);
 		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
 		for(int64_t i=0; i<readNumber; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference),TRUE,NULL));
+			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference),NULL,TRUE,NULL));
 		}
 
 		FILE *fh = fopen(polishParamsFile, "r");
@@ -440,7 +440,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		int64_t readNumber = st_randomInt(0, 20);
 		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
 		for(int64_t i=0; i<readNumber; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), st_random() > 0.5, NULL));
+			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), NULL, st_random() > 0.5, NULL));
 		}
 
 		FILE *fh = fopen(polishParamsFile, "r");
@@ -500,7 +500,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		RleString *rleString = rleString_construct(bcr->nucleotides);
 		stList_append(rleStrings, rleString);
 		stList_append(reads, bamChunkRead_construct2(stString_copy(bcr->readName), stString_copy(rleString->rleString),
-				bcr->forwardStrand, NULL));
+                                                     NULL, bcr->forwardStrand, NULL));
 	}
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
@@ -707,7 +707,7 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 			char strand = header[strlen(header)-1];
 			CuAssertTrue(testCase, strand == 'F' || strand == 'R');
 			stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i),
-					stString_copy(nucleotides->list[i]), strand == 'F', NULL));
+					stString_copy(nucleotides->list[i]), NULL, strand == 'F', NULL));
 		}
 
 		//if(strlen(reads->list[0]) > strlen(trueReferenceList->list[0]) * 0.8 || reads->length < 30) {

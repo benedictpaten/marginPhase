@@ -11,7 +11,8 @@ char* callConsensus(int readNo, char *readArray[], char *reference, char *params
     for (int64_t i = 0; i < readNo; i++) {
         RleString *rleString = rleString_construct((char *) stString_copy(readArray[i]));
         stList_append(rleStrings, rleString);
-        stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString), TRUE, NULL));
+        stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
+                NULL, TRUE, NULL));
     }
 
     // RLE reference (reference could be randomly chosen read)

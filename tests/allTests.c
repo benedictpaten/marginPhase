@@ -31,6 +31,7 @@ int marginPhaseTests(void) {
 
 	//CuSuiteAddSuite(suite, polisherTestSuite());
 
+
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
 	CuSuiteDetails(suite, output);

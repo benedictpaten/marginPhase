@@ -7,6 +7,8 @@
 #include "margin.h"
 #include "bedidx.h"
 
+#define DEFAULT_ALIGNMENT_SCORE 10
+
 int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t contigStartPos, int64_t contigEndPos,
                          uint64_t chunkSize, uint64_t chunkMargin) {
 
@@ -208,13 +210,15 @@ void bamChunk_destruct(BamChunk *bamChunk) {
 
 
 BamChunkRead *bamChunkRead_construct() {
-    return bamChunkRead_construct2(NULL, NULL, TRUE, NULL);
+    return bamChunkRead_construct2(NULL, NULL, NULL, TRUE, NULL);
 }
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, bool forwardStrand, BamChunk *parent) {
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand,
+        BamChunk *parent) {
     BamChunkRead *r = malloc(sizeof(BamChunkRead));
     r->readName = readName;
     r->nucleotides = nucleotides;
     r->readLength = (nucleotides == NULL ? 0 : strlen(nucleotides));
+    r->qualities = qualities;
     r->forwardStrand = forwardStrand;
     r->parent = parent;
 
@@ -225,6 +229,7 @@ BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle)
     r->readName = read->readName ==  NULL ? NULL : stString_copy(read->readName);
     r->nucleotides = stString_copy(rle->rleString);
     r->readLength = rle->length;
+    r->qualities = NULL; //TODO maybe put some exciting logic here?
     r->forwardStrand = read->forwardStrand;
     r->parent = read->parent;
 
@@ -233,6 +238,7 @@ BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle)
 void bamChunkRead_destruct(BamChunkRead *r) {
     if (r->readName != NULL) free(r->readName);
     if (r->nucleotides != NULL) free(r->nucleotides);
+    if (r->qualities != NULL) free(r->qualities);
     free(r);
 }
 
@@ -379,8 +385,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
             // handle current character
             if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
                 if (cigarIdxInRef >= chunkStart && cigarIdxInRef < chunkEnd) {
-                    stList_append(cigRepr, stIntTuple_construct2(cigarIdxInRef + refCigarModification,
-                                                                 cigarIdxInSeq + seqCigarModification));
+                    stList_append(cigRepr, stIntTuple_construct3(cigarIdxInRef + refCigarModification,
+                                                                 cigarIdxInSeq + seqCigarModification,
+                                                                 DEFAULT_ALIGNMENT_SCORE));
                     alignedReadLength++;
                 }
                 cigarIdxInSeq++;
@@ -420,64 +427,81 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         // sanity checks
         //TODO these may fail because of the existance of non-match end cigar operations
 //        assert(cigarIdxInRef == alnEndPos);  //does not include soft clip
-//        assert(cigarIdxInSeq == readEndIdx - (includeSoftClip ? end_softclip : 0));
+//        assert(cigarIdxInSeq == readEndIdxInChunk - (includeSoftClip ? end_softclip : 0));
 
         // get sequence positions
         int64_t seqLen = alignedReadLength;
 
         // modify start indices
-        int64_t readCurrIdx = firstNonSoftclipAlignedReadIdxInChunk;
+        int64_t readStartIdxInChunk = firstNonSoftclipAlignedReadIdxInChunk;
         if (firstNonSoftclipAlignedReadIdxInChunk != 0) {
             // the aligned portion spans chunkStart, so no softclipped bases are included
-            readCurrIdx += start_softclip;
+            readStartIdxInChunk += start_softclip;
         } else if (!includeSoftClip) {
             // configured to not handle softclipped bases
-            readCurrIdx += start_softclip;
+            readStartIdxInChunk += start_softclip;
         } else if (alnStartPos - start_softclip <= chunkStart) {
             // configured to handle softclipped bases; softclipped bases span chunkStart
             int64_t includedSoftclippedBases = alnStartPos - chunkStart;
             seqLen += includedSoftclippedBases;
-            readCurrIdx += (start_softclip - includedSoftclippedBases);
+            readStartIdxInChunk += (start_softclip - includedSoftclippedBases);
         } else {
             // configured to handle softclipped bases; softclipped bases all occur after chunkStart
             seqLen += start_softclip;
-            readCurrIdx = 0;
+            readStartIdxInChunk = 0;
         }
 
         // modify end indices
-        int64_t readEndIdx = readCurrIdx + seqLen;
+        int64_t readEndIdxInChunk = readStartIdxInChunk + seqLen;
         if (alnEndPos < chunkEnd && includeSoftClip) {
             // all other cases mean we don't need to handle softclip (by config or aln extends past chunk end)
             if (alnEndPos + end_softclip <= chunkEnd) {
                 // all softclipped bases fit in chunk
-                readEndIdx += end_softclip;
+                readEndIdxInChunk += end_softclip;
                 seqLen += end_softclip;
             } else {
                 // softclipping spands chunkEnd
                 int64_t includedSoftclippedBases = chunkEnd - alnEndPos;
                 seqLen += includedSoftclippedBases;
-                readEndIdx += includedSoftclippedBases;
+                readEndIdxInChunk += includedSoftclippedBases;
             }
         }
 
-        // get sequence - all data we need is encoded in readCurrIdx (start), readEnd idx, and seqLen
-        char *seq = malloc((seqLen + 1) * sizeof(char));
+        // get sequence - all data we need is encoded in readStartIdxInChunk (start), readEnd idx, and seqLen
+        char *seq = st_calloc(seqLen + 1, sizeof(char));
         uint8_t *seqBits = bam_get_seq(aln);
-        int64_t seqIdx = 0;
-        while (readCurrIdx < readEndIdx) {
-            seq[seqIdx] = seq_nt16_str[bam_seqi(seqBits, readCurrIdx)];
-            readCurrIdx++;
-            seqIdx++;
+        int64_t idxInOutputSeq = 0;
+        int64_t idxInBamRead = readStartIdxInChunk;
+        while (idxInBamRead < readEndIdxInChunk) {
+            seq[idxInOutputSeq] = seq_nt16_str[bam_seqi(seqBits, idxInBamRead)];
+            idxInBamRead++;
+            idxInOutputSeq++;
         }
         seq[seqLen] = '\0';
+
+        // get sequence qualities (if exists)
+        char *readName = stString_copy(bam_get_qname(aln));
+        uint8_t *qualBits = bam_get_qual(aln);
+        uint8_t *qual = NULL;
+        if (qualBits[0] != 0xff) { //inital score of 255 means qual scores are unavailable
+            idxInOutputSeq = 0;
+            idxInBamRead = readStartIdxInChunk;
+            qual = st_calloc(seqLen, sizeof(uint8_t));
+            while (idxInBamRead < readEndIdxInChunk) {
+                qual[idxInOutputSeq] = qualBits[idxInBamRead];
+                idxInBamRead++;
+                idxInOutputSeq++;
+
+            }
+            assert(idxInBamRead == strlen(seq));
+        };
 
         // sanity check
         assert(stIntTuple_get((stIntTuple *)stList_peek(cigRepr), 1) < strlen(seq));
 
         // save to read
-        char *readName = stString_copy(bam_get_qname(aln));
         bool forwardStrand = !bam_is_rev(aln);
-        BamChunkRead *chunkRead = bamChunkRead_construct2(readName, seq, forwardStrand, bamChunk);
+        BamChunkRead *chunkRead = bamChunkRead_construct2(readName, seq, qual, forwardStrand, bamChunk);
         stList_append(reads, chunkRead);
         stList_append(alignments, cigRepr);
         savedAlignments++;
