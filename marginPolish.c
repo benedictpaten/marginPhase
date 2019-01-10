@@ -37,6 +37,9 @@ void usage() {
     fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
     fprintf(stderr, "    -r --region            : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
+
+    fprintf(stderr, "    -i --outputRepeatCounts        : File to write out the repeat counts [default = NULL]\n");
+    fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -48,6 +51,8 @@ int main(int argc, char *argv[]) {
     char *outputBase = stString_copy("output");
     char *regionStr = NULL;
     int64_t verboseBitstring = -1;
+    char *outputRepeatCountFile = NULL;
+    char *outputPoaTsvFile = NULL;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -68,10 +73,12 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
+				{ "outputRepeatCounts", required_argument, 0, 'i'},
+				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:h", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hi:j:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -95,6 +102,12 @@ int main(int argc, char *argv[]) {
         case 'v':
             verboseBitstring = atoi(optarg);
             break;
+        case 'i':
+        	outputRepeatCountFile = stString_copy(optarg);
+        	break;
+        case 'j':
+        	outputPoaTsvFile = stString_copy(optarg);
+        	break;
         default:
             usage();
             return 0;
@@ -144,9 +157,18 @@ int main(int argc, char *argv[]) {
     // Open output files
     char *polishedReferenceOutFile = stString_print("%s.fa", outputBase);
     st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
-
     FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
     free(polishedReferenceOutFile);
+
+    // Open optional files for writing out repeat counts and such
+    FILE *outputRepeatCountFileHandle = NULL;
+    if(outputRepeatCountFile != NULL) {
+    	outputRepeatCountFileHandle = fopen(outputRepeatCountFile, "w");
+    }
+    FILE *outputPoaTsvFileHandle = NULL;
+    if(outputPoaTsvFile != NULL) {
+    	outputPoaTsvFileHandle = fopen(outputPoaTsvFile, "w");
+    }
 
     // if regionStr is NULL, it will be ignored in construct2
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
@@ -227,6 +249,14 @@ int main(int argc, char *argv[]) {
 			}
 			if (st_getLogLevel() >= debug) {
 				poa_print(poa, stderr, rleReads, 5, 5);
+			}
+
+			// Write any optional outputs about repeat count and POA, etc.
+			if(outputPoaTsvFileHandle != NULL) {
+				poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
+			}
+			if(outputRepeatCountFileHandle != NULL) {
+				poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
 			}
 
 			// Now cleanup run-length stuff
@@ -329,6 +359,15 @@ int main(int argc, char *argv[]) {
     bamChunker_destruct(bamChunker);
     stHash_destruct(referenceSequences);
     params_destruct(params);
+
+    if(outputPoaTsvFileHandle != NULL) {
+    	fclose(outputPoaTsvFileHandle);
+    	free(outputPoaTsvFile);
+    }
+    if(outputRepeatCountFileHandle != NULL) {
+    	fclose(outputRepeatCountFileHandle);
+    	free(outputRepeatCountFile);
+    }
 
     //while(1); // Use this for testing for memory leaks
 
