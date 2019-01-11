@@ -753,6 +753,19 @@ void poa_print(Poa *poa, FILE *fH,
 			  float indelSignificanceThreshold, float strandBalanceRatio);
 
 /*
+ * Prints a tab separated version of the POA graph.
+ */
+void poa_printTSV(Poa *poa, FILE *fH,
+		stList *bamChunkReads,
+		float indelSignificanceThreshold, float strandBalanceRatio);
+
+/*
+ * Print repeat count observations.
+ */
+void poa_printRepeatCounts(Poa *poa, FILE *fH,
+		stList *rleReads, stList *bamChunkReads);
+
+/*
  * Prints some summary stats on the POA.
  */
 void poa_printSummaryStats(Poa *poa, FILE *fH);
@@ -807,7 +820,8 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishPar
 
 void poa_destruct(Poa *poa);
 
-double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads, double *totalWeight);
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
+											 double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight);
 
 /*
  * Finds shift, expressed as a reference coordinate, that the given substring str can

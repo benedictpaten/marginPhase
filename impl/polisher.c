@@ -729,11 +729,14 @@ double poa_getTotalErrorWeight(Poa *poa)  {
 	return poa_getDeleteTotalWeight(poa) + poa_getInsertTotalWeight(poa) + poa_getReferenceNodeTotalDisagreementWeight(poa);
 }
 
-double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads, double *totalWeight) {
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
+		double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight) {
 	/*
 	 * Calculate strand specific base weights.
 	 */
 	*totalWeight = 0.0;
+	*totalPositiveWeight = 0.0;
+	*totalNegativeWeight = 0.0;
 	double *baseWeights = st_calloc(SYMBOL_NUMBER*2, sizeof(double));
 	for(int64_t i=0; i<stList_length(node->observations); i++) {
 		PoaBaseObservation *baseObs = stList_get(node->observations, i);
@@ -741,11 +744,109 @@ double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkRead
 		BamChunkRead *read = stList_get(bamChunkReads, baseObs->readNo);
 		char base = read->nucleotides[baseObs->offset];
 		baseWeights[symbol_convertCharToSymbol(base) * 2 + (read->forwardStrand ? 1 : 0)] += baseObs->weight;
+		if(read->forwardStrand) {
+			*totalPositiveWeight += baseObs->weight;
+		}
+		else {
+			*totalNegativeWeight += baseObs->weight;
+		}
 	}
 
 	return baseWeights;
 }
 
+void poa_printRepeatCounts(Poa *poa, FILE *fH,
+		stList *rleReads, stList *bamChunkReads) {
+		fprintf(fH, "REF_INDEX\tREF_BASE");
+		fprintf(fH, "\tREPEAT_COUNT_OBSxN(READ_BASE:READ_STRAND:REPEAT_COUNT,WEIGHT)\n");
+
+		// Print info for each base in reference in turn
+		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+			PoaNode *node = stList_get(poa->nodes, i);
+
+			fprintf(fH, "%" PRIi64 "\t%c", i, node->base);
+
+
+			for(int64_t j=0; j<stList_length(node->observations); j++) {
+				PoaBaseObservation *obs = stList_get(node->observations, j);
+				RleString *rleRead = stList_get(rleReads, obs->readNo);
+				BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
+				int64_t repeatCount = rleRead->repeatCounts[obs->offset];
+				char base = rleRead->rleString[obs->offset];
+				fprintf(fH, "\t%c%c%" PRIi64 ",%.3f", base, bamChunkRead->forwardStrand ? '+' : '-', repeatCount, obs->weight/PAIR_ALIGNMENT_PROB_1);
+			}
+
+			fprintf(fH, "\n");
+		}
+}
+
+void poa_printTSV(Poa *poa, FILE *fH,
+		stList *bamChunkReads,
+		float indelSignificanceThreshold, float strandBalanceRatio) {
+
+	fprintf(fH, "REF_INDEX\tREF_BASE\tTOTAL_WEIGHT\tPOS_STRAND_WEIGHT\tNEG_STRAND_WEIGHT");
+	for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+		char c = symbol_convertSymbolToChar(j);
+		fprintf(fH, "\tNORM_BASE_%c_WEIGHT\tNORM_POS_STRAND_BASE_%c_WEIGHT\tNORM_NEG_BASE_%c_WEIGHT", c, c, c);
+	}
+
+	fprintf(fH, "\tINSERTSxN(INSERT_SEQ, TOTAL_WEIGHT, TOTAL_POS_STRAND_WEIGHT, TOTAL_NEG_STRAND_WEIGHT)\tDELETESxN(DELETE_LENGTH, TOTAL_WEIGHT, TOTAL_POS_STRAND_WEIGHT, TOTAL_NEG_STRAND_WEIGHT)\n");
+
+	// Print info for each base in reference in turn
+	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+		PoaNode *node = stList_get(poa->nodes, i);
+
+		// Print base weights first
+
+		// Calculate strand specific base weights
+		double totalWeight, totalPositiveWeight, totalNegativeWeight;
+		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+				&totalWeight, &totalPositiveWeight, &totalNegativeWeight);
+		
+		fprintf(fH, "%" PRIi64 "\t%c\t%f\t%f\t%f", i, node->base,
+				totalWeight/PAIR_ALIGNMENT_PROB_1, totalPositiveWeight/PAIR_ALIGNMENT_PROB_1,
+				totalNegativeWeight/PAIR_ALIGNMENT_PROB_1);
+
+		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
+			double negativeStrandBaseWeight = baseWeights[j*2 + 0];
+			double totalBaseWeight = positiveStrandBaseWeight + negativeStrandBaseWeight;
+
+			fprintf(fH, "\t%f\t%f\t%f,", node->baseWeights[j]/totalWeight,
+					positiveStrandBaseWeight/totalPositiveWeight, negativeStrandBaseWeight/totalNegativeWeight);
+		}
+
+		free(baseWeights);
+
+		// Inserts
+		for(int64_t j=0; j<stList_length(node->inserts); j++) {
+			PoaInsert *insert = stList_get(node->inserts, j);
+			if(poaInsert_getWeight(insert)/PAIR_ALIGNMENT_PROB_1 >= indelSignificanceThreshold &&
+					isBalanced(insert->weightForwardStrand, insert->weightReverseStrand, strandBalanceRatio)) {
+				fprintf(fH, "\tINSERT\t%s\t%f\t%f\t%f",
+						insert->insert,
+						(float)poaInsert_getWeight(insert)/PAIR_ALIGNMENT_PROB_1,
+						(float)insert->weightForwardStrand/PAIR_ALIGNMENT_PROB_1,
+						(float)insert->weightReverseStrand/PAIR_ALIGNMENT_PROB_1);
+			}
+		}
+
+		// Deletes
+		for(int64_t j=0; j<stList_length(node->deletes); j++) {
+			PoaDelete *delete = stList_get(node->deletes, j);
+			if(poaDelete_getWeight(delete)/PAIR_ALIGNMENT_PROB_1 >= indelSignificanceThreshold &&
+					isBalanced(delete->weightForwardStrand, delete->weightReverseStrand, strandBalanceRatio)) {
+				fprintf(fH, "\tDELETE\t%" PRIi64 "\t%f\t%f\t%f",
+						delete->length,
+						(float)poaDelete_getWeight(delete)/PAIR_ALIGNMENT_PROB_1,
+						(float)delete->weightForwardStrand/PAIR_ALIGNMENT_PROB_1,
+						(float)delete->weightReverseStrand/PAIR_ALIGNMENT_PROB_1);
+			}
+		}
+
+		fprintf(fH, "\n");
+	}
+}
 
 void poa_print(Poa *poa, FILE *fH,
 		stList *bamChunkReads,
@@ -753,11 +854,14 @@ void poa_print(Poa *poa, FILE *fH,
 	// Print info for each base in reference in turn
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
-		fprintf(fH, "%" PRIi64 "\t%c", i, node->base);
 
 		// Calculate strand specific base weights
-		double totalWeight;
-		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads, &totalWeight);
+		double totalWeight, totalPositiveWeight, totalNegativeWeight;
+		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+											&totalWeight, &totalPositiveWeight, &totalNegativeWeight);
+
+		fprintf(fH, "%" PRIi64 "\t%c total-weight:%f\ttotal-pos-weight:%f\ttotal-neg-weight:%f", i, node->base,
+				totalWeight/PAIR_ALIGNMENT_PROB_1, totalPositiveWeight/PAIR_ALIGNMENT_PROB_1, totalNegativeWeight/PAIR_ALIGNMENT_PROB_1);
 
 		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
 			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
@@ -767,7 +871,7 @@ void poa_print(Poa *poa, FILE *fH,
 			if(totalBaseWeight/totalWeight > 0.25) {
 				fprintf(fH, "\t%c:%f (%f) +str:%f, -str:%f,", symbol_convertSymbolToChar(j),
 						(float)node->baseWeights[j]/PAIR_ALIGNMENT_PROB_1, node->baseWeights[j]/totalWeight,
-						positiveStrandBaseWeight/PAIR_ALIGNMENT_PROB_1, negativeStrandBaseWeight/PAIR_ALIGNMENT_PROB_1);
+						positiveStrandBaseWeight/totalPositiveWeight, negativeStrandBaseWeight/totalNegativeWeight);
 			}
 		}
 		fprintf(fH, "\tTotal-weight:%f\n", (float)totalWeight/PAIR_ALIGNMENT_PROB_1);
@@ -800,6 +904,7 @@ void poa_print(Poa *poa, FILE *fH,
 		}
 	}
 }
+
 
 void poa_printSummaryStats(Poa *poa, FILE *fH) {
 	double totalReferenceMatchWeight = poa_getReferenceNodeTotalMatchWeight(poa)/PAIR_ALIGNMENT_PROB_1;
@@ -1429,10 +1534,6 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
 		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
 		RleString *rleRead = stList_get(rleReads, observation->readNo);
 		int64_t observedRepeatCount = rleRead->repeatCounts[observation->offset];
-//		assert(underlyingRepeatCount < repeatSubMatrix->maximumRepeatLength);
-//		logProb += repeatSubMatrix_getLogProb(repeatSubMatrix, base,
-//		        ((BamChunkRead *) stList_get(bamChunkReads, observation->readNo))->forwardStrand,
-//		        observedRepeatCount, underlyingRepeatCount) * observation->weight;
 
 		// Be robust to over-long repeat count observations
 		observedRepeatCount = observedRepeatCount >= repeatSubMatrix->maximumRepeatLength ?
@@ -1777,23 +1878,50 @@ int64_t skipDupes(PoaNode *node, int64_t i, int64_t readNo) {
 	return i;
 }
 
-stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to) {
+void getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, stList *readSubstrings, stList *qualityValues) {
+
+	// Calculate the qual value
+	double qual = 0;
+	if(bamChunkRead->qualities != NULL) {
+		int64_t j = 0;
+		for(int64_t i=0; i<length; i++) {
+			j += (int64_t)bamChunkRead->qualities[i+start];
+		}
+		qual = (float)j / length;
+		qual /= -10.0; // Quals are phred, qual = -10 * log_10(p), convert to
+			// log probability
+	}
+
+	// Add read substring
+	char *read = &(bamChunkRead->nucleotides[start]);
+	char c = read[length];
+	read[length] = '\0';
+
+	if(qual > 20.0 || 1) { // This is a hack
+		stList_append(readSubstrings, stString_copy(read));
+		stList_append(qualityValues, stDoubleTuple_construct(1, qual));
+	}
+
+	read[length] = c;
+}
+
+void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to,
+						  stList *readSubstrings, stList *qualityValues) {
 	/*
 	 * Get the substrings of reads aligned to the interval from (inclusive) to to
-	 * (exclusive).
+	 * (exclusive) and their qual values. Adds them to readSubstrings and qualValues, respectively.
 	 */
-	stList *readSubstrings = stList_construct3(0, free);
 
+	// Deal with boundary cases
 	if(from == 0) {
 		if(to == stList_length(poa->nodes)) {
 			// If from and to reference positions that bound the complete alignment just
 			// copy the complete reads
 			for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 			    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, i);
-				stList_append(readSubstrings, stString_copy(bamChunkRead->nucleotides));
+				getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength, readSubstrings, qualityValues);
 			}
-
-			return readSubstrings;
+			return;
 		}
 
 		// Otherwise, include the read prefixes that end at to
@@ -1802,18 +1930,11 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 		while(i<stList_length(node->observations)) {
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
-			char *nucleotides = bamChunkRead->nucleotides;
-
-			// Trim the read substring, copy it and add to the substrings list
-			char c = nucleotides[obs->offset];
-            nucleotides[obs->offset] = '\0';
-			stList_append(readSubstrings, stString_copy(nucleotides));
-            nucleotides[obs->offset] = c;
-
+            // Trim the read substring, copy it and add to the substrings list
+			getReadSubstring(bamChunkRead, 0, obs->offset, readSubstrings, qualityValues);
 			i = skipDupes(node, ++i, obs->readNo);
 		}
-
-		return readSubstrings;
+		return;
 	}
 	else if(to == stList_length(poa->nodes)) {
 		// Finally, include the read suffixs that start at from
@@ -1822,15 +1943,11 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 		while (i < stList_length(node->observations)) {
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
-			char *nucleotides = bamChunkRead->nucleotides;
-
 			// Trim the read substring, copy it and add to the substrings list
-			stList_append(readSubstrings, stString_copy(&(nucleotides[obs->offset])));
-
+			getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset, readSubstrings, qualityValues);
 			i = skipDupes(node, ++i, obs->readNo);
 		}
-
-		return readSubstrings;
+		return;
 	}
 
 	PoaNode *fromNode = stList_get(poa->nodes, from);
@@ -1843,13 +1960,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 
 		if(obsFrom->readNo == obsTo->readNo) {
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obsFrom->readNo);
-            char *nucleotides = bamChunkRead->nucleotides;
-
-			// Trim the read substring, copy it and add to the substrings list
-			char c = nucleotides[obsTo->offset];
-            nucleotides[obsTo->offset] = '\0';
-			stList_append(readSubstrings, stString_copy(&(nucleotides[obsFrom->offset])));
-            nucleotides[obsTo->offset] = c;
+            getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset, readSubstrings, qualityValues);
 			i = skipDupes(fromNode, ++i, obsFrom->readNo);
 			j = skipDupes(toNode, ++j, obsTo->readNo);
 		}
@@ -1861,8 +1972,6 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			j = skipDupes(toNode, ++j, obsTo->readNo);
 		}
 	}
-
-	return readSubstrings;
 }
 
 char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to, double *candidateWeights, PolishParams *params) {
@@ -1888,13 +1997,15 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 
 	if(stList_length(consensusSubstrings) > 0) {
 		// Get read substrings
-		stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, from, to);
+		stList *readSubstrings = stList_construct3(0, free);
+		stList *qualityValues = stList_construct3(0, (void (*)(void *))stDoubleTuple_destruct);
+		getReadSubstrings(bamChunkReads, poa, from, to, readSubstrings, qualityValues);
 
 		if(st_getLogLevel() >= debug) {
 			st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
 						stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
 			for(int64_t i=0; i<stList_length(readSubstrings); i++) {
-				st_logDebug("\tGot read substring: %s\n", stList_get(readSubstrings, i));
+				st_logDebug("\tGot read substring: %s %f\n", stList_get(readSubstrings, i), stDoubleTuple_getPosition(stList_get(qualityValues, i), 0));
 			}
 		}
 
@@ -1920,6 +2031,7 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 
 		// Cleanup
 		stList_destruct(readSubstrings);
+		stList_destruct(qualityValues);
 	}
 
 	// Cleanup
