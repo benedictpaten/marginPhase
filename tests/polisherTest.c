@@ -821,6 +821,30 @@ static void test_rleString_examples(CuTest *testCase) {
 			(const int64_t[]){ 0,5 }, (const int64_t[]){ 0,0,0,0,0,1,1 });
 }
 
+static void test_rleString_construct2(CuTest *testCase) {
+    char *testString = "GATTACAGGGGTT";
+    RleString *string1 = rleString_construct(testString);
+    char *rleChars = string1->rleString;
+    uint8_t *rleLengths = st_calloc(strlen(rleChars), sizeof(uint8_t));
+    for (int64_t i = 0; i < string1->length; i++) {
+        rleLengths[i] = (uint8_t) string1->repeatCounts[i];
+    }
+
+    RleString *string2 = rleString_construct2(rleChars, rleLengths);
+
+    CuAssertTrue(testCase, stString_eq(string1->rleString, string2->rleString));
+    CuAssertTrue(testCase, string1->length == string2->length);
+    CuAssertTrue(testCase, string1->nonRleLength == string2->nonRleLength);
+    for (int64_t i = 0; i < string1->length; i++) {
+        CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[i] == string2->rleToNonRleCoordinateMap[i]);
+    }
+    for (int64_t i = 0; i < string1->nonRleLength; i++) {
+        CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[i] == string2->rleToNonRleCoordinateMap[i]);
+    }
+
+
+}
+
 void checkStringsAndFree(CuTest *testCase, const char *expected, char *temp) {
 	CuAssertStrEquals(testCase, expected, temp);
 	free(temp);
@@ -1010,6 +1034,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
     SUITE_ADD_TEST(suite, test_rleString_examples);
+    SUITE_ADD_TEST(suite, test_rleString_construct2);
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
     SUITE_ADD_TEST(suite, test_polishParams);

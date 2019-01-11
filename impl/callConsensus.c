@@ -34,8 +34,7 @@ char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[
                 NULL, strands[i], NULL));
     }
 
-    // RLE reference
-    //TODO how to pick this?
+    // RLE reference starts as one of the input string
     RleString *rleReference = stList_get(rleStrings, 0);
 
     // run poa

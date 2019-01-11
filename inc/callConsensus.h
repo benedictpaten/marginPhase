@@ -10,10 +10,12 @@
 extern "C" {
 #endif
 
-void testPrint();
+    // polish parameters functions
+    PolishParams* getConsensusParameters(char *paramsPath);
+    void destroyConsensusParameters(PolishParams *params);
 
-// iteratively construct a consensus sequence using profile HMM/POA
-char* callConsensus(int readNo, char *readArray[], char *reference, char *paramsPath);
+    // consensus calling function
+    char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], bool strands[], PolishParams *params);
 
 #ifdef __cplusplus
 }

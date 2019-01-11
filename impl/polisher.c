@@ -1376,7 +1376,7 @@ RleString *rleString_construct(char *str) {
 }
 
 
-RleString *rleString_construct2(char *rleChars, uint8_t *rleCounts) {
+RleString *rleString_construct2(char *rleChars, uint8_t rleCounts[]) {
 	RleString *rleString = st_calloc(1, sizeof(RleString));
 
 	rleString->length = strlen(rleChars);
@@ -1386,21 +1386,22 @@ RleString *rleString_construct2(char *rleChars, uint8_t *rleCounts) {
 	}
 
 	// Allocate
-	rleString->rleString = st_calloc(rleString->length+1, sizeof(char));
+	rleString->rleString = stString_copy(rleChars);
 	rleString->repeatCounts = st_calloc(rleString->length, sizeof(int64_t));
 	rleString->rleToNonRleCoordinateMap = st_calloc(rleString->length, sizeof(int64_t));
 	rleString->nonRleToRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
 
 	// Fill out
     //TODO verify this logic
-	int64_t n=1;
+	int64_t n=0;
 	for(int64_t r=0; r<rleString->length; r++) {
 		// counts
 		rleString->repeatCounts[r] = rleCounts[r];
 		// coordinates
 		rleString->rleToNonRleCoordinateMap[r] = n;
 		for (uint8_t c = 0; c < rleCounts[r]; c++) {
-			rleString->nonRleToRleCoordinateMap[n + c] = r;
+			rleString->nonRleToRleCoordinateMap[n] = r;
+			n++;
 		}
 	}
 	assert(n == rleString->nonRleLength);
