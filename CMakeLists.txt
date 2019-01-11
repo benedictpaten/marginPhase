@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.5)
 project(marginPhase)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
@@ -12,6 +12,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 
 #    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 #endif()
 
+include(GNUInstallDirs)
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
 ###############################
 ##### HEADERS AND SOURCES #####
@@ -41,6 +43,15 @@ include_directories(externalTools/samtools)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(${CPECAN_HEADERS})
+
+file(GLOB MARGIN_CORE_HEADERS
+        inc/*.h
+        externalTools/sonLib/C/inc/*.h
+        externalTools/sonLib/C/impl/*.h
+        externalTools/sonLib/externalTools/quicktree_1.1/include/*.h
+        externalTools/cPecan/inc/*.h
+        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src/*.h
+        )
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -321,6 +332,13 @@ add_dependencies(cpecan lastz CPECANLASTZ)
 add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
 target_link_libraries(MarginCore cpecan son)
 
+# Install command for MarginCore
+set_target_properties(MarginCore PROPERTIES
+        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}")
+install(TARGETS MarginCore
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION include/marginPhase
+        )
 
 # HTSLIB
 add_custom_command(
@@ -370,5 +388,3 @@ add_executable(allTests
 target_link_libraries(allTests margin)
 add_test(stRPHmm allTests)
 
-add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
-target_link_libraries(callConsensus cpecan son hts)
