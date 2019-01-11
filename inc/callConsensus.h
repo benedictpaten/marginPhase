@@ -6,6 +6,8 @@
 #ifndef MARGINPHASE_CALLCONSENSUS_H
 #define MARGINPHASE_CALLCONSENSUS_H
 
+#include "margin.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
