@@ -291,22 +291,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Dependencies
 find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'z' library")
+    message(WARNING "Couldn't find the 'z' library")
 endif()
 
 find_library(BZ2LIB bz2)
 if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'bz2' library")
+    message(WARNING "Couldn't find the 'bz2' library")
 endif()
 
 find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'pthread' library")
+    message(WARNING "Couldn't find the 'pthread' library")
 endif()
 
 find_library(CURLLIB curl)
 if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'curl' library")
+    message(WARNING "Couldn't find the 'curl' library")
 endif()
 
 # LASTZ
