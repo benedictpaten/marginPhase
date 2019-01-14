@@ -89,9 +89,10 @@ void test_readSet1(CuTest *testCase) {
     PolishParams *params = getConsensusParameters(polishParamsFile);
 
     // get consensus string
-    char *consensus = callConsensus(readCount, rleReads, rleCounts, strands, params);
+    RleString *consensus = callConsensus(readCount, rleReads, rleCounts, strands, params);
 
-    CuAssertTrue(testCase, strlen(consensus) > 0);
+    CuAssertTrue(testCase, consensus != NULL);
+    CuAssertTrue(testCase, strlen(consensus->rleString) > 0);
 
     // cleanup
     for (int64_t i = 0; i < readCount; i++) {

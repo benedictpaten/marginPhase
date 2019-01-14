@@ -23,7 +23,7 @@ void destroyConsensusParameters(PolishParams *params) {
     polishParams_destruct(params);
 }
 
-char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params) {
+RleString* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params) {
     stList *rleReads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
     stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
 
@@ -42,14 +42,12 @@ char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[
 
     // get consensus
     RleString *consensusRleString = expandRLEConsensus(poa, rleStrings, rleReads, params->repeatSubMatrix);
-    char *consensus = stString_copy(consensusRleString->rleString);
 
     //cleanup
     stList_destruct(rleStrings);
     stList_destruct(rleReads);
     poa_destruct(poa);
-    rleString_destruct(consensusRleString);
 
-    return consensus;
+    return consensusRleString;
 }
 
