@@ -829,9 +829,30 @@ static void test_rleString_construct2(CuTest *testCase) {
     for (int64_t i = 0; i < string1->length; i++) {
         rleLengths[i] = (uint8_t) string1->repeatCounts[i];
     }
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[0] == 0);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[1] == 1);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[2] == 2);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[3] == 4);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[4] == 5);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[5] == 6);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[6] == 7);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[7] == 11);
+
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[0] == 0);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[1] == 1);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[2] == 2);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[3] == 2);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[4] == 3);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[5] == 4);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[6] == 5);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[7] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[8] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[9] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[10] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[11] == 7);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[12] == 7);
 
     RleString *string2 = rleString_construct2(rleChars, rleLengths);
-
     CuAssertTrue(testCase, stString_eq(string1->rleString, string2->rleString));
     CuAssertTrue(testCase, string1->length == string2->length);
     CuAssertTrue(testCase, string1->nonRleLength == string2->nonRleLength);
@@ -839,9 +860,8 @@ static void test_rleString_construct2(CuTest *testCase) {
         CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[i] == string2->rleToNonRleCoordinateMap[i]);
     }
     for (int64_t i = 0; i < string1->nonRleLength; i++) {
-        CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[i] == string2->rleToNonRleCoordinateMap[i]);
+        CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[i] == string2->nonRleToRleCoordinateMap[i]);
     }
-
 
 }
 

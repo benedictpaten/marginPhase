@@ -705,9 +705,9 @@ struct _poaBaseObservation {
  * Poa functions.
  */
 
-double poaInsert_getWeight(PoaInsert *insert);
+double poaInsert_getWeight(PoaInsert *toInsert);
 
-double poaDelete_getWeight(PoaDelete *delete);
+double poaDelete_getWeight(PoaDelete *toDelete);
 
 /*
  * Creates a POA representing the given reference sequence, with one node for each reference base and a

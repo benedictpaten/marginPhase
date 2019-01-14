@@ -23,7 +23,7 @@ void destroyConsensusParameters(PolishParams *params) {
     polishParams_destruct(params);
 }
 
-char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], bool strands[], PolishParams *params) {
+char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params) {
     stList *rleReads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
     stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
 
@@ -31,7 +31,7 @@ char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[
         RleString *rleString = rleString_construct2(stString_copy(nucleotides[i]), runLengths[i]);
         stList_append(rleStrings, rleString);
         stList_append(rleReads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
-                NULL, strands[i], NULL));
+                NULL, (strands[i] == 0 ? TRUE : FALSE), NULL)); // strands defined as 0 -> forward, 1 -> backward
     }
 
     // RLE reference starts as one of the input string

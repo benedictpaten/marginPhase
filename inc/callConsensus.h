@@ -17,7 +17,7 @@ extern "C" {
     void destroyConsensusParameters(PolishParams *params);
 
     // consensus calling function
-    char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], bool strands[], PolishParams *params);
+    char* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params);
 
 #ifdef __cplusplus
 }

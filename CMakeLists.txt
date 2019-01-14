@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(marginPhase)
+project(marginPhase VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
@@ -333,10 +333,13 @@ add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
 target_link_libraries(MarginCore cpecan son)
 
 # Install command for MarginCore
+
 set_target_properties(MarginCore PROPERTIES
-        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}")
+        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}"
+        VERSION ${marginPhase_VERSION}
+        SOVERSION ${marginPhase_VERSION})
 install(TARGETS MarginCore
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
         PUBLIC_HEADER DESTINATION include/marginPhase
         )
 
