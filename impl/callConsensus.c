@@ -51,3 +51,7 @@ RleString* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLen
     return consensusRleString;
 }
 
+void destroyRleString(RleString *r) {
+    rleString_destruct(r);
+}
+
