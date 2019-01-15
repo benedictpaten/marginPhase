@@ -338,8 +338,8 @@ target_link_libraries(hts pthread bz2 z curl)
 
 
 # Build MarginCore Library
-add_library(margin ${SOURCE_FILES})
-target_link_libraries(margin MarginCore hts)
+add_library(margin ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(margin cpecan son hts)
 
 
 ###############################
