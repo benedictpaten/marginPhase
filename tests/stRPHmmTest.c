@@ -1296,9 +1296,7 @@ void test_stProfileSeq_constructFromPosteriorProbs_example(CuTest *testCase) {
 	char *reference = stString_copy("GATACAGCGGG");
 	char *read = stString_copy("GATTACAGCG");
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 
 	stList *anchorAlignment = stList_construct();
 
@@ -1330,9 +1328,7 @@ void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
 		char *read = evolveSequence(reference);
 
 		// Load params
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 
 		// Anchor alignment
 		double alignmentScore;

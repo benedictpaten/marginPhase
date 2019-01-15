@@ -162,9 +162,7 @@ void test_viewExamples(CuTest *testCase) {
 		destructList(trueReferenceList);
 
 		// Polish params
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 
 		// Set parameters
 		params->polishParams->maxPoaConsensusIterations = 100;

@@ -227,9 +227,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	stList_append(reads, read);
 	bool readStrand = 1;
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// This test used the default state machine in cPecan
@@ -369,9 +367,7 @@ static void test_poa_realign(CuTest *testCase) {
 			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference),NULL,TRUE,NULL));
 		}
 
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realign(reads, NULL, reference, polishParams);
@@ -443,9 +439,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), NULL, st_random() > 0.5, NULL));
 		}
 
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
@@ -465,9 +459,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 }
 
 int64_t calcSequenceMatches(char *seq1, char *seq2) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	//Get identity
@@ -505,9 +497,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// Set parameters
@@ -618,9 +608,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *bamChunkReads,
 		AlignmentMetrics *alignmentMetrics) {
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// Set parameters
@@ -887,9 +875,7 @@ void test_removeDelete(CuTest *testCase) {
 }
 
 void test_polishParams(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
@@ -927,9 +913,7 @@ void test_polishParams(CuTest *testCase) {
 }
 
 void test_removeOverlapExample(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	//Make prefix
@@ -955,9 +939,7 @@ void test_removeOverlapExample(CuTest *testCase) {
 }
 
 void test_removeOverlap_RandomExamples(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	for (int64_t test = 0; test < 100; test++) {
