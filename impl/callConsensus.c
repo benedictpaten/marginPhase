@@ -6,18 +6,13 @@
 PolishParams* getConsensusParameters(char *paramsPath) {
 
     // Load parameters / models
-    FILE *paramsFile = fopen(paramsPath, "r");
-    if (paramsFile == NULL) {
-        fprintf(stderr, "[getConsensusParameters] cannot open file '%s'\n", paramsPath);
-        return NULL;
-    }
-
-    Params *p = params_readParams(paramsFile);
+    Params *p = params_readParams(paramsPath);
     PolishParams *polish = p->polishParams;
     p->polishParams = NULL;
     params_destruct(p);
     return polish;
 }
+
 
 void destroyConsensusParameters(PolishParams *params) {
     polishParams_destruct(params);

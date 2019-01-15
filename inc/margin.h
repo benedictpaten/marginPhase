@@ -75,8 +75,8 @@ struct _params {
 	stBaseMapper *baseMapper;
 };
 
-Params *params_readParams(FILE *fp);
-Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase);
+Params *params_readParams(char *paramsFile);
+Params *params_readParams2(char *paramsFile, bool requirePolish, bool requirePhase);
 
 void params_destruct(Params *params);
 

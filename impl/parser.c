@@ -4,6 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <sys/stat.h>
 #include "margin.h"
 
 /*
@@ -581,12 +582,31 @@ Params *params_jsonParse(char *buf, size_t r, bool requirePolish, bool requirePh
 	return params;
 }
 
-Params *params_readParams(FILE *fp) {
-    params_readParams2(fp, TRUE, TRUE);
+Params *params_readParams(char *paramsFile) {
+    params_readParams2(paramsFile, TRUE, TRUE);
 }
-Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase) {
-    char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
-    return params_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp), requirePolish, requirePhase);
+Params *params_readParams2(char *paramsFile, bool requirePolish, bool requirePhase) {
+    // open file and check for existence
+    FILE *fh = fopen(paramsFile, "rb");
+    if (fh == NULL) {
+        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+    }
+
+    // get file length
+    struct stat st;
+    fstat(fileno(fh), &st);
+
+    // read file and parse json
+    char *buf = st_calloc(st.st_size + 1, sizeof(char));
+    size_t readLen = fread(buf, sizeof(char), st.st_size , fh);
+    buf[st.st_size] = '\0';
+    Params *params = params_jsonParse(buf, readLen, requirePolish, requirePhase);
+
+    // close
+    free(buf);
+    fclose(fh);
+
+    return params;
 }
 
 void params_destruct(Params *params) {

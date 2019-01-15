@@ -22,9 +22,7 @@ void test_bamReadParsing(CuTest *testCase) {
     char *bamFile = "../tests/data/NA12878.pb.chr3.5kb.bam";
     char *paramsFile = "../tests/data/parsingTest.json";
 
-    FILE *fh = fopen(paramsFile, "rb");
-    Params *fullParams = params_readParams2(fh, FALSE, TRUE);
-    fclose(fh);
+    Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
     stBaseMapper *baseMapper = fullParams->baseMapper;
     stRPHmmParameters *params = fullParams->phaseParams;
 
@@ -178,9 +176,7 @@ void test_jsmnParsing(CuTest *testCase) {
     for (int p = 0; p < 2; p++) {
         char *paramsFile = paramsFiles[p];
 
-        FILE *fh = fopen(paramsFile, "rb");
-        Params *fullParams = params_readParams2(fh, FALSE, TRUE);
-        fclose(fh);
+        Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
         stBaseMapper *baseMapper = fullParams->baseMapper;
         stRPHmmParameters *params = fullParams->phaseParams;
 
@@ -259,7 +255,7 @@ void test_jsmnParsing(CuTest *testCase) {
     }
 }
 
-CuSuite *marginPhaseParserTestSuite(void) {
+CuSuite *parserTestSuite(void) {
     st_setLogLevelFromString("debug");
     CuSuite* suite = CuSuiteNew();
 
