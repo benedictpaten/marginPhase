@@ -321,7 +321,6 @@ add_dependencies(cpecan lastz CPECANLASTZ)
 add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
 target_link_libraries(MarginCore cpecan son)
 
-
 # HTSLIB
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
@@ -336,24 +335,22 @@ add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
 target_link_libraries(hts pthread bz2 z curl)
 
-
-# Build MarginCore Library
-add_library(margin ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(margin cpecan son hts)
-
+## Build MarginCore Library
+#add_library(margin ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+#target_link_libraries(margin cpecan son hts)
 
 ###############################
 ######### EXECUTABLES #########
 ###############################
 
-add_executable(marginPhase marginPhase.c )
-target_link_libraries(marginPhase margin)
+add_executable(marginPhase marginPhase.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(marginPhase cpecan son hts)
 
-add_executable(marginPolish marginPolish.c )
-target_link_libraries(marginPolish margin)
+add_executable(marginPolish marginPolish.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(marginPolish cpecan son hts)
 
-add_executable(vcfCompare vcfCompare.c )
-target_link_libraries(vcfCompare margin)
+add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(vcfCompare cpecan son hts)
 
 enable_testing()
 add_executable(allTests
@@ -365,10 +362,10 @@ add_executable(allTests
         tests/polisherTest.c
         tests/viewTest.c
         tests/callConsensusTest.c
+        ${SOURCE_FILES}
+        ${CORE_SOURCE_FILES}
         )
+target_link_libraries(allTests cpecan son hts)
 
-target_link_libraries(allTests margin)
-add_test(stRPHmm allTests)
 
-add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
-target_link_libraries(callConsensus cpecan son hts)
+
