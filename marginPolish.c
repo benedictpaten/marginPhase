@@ -121,12 +121,7 @@ int main(int argc, char *argv[]) {
 
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
-    FILE *fh = fopen(paramsFile, "r");
-    if (fh == NULL) {
-        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
-    }
-    Params *params = params_readParams(fh);
-    fclose(fh);
+    Params *params = params_readParams(paramsFile);
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -135,7 +130,7 @@ int main(int argc, char *argv[]) {
 
     // Parse reference as map of header string to nucleotide sequences
     st_logInfo("> Parsing reference sequences from file: %s\n", referenceFastaFile);
-    fh = fopen(referenceFastaFile, "r");
+    FILE *fh = fopen(referenceFastaFile, "r");
     stHash *referenceSequences = fastaReadToMap(fh);  //valgrind says blocks from this allocation are "still reachable"
     fclose(fh);
     // log names and transform (if necessary)

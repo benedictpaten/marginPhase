@@ -19,13 +19,7 @@ char* callConsensus(int readNo, char *readArray[], char *reference, char *params
     RleString *rleReference = rleString_construct(stString_copy(reference));
 
     // Load parameters / models
-    FILE *paramsFile = fopen(paramsPath, "r");
-    if (paramsFile == NULL) {
-        printf("Cannot open file '%s'\n", paramsPath);
-        return "";
-    }
-
-    Params *p = params_readParams(paramsFile);
+    Params *p = params_readParams(paramsPath);
 
     Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p->polishParams);
 

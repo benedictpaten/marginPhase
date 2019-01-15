@@ -11,6 +11,7 @@ CuSuite *stRPHmmTestSuite(void);
 CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
 CuSuite* polisherTestSuite(void);
+CuSuite* parserTestSuite(void);
 CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
 CuSuite* callConsensusTestSuite(void);
@@ -25,6 +26,7 @@ int marginPhaseTests(void) {
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, polisherTestSuite());
+	CuSuiteAddSuite(suite, parserTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
 	CuSuiteAddSuite(suite, callConsensusTestSuite());
