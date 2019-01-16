@@ -1795,6 +1795,43 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 	return consensusSubstrings;
 }
 
+typedef struct _readSubstring {
+	char *readSubstring;
+	double qualValue;
+} ReadSubstring;
+
+ReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length) {
+	assert(length >= 0);
+
+	ReadSubstring *rs = st_calloc(1, sizeof(ReadSubstring));
+
+	// Calculate the qual value
+	if(bamChunkRead->qualities != NULL) {
+		int64_t j = 0;
+		for(int64_t i=0; i<length; i++) {
+			j += (int64_t)bamChunkRead->qualities[i+start];
+		}
+		rs->qualValue = (double)j / length; // Quals are phred, qual = -10 * log_10(p)
+	}
+	else {
+		rs->qualValue = -1.0;
+	}
+
+	// Add read substring
+	char *read = &(bamChunkRead->nucleotides[start]);
+	char c = read[length];
+	read[length] = '\0';
+	rs->readSubstring = stString_copy(read);
+	read[length] = c;
+
+	return rs;
+}
+
+void readSubstring_destruct(ReadSubstring *rs) {
+	free(rs->readSubstring);
+	free(rs);
+}
+
 double computeLogLikelihoodOfConsensusString(char *reference, stList *nucleotides, PolishParams *params) {
 	/*
 	 * Computes the log probability of the reference given the reads.
@@ -1802,8 +1839,8 @@ double computeLogLikelihoodOfConsensusString(char *reference, stList *nucleotide
 	double logProb = LOG_ONE;
 	stList *anchorPairs = stList_construct(); // Currently empty
 	for(int64_t i=0; i<stList_length(nucleotides); i++) {
-		char *read = stList_get(nucleotides, i);
-		logProb += computeForwardProbability(reference, read, anchorPairs, params->p, params->sM, 0, 0);
+		ReadSubstring *rs = stList_get(nucleotides, i);
+		logProb += computeForwardProbability(reference, rs->readSubstring, anchorPairs, params->p, params->sM, 0, 0);
 	}
 
 	// Cleanup
@@ -1845,39 +1882,13 @@ int64_t skipDupes(PoaNode *node, int64_t i, int64_t readNo) {
 	return i;
 }
 
-void getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, stList *readSubstrings, stList *qualityValues) {
-
-	// Calculate the qual value
-	double qual = 0;
-	if(bamChunkRead->qualities != NULL) {
-		int64_t j = 0;
-		for(int64_t i=0; i<length; i++) {
-			j += (int64_t)bamChunkRead->qualities[i+start];
-		}
-		qual = (float)j / length;
-		qual /= -10.0; // Quals are phred, qual = -10 * log_10(p), convert to
-			// log probability
-	}
-
-	// Add read substring
-	char *read = &(bamChunkRead->nucleotides[start]);
-	char c = read[length];
-	read[length] = '\0';
-
-	if(qual > 20.0 || 1) { // This is a hack
-		stList_append(readSubstrings, stString_copy(read));
-		stList_append(qualityValues, stDoubleTuple_construct(1, qual));
-	}
-
-	read[length] = c;
-}
-
-void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to,
-						  stList *readSubstrings, stList *qualityValues) {
+stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to, PolishParams *params) {
 	/*
 	 * Get the substrings of reads aligned to the interval from (inclusive) to to
 	 * (exclusive) and their qual values. Adds them to readSubstrings and qualValues, respectively.
+	 *
 	 */
+	stList *readSubstrings = stList_construct3(0, (void (*)(void *))readSubstring_destruct);
 
 	// Deal with boundary cases
 	if(from == 0) {
@@ -1886,7 +1897,7 @@ void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to
 			// copy the complete reads
 			for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 			    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, i);
-				getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength, readSubstrings, qualityValues);
+				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength));
 			}
 			return;
 		}
@@ -1898,7 +1909,7 @@ void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
             // Trim the read substring, copy it and add to the substrings list
-			getReadSubstring(bamChunkRead, 0, obs->offset, readSubstrings, qualityValues);
+            stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, obs->offset));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
 		return;
@@ -1911,7 +1922,7 @@ void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
 			// Trim the read substring, copy it and add to the substrings list
-			getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset, readSubstrings, qualityValues);
+            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
 		return;
@@ -1927,7 +1938,9 @@ void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to
 
 		if(obsFrom->readNo == obsTo->readNo) {
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obsFrom->readNo);
-            getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset, readSubstrings, qualityValues);
+            if(obsTo->offset-obsFrom->offset > 0) { // If a non zero run of bases
+            	stList_append(readSubstrings, getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset));
+            }
 			i = skipDupes(fromNode, ++i, obsFrom->readNo);
 			j = skipDupes(toNode, ++j, obsTo->readNo);
 		}
@@ -1939,6 +1952,8 @@ void getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to
 			j = skipDupes(toNode, ++j, obsTo->readNo);
 		}
 	}
+
+	return readSubstrings;
 }
 
 char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to, double *candidateWeights, PolishParams *params) {
@@ -1964,9 +1979,15 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 
 	if(stList_length(consensusSubstrings) > 0) {
 		// Get read substrings
-		stList *readSubstrings = stList_construct3(0, free);
-		stList *qualityValues = stList_construct3(0, (void (*)(void *))stDoubleTuple_destruct);
-		getReadSubstrings(bamChunkReads, poa, from, to, readSubstrings, qualityValues);
+		stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, from, to, params);
+
+		if(stList_length(readSubstrings) < params->minReadsToCallConsensus) {
+			// If there are not sufficient numbers of sequences to call the consensus
+			stList_destruct(readSubstrings);
+			stList_destruct(consensusSubstrings);
+			free(consensusSubstring);
+			return getExistingSubstring(poa, from, to);
+		}
 
 		if(st_getLogLevel() >= debug) {
 			st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
@@ -1998,7 +2019,6 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 
 		// Cleanup
 		stList_destruct(readSubstrings);
-		stList_destruct(qualityValues);
 	}
 
 	// Cleanup
