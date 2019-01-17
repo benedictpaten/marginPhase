@@ -1800,7 +1800,7 @@ typedef struct _readSubstring {
 	double qualValue;
 } ReadSubstring;
 
-ReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length) {
+ReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, PolishParams *params) {
 	assert(length >= 0);
 
 	ReadSubstring *rs = st_calloc(1, sizeof(ReadSubstring));
@@ -1882,6 +1882,32 @@ int64_t skipDupes(PoaNode *node, int64_t i, int64_t readNo) {
 	return i;
 }
 
+int readSubstrings_cmpByQual(const void *a, const void *b) {
+	/*
+	 * Compares read substrings by quality in descending order
+	 */
+	ReadSubstring *rs1 = (ReadSubstring *)a;
+	ReadSubstring *rs2 = (ReadSubstring *)b;
+
+	return rs1->qualValue < rs2->qualValue ? 1 : (rs1->qualValue > rs2->qualValue ? -1 : 0);
+}
+
+stList *filterReadSubstrings(stList *readSubstrings, PolishParams *params) {
+	// Sort the substrings by descending qvalue
+	stList_sort(readSubstrings, readSubstrings_cmpByQual);
+
+	while(stList_length(readSubstrings) > params->filterReadsWhileHaveAtLeastThisCoverage) {
+		ReadSubstring *rs = stList_peek(readSubstrings);
+		if(rs->qualValue >= params->minAvgBaseQuality) {
+			break;
+		}
+		readSubstring_destruct(rs);
+		stList_pop(readSubstrings);
+	}
+
+	return readSubstrings;
+}
+
 stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t to, PolishParams *params) {
 	/*
 	 * Get the substrings of reads aligned to the interval from (inclusive) to to
@@ -1897,9 +1923,9 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			// copy the complete reads
 			for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 			    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, i);
-				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength));
+				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength, params));
 			}
-			return;
+			return filterReadSubstrings(readSubstrings, params);
 		}
 
 		// Otherwise, include the read prefixes that end at to
@@ -1909,10 +1935,10 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
             // Trim the read substring, copy it and add to the substrings list
-            stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, obs->offset));
+            stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, obs->offset, params));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
-		return;
+		return filterReadSubstrings(readSubstrings, params);
 	}
 	else if(to == stList_length(poa->nodes)) {
 		// Finally, include the read suffixs that start at from
@@ -1922,10 +1948,10 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
 			// Trim the read substring, copy it and add to the substrings list
-            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset));
+            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset, params));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
-		return;
+		return filterReadSubstrings(readSubstrings, params);
 	}
 
 	PoaNode *fromNode = stList_get(poa->nodes, from);
@@ -1939,7 +1965,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 		if(obsFrom->readNo == obsTo->readNo) {
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obsFrom->readNo);
             if(obsTo->offset-obsFrom->offset > 0) { // If a non zero run of bases
-            	stList_append(readSubstrings, getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset));
+            	stList_append(readSubstrings, getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset, params));
             }
 			i = skipDupes(fromNode, ++i, obsFrom->readNo);
 			j = skipDupes(toNode, ++j, obsTo->readNo);
@@ -1953,7 +1979,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 		}
 	}
 
-	return readSubstrings;
+	return filterReadSubstrings(readSubstrings, params);
 }
 
 char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to, double *candidateWeights, PolishParams *params) {
@@ -1993,7 +2019,8 @@ char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, i
 			st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
 						stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
 			for(int64_t i=0; i<stList_length(readSubstrings); i++) {
-				st_logDebug("\tGot read substring: %s %f\n", stList_get(readSubstrings, i), stDoubleTuple_getPosition(stList_get(qualityValues, i), 0));
+				ReadSubstring *rs = stList_get(readSubstrings, i);
+				st_logDebug("\tGot read substring: %s %f\n", rs->readSubstring, rs->qualValue);
 			}
 		}
 

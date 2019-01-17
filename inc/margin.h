@@ -748,6 +748,8 @@ struct _polishParams {
 	uint64_t minRealignmentPolishIterations; // Minimum number of poa_polish iterations
 
 	uint64_t minReadsToCallConsensus; // Min reads to choose between consensus sequences for a region
+	uint64_t filterReadsWhileHaveAtLeastThisCoverage; // Only filter read substrings if we have at least this coverage
+	// at a locus
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
 };
 
