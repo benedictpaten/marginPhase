@@ -1,16 +1,12 @@
 cmake_minimum_required(VERSION 3.7)
-project(marginPhase)
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_COMPILER gcc)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
-#include(FindOpenMP)
-#if(OPENMP_FOUND)
-#    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-#    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-#endif()
+project(marginPhase LANGUAGES C)
 
 
 ###############################
@@ -128,7 +124,7 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/impl/sonLibHash.c
         externalTools/sonLib/C/impl/sonLibKVDatabase.c
         externalTools/sonLib/C/impl/sonLibKVDatabase_BigRecordFile.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase_KyotoTycoon.cpp
+        #externalTools/sonLib/C/impl/sonLibKVDatabase_KyotoTycoon.cpp
         externalTools/sonLib/C/impl/sonLibKVDatabase_MySql.c
         externalTools/sonLib/C/impl/sonLibKVDatabase_TokyoCabinet.c
         externalTools/sonLib/C/impl/sonLibKVDatabaseConf.c
@@ -314,7 +310,8 @@ add_custom_target(CPECANLASTZ DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/sonLi
 # MISC
 add_library(son ${SONLIB_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
-add_dependencies(cpecan lastz CPECANLASTZ)
+add_dependencies(cpecan CPECANLASTZ)
+target_link_libraries(cpecan lastz m)
 
 
 # Build MarginCore Library
@@ -335,22 +332,22 @@ add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
 target_link_libraries(hts pthread bz2 z curl)
 
-## Build MarginCore Library
-#add_library(margin ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-#target_link_libraries(margin cpecan son hts)
+# Build MarginCore Library
+add_library(margin ${SOURCE_FILES})
+target_link_libraries(margin MarginCore hts)
 
 ###############################
 ######### EXECUTABLES #########
 ###############################
 
 add_executable(marginPhase marginPhase.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(marginPhase cpecan son hts)
+target_link_libraries(marginPhase margin)
 
 add_executable(marginPolish marginPolish.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(marginPolish cpecan son hts)
+target_link_libraries(marginPolish margin)
 
 add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(vcfCompare cpecan son hts)
+target_link_libraries(vcfCompare margin)
 
 enable_testing()
 add_executable(allTests
@@ -362,10 +359,8 @@ add_executable(allTests
         tests/polisherTest.c
         tests/viewTest.c
         tests/callConsensusTest.c
-        ${SOURCE_FILES}
-        ${CORE_SOURCE_FILES}
         )
-target_link_libraries(allTests cpecan son hts)
+target_link_libraries(allTests margin)
 
 
 
