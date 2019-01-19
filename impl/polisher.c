@@ -1525,7 +1525,6 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 		PoaBaseObservation *observation = stList_get(observations, i);
 		RleString *read = stList_get(rleReads, observation->readNo);
 		int64_t observedRepeatCount = read->repeatCounts[observation->offset];
-		assert(observedRepeatCount < repeatSubMatrix->maximumRepeatLength);
 		if(observedRepeatCount < minRepeatLength) {
 			minRepeatLength = observedRepeatCount;
 		}
