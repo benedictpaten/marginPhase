@@ -1898,7 +1898,8 @@ stList *filterReadSubstrings(stList *readSubstrings, PolishParams *params) {
 
 	while(stList_length(readSubstrings) > params->filterReadsWhileHaveAtLeastThisCoverage) {
 		ReadSubstring *rs = stList_peek(readSubstrings);
-		if(rs->qualValue >= params->minAvgBaseQuality) {
+		if(rs->qualValue >= params->minAvgBaseQuality || rs->qualValue == -1) { //Filter by qvalue, but don't filter if some or all reads
+			// don't have q-values
 			break;
 		}
 		readSubstring_destruct(rs);
