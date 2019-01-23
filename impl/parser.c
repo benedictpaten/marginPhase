@@ -582,7 +582,7 @@ Params *params_jsonParse(char *buf, size_t r, bool requirePolish, bool requirePh
 }
 
 Params *params_readParams(FILE *fp) {
-    params_readParams2(fp, TRUE, TRUE);
+    return params_readParams2(fp, TRUE, TRUE);
 }
 Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase) {
     char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
