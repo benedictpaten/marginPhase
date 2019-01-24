@@ -16,7 +16,7 @@
 BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
 BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params);
 void bamChunker_destruct(BamChunker *bamChunker);
-BamChunk *bamChunker_getNext(BamChunker *bamChunker);
+BamChunk *bamChunker_getChunk(BamChunker *bamChunker, int64_t chunkIdx);
 
 BamChunk *bamChunk_construct();
 BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int64_t chunkStart, int64_t chunkEnd,

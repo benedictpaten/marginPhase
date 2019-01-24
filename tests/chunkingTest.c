@@ -53,11 +53,6 @@ static void test_getRegionChunker(CuTest *testCase) {
 static void test_getChunksByChrom(CuTest *testCase) {
     BamChunker *chunker = bamChunker_construct(INPUT_BAM, getParameters(0,0,FALSE));
     CuAssertTrue(testCase, chunker->chunkCount == 2);
-    int itorCount = 0;
-    while (bamChunker_getNext(chunker) != NULL) {
-        itorCount++;
-    }
-    CuAssertTrue(testCase, itorCount == 2);
     free(chunker->params);
     bamChunker_destruct(chunker);
 }
@@ -68,11 +63,6 @@ static void test_getChunksBy100kb(CuTest *testCase) {
     // contig_1 alignments start at 100 000 and go to 2 100 008 (21 @ 100k size)
     // contig_2 alignments start at 100 000 and go to   100 032 ( 1 @ 100k size)
     CuAssertTrue(testCase, chunker->chunkCount == 22);
-    int itorCount = 0;
-    while (bamChunker_getNext(chunker) != NULL) {
-        itorCount++;
-    }
-    CuAssertTrue(testCase, itorCount == 22);
     free(chunker->params);
     bamChunker_destruct(chunker);
 }
@@ -82,7 +72,9 @@ static void test_getQualityScores(CuTest *testCase) {
 
     // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
     BamChunk *chunk = NULL;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         // margin testing is on contig_2
         if (!stString_eq(chunk->refSeqName, "contig_2")) continue;
 
@@ -153,7 +145,8 @@ static void test_getChunksWithBoundary(CuTest *testCase) {
     // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
     int contig2ChunkCount = 0;
     BamChunk *chunk = NULL;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         // margin testing is on contig_2
         if (!stString_eq(chunk->refSeqName, "contig_2")) continue;
 
@@ -200,7 +193,8 @@ static void test_getChunksWithoutBoundary(CuTest *testCase) {
     // has 9 reads of 8 characters aligned to position 100 000 and every 4 bases after (last read aligned to 100 032)
     int contig2ChunkCount = 0;
     BamChunk *chunk = NULL;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         // margin testing is on contig_2
         if (!stString_eq(chunk->refSeqName, "contig_2")) continue;
 
@@ -269,7 +263,8 @@ static void test_getReadsWithoutSoftClipping(CuTest *testCase) {
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 200000 &&
                                                              chunk->chunkBoundaryEnd == 300000)) continue;
         CuAssertTrue(testCase, !foundChunk);
@@ -298,7 +293,8 @@ static void test_getReadsWithSoftClipping(CuTest *testCase) {
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 200000 &&
                                                             chunk->chunkBoundaryEnd == 300000)) continue;
         CuAssertTrue(testCase, !foundChunk);
@@ -334,7 +330,8 @@ static void test_readAlignmentsWithoutSoftclippingChunkStart(CuTest *testCase) {
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 400000 &&
                                                              chunk->chunkBoundaryEnd == 401000)) continue;
         CuAssertTrue(testCase, !foundChunk);
@@ -488,7 +485,8 @@ static void test_readAlignmentsWithSoftclippingChunkStart(CuTest *testCase) {
     // have reads aligned to a region wholly between 200 000 and 299 999 for soft clip testing
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 400000 &&
                                                              chunk->chunkBoundaryEnd == 401000)) continue;
         CuAssertTrue(testCase, !foundChunk);
@@ -640,7 +638,8 @@ static void test_readAlignmentsWithoutSoftclippingChunkEnd(CuTest *testCase) {
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 410000 &&
                                                              chunk->chunkBoundaryEnd == 410020)) continue;
         CuAssertTrue(testCase, !foundChunk);
@@ -779,7 +778,8 @@ static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
 
     BamChunk *chunk = NULL;
     bool foundChunk = FALSE;
-    while((chunk = bamChunker_getNext(chunker)) != NULL) {
+    for (int64_t chunkIdx = 0; chunkIdx < chunker->chunkCount; chunkIdx++) {
+        chunk = bamChunker_getChunk(chunker, chunkIdx);
         if (!stString_eq(chunk->refSeqName, "contig_1") || !(chunk->chunkBoundaryStart == 410000 &&
                                                              chunk->chunkBoundaryEnd == 410020)) continue;
         CuAssertTrue(testCase, !foundChunk);

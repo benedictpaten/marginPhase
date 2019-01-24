@@ -10,6 +10,7 @@
 #include <memory.h>
 #include <hashTableC.h>
 #include <unistd.h>
+#include <omp.h>
 
 #include "marginVersion.h"
 #include "margin.h"
@@ -52,6 +53,7 @@ int main(int argc, char *argv[]) {
     char *outputBase = stString_copy("output");
     char *regionStr = NULL;
     int64_t verboseBitstring = -1;
+    int numThreads = 0;
     char *outputRepeatCountFile = NULL;
     char *outputPoaTsvFile = NULL;
 
@@ -71,6 +73,7 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+                { "threads", required_argument, 0, 't'},
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
@@ -79,7 +82,7 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hi:j:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hi:j:t:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -109,6 +112,12 @@ int main(int argc, char *argv[]) {
         case 'j':
         	outputPoaTsvFile = stString_copy(optarg);
         	break;
+        case 't':
+            numThreads = atoi(optarg);
+            if (numThreads <= 0) {
+                st_errAbort("Invalid thread count: %d", numThreads);
+            }
+            break;
         default:
             usage();
             return 0;
@@ -118,6 +127,30 @@ int main(int argc, char *argv[]) {
     // Initialization from arguments
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
+    # ifdef _OPENMP
+    if (numThreads > 0) {
+        omp_set_num_threads(numThreads);
+    }
+    st_logInfo("Running OpenMP with %d threads.\n", omp_get_max_threads());
+    # endif
+
+
+
+    int i;
+    int n = 30;
+    double* a = st_calloc(n, sizeof(double));
+    double* b = st_calloc(n, sizeof(double));
+    for (i=1; i<n; i++) {
+        a[i] = i;
+    }
+#pragma omp parallel for
+    for (i=1; i<n; i++) {
+        b[i] = (a[i] + a[i - 1]) / 2.0;
+        st_logInfo("thread:%d i:%d a:%f b:%f\n", omp_get_thread_num(), i, a[i], b[i]);
+    }
+
+    st_errAbort("fin.");
+
 
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
@@ -179,8 +212,10 @@ int main(int argc, char *argv[]) {
     char *referenceSequenceName = NULL;
 
     // For each chunk of the BAM
-    BamChunk *bamChunk = NULL;
-    while((bamChunk = bamChunker_getNext(bamChunker)) != NULL) {
+    int64_t chunkIdx;
+    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+        // Get chunk
+        BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
     	// Get reference string for chunk of alignment
     	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
         if (fullReferenceString == NULL) {

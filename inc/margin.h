@@ -971,7 +971,6 @@ typedef struct _bamChunker {
     // internal data
     stList *chunks;
     uint64_t chunkCount;
-    int64_t itorIdx;
 } BamChunker;
 
 typedef struct _bamChunk {

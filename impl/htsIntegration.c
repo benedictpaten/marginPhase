@@ -175,7 +175,6 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
     chunker->params = params;
     chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
     chunker->chunkCount = 0;
-    chunker->itorIdx = -1;
 
     // open bamfile
     samFile *in = hts_open(bamFile, "r");
@@ -271,23 +270,10 @@ void bamChunker_destruct(BamChunker *bamChunker) {
     free(bamChunker);
 }
 
-BamChunk *bamChunker_getNext(BamChunker *bamChunker) {
-    // init if first invocation of getNext
-    if (bamChunker->itorIdx < 0) {
-        bamChunker->itorIdx = 0;
-    }
-    // handle end of list case
-    if (bamChunker->itorIdx == bamChunker->chunkCount) {
-        bamChunker->itorIdx = -1;
-        return NULL;
-    }
-
-    // get chunk, increment, return
-    BamChunk *chunk = stList_get(bamChunker->chunks, bamChunker->itorIdx);
-    bamChunker->itorIdx += 1;
+BamChunk *bamChunker_getChunk(BamChunker *bamChunker, int64_t chunkIdx) {
+    BamChunk *chunk = stList_get(bamChunker->chunks, chunkIdx);
     return chunk;
 }
-
 
 BamChunk *bamChunk_construct() {
     return bamChunk_construct2(NULL, 0, 0, 0, 0, NULL);

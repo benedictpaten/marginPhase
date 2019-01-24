@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <htslib/vcf.h>
 #include "vcfComparison.h"
+#include "htsIntegration.h"
 #include "margin.h"
 
 void printBaseCompositionAtPosition(int64_t pos, stReferencePriorProbs *rProbs);
