@@ -475,6 +475,24 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 			}
 			params->minRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
 		}
+		else if (strcmp(keyString, "minReadsToCallConsensus") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minReadsToCallConsensus parameter must zero or greater\n");
+			}
+			params->minReadsToCallConsensus = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
+		else if (strcmp(keyString, "filterReadsWhileHaveAtLeastThisCoverage") == 0) {
+			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: filterReadsWhileHaveAtLeastThisCoverage parameter must zero or greater\n");
+			}
+			params->filterReadsWhileHaveAtLeastThisCoverage = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+		}
+		else if (strcmp(keyString, "minAvgBaseQuality") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: minAvgBaseQuality parameter must zero or greater\n");
+			}
+			params->minAvgBaseQuality = stJson_parseFloat(js, tokens, tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }

@@ -53,6 +53,12 @@
 		
 		  "minRealignmentPolishIterations" : 2, 
 		  
+		  "minReadsToCallConsensus" : 5,
+		  
+		  "filterReadsWhileHaveAtLeastThisCoverage" : 15,
+	
+		  "minAvgBaseQuality" : 10,
+		  
 		  "pairwiseAlignmentParameters" : {
 			    "threshold" : 0.01,
 			    "minDiagsBetweenTraceBack" : 10000,

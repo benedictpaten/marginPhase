@@ -18,7 +18,7 @@ Notes:
 
 
 # Script for munging repeat counts
-f = open("./frequency_matrices_ecoli_guppy_directional.csv", 'r')
+f = open("./probability_matrices_directional_2019_1_16_14_42_42_742985.fasta", 'r')
 l = f.readlines()
 f2 = open("./subMatrix.txt", 'w')
 for i in xrange(0, 16, 2):
