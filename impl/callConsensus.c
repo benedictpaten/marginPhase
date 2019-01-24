@@ -3,44 +3,50 @@
 
 
 // Make RLEStrings representing reads and list of the RLE strings
-char* callConsensus(int readNo, char *readArray[], char *reference, char *paramsPath) {
-    stList *reads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
-    stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
-    bool *readStrandArray = st_calloc(readNo, sizeof(bool));
-
-    for (int64_t i = 0; i < readNo; i++) {
-        RleString *rleString = rleString_construct((char *) stString_copy(readArray[i]));
-        stList_append(rleStrings, rleString);
-        stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
-                NULL, TRUE, NULL));
-    }
-
-    // RLE reference (reference could be randomly chosen read)
-    RleString *rleReference = rleString_construct(stString_copy(reference));
+PolishParams* getConsensusParameters(char *paramsPath) {
 
     // Load parameters / models
-    FILE *paramsFile = fopen(paramsPath, "r");
-    if (paramsFile == NULL) {
-        printf("Cannot open file '%s'\n", paramsPath);
-        return "";
+    Params *p = params_readParams(paramsPath);
+    PolishParams *polish = p->polishParams;
+    p->polishParams = NULL;
+    params_destruct(p);
+    return polish;
+}
+
+
+void destroyConsensusParameters(PolishParams *params) {
+    polishParams_destruct(params);
+}
+
+RleString* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params) {
+    stList *rleReads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
+    stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
+
+    for (int64_t i = 0; i < readCount; i++) {
+        RleString *rleString = rleString_construct2(stString_copy(nucleotides[i]), runLengths[i]);
+        stList_append(rleStrings, rleString);
+        stList_append(rleReads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
+                NULL, (strands[i] == 0 ? TRUE : FALSE), NULL)); // strands defined as 0 -> forward, 1 -> backward
     }
 
-    Params *p = params_readParams(paramsFile);
+    // RLE reference starts as one of the input string
+    RleString *rleReference = stList_get(rleStrings, 0);
 
-    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p->polishParams);
+    // run poa
+    Poa *poa = poa_realignAll(rleReads, NULL, rleReference->rleString, params);
 
-    // Now get a non-RLE (expanded) string
-    RleString* rleConsensus = expandRLEConsensus(poaRefined, rleStrings, reads, p->polishParams->repeatSubMatrix);
-
-    char* nonRleString = rleString_expand(rleConsensus);
-    char *nonRLEConsensusString = rleString_expand(rleConsensus);
+    // get consensus
+    RleString *consensusRleString = expandRLEConsensus(poa, rleStrings, rleReads, params->repeatSubMatrix);
 
     //cleanup
     stList_destruct(rleStrings);
-    stList_destruct(reads);
-    rleString_destruct(rleReference);
-    // TODO: Cleanup memory!
+    stList_destruct(rleReads);
+    poa_destruct(poa);
 
-    return nonRleString;
+    return consensusRleString;
+}
+
+void destroyRleString(RleString *r) {
+    rleString_destruct(r);
 }
 

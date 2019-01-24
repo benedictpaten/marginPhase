@@ -8,9 +8,9 @@
 #include "margin.h"
 
 CuSuite *stRPHmmTestSuite(void);
-CuSuite *marginPhaseParserTestSuite(void);
 CuSuite *marginPhaseTestSuite(void);
 CuSuite* polisherTestSuite(void);
+CuSuite* parserTestSuite(void);
 CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
 CuSuite* callConsensusTestSuite(void);
@@ -22,9 +22,9 @@ int marginPhaseTests(void) {
 	CuSuite* suite = CuSuiteNew();
 
 	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseTestSuite());
-	CuSuiteAddSuite(suite, polisherTestSuite());
+    CuSuiteAddSuite(suite, parserTestSuite());
+    CuSuiteAddSuite(suite, marginPhaseTestSuite());
+    CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
 	CuSuiteAddSuite(suite, callConsensusTestSuite());

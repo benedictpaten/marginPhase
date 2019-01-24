@@ -227,9 +227,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	stList_append(reads, read);
 	bool readStrand = 1;
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// This test used the default state machine in cPecan
@@ -369,9 +367,7 @@ static void test_poa_realign(CuTest *testCase) {
 			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference),NULL,TRUE,NULL));
 		}
 
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realign(reads, NULL, reference, polishParams);
@@ -443,9 +439,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), NULL, st_random() > 0.5, NULL));
 		}
 
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
+		Params *params = params_readParams(polishParamsFile);
 		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
@@ -465,9 +459,7 @@ static void test_poa_realignIterative(CuTest *testCase) {
 }
 
 int64_t calcSequenceMatches(char *seq1, char *seq2) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	//Get identity
@@ -505,9 +497,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// Set parameters
@@ -618,9 +608,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *bamChunkReads,
 		AlignmentMetrics *alignmentMetrics) {
 
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 	
 	// Set parameters
@@ -821,6 +809,50 @@ static void test_rleString_examples(CuTest *testCase) {
 			(const int64_t[]){ 0,5 }, (const int64_t[]){ 0,0,0,0,0,1,1 });
 }
 
+static void test_rleString_construct2(CuTest *testCase) {
+    char *testString = "GATTACAGGGGTT";
+    RleString *string1 = rleString_construct(testString);
+    char *rleChars = string1->rleString;
+    uint8_t *rleLengths = st_calloc(strlen(rleChars), sizeof(uint8_t));
+    for (int64_t i = 0; i < string1->length; i++) {
+        rleLengths[i] = (uint8_t) string1->repeatCounts[i];
+    }
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[0] == 0);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[1] == 1);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[2] == 2);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[3] == 4);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[4] == 5);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[5] == 6);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[6] == 7);
+    CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[7] == 11);
+
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[0] == 0);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[1] == 1);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[2] == 2);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[3] == 2);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[4] == 3);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[5] == 4);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[6] == 5);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[7] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[8] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[9] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[10] == 6);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[11] == 7);
+    CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[12] == 7);
+
+    RleString *string2 = rleString_construct2(rleChars, rleLengths);
+    CuAssertTrue(testCase, stString_eq(string1->rleString, string2->rleString));
+    CuAssertTrue(testCase, string1->length == string2->length);
+    CuAssertTrue(testCase, string1->nonRleLength == string2->nonRleLength);
+    for (int64_t i = 0; i < string1->length; i++) {
+        CuAssertTrue(testCase, string1->rleToNonRleCoordinateMap[i] == string2->rleToNonRleCoordinateMap[i]);
+    }
+    for (int64_t i = 0; i < string1->nonRleLength; i++) {
+        CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[i] == string2->nonRleToRleCoordinateMap[i]);
+    }
+
+}
+
 void checkStringsAndFree(CuTest *testCase, const char *expected, char *temp) {
 	CuAssertStrEquals(testCase, expected, temp);
 	free(temp);
@@ -843,9 +875,7 @@ void test_removeDelete(CuTest *testCase) {
 }
 
 void test_polishParams(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	CuAssertTrue(testCase, polishParams->useRunLengthEncoding);
@@ -883,9 +913,7 @@ void test_polishParams(CuTest *testCase) {
 }
 
 void test_removeOverlapExample(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	//Make prefix
@@ -911,9 +939,7 @@ void test_removeOverlapExample(CuTest *testCase) {
 }
 
 void test_removeOverlap_RandomExamples(CuTest *testCase) {
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
+	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
 
 	for (int64_t test = 0; test < 100; test++) {
@@ -1010,6 +1036,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
     SUITE_ADD_TEST(suite, test_rleString_examples);
+    SUITE_ADD_TEST(suite, test_rleString_construct2);
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
     SUITE_ADD_TEST(suite, test_polishParams);

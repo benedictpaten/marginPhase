@@ -17,7 +17,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <unistd.h>
-#include <util.h>
+//#include <util.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -75,8 +75,8 @@ struct _params {
 	stBaseMapper *baseMapper;
 };
 
-Params *params_readParams(FILE *fp);
-Params *params_readParams2(FILE *fp, bool requirePolish, bool requirePhase);
+Params *params_readParams(char *paramsFile);
+Params *params_readParams2(char *paramsFile, bool requirePolish, bool requirePhase);
 
 void params_destruct(Params *params);
 
@@ -710,9 +710,9 @@ struct _poaBaseObservation {
  * Poa functions.
  */
 
-double poaInsert_getWeight(PoaInsert *insert);
+double poaInsert_getWeight(PoaInsert *toInsert);
 
-double poaDelete_getWeight(PoaDelete *delete);
+double poaDelete_getWeight(PoaDelete *toDelete);
 
 /*
  * Creates a POA representing the given reference sequence, with one node for each reference base and a
@@ -875,6 +875,7 @@ struct _rleString {
 };
 
 RleString *rleString_construct(char *string);
+RleString *rleString_construct2(char *rleChars, uint8_t *rleCounts);
 
 void rleString_destruct(RleString *rlString);
 

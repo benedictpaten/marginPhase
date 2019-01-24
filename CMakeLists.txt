@@ -1,10 +1,14 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.5)
+project(marginPhase VERSION 1.1.0)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
 project(marginPhase LANGUAGES C)
 
+include(GNUInstallDirs)
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
 ###############################
 ##### HEADERS AND SOURCES #####
@@ -34,6 +38,15 @@ include_directories(externalTools/samtools)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(${CPECAN_HEADERS})
+
+file(GLOB MARGIN_CORE_HEADERS
+        inc/*.h
+        externalTools/sonLib/C/inc/*.h
+        externalTools/sonLib/C/impl/*.h
+        externalTools/sonLib/externalTools/quicktree_1.1/include/*.h
+        externalTools/cPecan/inc/*.h
+        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src/*.h
+        )
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -273,22 +286,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Dependencies
 find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'z' library")
+    message(WARNING "Couldn't find the 'z' library")
 endif()
 
 find_library(BZ2LIB bz2)
 if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'bz2' library")
+    message(WARNING "Couldn't find the 'bz2' library")
 endif()
 
 find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'pthread' library")
+    message(WARNING "Couldn't find the 'pthread' library")
 endif()
 
 find_library(CURLLIB curl)
 if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'curl' library")
+    message(WARNING "Couldn't find the 'curl' library")
 endif()
 
 # LASTZ
@@ -314,6 +327,16 @@ target_link_libraries(cpecan m)
 # Build MarginCore Library
 add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
 target_link_libraries(MarginCore cpecan son)
+
+# Install command for MarginCore
+set_target_properties(MarginCore PROPERTIES
+        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}"
+        VERSION ${marginPhase_VERSION}
+        SOVERSION ${marginPhase_VERSION})
+install(TARGETS MarginCore
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION include/marginPhase
+        )
 
 # HTSLIB
 add_custom_command(
@@ -358,6 +381,3 @@ add_executable(allTests
         tests/callConsensusTest.c
         )
 target_link_libraries(allTests margin)
-
-
-

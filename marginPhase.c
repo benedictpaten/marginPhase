@@ -321,12 +321,7 @@ int main(int argc, char *argv[]) {
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
-    FILE *fh = fopen(paramsFile, "rb");
-    if (fh == NULL) {
-        st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
-    }
-    Params *fullParams = params_readParams2(fh, FALSE, TRUE);
-    fclose(fh);
+    Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
     stBaseMapper *baseMapper = fullParams->baseMapper;
     stRPHmmParameters *params = fullParams->phaseParams;
     assert(baseMapper != NULL);

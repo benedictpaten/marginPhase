@@ -11,8 +11,29 @@
 static char *polishParamsFile = "../params/allParams.np.json";
 
 
+void getCallConsensusDataFromReads(char *rawReads[], int readCount, char**rleReads[], uint8_t**rleCounts[], uint8_t *strands[]) {
+    *rleReads = st_calloc(readCount, sizeof(char*));
+    *rleCounts = st_calloc(readCount, sizeof(uint8_t*));
+    *strands = st_calloc(readCount, sizeof(uint8_t));
+
+    for (int i = 0; i < readCount; i++) {
+        char *rawRead = rawReads[i];
+        RleString *rleString = rleString_construct(rawRead);
+
+        (*rleReads)[i] = stString_copy(rleString->rleString);
+        (*rleCounts)[i] = st_calloc(rleString->length, sizeof(uint8_t));
+        for (int j = 0; j < rleString->length; j++) {
+            ((*rleCounts)[i])[j] = (uint8_t) rleString->repeatCounts[j];
+        }
+        (*strands)[i] = 0; //todo
+
+        rleString_destruct(rleString);
+    }
+}
+
+
 void test_readSet1(CuTest *testCase) {
-	char *reads[] = {
+	char *rawReads[] = {
             "CATTTTTCTCCTCCACCTGCAACAGAAGATAAAAACGCGCATCACAAACTACTTTATTG",
             "CATTTTTCTCTCCGTCACGTAATAGGAAAACAGATGAAAATGTGCACCATAAAACGCATTTTTATTT",
             "CATTTTCTCTCTCCGTCACGACAGGAAACAGATGAAAATGGGCACAAGACCACAAACGCATTTTGAT",
@@ -60,16 +81,34 @@ void test_readSet1(CuTest *testCase) {
             "CATTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAAAGAGCTGGCATGCGGGGCATGTGACCATAAAACGCATTTTTTTGT"
     };
     int readCount = 45;
-    char *trueRef = "CATTTTTCTCTCTCCCTCCGTCATTGCACAGGAAAACAGATGAAAAATGCGGGGCATGTGACCATAAAACGCATTTTTTATTT";
 
-    char *consensus = callConsensus(readCount, reads, trueRef, polishParamsFile);
+    char **rleReads = NULL;
+    uint8_t **rleCounts = NULL;
+    uint8_t *strands = NULL;
+    getCallConsensusDataFromReads(rawReads, readCount, &rleReads, &rleCounts, &strands);
+    PolishParams *params = getConsensusParameters(polishParamsFile);
 
-    CuAssertTrue(testCase, strlen(consensus) > 0);
+    // get consensus string
+    RleString *consensus = callConsensus(readCount, rleReads, rleCounts, strands, params);
+
+    CuAssertTrue(testCase, consensus != NULL);
+    CuAssertTrue(testCase, strlen(consensus->rleString) > 0);
+
+    // cleanup
+    destroyRleString(consensus);
+    destroyConsensusParameters(params);
+    for (int64_t i = 0; i < readCount; i++) {
+        free(rleReads[i]);
+        free(rleCounts[i]);
+    }
+    free(rleReads);
+    free(rleCounts);
+    free(strands);
 }
 
 
 void test_readSet2(CuTest *testCase) {
-	char *reads[] = {
+	char *rawReads[] = {
             "GATGTAAAAATGACTGAGTTAGAACAGGCATAAATACATCTGT",
             "GATGTAAAAAAAAATGACAGAGAATAAAACTATCCTTATCTATT",
             "GATGTAAAAAGAAGCGGAAGTTAGAACAGGCATAAATACATCTGT",
@@ -114,11 +153,29 @@ void test_readSet2(CuTest *testCase) {
             "GATGTAAAAAAAAAGAAATGCGGATTTGGAAGTTAGAACAGTATATAAAGCACACATCCGT"
     };
     int readCount = 42;
-    char *trueRef = "GATGTAAAAAAAAAGAAATGACGGAAGTTAGAACAGAGCATAAATACACATCTGT";
 
-    char *consensus = callConsensus(readCount, reads, trueRef, polishParamsFile);
+    char **rleReads = NULL;
+    uint8_t **rleCounts = NULL;
+    uint8_t *strands = NULL;
+    getCallConsensusDataFromReads(rawReads, readCount, &rleReads, &rleCounts, &strands);
+    PolishParams *params = getConsensusParameters(polishParamsFile);
 
-    CuAssertTrue(testCase, strlen(consensus) > 0);
+    // get consensus string
+    RleString *consensus = callConsensus(readCount, rleReads, rleCounts, strands, params);
+
+    CuAssertTrue(testCase, consensus != NULL);
+    CuAssertTrue(testCase, strlen(consensus->rleString) > 0);
+
+    // cleanup
+    destroyRleString(consensus);
+    destroyConsensusParameters(params);
+    for (int64_t i = 0; i < readCount; i++) {
+        free(rleReads[i]);
+        free(rleCounts[i]);
+    }
+    free(rleReads);
+    free(rleCounts);
+    free(strands);
 }
 
 
