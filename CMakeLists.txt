@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_COMPILER gcc)
-
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
@@ -305,13 +302,13 @@ add_custom_command(
         COMMAND make
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/cPecan/
 )
-add_custom_target(CPECANLASTZ DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
+add_custom_target(CPECANLASTZ DEPENDS lastz "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
 
 # MISC
 add_library(son ${SONLIB_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
 add_dependencies(cpecan CPECANLASTZ)
-target_link_libraries(cpecan lastz m)
+target_link_libraries(cpecan m)
 
 
 # Build MarginCore Library
