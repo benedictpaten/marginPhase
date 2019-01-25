@@ -134,24 +134,6 @@ int main(int argc, char *argv[]) {
     st_logInfo("Running OpenMP with %d threads.\n", omp_get_max_threads());
     # endif
 
-
-
-    int i;
-    int n = 30;
-    double* a = st_calloc(n, sizeof(double));
-    double* b = st_calloc(n, sizeof(double));
-    for (i=1; i<n; i++) {
-        a[i] = i;
-    }
-#pragma omp parallel for
-    for (i=1; i<n; i++) {
-        b[i] = (a[i] + a[i - 1]) / 2.0;
-        st_logInfo("thread:%d i:%d a:%f b:%f\n", omp_get_thread_num(), i, a[i], b[i]);
-    }
-
-    st_errAbort("fin.");
-
-
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     Params *params = params_readParams(paramsFile);
@@ -207,119 +189,161 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Set up bam chunker with chunk size: %i and overlap %i (for region=%s)\n",
     		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr);
 
-    stList *polishedReferenceStrings = NULL; // The polished reference strings, one
-    // for each chunk
-    char *referenceSequenceName = NULL;
+    // Polish chunks
+    // Each chunk produces a char* as output which is saved here
+    char **chunkResults = st_calloc(bamChunker->chunkCount, sizeof(char*));
 
-    // For each chunk of the BAM
+    // multiproccess the chunks, save to results
     int64_t chunkIdx;
+    #pragma omp parallel for
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Get chunk
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
-    	// Get reference string for chunk of alignment
-    	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+        char *logIdentifier;
+        # ifdef _OPENMP
+        logIdentifier = stString_print("T%02d_C%03"PRId64, omp_get_thread_num(), chunkIdx);
+        # else
+        logIdentifier = stString_copy("");
+        # endif
+
+        // Get reference string for chunk of alignment
+        char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
         if (fullReferenceString == NULL) {
             st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
             continue;
         }
         int64_t refLen = strlen(fullReferenceString);
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
-            (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
+                                                      (refLen < bamChunk->chunkBoundaryEnd ? refLen
+                                                                                           : bamChunk->chunkBoundaryEnd) -
+                                                      bamChunk->chunkBoundaryStart);
 
-        st_logInfo("> Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
-        		   bamChunk->refSeqName, (int)bamChunk->chunkBoundaryStart,
-				   (int)(refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
+        st_logInfo("> %s: Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
+                   logIdentifier, bamChunk->refSeqName, (int) bamChunk->chunkBoundaryStart,
+                   (int) (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
 
-		// Convert bam lines into corresponding reads and alignments
-		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
-		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-        stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
+        // Convert bam lines into corresponding reads and alignments
+        st_logInfo("> %s Parsing input reads from file: %s\n", logIdentifier, bamInFile);
+        stList *reads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+        stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
 
-		Poa *poa = NULL; // The poa alignment
-		char *polishedReferenceString = NULL; // The polished reference string
+        Poa *poa = NULL; // The poa alignment
+        char *polishedReferenceString = NULL; // The polished reference string
 
-		// Now run the polishing method
+        // Now run the polishing method
 
-		if(params->polishParams->useRunLengthEncoding) {
-			st_logInfo("> Running polishing algorithm using run-length encoding\n");
+        if (params->polishParams->useRunLengthEncoding) {
+            st_logInfo("> %s Running polishing algorithm using run-length encoding\n", logIdentifier);
 
-			// Run-length encoded polishing
+            // Run-length encoded polishing
 
-			// Do run length encoding (RLE)
+            // Do run length encoding (RLE)
 
-			// First RLE the reference
-			RleString *rleReference = rleString_construct(referenceString);
+            // First RLE the reference
+            RleString *rleReference = rleString_construct(referenceString);
 
-			// Now RLE the reads
-			stList *rleNucleotides = stList_construct3(0, (void (*)(void *))rleString_destruct);
-			stList *rleReads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-            stList *rleAlignments = stList_construct3(0, (void (*)(void*))stList_destruct);
-			for(int64_t j=0; j<stList_length(reads); j++) {
-				BamChunkRead *read = stList_get(reads, j);
-				RleString *rleNucleotideString = rleString_construct(read->nucleotides);
-				stList_append(rleNucleotides, rleNucleotideString);
-				stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
-			}
+            // Now RLE the reads
+            stList *rleNucleotides = stList_construct3(0, (void (*)(void *)) rleString_destruct);
+            stList *rleReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+            stList *rleAlignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
+            for (int64_t j = 0; j < stList_length(reads); j++) {
+                BamChunkRead *read = stList_get(reads, j);
+                RleString *rleNucleotideString = rleString_construct(read->nucleotides);
+                stList_append(rleNucleotides, rleNucleotideString);
+                stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
+                stList_append(rleAlignments,
+                              runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
+            }
 
-			// Generate partial order alignment (POA) (destroys rleAlignments in the process)
-			poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
+            // Generate partial order alignment (POA) (destroys rleAlignments in the process)
+            poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
 
-			// Now optionally do phasing and haplotype specific polishing
+            // Now optionally do phasing and haplotype specific polishing
 
-			//stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
-			//stList *reads1, *reads2;
-			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
+            //stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
+            //stList *reads1, *reads2;
+            //phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
 
-			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads, params->polishParams->repeatSubMatrix);
-			polishedReferenceString = rleString_expand(polishedRLEReference);
+            // Do run-length decoding
+            RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads,
+                                                                 params->polishParams->repeatSubMatrix);
+            polishedReferenceString = rleString_expand(polishedRLEReference);
 
-			// Log info about the POA
-			if (st_getLogLevel() >= info) {
-				st_logInfo("Summary stats for POA:\t");
-				poa_printSummaryStats(poa, stderr);
-			}
-			if (st_getLogLevel() >= debug) {
-				poa_print(poa, stderr, rleReads, 5, 5);
-			}
+            // Log info about the POA
+            if (st_getLogLevel() >= info) {
+                st_logInfo("> %s Summary stats for POA:\t", logIdentifier);
+                poa_printSummaryStats(poa, stderr);
+            }
+            if (st_getLogLevel() >= debug) {
+                poa_print(poa, stderr, rleReads, 5, 5);
+            }
 
-			// Write any optional outputs about repeat count and POA, etc.
-			if(outputPoaTsvFileHandle != NULL) {
-				poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
-			}
-			if(outputRepeatCountFileHandle != NULL) {
-				poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
-			}
+            // Write any optional outputs about repeat count and POA, etc.
+            /*TODO fix this after multithreading
+            if(outputPoaTsvFileHandle != NULL) {
+                poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
+            }
+            if(outputRepeatCountFileHandle != NULL) {
+                poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
+            } */
 
-			// Now cleanup run-length stuff
-			stList_destruct(rleNucleotides);
-			stList_destruct(rleReads);
+            // Now cleanup run-length stuff
+            stList_destruct(rleNucleotides);
+            stList_destruct(rleReads);
             stList_destruct(rleAlignments);
-			rleString_destruct(rleReference);
-			rleString_destruct(polishedRLEReference);
-		}
-		else { // Non-run-length encoded polishing
-			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
+            rleString_destruct(rleReference);
+            rleString_destruct(polishedRLEReference);
+        } else { // Non-run-length encoded polishing
+            st_logInfo("> %s Running polishing algorithm without using run-length encoding\n", logIdentifier);
 
-			// Generate partial order alignment (POA)
-			poa = poa_realignAll(reads, alignments, referenceString, params->polishParams);
+            // Generate partial order alignment (POA)
+            poa = poa_realignAll(reads, alignments, referenceString, params->polishParams);
 
-			// Polished string is the final backbone of the POA
-			polishedReferenceString = stString_copy(poa->refString);
-		
-			// Log info about the POA
-			if (st_getLogLevel() >= info) {
-				st_logInfo("Summary stats for POA:\t");
-				poa_printSummaryStats(poa, stderr);
-			}
-			if (st_getLogLevel() >= debug) {
-				poa_print(poa, stderr, reads, 5, 5);
-			}
-		}
+            // Polished string is the final backbone of the POA
+            polishedReferenceString = stString_copy(poa->refString);
 
-		// If there is no prior chunk
+            // Log info about the POA
+            if (st_getLogLevel() >= info) {
+                st_logInfo("> %s Summary stats for POA:\t", logIdentifier);
+                poa_printSummaryStats(poa, stderr);
+            }
+            if (st_getLogLevel() >= debug) {
+                poa_print(poa, stderr, reads, 5, 5);
+            }
+        }
+
+        // save polished reference string to chunk output array
+        chunkResults[chunkIdx] = polishedReferenceString;
+
+        // cleanup
+        poa_destruct(poa);
+        stList_destruct(reads);
+        stList_destruct(alignments);
+        free(referenceString);
+    }
+
+    // TODO to help determine determinism
+    // debugging the chunks
+    char *debugReferenceOutFile = stString_print("%s.chunks.fa", outputBase);
+    FILE *debugReferenceOutFh = fopen(debugReferenceOutFile, "w");
+    for (int64_t i = 0; i < bamChunker->chunkCount; i++ ) {
+        char *chunk = stString_print("%"PRId64"_%s", i, bamChunker_getChunk(bamChunker, i)->refSeqName);
+        fastaWrite(chunkResults[i], chunk, debugReferenceOutFh);
+        free(chunk);
+    }
+    fclose(debugReferenceOutFh);
+    free(debugReferenceOutFile);
+
+    // merge chunks
+    stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
+    char *referenceSequenceName = NULL;
+    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+        // Get chunk and polished
+        BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
+        char* polishedReferenceString = chunkResults[chunkIdx];
+
+		// If there is no prior chunk for this contig
 		if(referenceSequenceName == NULL) {
 			polishedReferenceStrings = stList_construct3(0, free);
 			referenceSequenceName = stString_copy(bamChunk->refSeqName);
@@ -368,11 +392,6 @@ int main(int argc, char *argv[]) {
 		// Add the polished sequence to the list of polished reference sequence chunks
 		stList_append(polishedReferenceStrings, polishedReferenceString);
 
-		// Cleanup
-		poa_destruct(poa);
-		stList_destruct(reads);
-        stList_destruct(alignments);
-		free(referenceString);
     }
 
     // Write out the last chunk
