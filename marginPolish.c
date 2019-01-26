@@ -207,7 +207,8 @@ int main(int argc, char *argv[]) {
         # endif
 
         // Get reference string for chunk of alignment
-        char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+        //TODO maybe we don't need to stringcopy this
+        char *fullReferenceString = stString_copy(stHash_search(referenceSequences, bamChunk->refSeqName));
         if (fullReferenceString == NULL) {
             st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
             continue;
@@ -227,6 +228,21 @@ int main(int argc, char *argv[]) {
         stList *reads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
+
+        // TODO to help determine determinism
+        // debugging the reads
+        char *chunkReadOutFile = stString_print("%s.c%"PRId64".reads.fa", outputBase, chunkIdx);
+        st_logInfo("Writing reads to %s\n", chunkReadOutFile);
+        FILE *chunkReadOutFh = fopen(chunkReadOutFile, "w");
+        for (int64_t i = 0; i < stList_length(reads); i++ ) {
+            char *read = stString_print("%s_c%"PRId64"_%"PRId64, bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName, chunkIdx, i);
+            fastaWrite(((BamChunkRead*)stList_get(reads, i))->nucleotides, read, chunkReadOutFh);
+            free(read);
+        }
+        fclose(chunkReadOutFh);
+        st_logInfo("Wrote reads to %s\n", chunkReadOutFile);
+        free(chunkReadOutFile);
+
 
         Poa *poa = NULL; // The poa alignment
         char *polishedReferenceString = NULL; // The polished reference string
@@ -321,6 +337,7 @@ int main(int argc, char *argv[]) {
         stList_destruct(reads);
         stList_destruct(alignments);
         free(referenceString);
+        free(fullReferenceString);
     }
 
     // TODO to help determine determinism
