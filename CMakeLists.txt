@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.5)
 project(marginPhase VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 14)
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address")
 
 project(marginPhase LANGUAGES C)
 
@@ -30,7 +30,7 @@ set(SONLIB_HEADERS
 set(CPECAN_HEADERS
         externalTools/cPecan/inc
         externalTools/cPecan/tests
-        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src
+#        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src
         )
 
 include_directories(inc)
@@ -45,7 +45,7 @@ file(GLOB MARGIN_CORE_HEADERS
         externalTools/sonLib/C/impl/*.h
         externalTools/sonLib/externalTools/quicktree_1.1/include/*.h
         externalTools/cPecan/inc/*.h
-        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src/*.h
+#        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src/*.h
         )
 
 set(HTSLIB_SOURCES

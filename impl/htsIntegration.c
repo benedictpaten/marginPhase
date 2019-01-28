@@ -765,6 +765,7 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
                     (1.0 * randomSeed / readLength), readName);
     }
 
+    stList_destructIterator(itor);
     stList_destruct(probabilityList);
     free(line);
     free(chromStr);

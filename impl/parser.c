@@ -47,7 +47,7 @@ void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
  * Set the baseMapper wildcard.
  */
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
-    bm->wildcard = wildcard;
+    bm->wildcard = stString_copy(wildcard);
 }
 
 /*

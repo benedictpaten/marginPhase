@@ -97,8 +97,8 @@ void test_bamReadParsing(CuTest *testCase) {
     int64_t cigarOp = -1;
     int64_t cigarNum = -1;
     int64_t idxInSeq = start_read;
-    char *firstMatches = st_calloc(18, sizeof(char));
-    char *lastMatches = st_calloc(29, sizeof(char));
+    char *firstMatches = st_calloc(19, sizeof(char));
+    char *lastMatches = st_calloc(30, sizeof(char));
     // For each position turn character into profile probability
     // As is, this makes the probability 1 for the base read in, and 0 otherwise
     for (uint32_t i = 0; i < trueLength; i++) {

@@ -229,21 +229,6 @@ int main(int argc, char *argv[]) {
         stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
 
-        // TODO to help determine determinism
-        // debugging the reads
-        char *chunkReadOutFile = stString_print("%s.c%"PRId64".reads.fa", outputBase, chunkIdx);
-        st_logInfo("Writing reads to %s\n", chunkReadOutFile);
-        FILE *chunkReadOutFh = fopen(chunkReadOutFile, "w");
-        for (int64_t i = 0; i < stList_length(reads); i++ ) {
-            char *read = stString_print("%s_c%"PRId64"_%"PRId64, bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName, chunkIdx, i);
-            fastaWrite(((BamChunkRead*)stList_get(reads, i))->nucleotides, read, chunkReadOutFh);
-            free(read);
-        }
-        fclose(chunkReadOutFh);
-        st_logInfo("Wrote reads to %s\n", chunkReadOutFile);
-        free(chunkReadOutFile);
-
-
         Poa *poa = NULL; // The poa alignment
         char *polishedReferenceString = NULL; // The polished reference string
 
@@ -339,18 +324,6 @@ int main(int argc, char *argv[]) {
         free(referenceString);
         free(fullReferenceString);
     }
-
-    // TODO to help determine determinism
-    // debugging the chunks
-    char *debugReferenceOutFile = stString_print("%s.chunks.fa", outputBase);
-    FILE *debugReferenceOutFh = fopen(debugReferenceOutFile, "w");
-    for (int64_t i = 0; i < bamChunker->chunkCount; i++ ) {
-        char *chunk = stString_print("%"PRId64"_%s", i, bamChunker_getChunk(bamChunker, i)->refSeqName);
-        fastaWrite(chunkResults[i], chunk, debugReferenceOutFh);
-        free(chunk);
-    }
-    fclose(debugReferenceOutFh);
-    free(debugReferenceOutFile);
 
     // merge chunks
     stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
