@@ -34,13 +34,16 @@ void usage() {
     fprintf(stderr, "    PARAMS is the file with marginPolish parameters.\n");
 
     fprintf(stderr, "\nDefault options:\n");
-    fprintf(stderr, "    -h --help              : Print this help screen\n");
-    fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
-    fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
-    fprintf(stderr, "    -r --region            : If set, will only compute for given chromosomal region.\n");
-    fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
+    fprintf(stderr, "    -h --help                : Print this help screen\n");
+    fprintf(stderr, "    -a --logLevel            : Set the log level [default = info]\n");
+    # ifdef _OPENMP
+    fprintf(stderr, "    -t --threads             : Set number of concurrent threads (default: 1)\n");
+    #endif
+    fprintf(stderr, "    -o --outputBase          : Name to use for output files [default = output]\n");
+    fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
+    fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
-    fprintf(stderr, "    -i --outputRepeatCounts        : File to write out the repeat counts [default = NULL]\n");
+    fprintf(stderr, "    -i --outputRepeatCounts  : File to write out the repeat counts [default = NULL]\n");
     fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
 
@@ -73,7 +76,9 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+                # ifdef _OPENMP
                 { "threads", required_argument, 0, 't'},
+                #endif
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
@@ -130,6 +135,8 @@ int main(int argc, char *argv[]) {
     # ifdef _OPENMP
     if (numThreads > 0) {
         omp_set_num_threads(numThreads);
+    } else {
+        omp_set_num_threads(1);
     }
     st_logInfo("Running OpenMP with %d threads.\n", omp_get_max_threads());
     # endif
