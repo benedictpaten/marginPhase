@@ -11,6 +11,7 @@
 #include <hashTableC.h>
 #include <unistd.h>
 #include <omp.h>
+#include <time.h>
 
 #include "marginVersion.h"
 #include "margin.h"
@@ -197,11 +198,14 @@ int main(int argc, char *argv[]) {
     int64_t chunkIdx;
     #pragma omp parallel for
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+        // Time all chunks
+        clock_t start = clock();
+
         // Get chunk
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
         char *logIdentifier;
         # ifdef _OPENMP
-        logIdentifier = stString_print("T%02d_C%03"PRId64, omp_get_thread_num(), chunkIdx);
+        logIdentifier = stString_print("T%02d_C%05"PRId64, omp_get_thread_num(), chunkIdx);
         # else
         logIdentifier = stString_copy("");
         # endif
@@ -316,6 +320,11 @@ int main(int argc, char *argv[]) {
 
         // save polished reference string to chunk output array
         chunkResults[chunkIdx] = polishedReferenceString;
+
+        // report timing
+        clock_t end = clock();
+        st_logInfo("> %s: Chunk with %d reads processed in %d sec\n",
+                   logIdentifier, stList_length(reads), (int) (end - start) / CLOCKS_PER_SEC);
 
         // cleanup
         poa_destruct(poa);
