@@ -64,6 +64,8 @@ int main(int argc, char *argv[]) {
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
     if(argc < 4) {
+        free(outputBase);
+        free(logLevelString);
         usage();
         return 0;
     }
@@ -126,6 +128,11 @@ int main(int argc, char *argv[]) {
             break;
         default:
             usage();
+            free(outputBase);
+            free(logLevelString);
+            free(bamInFile);
+            free(referenceFastaFile);
+            free(paramsFile);
             return 0;
         }
     }
@@ -206,13 +213,13 @@ int main(int argc, char *argv[]) {
     #pragma omp parallel for
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Time all chunks
-        clock_t start = clock();
+        time_t start = time(NULL);
 
         // Get chunk
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
         char *logIdentifier;
         # ifdef _OPENMP
-        logIdentifier = stString_print("T%02d_C%05"PRId64, omp_get_thread_num(), chunkIdx);
+        logIdentifier = stString_print(" T%02d_C%05"PRId64, omp_get_thread_num(), chunkIdx);
         # else
         logIdentifier = stString_copy("");
         # endif
@@ -230,12 +237,12 @@ int main(int argc, char *argv[]) {
                                                                                            : bamChunk->chunkBoundaryEnd) -
                                                       bamChunk->chunkBoundaryStart);
 
-        st_logInfo("> %s: Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
+        st_logInfo(">%s Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
                    logIdentifier, bamChunk->refSeqName, (int) bamChunk->chunkBoundaryStart,
                    (int) (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
 
         // Convert bam lines into corresponding reads and alignments
-        st_logInfo("> %s Parsing input reads from file: %s\n", logIdentifier, bamInFile);
+        st_logInfo(">%s Parsing input reads from file: %s\n", logIdentifier, bamInFile);
         stList *reads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
@@ -253,10 +260,10 @@ int main(int argc, char *argv[]) {
 
         // Note RLE status (and handle reference)
         if (params->polishParams->useRunLengthEncoding) {
-            st_logInfo("> %s Applying RLE\n", logIdentifier);
+            st_logInfo(">%s Applying RLE\n", logIdentifier);
             rleReference = rleString_construct(referenceString);
         } else {
-            st_logInfo("> %s Skipping RLE\n", logIdentifier);
+            st_logInfo(">%s Skipping RLE\n", logIdentifier);
             rleReference = rleString_constructNoRLE(referenceString);
         }
 
@@ -282,8 +289,8 @@ int main(int argc, char *argv[]) {
 
 
         // Run the polishing method
-        st_logInfo("> %s Running polishing algorithm with %"PRId64" reads and %"PRIu64"M nucleotides\n",
-                logIdentifier, stList_length(reads), (int) totalNucleotides >> 20);
+        st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"M nucleotides\n",
+                logIdentifier, stList_length(reads), totalNucleotides >> 20);
 
         // Generate partial order alignment (POA) (destroys rleAlignments in the process)
         poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
@@ -303,7 +310,7 @@ int main(int argc, char *argv[]) {
 
         // Log info about the POA
         if (st_getLogLevel() >= info) {
-            st_logInfo("> %s Summary stats for POA:\t", logIdentifier);
+            st_logInfo(">%s Summary stats for POA:\t", logIdentifier);
             poa_printSummaryStats(poa, stderr);
         }
         if (st_getLogLevel() >= debug) {
@@ -324,9 +331,8 @@ int main(int argc, char *argv[]) {
         chunkResults[chunkIdx] = polishedReferenceString;
 
         // report timing
-        clock_t end = clock();
-        st_logInfo("> %s: Chunk with %d reads processed in %d sec\n",
-                   logIdentifier, stList_length(reads), (int) (end - start) / CLOCKS_PER_SEC);
+        st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"M nucleotides processed in %d sec\n",
+                   logIdentifier, stList_length(reads), totalNucleotides >> 20, (int) (time(NULL) - start));
 
         // Cleanup
         stList_destruct(rleNucleotides);
@@ -339,9 +345,11 @@ int main(int argc, char *argv[]) {
         stList_destruct(alignments);
         free(referenceString);
         free(fullReferenceString);
+        free(logIdentifier);
     }
 
     // merge chunks
+    st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.", bamChunker->chunkCount);
     stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
     char *referenceSequenceName = NULL;
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
@@ -382,7 +390,7 @@ int main(int argc, char *argv[]) {
 													   bamChunker->chunkBoundary * 2, params->polishParams,
 													   &prefixStringCropEnd, &suffixStringCropStart);
 
-			st_logInfo("Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
+			st_logInfo("  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
 					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary * 2, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
 					strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
 
@@ -427,6 +435,12 @@ int main(int argc, char *argv[]) {
     	fclose(outputRepeatCountFileHandle);
     	free(outputRepeatCountFile);
     }
+
+    free(chunkResults);
+    free(outputBase);
+    free(bamInFile);
+    free(referenceFastaFile);
+    free(paramsFile);
 
     //while(1); // Use this for testing for memory leaks
 

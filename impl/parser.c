@@ -14,7 +14,7 @@ stBaseMapper* stBaseMapper_construct() {
     stBaseMapper *bm = (stBaseMapper*)st_malloc(sizeof(stBaseMapper));
     bm->charToNum = st_calloc(256, sizeof(uint8_t));
     bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(uint8_t));
-    bm->wildcard = "";
+    bm->wildcard = stString_copy("");
     bm->size = 0;
     return bm;
 }
@@ -25,6 +25,7 @@ stBaseMapper* stBaseMapper_construct() {
 void stBaseMapper_destruct(stBaseMapper *bm) {
     free(bm->charToNum);
     free(bm->numToChar);
+    free(bm->wildcard);
     free(bm);
 }
 
@@ -47,6 +48,7 @@ void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
  * Set the baseMapper wildcard.
  */
 void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
+    free(bm->wildcard);
     bm->wildcard = stString_copy(wildcard);
 }
 
@@ -59,7 +61,7 @@ uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
     for (int i = 0; i < strlen(bm->wildcard); i++) {
         if (bm->wildcard[i] == base) {
             assert(bm->size-1 < UINT8_MAX);
-            return st_randomInt(0, bm->size-1);
+            return (uint8_t) st_randomInt(0, bm->size-1);
         }
     }
     st_errAbort("Base '%c' (%d) not in alphabet", base, base);
@@ -475,20 +477,17 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: minRealignmentPolishIterations parameter must zero or greater\n");
 			}
 			params->minRealignmentPolishIterations = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
-		}
-		else if (strcmp(keyString, "minReadsToCallConsensus") == 0) {
+		} else if (strcmp(keyString, "minReadsToCallConsensus") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: minReadsToCallConsensus parameter must zero or greater\n");
 			}
 			params->minReadsToCallConsensus = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
-		}
-		else if (strcmp(keyString, "filterReadsWhileHaveAtLeastThisCoverage") == 0) {
+		} else if (strcmp(keyString, "filterReadsWhileHaveAtLeastThisCoverage") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: filterReadsWhileHaveAtLeastThisCoverage parameter must zero or greater\n");
 			}
 			params->filterReadsWhileHaveAtLeastThisCoverage = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
-		}
-		else if (strcmp(keyString, "minAvgBaseQuality") == 0) {
+		} else if (strcmp(keyString, "minAvgBaseQuality") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: minAvgBaseQuality parameter must zero or greater\n");
 			}
@@ -526,6 +525,7 @@ void polishParams_destruct(PolishParams *params) {
 	stateMachine_destruct(params->sM);
 	hmm_destruct(params->hmm);
 	pairwiseAlignmentBandingParameters_destruct(params->p);
+    free(params->minPosteriorProbForAlignmentAnchors);
 	free(params);
 }
 

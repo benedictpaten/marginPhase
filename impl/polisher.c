@@ -5,6 +5,7 @@
  */
 
 #include "margin.h"
+#include <omp.h>
 
 PoaBaseObservation *poaBaseObservation_construct(int64_t readNo, int64_t offset, double weight) {
 	PoaBaseObservation *poaBaseObservation = st_calloc(1, sizeof(PoaBaseObservation));
@@ -2376,6 +2377,7 @@ Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params) {
 
 	time_t startTime = time(NULL);
 
+
 	int64_t *poaToConsensusMap;
 	char *newConsensusString = poa_polish2(poa, bamChunkReads, params, &poaToConsensusMap);
 
@@ -2391,11 +2393,18 @@ Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params) {
 	free(poaToConsensusMap);
 
 	if(st_getLogLevel() >= info) {
+        char *logIdentifier;
+        # ifdef _OPENMP
+            logIdentifier = stString_print(" T%02d", omp_get_thread_num());
+        # else
+            logIdentifier = stString_copy("");
+        # endif
 		double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
-		st_logInfo("Took %f seconds to do a round of polishing, got score: %f, a diff: %f \n",
-					(float)(time(NULL) - startTime), score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
-	}
+		st_logInfo(" %s Took %3d seconds to do a round of polishing, got score: %6.4f (%f score diff)\n",
+					logIdentifier, (int)(time(NULL) - startTime), score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
+        free(logIdentifier);
+    }
 
 	return poa2;
 }
@@ -2408,10 +2417,16 @@ Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
 	assert(minIterations <= maxIterations);
 
 	time_t startTime = time(NULL);
+    char *logIdentifier;
+    # ifdef _OPENMP
+        logIdentifier = stString_print(" T%02d", omp_get_thread_num());
+    # else
+        logIdentifier = stString_copy("");
+    # endif
 
 	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
 
-	st_logInfo("Starting realignment with score: %f\n", score/PAIR_ALIGNMENT_PROB_1);
+	st_logInfo(" %s Starting realignment with score: %6.4f\n", logIdentifier, score/PAIR_ALIGNMENT_PROB_1);
 
 	int64_t i=0;
 	while(i < maxIterations) {
@@ -2423,8 +2438,8 @@ Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
 		char *reference = hmmMNotRealign ? poa_getConsensus(poa, &poaToConsensusMap, polishParams) :
 				poa_polish2(poa, bamChunkReads, polishParams, &poaToConsensusMap);
 
-		st_logInfo("Took %f seconds to do round %" PRIi64 " of consensus finding using algorithm %s\n",
-				(float)(time(NULL) - consensusFindingStartTime), i, hmmMNotRealign ? "consensus" : "polish");
+		st_logInfo(" %s Took %3d seconds to do round %" PRIi64 " of consensus finding using algorithm %s\n",
+				logIdentifier, (int)(time(NULL) - consensusFindingStartTime), i, hmmMNotRealign ? "consensus" : "polish");
 
 		// Stop in case consensus string is same as old reference (i.e. greedy convergence)
 		if(stString_eq(reference, poa->refString)) {
@@ -2448,8 +2463,8 @@ Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
 
 		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
 
-		st_logInfo("Took %f seconds to do round %" PRIi64 " of realignment, Have score: %f (%f score diff)\n",
-					(float)(time(NULL) - realignStartTime), i, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
+		st_logInfo(" %s Took %3d seconds to do round %" PRIi64 " of realignment, Have score: %6.4f (%f score diff)\n",
+					logIdentifier, (int)(time(NULL) - realignStartTime), i, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
 
 		// Stop if score decreases (greedy stopping)
 		if(score2 <= score && i >= minIterations) {
@@ -2462,9 +2477,10 @@ Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
 		score = score2;
 	}
 
-	st_logInfo("Took %f seconds to realign iterative using algorithm: %s through %" PRIi64 " iterations, got final score : %f\n",
-			(float)(time(NULL) - startTime), hmmMNotRealign ? "consensus" : "polish", i, score/PAIR_ALIGNMENT_PROB_1);
+	st_logInfo(" %s Took %3d seconds to realign iterative using algorithm: %s through %" PRIi64 " iterations, got final score : %6.4f\n",
+			logIdentifier, (int)(time(NULL) - startTime), hmmMNotRealign ? "consensus" : "polish", i, score/PAIR_ALIGNMENT_PROB_1);
 
+	free(logIdentifier);
 	return poa;
 }
 
@@ -2474,7 +2490,14 @@ Poa *poa_realignIterative2(stList *bamChunkReads,
 						   int64_t minIterations, int64_t maxIterations) {
 	time_t startTime = time(NULL);
 	Poa *poa = poa_realign(bamChunkReads, anchorAlignments, reference, polishParams);
-	st_logInfo("Took %f seconds to generate initial POA\n", (float)(time(NULL) - startTime));
+	char *logIdentifier;
+    # ifdef _OPENMP
+        logIdentifier = stString_print(" T%02d", omp_get_thread_num());
+    # else
+        logIdentifier = stString_copy("");
+    # endif
+	st_logInfo(" %s Took %3d seconds to generate initial POA\n", logIdentifier, (int)(time(NULL) - startTime));
+	free(logIdentifier);
 	return maxIterations == 0 ? poa : poa_realignIterative3(poa, bamChunkReads, polishParams, hmmMNotRealign, minIterations, maxIterations);
 }
 
