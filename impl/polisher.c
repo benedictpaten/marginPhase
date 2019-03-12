@@ -1375,7 +1375,6 @@ RleString *rleString_construct(char *str) {
 	return rleString;
 }
 
-
 RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts) {
 	RleString *rleString = st_calloc(1, sizeof(RleString));
 
@@ -1407,6 +1406,29 @@ RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts) {
 	assert(n == rleString->nonRleLength);
 
 	return rleString;
+}
+
+RleString *rleString_constructNoRLE(char *str) {
+    RleString *rleString = st_calloc(1, sizeof(RleString));
+
+    rleString->nonRleLength = strlen(str);
+    rleString->length = rleString->nonRleLength;
+
+    // Allocate
+    rleString->rleString = st_calloc(rleString->nonRleLength+1, sizeof(char));
+    rleString->repeatCounts = st_calloc(rleString->nonRleLength, sizeof(int64_t));
+    rleString->rleToNonRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
+    rleString->nonRleToRleCoordinateMap = st_calloc(rleString->nonRleLength, sizeof(int64_t));
+
+    // Fill out
+    for(int64_t i=0; i<rleString->nonRleLength; i++) {
+        rleString->nonRleToRleCoordinateMap[i] = i;
+        rleString->rleToNonRleCoordinateMap[i] = i;
+        rleString->rleString[i] = str[i];
+        rleString->repeatCounts[i] = 1;
+    }
+
+    return rleString;
 }
 
 void rleString_destruct(RleString *rleString) {
