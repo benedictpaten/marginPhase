@@ -840,7 +840,7 @@ static void test_rleString_construct2(CuTest *testCase) {
     CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[11] == 7);
     CuAssertTrue(testCase, string1->nonRleToRleCoordinateMap[12] == 7);
 
-    RleString *string2 = rleString_construct2(rleChars, rleLengths);
+    RleString *string2 = rleString_constructPreComputed(rleChars, rleLengths);
     CuAssertTrue(testCase, stString_eq(string1->rleString, string2->rleString));
     CuAssertTrue(testCase, string1->length == string2->length);
     CuAssertTrue(testCase, string1->nonRleLength == string2->nonRleLength);

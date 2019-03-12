@@ -23,7 +23,7 @@ RleString* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLen
     stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
 
     for (int64_t i = 0; i < readCount; i++) {
-        RleString *rleString = rleString_construct2(stString_copy(nucleotides[i]), runLengths[i]);
+        RleString *rleString = rleString_constructPreComputed(stString_copy(nucleotides[i]), runLengths[i]);
         stList_append(rleStrings, rleString);
         stList_append(rleReads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
                 NULL, (strands[i] == 0 ? TRUE : FALSE), NULL)); // strands defined as 0 -> forward, 1 -> backward

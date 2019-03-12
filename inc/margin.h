@@ -875,7 +875,7 @@ struct _rleString {
 };
 
 RleString *rleString_construct(char *string);
-RleString *rleString_construct2(char *rleChars, uint8_t *rleCounts);
+RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts);
 
 void rleString_destruct(RleString *rlString);
 

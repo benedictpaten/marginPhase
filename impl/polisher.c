@@ -1376,7 +1376,7 @@ RleString *rleString_construct(char *str) {
 }
 
 
-RleString *rleString_construct2(char *rleChars, uint8_t rleCounts[]) {
+RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts) {
 	RleString *rleString = st_calloc(1, sizeof(RleString));
 
 	rleString->length = strlen(rleChars);
