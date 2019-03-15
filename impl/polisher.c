@@ -744,7 +744,7 @@ double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkRead
 		*totalWeight += baseObs->weight;
 		BamChunkRead *read = stList_get(bamChunkReads, baseObs->readNo);
 		char base = read->nucleotides[baseObs->offset];
-		baseWeights[symbol_convertCharToSymbol(base) * 2 + (read->forwardStrand ? 1 : 0)] += baseObs->weight;
+		baseWeights[symbol_convertCharToSymbol(base) * 2 + (read->forwardStrand ? POS_STRAND_IDX : NEG_STRAND_IDX)] += baseObs->weight;
 		if(read->forwardStrand) {
 			*totalPositiveWeight += baseObs->weight;
 		}
@@ -756,29 +756,27 @@ double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkRead
 	return baseWeights;
 }
 
-void poa_printRepeatCounts(Poa *poa, FILE *fH,
-		stList *rleReads, stList *bamChunkReads) {
-		fprintf(fH, "REF_INDEX\tREF_BASE");
-		fprintf(fH, "\tREPEAT_COUNT_OBSxN(READ_BASE:READ_STRAND:REPEAT_COUNT,WEIGHT)\n");
+void poa_printRepeatCounts(Poa *poa, FILE *fH, stList *rleReads, stList *bamChunkReads) {
+    fprintf(fH, "REF_INDEX\tREF_BASE");
+    fprintf(fH, "\tREPEAT_COUNT_OBSxN(READ_BASE:READ_STRAND:REPEAT_COUNT,WEIGHT)\n");
 
-		// Print info for each base in reference in turn
-		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-			PoaNode *node = stList_get(poa->nodes, i);
+    // Print info for each base in reference in turn
+    for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+        PoaNode *node = stList_get(poa->nodes, i);
 
-			fprintf(fH, "%" PRIi64 "\t%c", i, node->base);
+        fprintf(fH, "%" PRIi64 "\t%c", i, node->base);
 
+        for(int64_t j=0; j<stList_length(node->observations); j++) {
+            PoaBaseObservation *obs = stList_get(node->observations, j);
+            RleString *rleRead = stList_get(rleReads, obs->readNo);
+            BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
+            int64_t repeatCount = rleRead->repeatCounts[obs->offset];
+            char base = rleRead->rleString[obs->offset];
+            fprintf(fH, "\t%c%c%" PRIi64 ",%.3f", base, bamChunkRead->forwardStrand ? '+' : '-', repeatCount, obs->weight/PAIR_ALIGNMENT_PROB_1);
+        }
 
-			for(int64_t j=0; j<stList_length(node->observations); j++) {
-				PoaBaseObservation *obs = stList_get(node->observations, j);
-				RleString *rleRead = stList_get(rleReads, obs->readNo);
-				BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
-				int64_t repeatCount = rleRead->repeatCounts[obs->offset];
-				char base = rleRead->rleString[obs->offset];
-				fprintf(fH, "\t%c%c%" PRIi64 ",%.3f", base, bamChunkRead->forwardStrand ? '+' : '-', repeatCount, obs->weight/PAIR_ALIGNMENT_PROB_1);
-			}
-
-			fprintf(fH, "\n");
-		}
+        fprintf(fH, "\n");
+    }
 }
 
 void poa_printTSV(Poa *poa, FILE *fH,
@@ -865,8 +863,8 @@ void poa_print(Poa *poa, FILE *fH,
 				totalWeight/PAIR_ALIGNMENT_PROB_1, totalPositiveWeight/PAIR_ALIGNMENT_PROB_1, totalNegativeWeight/PAIR_ALIGNMENT_PROB_1);
 
 		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
-			double negativeStrandBaseWeight = baseWeights[j*2 + 0];
+			double positiveStrandBaseWeight = baseWeights[j*2 + POS_STRAND_IDX];
+			double negativeStrandBaseWeight = baseWeights[j*2 + NEG_STRAND_IDX];
 			double totalBaseWeight = positiveStrandBaseWeight + negativeStrandBaseWeight;
 
 			if(totalBaseWeight/totalWeight > 0.25) {
@@ -2513,4 +2511,83 @@ Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *refer
 	poa = poa_realignIterative3(poa, bamChunkReads, polishParams, 0,
 			polishParams->minRealignmentPolishIterations, polishParams->maxRealignmentPolishIterations);
 	return poa;
+}
+
+
+PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_t refPos, int64_t insPos) {
+    PoaFeatureSimpleCharacterCount *scc = st_calloc(1, sizeof(PoaFeatureSimpleCharacterCount));
+    scc->refPosition = refPos;
+    scc->insertPosition = insPos;
+    scc->nextInsert = NULL;
+    return scc;
+}
+void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleCharacterCount *scc) {
+    free(scc);
+}
+
+stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads, FILE *fH) {
+
+    // initialize feature list
+    stList *featureList = stList_construct3(0, (void (*)(void *))PoaFeature_SimpleCharacterCount_destruct);
+    for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+        stList_append(featureList, PoaFeature_SimpleCharacterCount_construct(i, 0));
+    }
+
+    // iterate over all positions
+    for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+
+        // get feature and node
+        PoaFeatureSimpleCharacterCount* feature = stList_get(featureList, i);
+        PoaNode *node = stList_get(poa->nodes, i);
+
+        // iterate over all observations in node (to get character counts)
+        for(int64_t j=0; i<stList_length(node->observations); i++) {
+            PoaBaseObservation *baseObs = stList_get(node->observations, i);
+            BamChunkRead *read = stList_get(bamChunkReads, baseObs->readNo);
+            char base = read->nucleotides[baseObs->offset];
+            feature->counts[symbol_convertCharToSymbol(base) * 2 + (read->forwardStrand ? POS_STRAND_IDX : NEG_STRAND_IDX)] += 1;
+        }
+
+        // get weights for all bases, strands
+        double totalWeight, totalPositiveWeight, totalNegativeWeight;
+        double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+                                                                   &totalWeight, &totalPositiveWeight, &totalNegativeWeight);
+        for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+            double positiveStrandBaseWeight = baseWeights[j*2 + POS_STRAND_IDX];
+            double negativeStrandBaseWeight = baseWeights[j*2 + NEG_STRAND_IDX];
+            feature->weights[i * 2 + POS_STRAND_IDX] += positiveStrandBaseWeight;
+            feature->weights[i * 2 + NEG_STRAND_IDX] += negativeStrandBaseWeight;
+        }
+        free(baseWeights);
+
+        // Deletes
+        for(int64_t j=0; j<stList_length(node->deletes); j++) {
+            PoaDelete *delete = stList_get(node->deletes, j);
+            //TODO how to account for deletes?
+//            if(poaDelete_getWeight(delete)/PAIR_ALIGNMENT_PROB_1 >= indelSignificanceThreshold &&
+//               isBalanced(delete->weightForwardStrand, delete->weightReverseStrand, strandBalanceRatio)) {
+//                fprintf(fH, "Delete\tLength:%" PRIi64 "\tTotal weight:%f\tForward Strand Weight:%f\tReverse Strand Weight:%f\n",
+//                        delete->length,
+//                        (float)poaDelete_getWeight(delete)/PAIR_ALIGNMENT_PROB_1,
+//                        (float)delete->weightForwardStrand/PAIR_ALIGNMENT_PROB_1,
+//                        (float)delete->weightReverseStrand/PAIR_ALIGNMENT_PROB_1);
+//            }
+        }
+
+        // Inserts
+        for(int64_t j=0; j<stList_length(node->inserts); j++) {
+            PoaInsert *insert = stList_get(node->inserts, j);
+            //TODO each insert here comes from a read? How do we tell if the read is fwd/rev?
+//            if(poaInsert_getWeight(insert)/PAIR_ALIGNMENT_PROB_1 >= indelSignificanceThreshold &&
+//               isBalanced(insert->weightForwardStrand, insert->weightReverseStrand, strandBalanceRatio)) {
+//                fprintf(fH, "Insert\tSeq:%s\tTotal weight:%f\tForward Strand Weight:%f\tReverse Strand Weight:%f\n", insert->insert,
+//                        (float)poaInsert_getWeight(insert)/PAIR_ALIGNMENT_PROB_1,
+//                        (float)insert->weightForwardStrand/PAIR_ALIGNMENT_PROB_1,
+//                        (float)insert->weightReverseStrand/PAIR_ALIGNMENT_PROB_1);
+//            }
+        }
+
+    }
+
+
 }

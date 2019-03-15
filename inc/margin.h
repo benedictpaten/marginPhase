@@ -112,6 +112,12 @@ double logAddP(double a, double b, bool maxNotSum);
 #define ALPHABET_CHARACTER_BITS 8
 #define ALPHABET_MIN_SUBSTITUTION_PROB 65535 // 2^16 -1
 
+/*
+ * Strandedness
+ */
+#define POS_STRAND_IDX 1
+#define NEG_STRAND_IDX 1
+
 // Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1,
 // with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
 uint16_t scaleToLogIntegerSubMatrix(double logProb);
@@ -692,12 +698,14 @@ struct _poaInsert {
 	char *insert; // String representing characters of insert e.g. "GAT", etc.
 	double weightForwardStrand;
 	double weightReverseStrand;
+    //TODO add in observations
 };
 
 struct _poaDelete {
 	int64_t length; // Length of delete
 	double weightForwardStrand;
 	double weightReverseStrand;
+    //TODO add in observations
 };
 
 struct _poaBaseObservation {
@@ -1083,5 +1091,27 @@ void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
 
 void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
 				stList **readsPartition1, stList **readsPartition2, Params *params);
+
+/*
+ * Output for NN variant caller
+ */
+
+
+/*
+ * Simple feature (no run lengths)
+ */
+typedef struct _poaFeatureSimpleCharacterCount PoaFeatureSimpleCharacterCount;
+struct _poaFeatureSimpleCharacterCount {
+    int64_t refPosition;
+    int64_t insertPosition;
+    int64_t counts[(SYMBOL_NUMBER + 1) * 2]; // {A, C, G, T, N, gap} x {fwd, bkwd}
+    double weights[(SYMBOL_NUMBER + 1) * 2]; // {A, C, G, T, N, gap} x {fwd, bkwd}
+    PoaFeatureSimpleCharacterCount* nextInsert; //so we can model all inserts after a position
+};
+
+PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_t refPos, int64_t insPos);
+void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleCharacterCount *scc);
+
+
 
 #endif /* ST_RP_HMM_H_ */
