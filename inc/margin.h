@@ -698,14 +698,14 @@ struct _poaInsert {
 	char *insert; // String representing characters of insert e.g. "GAT", etc.
 	double weightForwardStrand;
 	double weightReverseStrand;
-    //TODO add in observations
+    stList *observations; // Individual events representing event, a list of PoaObservations
 };
 
 struct _poaDelete {
 	int64_t length; // Length of delete
 	double weightForwardStrand;
 	double weightReverseStrand;
-    //TODO add in observations
+    stList *observations; // Individual events representing event, a list of PoaObservations
 };
 
 struct _poaBaseObservation {

@@ -23,6 +23,7 @@ void poaBaseObservation_destruct(PoaBaseObservation *poaBaseObservation) {
 
 PoaInsert *poaInsert_construct(char *insert, double weight, bool strand) {
 	PoaInsert *poaInsert = st_calloc(1, sizeof(PoaInsert));
+	poaInsert->observations = stList_construct3(0, (void (*)(void *))poaBaseObservation_destruct);
 
 	poaInsert->insert = insert;
 	if(strand) {
@@ -36,6 +37,7 @@ PoaInsert *poaInsert_construct(char *insert, double weight, bool strand) {
 }
 
 void poaInsert_destruct(PoaInsert *poaInsert) {
+    stList_destruct(poaInsert->observations);
 	free(poaInsert->insert);
 	free(poaInsert);
 }
@@ -51,6 +53,7 @@ double poaInsert_getWeight(PoaInsert *insert) {
 
 PoaDelete *poaDelete_construct(int64_t length, double weight, bool strand) {
 	PoaDelete *poaDelete = st_calloc(1, sizeof(PoaDelete));
+	poaDelete->observations = stList_construct3(0, (void (*)(void *))poaBaseObservation_destruct);
 
 	poaDelete->length = length;
 	if(strand) {
@@ -64,6 +67,7 @@ PoaDelete *poaDelete_construct(int64_t length, double weight, bool strand) {
 }
 
 void poaDelete_destruct(PoaDelete *poaDelete) {
+    stList_destruct(poaDelete->observations);
 	free(poaDelete);
 }
 
@@ -150,7 +154,7 @@ bool isMatch(stSortedSet *matchesSet, int64_t x, int64_t y) {
 	return stSortedSet_search(matchesSet, &pair) != NULL;
 }
 
-static void addToInserts(PoaNode *node, char *insert, double weight, bool strand) {
+static void addToInserts(PoaNode *node, char *insert, double weight, bool strand, PoaBaseObservation *observation) {
 	/*
 	 * Add given insert to node.
 	 */
@@ -158,22 +162,29 @@ static void addToInserts(PoaNode *node, char *insert, double weight, bool strand
 	PoaInsert *poaInsert = NULL;
 	// Check if the complete insert is already in the poa graph:
 	for(int64_t m=0; m<stList_length(node->inserts); m++) {
-		poaInsert = stList_get(node->inserts, m);
-		if(stString_eq(poaInsert->insert, insert)) {
-			if(strand) {
-				poaInsert->weightForwardStrand += weight;
-			}
-			else {
-				poaInsert->weightReverseStrand += weight;
-			}
-			return;
+        PoaInsert *tmp = stList_get(node->inserts, m);
+		if(stString_eq(tmp->insert, insert)) {
+		    poaInsert = tmp;
+		    break;
 		}
 	}
-	// otherwise add the insert to the poa graph
-	stList_append(node->inserts, poaInsert_construct(stString_copy(insert), weight, strand));
+	// otherwise create and save it
+	if (poaInsert == NULL) {
+	    poaInsert = poaInsert_construct(stString_copy(insert), 0, FALSE);
+        stList_append(node->inserts, poaInsert);
+	}
+
+	// update with (stranded) weight and observation
+    if(strand) {
+        poaInsert->weightForwardStrand += weight;
+    }
+    else {
+        poaInsert->weightReverseStrand += weight;
+    }
+    stList_append(poaInsert->observations, observation);
 }
 
-static void addToDeletes(PoaNode *node, int64_t length, double weight, bool strand) {
+static void addToDeletes(PoaNode *node, int64_t length, double weight, bool strand, PoaBaseObservation *observation) {
 	/*
 	 * Add given deletion to node.
 	 */
@@ -181,19 +192,26 @@ static void addToDeletes(PoaNode *node, int64_t length, double weight, bool stra
 	PoaDelete *poaDelete = NULL;
 	// Check if the delete is already in the poa graph:
 	for(int64_t m=0; m<stList_length(node->deletes); m++) {
-		poaDelete = stList_get(node->deletes, m);
-		if(poaDelete->length == length) {
-			if(strand) {
-				poaDelete->weightForwardStrand += weight;
-			}
-			else {
-				poaDelete->weightReverseStrand += weight;
-			}
-			return;
+		PoaDelete *tmp = stList_get(node->deletes, m);
+		if(tmp->length == length) {
+			poaDelete = tmp;
+			break;
 		}
 	}
-	// otherwise add the delete to the poa graph
-	stList_append(node->deletes, poaDelete_construct(length, weight, strand));
+    // otherwise create and save it
+    if (poaDelete == NULL) {
+        poaDelete = poaDelete_construct(length, 0, FALSE);
+        stList_append(node->deletes, poaDelete);
+    }
+
+    // update with (stranded) weight and observation
+    if(strand) {
+        poaDelete->weightForwardStrand += weight;
+    }
+    else {
+        poaDelete->weightReverseStrand += weight;
+    }
+    stList_append(poaDelete->observations, observation);
 }
 
 char *poa_getReferenceSubstring(Poa *poa, int64_t startIndex, int64_t length) {
@@ -406,7 +424,8 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
 				}
 
 				// Add insert to graph at leftmost position
-				addToInserts(stList_get(poa->nodes, insertPosition), insertLabel, insertWeight, readStrand);
+				addToInserts(stList_get(poa->nodes, insertPosition), insertLabel, insertWeight, readStrand,
+                             poaBaseObservation_construct(readNo, stIntTuple_get(insertStart, 2), insertWeight));
 			}
 		}
 
@@ -479,20 +498,21 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
 
 				// First find the left point to which the delete would be connected
 				assert(stIntTuple_get(deleteStart, 1) + k - i >= 0);
-				int64_t insertPosition = stIntTuple_get(deleteStart, 1) + k - i;
+				int64_t deletePosition = stIntTuple_get(deleteStart, 1) + k - i;
 
 				// Get string being deleted
-				char *deleteLabel = poa_getReferenceSubstring(poa, insertPosition+1, deleteLength);
+				char *deleteLabel = poa_getReferenceSubstring(poa, deletePosition+1, deleteLength);
 
 				// Now walk back over reference sequence and see if insert can be left-shifted
-				insertPosition = getShift(poa->refString, insertPosition, deleteLabel, deleteLength);
+				deletePosition = getShift(poa->refString, deletePosition, deleteLabel, deleteLength);
 
 				// Finally see if can be shifted by common suffix
-				insertPosition -= getMaxCommonSuffixLength(poa->refString, insertPosition, deleteLabel, deleteLength);
+				deletePosition -= getMaxCommonSuffixLength(poa->refString, deletePosition, deleteLabel, deleteLength);
 				free(deleteLabel);
 
 				// Add delete to graph at leftmost position
-				addToDeletes(stList_get(poa->nodes, insertPosition), deleteLength, deleteWeight, readStrand);
+				addToDeletes(stList_get(poa->nodes, deletePosition), deleteLength, deleteWeight, readStrand,
+                             poaBaseObservation_construct(readNo, stIntTuple_get(deleteStart, 2), deleteWeight));
 			}
 		}
 
