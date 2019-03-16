@@ -331,8 +331,8 @@ int main(int argc, char *argv[]) {
         chunkResults[chunkIdx] = polishedReferenceString;
 
         // report timing
-        st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"M nucleotides processed in %d sec\n",
-                   logIdentifier, stList_length(reads), totalNucleotides >> 20, (int) (time(NULL) - start));
+        st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",
+                   logIdentifier, stList_length(reads), totalNucleotides >> 10, (int) (time(NULL) - start));
 
         // Cleanup
         stList_destruct(rleNucleotides);
@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
     }
 
     // merge chunks
-    st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.", bamChunker->chunkCount);
+    st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
     stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
     char *referenceSequenceName = NULL;
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
