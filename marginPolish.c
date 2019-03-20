@@ -38,14 +38,20 @@ void usage() {
     fprintf(stderr, "    -h --help                : Print this help screen\n");
     fprintf(stderr, "    -a --logLevel            : Set the log level [default = info]\n");
     # ifdef _OPENMP
-    fprintf(stderr, "    -t --threads             : Set number of concurrent threads (default: 1)\n");
+    fprintf(stderr, "    -t --threads             : Set number of concurrent threads [default = 1]\n");
     #endif
-    fprintf(stderr, "    -o --outputBase          : Name to use for output files [default = output]\n");
+    fprintf(stderr, "    -o --outputBase          : Name to use for output files [default = 'output']\n");
     fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
-    fprintf(stderr, "    -i --outputRepeatCounts  : File to write out the repeat counts [default = NULL]\n");
-    fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
+    fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
+    fprintf(stderr, "                                 simpleCount:  counts alignments for each read\n");
+    fprintf(stderr, "                                 simpleWeight: weighted likelyhood from POA nodes\n");
+    fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
+    fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
+    fprintf(stderr, "                               in output.\n");
+//    fprintf(stderr, "    -i --outputRepeatCounts  : File to write out the repeat counts [default = NULL]\n");
+//    fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -60,6 +66,8 @@ int main(int argc, char *argv[]) {
     int numThreads = 0;
     char *outputRepeatCountFile = NULL;
     char *outputPoaTsvFile = NULL;
+    HelenFeatureType helenFeatureType = HFEAT_NONE;
+    char *trueReferenceBam = NULL;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -85,12 +93,14 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
+                { "outputFeatureType", required_argument, 0, 'f'},
+                { "trueReferenceBam", required_argument, 0, 'u'},
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hi:j:t:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:f:u:hi:j:t:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -118,8 +128,22 @@ int main(int argc, char *argv[]) {
         	outputRepeatCountFile = stString_copy(optarg);
         	break;
         case 'j':
-        	outputPoaTsvFile = stString_copy(optarg);
-        	break;
+            outputPoaTsvFile = stString_copy(optarg);
+            break;
+        case 'f':
+            if (stString_eq(optarg, "simpleCount")) {
+                helenFeatureType = HFEAT_SIMPLE_COUNT;
+            } else if (stString_eq(optarg, "simpleWeight")) {
+                helenFeatureType = HFEAT_SIMPLE_WEIGHT;
+            } else {
+                fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
+                usage();
+                return 1;
+            }
+            break;
+        case 'u':
+            trueReferenceBam = stString_copy(optarg);
+            break;
         case 't':
             numThreads = atoi(optarg);
             if (numThreads <= 0) {
@@ -152,6 +176,14 @@ int main(int argc, char *argv[]) {
     // Parse parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     Params *params = params_readParams(paramsFile);
+
+    // Set no RLE if appropriate feature type is set
+//    if (helenFeatureType == HFEAT_SIMPLE_WEIGHT || helenFeatureType == HFEAT_SIMPLE_COUNT) {
+//        if (params->polishParams->useRunLengthEncoding) {
+//            st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
+//            params->polishParams->useRunLengthEncoding = FALSE;
+//        }
+//    }
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -289,8 +321,8 @@ int main(int argc, char *argv[]) {
 
 
         // Run the polishing method
-        st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"M nucleotides\n",
-                logIdentifier, stList_length(reads), totalNucleotides >> 20);
+        st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"K nucleotides\n",
+                logIdentifier, stList_length(reads), totalNucleotides >> 10);
 
         // Generate partial order alignment (POA) (destroys rleAlignments in the process)
         poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
@@ -329,6 +361,31 @@ int main(int argc, char *argv[]) {
 
         // save polished reference string to chunk output array
         chunkResults[chunkIdx] = polishedReferenceString;
+
+        // HELEN feature outputs
+        if (helenFeatureType != HFEAT_NONE) {
+            // get filename
+            char *helenFeatureOutfile = NULL;
+            switch (helenFeatureType) {
+                case HFEAT_SIMPLE_COUNT:
+                    helenFeatureOutfile = stString_print("%s.simpleCount.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                            outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
+                            bamChunk->chunkBoundaryEnd);
+                    break;
+                case HFEAT_SIMPLE_WEIGHT:
+                    helenFeatureOutfile = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                            outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
+                            bamChunk->chunkBoundaryEnd);
+                    break;
+                default:
+                    st_errAbort("Unhandled HELEN feature type!\n");
+            }
+
+            // log, write, free
+            st_logInfo(">%s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
+            poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile);
+            free(helenFeatureOutfile);
+        }
 
         // report timing
         st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",

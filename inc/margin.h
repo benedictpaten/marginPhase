@@ -116,7 +116,7 @@ double logAddP(double a, double b, bool maxNotSum);
  * Strandedness
  */
 #define POS_STRAND_IDX 1
-#define NEG_STRAND_IDX 1
+#define NEG_STRAND_IDX 0
 
 // Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1,
 // with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
@@ -1100,17 +1100,28 @@ void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList 
 /*
  * Simple feature (no run lengths)
  */
+typedef enum {
+    HFEAT_NONE=0,
+    HFEAT_SIMPLE_COUNT=1,
+    HFEAT_SIMPLE_WEIGHT=2
+} HelenFeatureType;
+#define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
+#define POAFEATURE_TOTAL_SIZE ((SYMBOL_NUMBER + 1) * 2) // {A, C, G, T, N, gap} x {fwd, bkwd}
 typedef struct _poaFeatureSimpleCharacterCount PoaFeatureSimpleCharacterCount;
 struct _poaFeatureSimpleCharacterCount {
     int64_t refPosition;
     int64_t insertPosition;
-    int64_t counts[(SYMBOL_NUMBER + 1) * 2]; // {A, C, G, T, N, gap} x {fwd, bkwd}
-    double weights[(SYMBOL_NUMBER + 1) * 2]; // {A, C, G, T, N, gap} x {fwd, bkwd}
+    int64_t counts[POAFEATURE_TOTAL_SIZE];
+    double weights[POAFEATURE_TOTAL_SIZE];
     PoaFeatureSimpleCharacterCount* nextInsert; //so we can model all inserts after a position
 };
 
 PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_t refPos, int64_t insPos);
 void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleCharacterCount *scc);
+int64_t PoaFeature_SimpleCharacterCount_getTotalCount(PoaFeatureSimpleCharacterCount *scc);
+double PoaFeature_SimpleCharacterCount_getTotalWeight(PoaFeatureSimpleCharacterCount *scc);
+stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads);
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile);
 
 
 
