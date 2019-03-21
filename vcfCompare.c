@@ -9,7 +9,7 @@
 #include <ctype.h>
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
-#include "stRPHmm.h"
+#include "vcfComparison.h"
 #include "sam.h"
 #include "bgzf.h"
 
@@ -132,15 +132,21 @@ int main(int argc, char *argv[]) {
             st_errAbort("ERROR: must specify reference fasta while when in debug mode. Use flag -f <FILE>\n");
         }
         // Parse files
-        stBaseMapper *baseMapper = stBaseMapper_construct();
         st_logInfo("> Parsing input files. params file: %s  bam1file: %s  bam2file: %s\n",
                    paramsFile, bamFile1, bamFile2);
-        stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+        FILE *fh = fopen(paramsFile, "rb");
+        if (fh == NULL) {
+            st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+        }
+        Params *fullParams = params_readParams2(fh, FALSE, TRUE);
+        fclose(fh);
+        stBaseMapper *baseMapper = fullParams->baseMapper;
+        stRPHmmParameters *params = fullParams->phaseParams;
 
         // Compare vcfs
         compareVCFs_debugWithBams(vcfEvaluated, vcfReference, bamFile1, bamFile2,
                                   referenceFasta, baseMapper, results, params);
-        free(params);
+        params_destruct(fullParams);
     } else {
         compareVCFsBasic(stderr, vcfEvaluated, vcfReference, results);
     }

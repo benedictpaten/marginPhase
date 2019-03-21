@@ -12,7 +12,6 @@ Makefile
 vcfCompare
 marginPhase.cbp
 libjsmn.a
-*.bai
 venv
 s3am
 *.pyc
@@ -28,3 +27,5 @@ toil/docker/tempMarginPhase/
 toil/test-report.xml
 *.egg-info
 tests/NA12878.pb.chr3.5kb/
+build/
+tmp

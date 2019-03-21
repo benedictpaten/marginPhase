@@ -10,10 +10,12 @@
 #include <memory.h>
 #include <hashTableC.h>
 #include <unistd.h>
+#include "vcf.h"
 
-#include "stRPHmm.h"
-#include "margin_phase_version.h"
-#include "sonLib.h"
+#include "margin.h"
+#include "marginVersion.h"
+#include "vcfComparison.h"
+#include "htsIntegration.h"
 #include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*
@@ -31,74 +33,6 @@ void printSequenceStats(FILE *fH, stList *profileSequences) {
     }
     fprintf(fH, "\tGot %" PRIi64 " profile sequences, with total length: %" PRIi64 ", average length: %f\n",
             stList_length(profileSequences), totalLength, ((float)totalLength)/stList_length(profileSequences));
-}
-
-double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start,
-                                  int64_t length, stProfileSeq *profileSeq) {
-    /*
-     * Returns the expected number of positions in the profile sequence
-     * that are identical to the given haplotype string.
-     */
-    double totalExpectedMatches = 0.0;
-
-    for(int64_t i=0; i<profileSeq->length; i++) {
-        // Get base in the haplotype sequence
-        int64_t j = i + profileSeq->refStart - start;
-        if(j >= 0 && j < length) {
-            uint64_t hapBase = haplotypeString[j];
-            assert(hapBase < ALPHABET_SIZE);
-
-            // Expectation of a match
-            totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
-        }
-    }
-    return totalExpectedMatches;
-}
-
-double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
-    /*
-     * Returns the expected fraction of positions in the profile sequences
-     * that match their corresponding position in the given haplotype string.
-     */
-    double totalExpectedNumberOfMatches = 0.0;
-    int64_t totalLength = 0;
-    stSetIterator *it = stSet_getIterator(profileSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        totalExpectedNumberOfMatches += getExpectedNumberOfMatches(haplotypeString, start, length, pSeq);
-        totalLength += pSeq->length;
-    }
-    stSet_destructIterator(it);
-    return totalExpectedNumberOfMatches/totalLength;
-}
-
-double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
-    /*
-     * Returns the fraction of positions in two haplotypes that are identical.
-     */
-    int64_t totalMatches = 0;
-    for(int64_t i=0; i<length; i++) {
-        if(hap1String[i] == hap2String[i]) {
-            totalMatches++;
-        }
-    }
-    return ((double)totalMatches)/length;
-}
-
-double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
-    /*
-     * Returns the fraction of positions in two haplotypes that are identical.
-     */
-    int64_t totalMatches = 0;
-    int64_t numGaps = 0;
-    for(int64_t i=0; i<length; i++) {
-        if(hap1String[i] == hap2String[i]) {
-            totalMatches++;
-        } else if (hap1String[i] == ALPHABET_SIZE-1 || hap2String[i] == ALPHABET_SIZE-1) {
-            numGaps++;
-        }
-    }
-    return ((double)totalMatches)/(length - numGaps);
 }
 
 void getExpectedMatchesBetweenProfileSeqs(stProfileSeq *pSeq1, stProfileSeq *pSeq2,
@@ -140,48 +74,6 @@ void printAvgIdentityBetweenProfileSequences(FILE *fH, stList *profileSequences,
 
     fprintf(fH, "\tAvg. pairwise identity between profile sequences: %f measured at %" PRIi64 " overlapping sites\n",
             totalExpectedMatches/totalAlignedPositions, totalAlignedPositions);
-}
-double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
-    /*
-     * Get the count of each alphabet character in the haplotype sequence, returned
-     * as an array.
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    for(int64_t i=0; i<length; i++) {
-        baseCounts[hapString[i]] += 1;
-    }
-    return baseCounts;
-}
-
-double *getExpectedProfileSequenceBaseComposition(stSet *profileSeqs) {
-    /*
-     * Get the expected count of each alphabet character in the profile sequences, returned
-     * as an array.
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    stSetIterator *it = stSet_getIterator(profileSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        for(int64_t i=0; i<pSeq->length; i++) {
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(pSeq->profileProbs[i*ALPHABET_SIZE]), j);
-            }
-        }
-    }
-    return baseCounts;
-}
-
-void printBaseComposition(FILE *fH, double *baseCounts) {
-    /*
-     * Print the counts/fraction of each alphabet character.
-     */
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += baseCounts[i];
-    }
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\t\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
-    }
 }
 
 double matchesTopTwoBases(int64_t pos, stProfileSeq *profileSeq, stReferencePriorProbs *rProbs) {
@@ -297,59 +189,6 @@ stList *createHMMs(stList *profileSequences, stHash *referenceNamesToReferencePr
     }
     return hmms;
 }
-
-void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
-    /*
-     * Print debug-level logging information about an HMM and associated genome fragment.
-     */
-
-    if(st_getLogLevel() == debug) {
-        st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
-                    hmm->referenceName, hmm->refStart, hmm->refLength);
-        st_logDebug("\n\tThere are %" PRIi64 " reads covered by the hmm, "
-                            "bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
-                    stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
-
-        // Print the similarity between the two imputed haplotypes sequences
-        st_logDebug("\tThe haplotypes have identity: %f \n",
-                    getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-        st_logDebug("\tIdentity excluding indels:    %f \n\n",
-                    getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-
-        // Print the base composition of the haplotype sequences
-        double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
-        st_logDebug("\tThe base composition of haplotype 1:\n");
-        printBaseComposition(stderr, hap1BaseCounts);
-        free(hap1BaseCounts);
-
-        double *hap2BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString2, gF->length);
-        st_logDebug("\tThe base composition of haplotype 2:\n");
-        printBaseComposition(stderr, hap2BaseCounts);
-        free(hap2BaseCounts);
-
-        // Print the base composition of the reads
-        double *reads1BaseCounts =getExpectedProfileSequenceBaseComposition(reads1);
-        st_logDebug("\tThe base composition of reads1 set:\n");
-        printBaseComposition(stderr, reads1BaseCounts);
-        free(reads1BaseCounts);
-
-        double *reads2BaseCounts =getExpectedProfileSequenceBaseComposition(reads2);
-        st_logDebug("\tThe base composition of reads2 set:\n");
-        printBaseComposition(stderr, reads2BaseCounts);
-        free(reads2BaseCounts);
-
-        // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-        st_logDebug("\thap1 vs. reads1 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-        st_logDebug("\thap1 vs. reads2 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-        st_logDebug("\thap2 vs. reads2 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-        st_logDebug("\thap2 vs. reads1 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
-    }
-}
-
 
 /*
  * Main functions
@@ -482,8 +321,11 @@ int main(int argc, char *argv[]) {
 
     // Parse any model parameters
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
-    stBaseMapper *baseMapper = stBaseMapper_construct();
-    stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
+    stBaseMapper *baseMapper = fullParams->baseMapper;
+    stRPHmmParameters *params = fullParams->phaseParams;
+    assert(baseMapper != NULL);
+    assert(params != NULL);
     if (verboseBitstring >= 0) setVerbosity(params, verboseBitstring); //run this AFTER parameters, so CL args overwrite
 
     // Print a report of the parsed parameters
@@ -704,8 +546,7 @@ int main(int argc, char *argv[]) {
     stReadHaplotypePartitionTable_destruct(readHaplotypePartitions);
     stList_destruct(hmms);
 
-    stBaseMapper_destruct(baseMapper);
-    stRPHmmParameters_destruct(params);
+    params_destruct(fullParams);
     stHash_destruct(referenceNamesToReferencePriors);
 
     // TODO: only free these if they need to be

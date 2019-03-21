@@ -5,7 +5,7 @@
  */
 
 #include <htslib/vcf.h>
-#include "stRPHmm.h"
+#include "htsIntegration.h"
 
 /*
  * Functions for reference prior probabilities
@@ -137,54 +137,6 @@ stHash *createEmptyReferencePriorProbabilities(stList *profileSequences) {
     return referenceNamesToReferencePriors;
 }
 
-stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
-        stBaseMapper *baseMapper, stRPHmmParameters *params) {
-    /*
-     * Create a set of stReferencePriorProbs that cover the reference intervals included in the profile sequences.
-     * The return value is encoded as a map from the reference sequence name (as a string)
-     * to the stReferencePriorProbs.
-     */
-
-    // Make map from reference sequence names to reference priors
-    stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSequences);
-
-    // Load reference fasta index
-    faidx_t *fai = fai_load(referenceFastaFile);
-    if ( !fai ) {
-        st_errAbort("Could not load fai index of %s.  Maybe you should run 'samtools faidx %s'\n",
-                       referenceFastaFile, referenceFastaFile);
-    }
-
-    stHashIterator *hashIt = stHash_getIterator(referenceNamesToReferencePriors);
-    char *referenceName;
-    while((referenceName = stHash_getNext(hashIt)) != NULL) {
-        stReferencePriorProbs *rProbs = stHash_search(referenceNamesToReferencePriors, referenceName);
-
-        // Now get the corresponding reference sequence
-        int seqLen;
-        char *referenceSeq = fai_fetch(fai, rProbs->referenceName, &seqLen);
-        if ( seqLen < 0 ) {
-            st_errAbort("Failed to fetch reference sequence %s\n", rProbs->referenceName);
-        }
-
-        // Build probability profile
-        assert(seqLen >= rProbs->length + rProbs->refStart);
-        for(int64_t i=0; i<rProbs->length; i++) {
-            uint8_t refChar = stBaseMapper_getValueForChar(baseMapper, referenceSeq[i+rProbs->refStart-1]);
-            assert(refChar >= 0 && refChar < ALPHABET_SIZE);
-            rProbs->referenceSequence[i] = refChar;
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                rProbs->profileProbs[i*ALPHABET_SIZE + j] = *getSubstitutionProb(params->hetSubModel, refChar, j);
-            }
-        }
-    }
-
-    // Cleanup
-    fai_destroy(fai);
-    stHash_destructIterator(hashIt);
-
-    return referenceNamesToReferencePriors;
-}
 
 double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
     /*

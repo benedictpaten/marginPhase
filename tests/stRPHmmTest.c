@@ -5,34 +5,33 @@
  */
 
 #include "CuTest.h"
-#include "sonLib.h"
-#include "stRPHmm.h"
-#include <math.h>
-#include <time.h>
+#include "margin.h"
+#include "htsIntegration.h"
 
 #define RANDOM_TEST_NO 2
+static char *polishParamsFile = "../params/allParams.np.json";
 
-char getRandomBase() {
+char stRPHmm_getRandomBase() {
     /*
      * Returns an ascii character starting from ascii symbol 48: '0', '1', '2', ... alphabetsize
      */
     return st_randomInt(FIRST_ALPHABET_CHAR, FIRST_ALPHABET_CHAR+ALPHABET_SIZE);
 }
 
-char *getRandomSequence(int64_t referenceLength) {
+char *stRPHmm_getRandomSequence(int64_t referenceLength) {
     /*
      * Creates a random sequence of form [ACTG]*referenceLength
      */
     char *randomSequence = st_malloc(sizeof(char) * (referenceLength+1));
     for(int64_t i=0; i<referenceLength; i++) {
-        randomSequence[i] = getRandomBase();
+        randomSequence[i] = stRPHmm_getRandomBase();
     }
     randomSequence[referenceLength] = '\0';
 
     return randomSequence;
 }
 
-char *permuteSequence(char *referenceSeq, double hetRate) {
+char *stRPHmm_permuteSequence(char *referenceSeq, double hetRate) {
     /*
      * Takes a random sequence and returns a copy of it, permuting randomly each position with rate hetRate.
      */
@@ -40,7 +39,7 @@ char *permuteSequence(char *referenceSeq, double hetRate) {
     int64_t strLength = strlen(referenceSeq);
     for(int64_t i=0; i<strLength; i++) {
         if(st_random() < hetRate) {
-            referenceSeq[i] = getRandomBase();
+            referenceSeq[i] = stRPHmm_getRandomBase();
         }
     }
     return referenceSeq;
@@ -60,7 +59,7 @@ stProfileSeq *getRandomProfileSeq(char *referenceName, char *hapSeq, int64_t hap
 
     for(int64_t i=0; i<readLength; i++) {
         // Haplotype base or error at random
-        char b = st_random() < readErrorRate ? getRandomBase() : hapSeq[start+i];
+        char b = st_random() < readErrorRate ? stRPHmm_getRandomBase() : hapSeq[start+i];
         assert(b - FIRST_ALPHABET_CHAR >= 0);
         assert(b - FIRST_ALPHABET_CHAR < ALPHABET_SIZE);
         // Fill in the profile probabilities according to the chosen base
@@ -133,7 +132,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
     for(int64_t i=0; i<referenceSeqNumber; i++) {
         // Generate random reference sequence
         int64_t referenceLength = st_randomInt(minReferenceLength, maxReferenceLength+1);
-        char *referenceSeq = getRandomSequence(referenceLength);
+        char *referenceSeq = stRPHmm_getRandomSequence(referenceLength);
         // Reference name
         char *referenceName = stString_print("Reference_%" PRIi64 "", i);
 
@@ -143,7 +142,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
                 stReferencePriorProbs_constructEmptyProfile(referenceName, 0, referenceLength);
         stHash_insert(referenceNamesToReferencePriors, stString_copy(referenceName), rProbs);
 
-		char *noisyReferenceSeq = permuteSequence(referenceSeq, hetRate);
+		char *noisyReferenceSeq = stRPHmm_permuteSequence(referenceSeq, hetRate);
         for(int64_t i=0; i<referenceLength; i++) {
             int64_t refChar = noisyReferenceSeq[i] - FIRST_ALPHABET_CHAR;
             assert(refChar >= 0 && refChar < ALPHABET_SIZE);
@@ -153,8 +152,8 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         }
 
         // Create haplotype sequences for reference
-        char *haplotypeSeq1 = permuteSequence(referenceSeq, hetRate);
-        char *haplotypeSeq2 = permuteSequence(referenceSeq, hetRate);
+        char *haplotypeSeq1 = stRPHmm_permuteSequence(referenceSeq, hetRate);
+        char *haplotypeSeq2 = stRPHmm_permuteSequence(referenceSeq, hetRate);
 
         stList_append(hapSeqs1, haplotypeSeq1);
         stList_append(hapSeqs2, haplotypeSeq2);
@@ -223,7 +222,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
      */
 
     // Print info about test parameters
-    fprintf(stderr, " System test parameters:\n"
+    fprintf(stderr, "\nstRPHMMTest:\n"
+                    " System test parameters:\n"
             "\tminReferenceSequenceNumber: %" PRIi64 "\n"
             "\tmaxReferenceSequenceNumber: %" PRIi64 "\n"
             "\tminReferenceLength: %" PRIi64 "\n"
@@ -1292,6 +1292,81 @@ void test_flipAReadsPartition(CuTest *testCase) {
 }
 
 
+void test_stProfileSeq_constructFromPosteriorProbs_example(CuTest *testCase) {
+	char *reference = stString_copy("GATACAGCGGG");
+	char *read = stString_copy("GATTACAGCG");
+
+	Params *params = params_readParams(polishParamsFile);
+
+	stList *anchorAlignment = stList_construct();
+
+	stProfileSeq *pSeq = stProfileSeq_constructFromPosteriorProbs("ref", reference, strlen(reference),
+														   	      "read", read, anchorAlignment, params);
+
+	fprintf(stderr, "Reference:\t%s\n", reference);
+	fprintf(stderr, "Read \t\t%s\n", read);
+	stProfileSeq_print(pSeq, stderr, 1);
+
+	// cleanup
+	stList_destruct(anchorAlignment);
+	stProfileSeq_destruct(pSeq);
+	params_destruct(params);
+	free(reference);
+	free(read);
+}
+
+void test_stProfileSeq_constructFromPosteriorProbs(CuTest *testCase) {
+    int64_t testIterations = 100;
+    st_logInfo("Starting test with %" PRIi64 "iterations\n", testIterations);
+    for(int64_t test=0; test<testIterations; test++) {
+		st_logInfo(" Starting test iteration: #%" PRIi64 "\n", test);
+
+		//Make true reference
+		char *reference = getRandomSequence(st_randomInt(1, 100));
+
+		// Make starting reference
+		char *read = evolveSequence(reference);
+
+		// Load params
+		Params *params = params_readParams(polishParamsFile);
+
+		// Anchor alignment
+		double alignmentScore;
+		stList *anchorAlignment = stList_construct();
+		stList *meaAlignment = getShiftedMEAAlignment(reference, read, anchorAlignment, params->polishParams->p, params->polishParams->sM, 1, 1, &alignmentScore);
+		for(int64_t i=0; i<stList_length(meaAlignment); i++) {
+			stIntTuple *aPair = stList_get(meaAlignment, i);
+			stList_append(anchorAlignment, stIntTuple_construct3(stIntTuple_get(aPair, 1), stIntTuple_get(aPair, 2), params->polishParams->p->diagonalExpansion));
+		}
+		stList_destruct(meaAlignment);
+
+		// Run method
+		stProfileSeq *pSeq = stProfileSeq_constructFromPosteriorProbs("ref", reference, strlen(reference),
+															   "read", read, anchorAlignment,
+															   params);
+
+		// Do checks
+		CuAssertTrue(testCase, pSeq->refStart >= 0);
+		CuAssertTrue(testCase, pSeq->length >= 0);
+		CuAssertTrue(testCase, pSeq->length + pSeq->refStart <= strlen(reference));
+		CuAssertStrEquals(testCase, pSeq->referenceName, "ref");
+
+		for(int64_t i=0; i<pSeq->length; i++) {
+			int64_t total=0;
+			for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+				total += pSeq->profileProbs[i*ALPHABET_SIZE + j];
+			}
+			CuAssertTrue(testCase, total < 260);
+			//CuAssertTrue(testCase, total > 250);
+		}
+
+		// cleanup
+		stList_destruct(anchorAlignment);
+		stProfileSeq_destruct(pSeq);
+		params_destruct(params);
+	}
+}
+
 CuSuite *stRPHmmTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
@@ -1307,6 +1382,11 @@ CuSuite *stRPHmmTestSuite(void) {
     SUITE_ADD_TEST(suite, test_bitCountVectors);
     SUITE_ADD_TEST(suite, test_getOverlappingComponents);
     SUITE_ADD_TEST(suite, test_emissionLogProbability);
+
+    // Test method for creating posterior probs of reference matches
+    SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs_example);
+
+    SUITE_ADD_TEST(suite, test_stProfileSeq_constructFromPosteriorProbs);
 
     return suite;
 }
