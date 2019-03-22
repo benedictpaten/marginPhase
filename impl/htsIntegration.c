@@ -264,6 +264,17 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
     return chunker;
 }
 
+BamChunker *bamChunker_copyConstruct(BamChunker *toCopy) {
+    BamChunker *chunker = malloc(sizeof(BamChunker));
+    chunker->bamFile = stString_copy(toCopy->bamFile);
+    chunker->chunkSize = toCopy->chunkSize;
+    chunker->chunkBoundary = toCopy->chunkBoundary;
+    chunker->includeSoftClip = toCopy->includeSoftClip;
+    chunker->params = toCopy->params;
+    chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
+    chunker->chunkCount = 0;
+}
+
 void bamChunker_destruct(BamChunker *bamChunker) {
     free(bamChunker->bamFile);
     stList_destruct(bamChunker->chunks);
@@ -288,6 +299,17 @@ BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int6
     c->chunkEnd = chunkEnd;
     c->chunkBoundaryEnd = chunkBoundaryEnd;
     c->parent = parent;
+    return c;
+}
+
+BamChunk *bamChunk_copyConstruct(BamChunk *toCopy) {
+    BamChunk *c = malloc(sizeof(BamChunk));
+    c->refSeqName = stString_copy(toCopy->refSeqName);
+    c->chunkBoundaryStart = toCopy->chunkBoundaryStart;
+    c->chunkStart = toCopy->chunkStart;
+    c->chunkEnd = toCopy->chunkEnd;
+    c->chunkBoundaryEnd = toCopy->chunkBoundaryEnd;
+    c->parent = toCopy->parent;
     return c;
 }
 

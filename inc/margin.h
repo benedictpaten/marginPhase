@@ -1111,6 +1111,7 @@ typedef struct _poaFeatureSimpleCharacterCount PoaFeatureSimpleCharacterCount;
 struct _poaFeatureSimpleCharacterCount {
     int64_t refPosition;
     int64_t insertPosition;
+    char label;
     int64_t counts[POAFEATURE_TOTAL_SIZE];
     double weights[POAFEATURE_TOTAL_SIZE];
     PoaFeatureSimpleCharacterCount* nextInsert; //so we can model all inserts after a position
@@ -1121,7 +1122,8 @@ void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleCharacterCount *sc
 int64_t PoaFeature_SimpleCharacterCount_getTotalCount(PoaFeatureSimpleCharacterCount *scc);
 double PoaFeature_SimpleCharacterCount_getTotalWeight(PoaFeatureSimpleCharacterCount *scc);
 stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads);
-void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile);
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile,
+        stList *trueRefAlignment, RleString *trueRefRleString);
 
 
 

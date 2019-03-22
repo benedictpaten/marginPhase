@@ -68,6 +68,7 @@ int main(int argc, char *argv[]) {
     char *outputPoaTsvFile = NULL;
     HelenFeatureType helenFeatureType = HFEAT_NONE;
     char *trueReferenceBam = NULL;
+    BamChunker *trueReferenceChunker = NULL;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -157,8 +158,29 @@ int main(int argc, char *argv[]) {
             free(bamInFile);
             free(referenceFastaFile);
             free(paramsFile);
+            if (trueReferenceBam != NULL) free(trueReferenceBam);
             return 0;
         }
+    }
+    // sanity check (verify files exist)
+    if (access(bamInFile, R_OK ) != 0) {
+        st_errAbort("Could not read from file: %s\n", bamInFile);
+        char *idx = stString_print("%s.bai", bamInFile);
+        if (access(idx, R_OK ) != 0 ) {
+            st_errAbort("BAM does not appear to be indexed: %s\n", bamInFile);
+        }
+        free(idx);
+    } else if (access(referenceFastaFile, R_OK ) != 0 ) {
+        st_errAbort("Could not read from file: %s\n", referenceFastaFile);
+    } else if (access(paramsFile, R_OK ) != 0 ) {
+        st_errAbort("Could not read from file: %s\n", paramsFile);
+    } else if (trueReferenceBam != NULL && access(trueReferenceBam, R_OK ) != 0 ) {
+        st_errAbort("Could not read from file: %s\n", trueReferenceBam);
+        char *idx = stString_print("%s.bai", trueReferenceBam);
+        if (access(idx, R_OK ) != 0 ) {
+            st_errAbort("BAM does not appear to be indexed: %s\n", trueReferenceBam);
+        }
+        free(idx);
     }
 
     // Initialization from arguments
@@ -178,12 +200,12 @@ int main(int argc, char *argv[]) {
     Params *params = params_readParams(paramsFile);
 
     // Set no RLE if appropriate feature type is set
-//    if (helenFeatureType == HFEAT_SIMPLE_WEIGHT || helenFeatureType == HFEAT_SIMPLE_COUNT) {
-//        if (params->polishParams->useRunLengthEncoding) {
-//            st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
-//            params->polishParams->useRunLengthEncoding = FALSE;
-//        }
-//    }
+    if (helenFeatureType == HFEAT_SIMPLE_WEIGHT || helenFeatureType == HFEAT_SIMPLE_COUNT) {
+        if (params->polishParams->useRunLengthEncoding) {
+            st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
+            params->polishParams->useRunLengthEncoding = FALSE;
+        }
+    }
 
     // Print a report of the parsed parameters
     if(st_getLogLevel() == debug) {
@@ -235,6 +257,14 @@ int main(int argc, char *argv[]) {
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
     st_logInfo("> Set up bam chunker with chunk size: %i and overlap %i (for region=%s)\n",
     		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr);
+
+    // for feature generation
+    BamChunker *trueReferenceBamChunker = NULL;
+    if (trueReferenceBam != NULL) {
+        trueReferenceBamChunker = bamChunker_copyConstruct(bamChunker);
+        free(trueReferenceBamChunker->bamFile);
+        trueReferenceBamChunker->bamFile = stString_copy(trueReferenceBam);
+    }
 
     // Polish chunks
     // Each chunk produces a char* as output which is saved here
@@ -335,7 +365,7 @@ int main(int argc, char *argv[]) {
         phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
         */
 
-        // Do run-length decoding (regardless of whether RLE was applied)
+        // get polished reference string and expand RLE (regardless of whether RLE was applied)
         RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads,
                                                              params->polishParams->repeatSubMatrix);
         polishedReferenceString = rleString_expand(polishedRLEReference);
@@ -364,6 +394,7 @@ int main(int argc, char *argv[]) {
 
         // HELEN feature outputs
         if (helenFeatureType != HFEAT_NONE) {
+            st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
             // get filename
             char *helenFeatureOutfile = NULL;
             switch (helenFeatureType) {
@@ -381,10 +412,65 @@ int main(int argc, char *argv[]) {
                     st_errAbort("Unhandled HELEN feature type!\n");
             }
 
-            // log, write, free
-            st_logInfo(">%s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
-            poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile);
+            // necessary to annotate poa with truth (if true reference BAM has been specified)
+            stList *trueRefAlignment = NULL;
+            RleString *trueRefRleString = NULL;
+            bool validReferenceAlignment = FALSE;
+
+            // get reference chunk
+            if (trueReferenceBam != NULL) {
+                // get alignment of true ref to assembly
+                stList *trueRefReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+                stList *unused = stList_construct3(0, (void (*)(void *)) stList_destruct);
+                // construct new chunk
+                BamChunk *trueRefBamChunk = bamChunk_copyConstruct(bamChunk);
+                trueRefBamChunk->parent = trueReferenceBamChunker;
+                // get true ref as "read"
+                uint32_t trueAlignments = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
+
+                // poor man's "do we have a unique alignment"
+                if (trueAlignments == 1) {
+                    BamChunkRead *trueRefRead = stList_get(reads, 0);
+
+                    // convert to rleSpace
+                    trueRefRleString = NULL;
+                    if (params->polishParams->useRunLengthEncoding) {
+                        trueRefRleString = rleString_construct(trueRefRead->nucleotides);
+                    } else {
+                        trueRefRleString = rleString_constructNoRLE(trueRefRead->nucleotides);
+                    }
+
+                    // get most likely alignment
+                    double alignmentScore;
+                    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(polishedRLEReference->rleString,
+                            trueRefRleString->rleString, strlen(polishedRLEReference->rleString),
+                            strlen(trueRefRleString->rleString), params->polishParams->p);
+                    trueRefAlignment = getShiftedMEAAlignment(polishedRLEReference->rleString,
+                            trueRefRleString->rleString, anchorPairs, params->polishParams->p,
+                            params->polishParams->sM, 0, 0, &alignmentScore);
+                    stList_destruct(anchorPairs);
+
+                    // we found a single alignment of reference
+                    validReferenceAlignment = TRUE;
+                }
+
+                stList_destruct(trueRefReads);
+                stList_destruct(unused);
+                bamChunk_destruct(trueRefBamChunk);
+            }
+
+            // either write it, or note that we failed to find a valid reference alignment
+            if (trueReferenceBam != NULL && !validReferenceAlignment) {
+                st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
+            }
+            st_logInfo(" %s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
+            poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile,
+                    trueRefAlignment, trueRefRleString);
+
+            // cleanup
             free(helenFeatureOutfile);
+            if (trueRefAlignment != NULL) stList_destruct(trueRefAlignment);
+            if (trueRefRleString != NULL) rleString_destruct(trueRefRleString);
         }
 
         // report timing

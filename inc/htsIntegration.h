@@ -15,12 +15,14 @@
 
 BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
 BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *params);
+BamChunker *bamChunker_copyConstruct(BamChunker *toCopy);
 void bamChunker_destruct(BamChunker *bamChunker);
 BamChunk *bamChunker_getChunk(BamChunker *bamChunker, int64_t chunkIdx);
 
 BamChunk *bamChunk_construct();
 BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int64_t chunkStart, int64_t chunkEnd,
                               int64_t chunkBoundaryEnd, BamChunker *parent);
+BamChunk *bamChunk_copyConstruct(BamChunk *toCopy);
 void bamChunk_destruct(BamChunk *bamChunk);
 
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);

@@ -557,9 +557,9 @@ stList *poa_getAnchorAlignments(Poa *poa, int64_t *poaToConsensusMap, int64_t no
 
 					// Figure out the exact diagonal expansion
 					int64_t expansion = (int64_t) pp->minPosteriorProbForAlignmentAnchors[1];
-					for(int64_t i=2; i<pp->minPosteriorProbForAlignmentAnchorsLength; i+=2) {
-						if(normalizedObsWeight >= pp->minPosteriorProbForAlignmentAnchors[i]) {
-							expansion = (int64_t) pp->minPosteriorProbForAlignmentAnchors[i+1];
+					for(int64_t k=2; k<pp->minPosteriorProbForAlignmentAnchorsLength; k+=2) {
+						if(normalizedObsWeight >= pp->minPosteriorProbForAlignmentAnchors[k]) {
+							expansion = (int64_t) pp->minPosteriorProbForAlignmentAnchors[k+1];
 						}
 						else {
 							break;
@@ -2534,6 +2534,7 @@ PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_
     PoaFeatureSimpleCharacterCount *scc = st_calloc(1, sizeof(PoaFeatureSimpleCharacterCount));
     scc->refPosition = refPos;
     scc->insertPosition = insPos;
+    scc->label = '\0';
     scc->nextInsert = NULL;
     return scc;
 }
@@ -2564,23 +2565,19 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
 
     // initialize feature list
     stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_SimpleCharacterCount_destruct);
-    for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-        stList_append(featureList, PoaFeature_SimpleCharacterCount_construct(i, 0));
+    for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+        stList_append(featureList, PoaFeature_SimpleCharacterCount_construct(i-1, 0));
     }
 
     // for logging (of errors)
 	char *logIdentifier = getLogIdentifier();
 
-    // for debugging
-    bool TP_DEBUG = FALSE;
-
     // iterate over all positions
-    for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-		if (TP_DEBUG) printf("\n________\n%"PRId64":\n", i);
+    for(int64_t i=0; i<stList_length(featureList); i++) {
 
         // get feature and node
         PoaFeatureSimpleCharacterCount* feature = stList_get(featureList, i);
-        PoaNode *node = stList_get(poa->nodes, i);
+        PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
 
 		// only include nucleotide counts once for each read
 		stHash* readToMaxMatchWeight = stHash_construct();
@@ -2682,22 +2679,6 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
 
         // Inserts
         if (stList_length(node->inserts) > 0) {
-			if (TP_DEBUG) printf("\n    INSERTS:\n");
-
-			// this is how we determine the totals for this node
-			int64_t totalPosCount = 0;
-            int64_t totalNegCount = 0;
-            double totalPosWeight = 0;
-			double totalNegWeight = 0;
-            for (int64_t j = 0; j < POAFEATURE_TOTAL_SIZE; j++) {
-				if (j % 2 == POS_STRAND_IDX) {
-					totalPosCount += feature->counts[j];
-					totalPosWeight += feature->weights[j];
-				} else {
-					totalNegCount += feature->counts[j];
-					totalNegWeight += feature->weights[j];
-				}
-            }
 
             // only include nucleotide counts once for each read
             stHash* readToMaxInsWeight = stHash_construct();
@@ -2715,8 +2696,6 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
 			// iterate over all inserts
             for (int64_t j = 0; j < stList_length(node->inserts); j++) {
                 PoaInsert *insert = stList_get(node->inserts, j);
-
-				if (TP_DEBUG) printf("\n        %-5s (%f)\n", insert->insert, insert->weightForwardStrand + insert->weightReverseStrand);
 
                 // get counts for observations
                 int64_t fwdObservations = 0;
@@ -2739,8 +2718,7 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
                     }
 
                     // sanity check
-                    char *obsStr = stString_getSubString(bcr->nucleotides, obs->offset, strlen(insert->insert));
-					if (TP_DEBUG) printf("  %5"PRId64" %-5s (%f)\n", obs->readNo, obsStr, obs->weight);
+                    //char *obsStr = stString_getSubString(bcr->nucleotides, obs->offset, strlen(insert->insert));
                 }
 
 				// get feature iterator
@@ -2750,10 +2728,6 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
 					PoaFeatureSimpleCharacterCount *currFeature = prevFeature->nextInsert;
 					if (currFeature == NULL) {
 						currFeature = PoaFeature_SimpleCharacterCount_construct(i, k + 1);
-						currFeature->counts[SYMBOL_NUMBER_NO_N * 2 + POS_STRAND_IDX] = totalPosCount;
-						currFeature->counts[SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] = totalNegCount;
-						currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + POS_STRAND_IDX] = totalPosWeight;
-						currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] = totalNegWeight;
 						prevFeature->nextInsert = currFeature;
 					}
 
@@ -2762,17 +2736,6 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
 					// add weights
 					currFeature->weights[c * 2 + POS_STRAND_IDX] += insert->weightForwardStrand;
 					currFeature->weights[c * 2 + NEG_STRAND_IDX] += insert->weightReverseStrand;
-
-					//TODO not sure if this is correct.. maybe we should be adding these weights to the original feature too?
-					currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + POS_STRAND_IDX] -= insert->weightForwardStrand;
-					currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] -= insert->weightReverseStrand;
-					if (i != 0 &&
-							(currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + POS_STRAND_IDX] < 0
-							|| currFeature->weights[SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] < 0)) {
-						st_logInfo(" %s Encountered more insert weight than total non-insert at pos %"PRId64,
-								logIdentifier, i);
-
-					}
 
 					// add counts
 					currFeature->counts[c * 2 + POS_STRAND_IDX] += fwdObservations;
@@ -2793,22 +2756,125 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
     return featureList;
 }
 
-void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile) {
+void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList *trueRefAlignment, RleString *trueRefRleString) {
+	/*
+	 Each index in features represents a character in the final consensus string (which in turn was a single node in the
+	 final POA which was used to generate the consensus).  This consensus was aligned against the true reference (which
+	 is reflected in the trueRefRleString).  Items in the true refAlignment are stIntTuples with index 0 being the
+	 alignment weight (discarded), index 1 being the position in the consensus string (and features), and index 2 being
+	 the position in the trueRefRleString.  So we can iterate over features and the true alignment to assign truth
+	 labels to each feature.
+	 */
+	int FPOS = 1;
+	int RPOS = 2;
+	bool TP_DEBUG = FALSE;
+	if (TP_DEBUG) fprintf(stderr, "\nAnnotating features with truth:\n");
+
+	// iterate over true ref alignment
+	stListIterator *trueRefAlignItor = stList_getIterator(trueRefAlignment);
+	stIntTuple *currRefAlign = stList_getNext(trueRefAlignItor);
+
+	// iterate over features
+	int64_t trueRefPos = stIntTuple_get(currRefAlign, RPOS);
+	for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
+		PoaFeatureSimpleCharacterCount *feature = stList_get(features, featureRefPos);
+		PoaFeatureSimpleCharacterCount *prevFeature = NULL;
+		if (TP_DEBUG) fprintf(stderr, "\n");
+
+		int64_t featureInsPos = 0;
+		while (feature != NULL) {
+			// no more ref bases, everything is gaps
+			if (currRefAlign == NULL) {
+				if (TP_DEBUG) fprintf(stderr, "(\t    )\t%"PRId64",%"PRId64"\t%"PRId64"\n-> DEL\n", featureRefPos,
+						featureInsPos, trueRefPos);
+				feature->label = '_';
+				feature = feature->nextInsert;
+				continue;
+			}
+
+			// debug and sanity checks
+			if (TP_DEBUG) fprintf(stderr, "(%4"PRId64"\t%4"PRId64")\t%4"PRId64",%"PRId64"\t%4"PRId64,
+								  (int64_t ) stIntTuple_get(currRefAlign, FPOS), (int64_t ) stIntTuple_get(currRefAlign, RPOS),
+								  featureRefPos, featureInsPos, trueRefPos);
+			assert(stIntTuple_get(currRefAlign, FPOS) >= featureRefPos && stIntTuple_get(currRefAlign, RPOS) >= trueRefPos);
+
+			// match
+			if (stIntTuple_get(currRefAlign, FPOS) == featureRefPos && stIntTuple_get(currRefAlign, RPOS) == trueRefPos) {
+				if (TP_DEBUG) fprintf(stderr, "\t -> MATCH\n");
+				feature->label = trueRefRleString->rleString[trueRefPos];
+				trueRefPos++;
+				currRefAlign = stList_getNext(trueRefAlignItor);
+			}
+			// insert
+			else if (trueRefPos < stIntTuple_get(currRefAlign, RPOS)) {
+				if (TP_DEBUG) fprintf(stderr, "\t -> INS\n");
+				feature->label = trueRefRleString->rleString[trueRefPos];
+				trueRefPos++;
+			}
+			// delete
+			else if (featureRefPos < stIntTuple_get(currRefAlign, FPOS)) {
+				if (TP_DEBUG) fprintf(stderr, "\t -> DEL\n");
+				feature->label = '_';
+			}
+			// programmer error
+			else {
+				st_errAbort("Unhandled case annotating features with true reference characters!\n");
+			}
+
+			// always iterate over insert features
+			prevFeature = feature;
+			feature = feature->nextInsert;
+			featureInsPos++;
+		}
+
+		// this catches any true inserts which are not present in the poa / feature list
+		while (currRefAlign != NULL && featureRefPos < stIntTuple_get(currRefAlign, FPOS) && trueRefPos < stIntTuple_get(currRefAlign, RPOS)) {
+			if (TP_DEBUG) fprintf(stderr, "(%4"PRId64"\t%4"PRId64")\t%4"PRId64",%"PRId64"\t%4"PRId64,
+								  (int64_t ) stIntTuple_get(currRefAlign, FPOS), (int64_t ) stIntTuple_get(currRefAlign, RPOS),
+								  featureRefPos, featureInsPos, trueRefPos);
+			if (TP_DEBUG) fprintf(stderr, "\t -> INS (new)\n");
+			// make new empty feature and save truth
+			PoaFeatureSimpleCharacterCount *newFeature = PoaFeature_SimpleCharacterCount_construct(featureRefPos, featureInsPos);
+			newFeature->label = trueRefRleString->rleString[trueRefPos];
+
+			// save and iterate
+			prevFeature->nextInsert = newFeature;
+			trueRefPos++;
+			featureInsPos++;
+		}
+	}
+
+	if (TP_DEBUG) fprintf(stderr, "Finished annotating with truth!\n\n");
+	stList_destructIterator(trueRefAlignItor);
+}
+
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile,
+		stList *trueRefAlignment, RleString *trueRefRleString) {
+	// prep
     FILE *fH = fopen(outputFile, "w");
     stList *features = NULL;
+    bool outputLabels = trueRefAlignment != NULL && trueRefRleString != NULL;
+
+    // handle differently based on type
 	switch (type) {
 		case HFEAT_SIMPLE_COUNT :
 		case HFEAT_SIMPLE_WEIGHT :
+			// get features
+			features = poa_getSimpleCharacterCountFeatures(poa, bamChunkReads);
+			if (outputLabels) {
+				poa_annotateSimpleCharacterCountFeaturesWithTruth(features, trueRefAlignment, trueRefRleString);
+			}
+
 			// print header
-			fprintf(fH, "#refPos\tinsPos\tlabel");
+			fprintf(fH, "#refPos\tinsPos");
+			if (outputLabels) fprintf(fH, "\tlabel");
 			for (int64_t i = 0; i < SYMBOL_NUMBER_NO_N; i++) {
 				fprintf(fH, "\t%c_fwd\t%c_rev", symbol_convertSymbolToChar((Symbol)i), symbol_convertSymbolToChar((Symbol)i));
 			}
 			fprintf(fH, "\tgap_fwd\tgap_rev\n");
 
-			// get features and write out
-			features = poa_getSimpleCharacterCountFeatures(poa, bamChunkReads);
-			for (int64_t i = 1; i < stList_length(features); i++) {
+			// iterate over features
+			for (int64_t i = 0; i < stList_length(features); i++) {
                 PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
 
                 // iterate over all inserts for each assembly position
@@ -2817,25 +2883,25 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 					// position and label
                     fprintf(fH, "%"PRId64, feature->refPosition);
                     fprintf(fH, "\t%"PRId64, feature->insertPosition);
-					fprintf(fH, "\t%c", 'N'); //TODO
+                    if (outputLabels) {
+						fprintf(fH, "\t%c", feature->label);
+					}
 
 					// print counts or weights
 					if (type == HFEAT_SIMPLE_COUNT) {
-						double totalCount = (double) PoaFeature_SimpleCharacterCount_getTotalCount(feature);
 						for (int64_t j = 0; j < SYMBOL_NUMBER_NO_N; j++) {
-							fprintf(fH, "\t%1.5f", feature->counts[j * 2 + POS_STRAND_IDX] / totalCount);
-							fprintf(fH, "\t%1.5f", feature->counts[j * 2 + NEG_STRAND_IDX] / totalCount);
+							fprintf(fH, "\t%"PRId64, feature->counts[j * 2 + POS_STRAND_IDX]);
+							fprintf(fH, "\t%"PRId64, feature->counts[j * 2 + NEG_STRAND_IDX]);
 						}
-						fprintf(fH, "\t%1.5f", feature->counts[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / totalCount);
-						fprintf(fH, "\t%1.5f\n", feature->counts[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / totalCount);
+						fprintf(fH, "\t%"PRId64, feature->counts[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX]);
+						fprintf(fH, "\t%"PRId64"\n", feature->counts[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX]);
 					} else {
-						double totalWeight = PoaFeature_SimpleCharacterCount_getTotalWeight(feature);
 						for (int64_t j = 0; j < SYMBOL_NUMBER_NO_N; j++) {
-							fprintf(fH, "\t%1.5f", feature->weights[j * 2 + POS_STRAND_IDX] / totalWeight);
-							fprintf(fH, "\t%1.5f", feature->weights[j * 2 + NEG_STRAND_IDX] / totalWeight);
+							fprintf(fH, "\t%7.4f", feature->weights[j * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
+							fprintf(fH, "\t%7.4f", feature->weights[j * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
 						}
-						fprintf(fH, "\t%1.5f", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / totalWeight);
-						fprintf(fH, "\t%1.5f\n", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / totalWeight);
+						fprintf(fH, "\t%7.4f", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
+						fprintf(fH, "\t%7.4f\n", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
 					}
 
 					// iterate
