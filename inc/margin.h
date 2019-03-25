@@ -1123,7 +1123,7 @@ int64_t PoaFeature_SimpleCharacterCount_getTotalCount(PoaFeatureSimpleCharacterC
 double PoaFeature_SimpleCharacterCount_getTotalWeight(PoaFeatureSimpleCharacterCount *scc);
 stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads);
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile,
-        stList *trueRefAlignment, RleString *trueRefRleString);
+                            BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
 
 
 

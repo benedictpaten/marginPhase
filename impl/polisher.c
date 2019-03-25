@@ -2320,14 +2320,18 @@ char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 	// Setup
 	double *candidateWeights = getCandidateWeights(poa, params);
 
+	//TODO, this could probably be debug
 	if(st_getLogLevel() >= info) {
 		double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
 		double totalCandidateWeight = 0.0;
 		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 			totalCandidateWeight += candidateWeights[i];
 		}
-		st_logDebug("Got avg. coverage: %f for region of length: %" PRIi64 " and avg. candidate weight of: %f\n",
-				avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes), totalCandidateWeight/(PAIR_ALIGNMENT_PROB_1*stList_length(poa->nodes)));
+		char* logIdentifier = getLogIdentifier();
+		st_logInfo(" %s Got avg. coverage: %f for region of length: %" PRIi64 " and avg. candidate weight of: %f\n",
+				logIdentifier, avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes),
+				totalCandidateWeight/(PAIR_ALIGNMENT_PROB_1*stList_length(poa->nodes)));
+		free(logIdentifier);
 	}
 
 	// Sort the base observations to make the getReadSubstrings function work
@@ -2849,7 +2853,7 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
 }
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFile,
-		stList *trueRefAlignment, RleString *trueRefRleString) {
+		BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString) {
 	// prep
     FILE *fH = fopen(outputFile, "w");
     stList *features = NULL;
@@ -2866,6 +2870,9 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 			}
 
 			// print header
+			fprintf(fH, "##contig:%s\n", bamChunk->refSeqName);
+			fprintf(fH, "##contigStartPos:%"PRId64"\n", bamChunk->chunkBoundaryStart);
+			fprintf(fH, "##contigEndPos:%"PRId64"\n", bamChunk->chunkBoundaryEnd);
 			fprintf(fH, "#refPos\tinsPos");
 			if (outputLabels) fprintf(fH, "\tlabel");
 			for (int64_t i = 0; i < SYMBOL_NUMBER_NO_N; i++) {

@@ -582,6 +582,15 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
             assert(idxInOutputSeq == strlen(seq));
         };
 
+        // failure case
+        if (stList_length(cigRepr) == 0 || strlen(seq) == 0) {
+            stList_destruct(cigRepr);
+            free(readName);
+            free(seq);
+            if (qual != NULL) free(qual);
+            continue;
+        }
+
         // sanity check
         assert(stIntTuple_get((stIntTuple *)stList_peek(cigRepr), 1) < strlen(seq));
 

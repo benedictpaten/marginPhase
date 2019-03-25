@@ -255,8 +255,9 @@ int main(int argc, char *argv[]) {
 
     // if regionStr is NULL, it will be ignored in construct2
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
-    st_logInfo("> Set up bam chunker with chunk size: %i and overlap %i (for region=%s)\n",
-    		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr);
+    st_logInfo("> Set up bam chunker with chunk size %i and overlap %i (for region=%s), resulting in %i total chunks\n",
+    		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr,
+    		   bamChunker->chunkCount);
 
     // for feature generation
     BamChunker *trueReferenceBamChunker = NULL;
@@ -272,7 +273,7 @@ int main(int argc, char *argv[]) {
 
     // multiproccess the chunks, save to results
     int64_t chunkIdx;
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic,1)
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Time all chunks
         time_t start = time(NULL);
@@ -451,7 +452,13 @@ int main(int argc, char *argv[]) {
                     stList_destruct(anchorPairs);
 
                     // we found a single alignment of reference
-                    validReferenceAlignment = TRUE;
+                    double refLengthRatio = 1.0 * trueRefRleString->length / polishedRLEReference->length;
+                    if (stList_length(trueRefAlignment) > 0 && refLengthRatio > 0.95 && refLengthRatio < 1.05) {
+                        validReferenceAlignment = TRUE;
+                    } else {
+                        st_logInfo(" %s True reference alignment failed. aligned pairs: %"PRId64", ref length ratio (true/polished): %f\n",
+                                logIdentifier, stList_length(trueRefAlignment), refLengthRatio);
+                    }
                 }
 
                 stList_destruct(trueRefReads);
@@ -462,10 +469,11 @@ int main(int argc, char *argv[]) {
             // either write it, or note that we failed to find a valid reference alignment
             if (trueReferenceBam != NULL && !validReferenceAlignment) {
                 st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
+            } else {
+                st_logInfo(" %s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
+                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile,
+                                       trueRefAlignment, trueRefRleString);
             }
-            st_logInfo(" %s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
-            poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile,
-                    trueRefAlignment, trueRefRleString);
 
             // cleanup
             free(helenFeatureOutfile);
@@ -579,6 +587,11 @@ int main(int argc, char *argv[]) {
     	free(outputRepeatCountFile);
     }
 
+
+    if (trueReferenceBam != NULL) free(trueReferenceBam);
+    if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
+
+    if (regionStr != NULL) free(regionStr);
     free(chunkResults);
     free(outputBase);
     free(bamInFile);
