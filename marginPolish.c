@@ -300,6 +300,21 @@ int main(int argc, char *argv[]) {
                                                                                            : bamChunk->chunkBoundaryEnd) -
                                                       bamChunk->chunkBoundaryStart);
 
+        //TODO there is an error if you have an alignment that extends past the end of reference (possible by 1?)
+        if (refLen < bamChunk->chunkBoundaryEnd) {
+            int64_t chunkSize = bamChunk->chunkBoundaryEnd - bamChunk->chunkBoundaryStart;
+            int64_t refSize = strlen(referenceString);
+            char *newRefString = st_calloc(chunkSize + 1, sizeof(char));
+            strcpy(newRefString, referenceString);
+            for (int64_t i = refSize; i <= chunkSize; i++) {
+                newRefString[i] = 'N';
+            }
+            newRefString[chunkSize] = '\0';
+            free(referenceString);
+            referenceString = newRefString;
+        }
+
+
         st_logInfo(">%s Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
                    logIdentifier, bamChunk->refSeqName, (int) bamChunk->chunkBoundaryStart,
                    (int) (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
@@ -333,6 +348,7 @@ int main(int argc, char *argv[]) {
         // RLE the reads
         for (int64_t j = 0; j < stList_length(reads); j++) {
             BamChunkRead *read = stList_get(reads, j);
+            stList *alignment = stList_get(alignments, j);
             RleString *rleNucleotideString = NULL;
 
             // Perform or skip RLE
@@ -346,8 +362,7 @@ int main(int argc, char *argv[]) {
             // Do RLE follow up regardless of whether RLE is applied
             stList_append(rleNucleotides, rleNucleotideString);
             stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
-            stList_append(rleAlignments,
-                          runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
+            stList_append(rleAlignments, runLengthEncodeAlignment(alignment, rleReference, rleNucleotideString));
         }
 
 
