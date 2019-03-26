@@ -1,0 +1,3 @@
+@HD	VN:1.4	GO:none	SO:coordinate
+@SQ	SN:feature_contig	LN:50
+feature_read_truth	0	feature_contig	1	50	3M1I11M3I24M2D10M	*	0	0	ACGATAACCGGTTAAACATCCCGGGTTTCAAACCCCGGGGTTGATTACACAT	*

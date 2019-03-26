@@ -431,10 +431,9 @@ int main(int argc, char *argv[]) {
 
                 // poor man's "do we have a unique alignment"
                 if (trueAlignments == 1) {
-                    BamChunkRead *trueRefRead = stList_get(reads, 0);
+                    BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
 
                     // convert to rleSpace
-                    trueRefRleString = NULL;
                     if (params->polishParams->useRunLengthEncoding) {
                         trueRefRleString = rleString_construct(trueRefRead->nucleotides);
                     } else {
@@ -471,7 +470,7 @@ int main(int argc, char *argv[]) {
                 st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
             } else {
                 st_logInfo(" %s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
-                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile,
+                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile, bamChunk,
                                        trueRefAlignment, trueRefRleString);
             }
 

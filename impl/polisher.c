@@ -2843,6 +2843,7 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
 
 			// save and iterate
 			prevFeature->nextInsert = newFeature;
+			prevFeature = newFeature;
 			trueRefPos++;
 			featureInsPos++;
 		}
