@@ -294,19 +294,19 @@ int main(int argc, char *argv[]) {
             st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
             continue;
         }
-        int64_t refLen = strlen(fullReferenceString);
+        int64_t fullRefLen = strlen(fullReferenceString);
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
-                                                      (refLen < bamChunk->chunkBoundaryEnd ? refLen
+                                                      (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
                                                                                            : bamChunk->chunkBoundaryEnd) -
                                                       bamChunk->chunkBoundaryStart);
 
         //TODO there is an error if you have an alignment that extends past the end of reference (possible by 1?)
-        if (refLen < bamChunk->chunkBoundaryEnd) {
+        if (fullRefLen < bamChunk->chunkBoundaryEnd) {
             int64_t chunkSize = bamChunk->chunkBoundaryEnd - bamChunk->chunkBoundaryStart;
-            int64_t refSize = strlen(referenceString);
+            int64_t chunkRefSize = strlen(referenceString);
             char *newRefString = st_calloc(chunkSize + 1, sizeof(char));
             strcpy(newRefString, referenceString);
-            for (int64_t i = refSize; i <= chunkSize; i++) {
+            for (int64_t i = chunkRefSize; i < chunkSize; i++) {
                 newRefString[i] = 'N';
             }
             newRefString[chunkSize] = '\0';
@@ -317,7 +317,7 @@ int main(int argc, char *argv[]) {
 
         st_logInfo(">%s Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
                    logIdentifier, bamChunk->refSeqName, (int) bamChunk->chunkBoundaryStart,
-                   (int) (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
+                   (int) (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen : bamChunk->chunkBoundaryEnd));
 
         // Convert bam lines into corresponding reads and alignments
         st_logInfo(">%s Parsing input reads from file: %s\n", logIdentifier, bamInFile);
@@ -442,10 +442,10 @@ int main(int argc, char *argv[]) {
                 BamChunk *trueRefBamChunk = bamChunk_copyConstruct(bamChunk);
                 trueRefBamChunk->parent = trueReferenceBamChunker;
                 // get true ref as "read"
-                uint32_t trueAlignments = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
+                uint32_t trueAlignmentCount = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
 
                 // poor man's "do we have a unique alignment"
-                if (trueAlignments == 1) {
+                if (trueAlignmentCount == 1) {
                     BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
 
                     // convert to rleSpace

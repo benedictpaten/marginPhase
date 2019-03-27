@@ -2789,7 +2789,7 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
 		while (feature != NULL) {
 			// no more ref bases, everything is gaps
 			if (currRefAlign == NULL) {
-				if (TP_DEBUG) fprintf(stderr, "(\t    )\t%"PRId64",%"PRId64"\t%"PRId64"\n-> DEL\n", featureRefPos,
+				if (TP_DEBUG) fprintf(stderr, "(\t    )\t%"PRId64",%"PRId64"\t%"PRId64"\t-> DEL\n", featureRefPos,
 						featureInsPos, trueRefPos);
 				feature->label = '_';
 				feature = feature->nextInsert;
