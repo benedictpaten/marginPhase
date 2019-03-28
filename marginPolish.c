@@ -253,7 +253,7 @@ int main(int argc, char *argv[]) {
     	outputPoaTsvFileHandle = fopen(outputPoaTsvFile, "w");
     }
 
-    // if regionStr is NULL, it will be ignored in construct2
+    // get chunker for bam.  if regionStr is NULL, it will be ignored
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
     st_logInfo("> Set up bam chunker with chunk size %i and overlap %i (for region=%s), resulting in %i total chunks\n",
     		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr,
@@ -288,8 +288,7 @@ int main(int argc, char *argv[]) {
         # endif
 
         // Get reference string for chunk of alignment
-        //TODO maybe we don't need to stringcopy this
-        char *fullReferenceString = stString_copy(stHash_search(referenceSequences, bamChunk->refSeqName));
+        char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
         if (fullReferenceString == NULL) {
             st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
             continue;
@@ -299,20 +298,6 @@ int main(int argc, char *argv[]) {
                                                       (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
                                                                                            : bamChunk->chunkBoundaryEnd) -
                                                       bamChunk->chunkBoundaryStart);
-
-        //TODO there is an error if you have an alignment that extends past the end of reference (possible by 1?)
-        if (fullRefLen < bamChunk->chunkBoundaryEnd) {
-            int64_t chunkSize = bamChunk->chunkBoundaryEnd - bamChunk->chunkBoundaryStart;
-            int64_t chunkRefSize = strlen(referenceString);
-            char *newRefString = st_calloc(chunkSize + 1, sizeof(char));
-            strcpy(newRefString, referenceString);
-            for (int64_t i = chunkRefSize; i < chunkSize; i++) {
-                newRefString[i] = 'N';
-            }
-            newRefString[chunkSize] = '\0';
-            free(referenceString);
-            referenceString = newRefString;
-        }
 
 
         st_logInfo(">%s Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
@@ -509,7 +494,6 @@ int main(int argc, char *argv[]) {
         stList_destruct(reads);
         stList_destruct(alignments);
         free(referenceString);
-        free(fullReferenceString);
         free(logIdentifier);
     }
 

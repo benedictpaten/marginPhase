@@ -199,13 +199,14 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
         // basic filtering (no read length, no cigar)
         if (aln->core.l_qseq <= 0) continue;
         if (aln->core.n_cigar == 0) continue;
+        if ((aln->core.flag & (uint16_t) 0x4) != 0) continue; //unaligned
 
         //data
         char *chr = bamHdr->target_name[aln->core.tid];
         int64_t start_softclip = 0;
         int64_t end_softclip = 0;
         int64_t alnReadLength = getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
-        int64_t alnStartPos = aln->core.pos + 1;
+        int64_t alnStartPos = aln->core.pos;
         int64_t alnEndPos = alnStartPos + alnReadLength;
 
         // does this belong in our chunk?
@@ -214,7 +215,7 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
             continue;
 
         // get start and stop position
-        int64_t readStartPos = aln->core.pos + 1;           // Left most position of alignment
+        int64_t readStartPos = aln->core.pos;           // Left most position of alignment
         int64_t readEndPos = readStartPos + alnReadLength;
 
         // get contig
@@ -273,6 +274,7 @@ BamChunker *bamChunker_copyConstruct(BamChunker *toCopy) {
     chunker->params = toCopy->params;
     chunker->chunks = stList_construct3(0,(void*)bamChunk_destruct);
     chunker->chunkCount = 0;
+    return chunker;
 }
 
 void bamChunker_destruct(BamChunker *bamChunker) {
@@ -335,6 +337,7 @@ typedef struct samview_settings {
  * softclipped portions of the reads should be included.
  */
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments) {
+
     // sanity check
     assert(stList_length(reads) == 0);
     assert(stList_length(alignments) == 0);
@@ -342,7 +345,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
     // prep
     int64_t chunkStart = bamChunk->chunkBoundaryStart;
     int64_t chunkEnd = bamChunk->chunkBoundaryEnd;
+
     bool includeSoftClip = bamChunk->parent->params->includeSoftClipping;
+
     char *bamFile = bamChunk->parent->bamFile;
     char *contig = bamChunk->refSeqName;
     uint32_t savedAlignments = 0;
@@ -387,6 +392,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         // basic filtering (no read length, no cigar)
         if (aln->core.l_qseq <= 0) continue;
         if (aln->core.n_cigar == 0) continue;
+        if ((aln->core.flag & (uint16_t) 0x4) != 0) continue; //unaligned
 
         //data
         char *chr = bamHdr->target_name[aln->core.tid];
@@ -394,7 +400,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         int64_t end_softclip = 0;
         int64_t alnReadLength = getAlignedReadLength3(aln, &start_softclip, &end_softclip, FALSE);
         if (alnReadLength <= 0) continue;
-        int64_t alnStartPos = aln->core.pos + 1;
+        int64_t alnStartPos = aln->core.pos;
         int64_t alnEndPos = alnStartPos + alnReadLength;
 
         // does this belong in our chunk?

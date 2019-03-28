@@ -65,6 +65,7 @@ int64_t polishingFeatureTest(char *bamFile, char *referenceFile, char *paramsFil
     char *command = stString_print("./marginPolish %s %s %s --outputBase %s %s --outputFeatureType %s %s",
             bamFile, referenceFile, paramsFile, outputName, logString, featureType, featureTruthCmd);
     st_logInfo("> Running command: %s\n", command);
+    fprintf(stderr, "> Running command: %s\n", command);
 
     int64_t i = st_system(command);
     free(featureTruthCmd);
