@@ -2,7 +2,7 @@
 // Created by tpesout on 1/8/19.
 //
 
-#ifndef MARGINPHASE_HTS_INTEGRATION_H
+#ifndef MARGINPHASE_EXTERNAL_INTEGRATION_H
 
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
@@ -58,5 +58,5 @@ void writeSplitSams(char *bamInFile, char *bamOutBase, stReadHaplotypePartitionT
 stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *profileSequences,
                                           stBaseMapper *baseMapper, stRPHmmParameters *params);
 
-#define MARGINPHASE_HTS_INTEGRATION_H
-#endif //MARGINPHASE_HTS_INTEGRATION_H
+#define MARGINPHASE_EXTERNAL_INTEGRATION_H
+#endif //MARGINPHASE_EXTERNAL_INTEGRATION_H

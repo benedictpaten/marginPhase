@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <htsIntegration.h>
+#include <externalIntegration.h>
 #include "CuTest.h"
 #include "margin.h"
 

@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <htsIntegration.h>
+#include <externalIntegration.h>
 #include "CuTest.h"
 #include "margin.h"
 #include <stdio.h>
@@ -82,7 +82,7 @@ void test_simpleWeightFeatureGeneration(CuTest *testCase) {
     int64_t retCode = polishingFeatureTest(FEATURE_TEST_BAM, FEATURE_TEST_FA, FEATURE_TEST_PARAMS, featureType, FEATURE_TEST_TRUTH_BAM, outputName, FALSE);
 
     char *expectedOutputFa = stString_print("%s.fa", outputName);
-    char *expectedOutputFeature = stString_print("%s.simpleWeight.C00000.feature_contig-0-51.tsv", outputName);
+    char *expectedOutputFeature = stString_print("%s.simpleWeight.C00000.feature_contig-0-50.tsv", outputName);
     CuAssertTrue(testCase, retCode == 0);
     CuAssertTrue(testCase, access(expectedOutputFa, F_OK ) == 0);
     CuAssertTrue(testCase, access(expectedOutputFeature, F_OK ) == 0);

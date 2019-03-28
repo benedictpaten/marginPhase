@@ -272,7 +272,7 @@ set(CORE_SOURCE_FILES
 
 
 set(SOURCE_FILES
-        impl/htsIntegration.c
+        impl/externalIntegration.c
         impl/vcfComparison.c
         externalTools/samtools/bedidx.c
         )
