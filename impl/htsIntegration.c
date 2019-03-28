@@ -345,9 +345,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
     // prep
     int64_t chunkStart = bamChunk->chunkBoundaryStart;
     int64_t chunkEnd = bamChunk->chunkBoundaryEnd;
-
     bool includeSoftClip = bamChunk->parent->params->includeSoftClipping;
-
     char *bamFile = bamChunk->parent->bamFile;
     char *contig = bamChunk->refSeqName;
     uint32_t savedAlignments = 0;
