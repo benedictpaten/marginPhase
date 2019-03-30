@@ -1738,3 +1738,6 @@ stHash *createReferencePriorProbabilities(char *referenceFastaFile, stList *prof
 
     return referenceNamesToReferencePriors;
 }
+
+
+

@@ -16,6 +16,7 @@
 #include "marginVersion.h"
 #include "margin.h"
 #include "externalIntegration.h"
+#include "helenFeatures.h"
 
 
 /*
@@ -397,15 +398,15 @@ int main(int argc, char *argv[]) {
         if (helenFeatureType != HFEAT_NONE) {
             st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
             // get filename
-            char *helenFeatureOutfile = NULL;
+            char *helenFeatureOutfileBase = NULL;
             switch (helenFeatureType) {
                 case HFEAT_SIMPLE_COUNT:
-                    helenFeatureOutfile = stString_print("%s.simpleCount.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                    helenFeatureOutfileBase = stString_print("%s.simpleCount.C%05"PRId64".%s-%"PRId64"-%"PRId64,
                             outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
                             bamChunk->chunkBoundaryEnd);
                     break;
                 case HFEAT_SIMPLE_WEIGHT:
-                    helenFeatureOutfile = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                    helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
                             outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
                             bamChunk->chunkBoundaryEnd);
                     break;
@@ -452,7 +453,7 @@ int main(int argc, char *argv[]) {
 
                     // we found a single alignment of reference
                     double refLengthRatio = 1.0 * trueRefRleString->length / polishedRLEReference->length;
-                    if (stList_length(trueRefAlignment) > 0 && refLengthRatio > 0.95 && refLengthRatio < 1.05) {
+                    if (stList_length(trueRefAlignment) > 0 && refLengthRatio > 0.9 && refLengthRatio < 1.1) {
                         validReferenceAlignment = TRUE;
                     } else {
                         st_logInfo(" %s True reference alignment failed. aligned pairs: %"PRId64", ref length ratio (true/polished): %f\n",
@@ -469,13 +470,13 @@ int main(int argc, char *argv[]) {
             if (trueReferenceBam != NULL && !validReferenceAlignment) {
                 st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
             } else {
-                st_logInfo(" %s Writing HELEN features to: %s\n", logIdentifier, helenFeatureOutfile);
-                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfile, bamChunk,
+                st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
+                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfileBase, bamChunk,
                                        trueRefAlignment, trueRefRleString);
             }
 
             // cleanup
-            free(helenFeatureOutfile);
+            free(helenFeatureOutfileBase);
             if (trueRefAlignment != NULL) stList_destruct(trueRefAlignment);
             if (trueRefRleString != NULL) rleString_destruct(trueRefRleString);
         }

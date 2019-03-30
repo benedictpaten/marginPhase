@@ -259,6 +259,7 @@ set(CORE_SOURCE_FILES
         impl/coordination.c
         impl/emissions.c
         impl/genomeFragment.c
+        impl/helenFeatures.c
         impl/hmm.c
         impl/mergeColumn.c
         impl/outputWriter.c
@@ -312,6 +313,18 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
+
+find_package(HDF5)
+if(HDF5_FOUND)
+    message(WARNING "Found HDF5 Library ${HDF5_INCLUDE_DIR}")
+    include_directories(${HDF5_INCLUDE_DIR})
+    set(HDF5_LIBS hdf5 hdf5_cpp)
+    #TODO don't hard code this in here! who committed this? what were you thinking!!
+    link_directories("/usr/lib/x86_64-linux-gnu/hdf5/serial/")
+else()
+    message(WARNING "Couldn't find HDF5 library")
+endif()
+
 # LASTZ
 #add_library(lastz ${LASTZ_SOURCES})
 #target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
@@ -363,6 +376,11 @@ target_link_libraries(hts pthread bz2 z curl)
 # Build MarginCore Library
 add_library(margin ${SOURCE_FILES})
 target_link_libraries(margin MarginCore hts)
+if (HDF5_FOUND)
+    target_link_libraries(margin ${HDF5_LIBS})
+    find_library(HDF5_LIB hdf5)
+endif()
+
 
 ###############################
 ######### EXECUTABLES #########

@@ -7,6 +7,7 @@
 #include <externalIntegration.h>
 #include "CuTest.h"
 #include "margin.h"
+#include "helenFeatures.h"
 #include <stdio.h>
 
 static char *FEATURE_TEST_PARAMS = "../params/allParams.np.json";
