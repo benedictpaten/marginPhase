@@ -15,7 +15,7 @@
 
 #include "marginVersion.h"
 #include "margin.h"
-#include "externalIntegration.h"
+#include "htsIntegration.h"
 #include "helenFeatures.h"
 
 
@@ -471,8 +471,20 @@ int main(int argc, char *argv[]) {
                 st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
             } else {
                 st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
+
+                // write the actual features (type dependent)
                 poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfileBase, bamChunk,
                                        trueRefAlignment, trueRefRleString);
+
+                // write the polished chunk in fasta format
+                char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
+                char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s", bamChunk->refSeqName,
+                        bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd, helenFeatureOutfileBase);
+                FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
+                fastaWrite(polishedReferenceString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
+                fclose(chunkPolishedRefOutFh);
+                free(chunkPolishedRefFilename);
+                free(chunkPolishedRefContigName);
             }
 
             // cleanup

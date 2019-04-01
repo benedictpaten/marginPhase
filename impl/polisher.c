@@ -6,7 +6,7 @@
 
 #include "margin.h"
 #include <omp.h>
-#include <externalIntegration.h>
+#include <htsIntegration.h>
 
 char *getLogIdentifier() {
 	char *logIdentifier;

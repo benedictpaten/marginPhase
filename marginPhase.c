@@ -15,7 +15,7 @@
 #include "margin.h"
 #include "marginVersion.h"
 #include "vcfComparison.h"
-#include "externalIntegration.h"
+#include "htsIntegration.h"
 #include "externalTools/sonLib/C/impl/sonLibListPrivate.h"
 
 /*

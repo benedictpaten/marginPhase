@@ -4,7 +4,10 @@
 
 #include "margin.h"
 #include "helenFeatures.h"
+
+#ifdef _HDF5
 #include <hdf5.h>
+#endif
 
 
 PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_t refPos, int64_t insPos) {
@@ -346,12 +349,14 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             writeSimpleHelenFeaturesTSV(outputFile, bamChunk, outputLabels, features, type);
             free(outputFile);
 
+            #ifdef _HDF5
             outputFile = stString_print("%s.h5", outputFileBase);
             int status = writeSimpleHelenFeaturesHDF5(outputFile, bamChunk, outputLabels, features, type);
             if (status) {
                 st_logInfo(" Error writing HELEN features to %s\n", outputFile);
             }
             free(outputFile);
+            #endif
 
             break;
         default:
@@ -418,7 +423,7 @@ void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outp
     fclose(fH);
 }
 
-
+#ifdef _HDF5
 typedef struct {
     int64_t     refPos;
     int64_t     insPos;
@@ -523,3 +528,4 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
 
     return (int) status;
 }
+#endif

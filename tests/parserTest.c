@@ -6,7 +6,7 @@
 
 #include "CuTest.h"
 #include "margin.h"
-#include "externalIntegration.h"
+#include "htsIntegration.h"
 
 /*
  * Test that a bam file is read in correctly.

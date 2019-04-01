@@ -273,7 +273,7 @@ set(CORE_SOURCE_FILES
 
 
 set(SOURCE_FILES
-        impl/externalIntegration.c
+        impl/htsIntegration.c
         impl/vcfComparison.c
         externalTools/samtools/bedidx.c
         )
@@ -316,11 +316,8 @@ endif()
 
 find_package(HDF5)
 if(HDF5_FOUND)
-    message(WARNING "Found HDF5 Library ${HDF5_INCLUDE_DIR}")
     include_directories(${HDF5_INCLUDE_DIR})
-    set(HDF5_LIBS hdf5 hdf5_cpp)
-    #TODO don't hard code this in here! who committed this? what were you thinking!!
-    link_directories("/usr/lib/x86_64-linux-gnu/hdf5/serial/")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_HDF5 ")
 else()
     message(WARNING "Couldn't find HDF5 library")
 endif()
@@ -377,8 +374,7 @@ target_link_libraries(hts pthread bz2 z curl)
 add_library(margin ${SOURCE_FILES})
 target_link_libraries(margin MarginCore hts)
 if (HDF5_FOUND)
-    target_link_libraries(margin ${HDF5_LIBS})
-    find_library(HDF5_LIB hdf5)
+    target_link_libraries(margin ${HDF5_C_LIBRARIES})
 endif()
 
 
