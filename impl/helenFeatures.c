@@ -345,17 +345,13 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                 poa_annotateSimpleCharacterCountFeaturesWithTruth(features, trueRefAlignment, trueRefRleString);
             }
 
-            char *outputFile = stString_print("%s.tsv", outputFileBase);
-            writeSimpleHelenFeaturesTSV(outputFile, bamChunk, outputLabels, features, type);
-            free(outputFile);
+            writeSimpleHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features, type);
 
             #ifdef _HDF5
-            outputFile = stString_print("%s.h5", outputFileBase);
-            int status = writeSimpleHelenFeaturesHDF5(outputFile, bamChunk, outputLabels, features, type);
+            int status = writeSimpleHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features, type);
             if (status) {
-                st_logInfo(" Error writing HELEN features to %s\n", outputFile);
+                st_logInfo(" Error writing HELEN features to HDF5 file\n");
             }
-            free(outputFile);
             #endif
 
             break;
@@ -368,9 +364,10 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 }
 
 
-void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outputLabels, stList *features,
+void writeSimpleHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                  HelenFeatureType type) {
 
+    char *outputFile = stString_print("%s.tsv", outputFileBase);
     FILE *fH = fopen(outputFile, "w");
 
     // print header
@@ -421,6 +418,7 @@ void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outp
     }
 
     fclose(fH);
+    free(outputFile);
 }
 
 #ifdef _HDF5
@@ -446,9 +444,15 @@ typedef struct {
     double      wGapRev;
 } helen_features_simple_weight_hdf5_record_t;      /* Compound type */
 
-int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outputLabels, stList *features, HelenFeatureType type) {
+#define HDF5_FEATURE_SIZE 1000
+
+int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features, HelenFeatureType type) {
 
     herr_t      status = 0;
+
+    /*
+     * Get feature data set up
+     */
 
     // count features, create feature array
     uint64_t featureCount = 0;
@@ -459,6 +463,14 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
             feature = feature->nextInsert;
         }
     }
+    if (featureCount < HDF5_FEATURE_SIZE) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+        free(logIdentifier);
+        return -1;
+    }
+
+    // get all feature data into an array
     helen_features_position_hdf5_record_t *positionData =
             st_calloc(featureCount, sizeof(helen_features_simple_weight_hdf5_record_t));
     helen_features_simple_weight_hdf5_record_t *simpleWeightData =
@@ -494,8 +506,10 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
         }
     }
 
-    // create file
-    hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+    /*
+     * Get hdf5 data set up
+     */
 
     // create datatypes
     hid_t simpleWeightType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_simple_weight_hdf5_record_t));
@@ -517,32 +531,55 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
     hid_t labelType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_label_hdf5_record_t));
     status |= H5Tinsert (labelType, "label", HOFFSET (helen_features_label_hdf5_record_t, label), H5T_NATIVE_CHAR);
 
-    // size of dataset
-    hsize_t dimension = featureCount;
-    hid_t space = H5Screate_simple (1, &dimension, NULL);
 
-    // create and write datasets
-    hid_t positionDataset = H5Dcreate (file, "position", positionType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    hid_t simpleWeightDataset = H5Dcreate (file, "simpleWeight", simpleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
-                                           H5P_DEFAULT);
-    status |= H5Dwrite (simpleWeightDataset, simpleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT, simpleWeightData);
-    status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData);
+    /*
+     * Write features to files
+     */
 
-    // if labels, add all these too
-    if (outputLabels) {
-        hid_t labelDataset = H5Dcreate (file, "label", labelType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (labelDataset, labelType, H5S_ALL, H5S_ALL, H5P_DEFAULT, labelData);
-        status |= H5Dclose (labelDataset);
+    // each file must have exactly 1000 features
+    // TODO I think this is more convoluted than it needs to be
+    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
+    int64_t featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / ((int64_t) (featureCount / HDF5_FEATURE_SIZE)));
+
+    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
+        // get start pos
+        int64_t featureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
+        if (featureIndex + 1 == totalFeatureFiles) featureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+
+        // create file
+        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
+        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+        hsize_t dimension = HDF5_FEATURE_SIZE;
+        hid_t space = H5Screate_simple (1, &dimension, NULL);
+
+        // create and write datasets
+        hid_t positionDataset = H5Dcreate (file, "position", positionType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        hid_t simpleWeightDataset = H5Dcreate (file, "simpleWeight", simpleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
+                                               H5P_DEFAULT);
+        status |= H5Dwrite (simpleWeightDataset, simpleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                &simpleWeightData[featureStartIdx]);
+        status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &positionData[featureStartIdx]);
+
+        // if labels, add all these too
+        if (outputLabels) {
+            hid_t labelDataset = H5Dcreate (file, "label", labelType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelDataset, labelType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &labelData[featureStartIdx]);
+            status |= H5Dclose (labelDataset);
+        }
+
+        // cleanup
+        status |= H5Dclose (positionDataset);
+        status |= H5Dclose (simpleWeightDataset);
+        status |= H5Sclose (space);
+        status |= H5Fclose (file);
+        free(outputFile);
     }
 
     // cleanup
-    status |= H5Dclose (positionDataset);
-    status |= H5Dclose (simpleWeightDataset);
-    status |= H5Sclose (space);
     status |= H5Tclose (positionType);
     status |= H5Tclose (simpleWeightType);
     status |= H5Tclose (labelType);
-    status |= H5Fclose (file);
 
     return (int) status;
 }
