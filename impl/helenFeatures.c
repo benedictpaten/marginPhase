@@ -427,7 +427,13 @@ void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outp
 typedef struct {
     int64_t     refPos;
     int64_t     insPos;
+} helen_features_position_hdf5_record_t;
+
+typedef struct {
     char        label;
+} helen_features_label_hdf5_record_t;
+
+typedef struct {
     double      wAFwd;
     double      wARev;
     double      wCFwd;
@@ -438,11 +444,10 @@ typedef struct {
     double      wTRev;
     double      wGapFwd;
     double      wGapRev;
-} helen_features_simple_weight_hdf5_record_t;                                 /* Compound type */
+} helen_features_simple_weight_hdf5_record_t;      /* Compound type */
 
 int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outputLabels, stList *features, HelenFeatureType type) {
 
-    hid_t       file, simpleWeightType, space, dset;
     herr_t      status = 0;
 
     // count features, create feature array
@@ -454,44 +459,46 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
             feature = feature->nextInsert;
         }
     }
-    helen_features_simple_weight_hdf5_record_t *writeData =
+    helen_features_position_hdf5_record_t *positionData =
             st_calloc(featureCount, sizeof(helen_features_simple_weight_hdf5_record_t));
+    helen_features_simple_weight_hdf5_record_t *simpleWeightData =
+            st_calloc(featureCount, sizeof(helen_features_simple_weight_hdf5_record_t));
+    helen_features_label_hdf5_record_t *labelData = NULL;
+    if (outputLabels) {
+        labelData = st_calloc(featureCount, sizeof(helen_features_simple_weight_hdf5_record_t));
+    }
 
     // add all data to features
     featureCount = 0;
     for (int64_t i = 0; i < stList_length(features); i++) {
         PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
         while (feature != NULL) {
-            writeData[featureCount].refPos = feature->refPosition;
-            writeData[featureCount].insPos = feature->insertPosition;
-            writeData[featureCount].label = feature->label;
-            writeData[featureCount].wAFwd = feature->weights[symbol_convertCharToSymbol('A') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wARev = feature->weights[symbol_convertCharToSymbol('A') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wCFwd = feature->weights[symbol_convertCharToSymbol('C') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wCRev = feature->weights[symbol_convertCharToSymbol('C') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wGFwd = feature->weights[symbol_convertCharToSymbol('G') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wGRev = feature->weights[symbol_convertCharToSymbol('G') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wTFwd = feature->weights[symbol_convertCharToSymbol('T') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wTRev = feature->weights[symbol_convertCharToSymbol('T') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wGapFwd = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            writeData[featureCount].wGapRev = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            positionData[featureCount].refPos = feature->refPosition;
+            positionData[featureCount].insPos = feature->insertPosition;
+            simpleWeightData[featureCount].wAFwd = feature->weights[symbol_convertCharToSymbol('A') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wARev = feature->weights[symbol_convertCharToSymbol('A') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wCFwd = feature->weights[symbol_convertCharToSymbol('C') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wCRev = feature->weights[symbol_convertCharToSymbol('C') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGFwd = feature->weights[symbol_convertCharToSymbol('G') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGRev = feature->weights[symbol_convertCharToSymbol('G') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wTFwd = feature->weights[symbol_convertCharToSymbol('T') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wTRev = feature->weights[symbol_convertCharToSymbol('T') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGapFwd = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGapRev = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            if (outputLabels) {
+                labelData[featureCount].label = feature->label;
+            }
+
             featureCount++;
             feature = feature->nextInsert;
         }
     }
 
-    /*
-     * Create a new file using the default properties.
-     */
-    file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    // create file
+    hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-    /*
-     * Create the compound datatype.
-     */
-    simpleWeightType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_simple_weight_hdf5_record_t));
-    status |= H5Tinsert (simpleWeightType, "refPos", HOFFSET (helen_features_simple_weight_hdf5_record_t, refPos), H5T_NATIVE_INT64);
-    status |= H5Tinsert (simpleWeightType, "insPos", HOFFSET (helen_features_simple_weight_hdf5_record_t, insPos), H5T_NATIVE_INT64);
-    status |= H5Tinsert (simpleWeightType, "label", HOFFSET (helen_features_simple_weight_hdf5_record_t, label), H5T_NATIVE_CHAR);
+    // create datatypes
+    hid_t simpleWeightType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_simple_weight_hdf5_record_t));
     status |= H5Tinsert (simpleWeightType, "a_fwd", HOFFSET (helen_features_simple_weight_hdf5_record_t, wAFwd), H5T_NATIVE_DOUBLE);
     status |= H5Tinsert (simpleWeightType, "a_rev", HOFFSET (helen_features_simple_weight_hdf5_record_t, wARev), H5T_NATIVE_DOUBLE);
     status |= H5Tinsert (simpleWeightType, "c_fwd", HOFFSET (helen_features_simple_weight_hdf5_record_t, wCFwd), H5T_NATIVE_DOUBLE);
@@ -502,28 +509,39 @@ int writeSimpleHelenFeaturesHDF5(char *outputFile, BamChunk *bamChunk, bool outp
     status |= H5Tinsert (simpleWeightType, "t_rev", HOFFSET (helen_features_simple_weight_hdf5_record_t, wTRev), H5T_NATIVE_DOUBLE);
     status |= H5Tinsert (simpleWeightType, "gap_fwd", HOFFSET (helen_features_simple_weight_hdf5_record_t, wGapFwd), H5T_NATIVE_DOUBLE);
     status |= H5Tinsert (simpleWeightType, "gap_rev", HOFFSET (helen_features_simple_weight_hdf5_record_t, wGapRev), H5T_NATIVE_DOUBLE);
-    if (status) fprintf(stderr, "statusH5Tinsert\n");
 
-    /*
-     * Create dataspace.  Setting maximum size to NULL sets the maximum
-     * size to be the current size.
-     */
+    hid_t positionType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_position_hdf5_record_t));
+    status |= H5Tinsert (positionType, "refPos", HOFFSET (helen_features_position_hdf5_record_t, refPos), H5T_NATIVE_INT64);
+    status |= H5Tinsert (positionType, "insPos", HOFFSET (helen_features_position_hdf5_record_t, insPos), H5T_NATIVE_INT64);
+
+    hid_t labelType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_label_hdf5_record_t));
+    status |= H5Tinsert (labelType, "label", HOFFSET (helen_features_label_hdf5_record_t, label), H5T_NATIVE_CHAR);
+
+    // size of dataset
     hsize_t dimension = featureCount;
-    space = H5Screate_simple (1, &dimension, NULL);
-    if (status) fprintf(stderr, "statusH5Screate_simple\n");
+    hid_t space = H5Screate_simple (1, &dimension, NULL);
 
-    /*
-     * Create the dataset and write the compound data to it.
-     */
-    dset = H5Dcreate (file, "simpleWeight", simpleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
-                      H5P_DEFAULT);
-    if (status) fprintf(stderr, "statusH5Dcreate\n");
-    status |= H5Dwrite (dset, simpleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT, writeData);
-    if (status) fprintf(stderr, "statusH5Dwrite\n");
+    // create and write datasets
+    hid_t positionDataset = H5Dcreate (file, "position", positionType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    hid_t simpleWeightDataset = H5Dcreate (file, "simpleWeight", simpleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
+                                           H5P_DEFAULT);
+    status |= H5Dwrite (simpleWeightDataset, simpleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT, simpleWeightData);
+    status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData);
 
-    status |= H5Dclose (dset);
+    // if labels, add all these too
+    if (outputLabels) {
+        hid_t labelDataset = H5Dcreate (file, "label", labelType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (labelDataset, labelType, H5S_ALL, H5S_ALL, H5P_DEFAULT, labelData);
+        status |= H5Dclose (labelDataset);
+    }
+
+    // cleanup
+    status |= H5Dclose (positionDataset);
+    status |= H5Dclose (simpleWeightDataset);
     status |= H5Sclose (space);
+    status |= H5Tclose (positionType);
     status |= H5Tclose (simpleWeightType);
+    status |= H5Tclose (labelType);
     status |= H5Fclose (file);
 
     return (int) status;
