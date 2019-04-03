@@ -124,10 +124,12 @@ int64_t saveContigChunks(stList *dest, BamChunker *parent, char *contig, int64_t
     for (int64_t i = contigStartPos; i < contigEndPos; i += chunkSize) {
         int64_t chunkEndPos = i + chunkSize;
         chunkEndPos = (chunkEndPos > contigEndPos ? contigEndPos : chunkEndPos);
+        int64_t chunkMarginStartPos = i - chunkMargin;
+        chunkMarginStartPos = (chunkMarginStartPos < contigStartPos ? contigStartPos : chunkMarginStartPos);
         int64_t chunkMarginEndPos = chunkEndPos + chunkMargin;
         chunkMarginEndPos = (chunkMarginEndPos > contigEndPos ? contigEndPos : chunkMarginEndPos);
 
-        BamChunk *chunk = bamChunk_construct2(contig, (chunkMargin > i ? 0 : i - chunkMargin), i, chunkEndPos,
+        BamChunk *chunk = bamChunk_construct2(contig, chunkMarginStartPos, i, chunkEndPos,
                                               chunkMarginEndPos, parent);
         stList_append(dest, chunk);
         chunkCount++;

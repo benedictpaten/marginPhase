@@ -312,7 +312,7 @@ int main(int argc, char *argv[]) {
         convertToReadsAndAlignments(bamChunk, reads, alignments);
 
         Poa *poa = NULL; // The poa alignment
-        char *polishedReferenceString = NULL; // The polished reference string
+        char *polishedConsensusString = NULL; // The polished reference string
 
 
         // prep for RLE work
@@ -368,9 +368,9 @@ int main(int argc, char *argv[]) {
         */
 
         // get polished reference string and expand RLE (regardless of whether RLE was applied)
-        RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads,
+        RleString *polishedRleConsensus = expandRLEConsensus(poa, rleNucleotides, rleReads,
                                                              params->polishParams->repeatSubMatrix);
-        polishedReferenceString = rleString_expand(polishedRLEReference);
+        polishedConsensusString = rleString_expand(polishedRleConsensus);
 
         // Log info about the POA
         if (st_getLogLevel() >= info) {
@@ -392,7 +392,7 @@ int main(int argc, char *argv[]) {
         */
 
         // save polished reference string to chunk output array
-        chunkResults[chunkIdx] = polishedReferenceString;
+        chunkResults[chunkIdx] = polishedConsensusString;
 
         // HELEN feature outputs
         if (helenFeatureType != HFEAT_NONE) {
@@ -443,21 +443,26 @@ int main(int argc, char *argv[]) {
 
                     // get most likely alignment
                     double alignmentScore;
-                    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(polishedRLEReference->rleString,
-                            trueRefRleString->rleString, strlen(polishedRLEReference->rleString),
+                    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(polishedRleConsensus->rleString,
+                            trueRefRleString->rleString, strlen(polishedRleConsensus->rleString),
                             strlen(trueRefRleString->rleString), params->polishParams->p);
-                    trueRefAlignment = getShiftedMEAAlignment(polishedRLEReference->rleString,
+                    trueRefAlignment = getShiftedMEAAlignment(polishedRleConsensus->rleString,
                             trueRefRleString->rleString, anchorPairs, params->polishParams->p,
                             params->polishParams->sM, 0, 0, &alignmentScore);
                     stList_destruct(anchorPairs);
 
                     // we found a single alignment of reference
-                    double refLengthRatio = 1.0 * trueRefRleString->length / polishedRLEReference->length;
-                    if (stList_length(trueRefAlignment) > 0 && refLengthRatio > 0.9 && refLengthRatio < 1.1) {
+                    double refLengthRatio = 1.0 * trueRefRleString->length / polishedRleConsensus->length;
+                    double alnLengthRatio = 1.0 * stList_length(trueRefAlignment) / polishedRleConsensus->length;
+                    int refLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - refLengthRatio)));
+                    int alnLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - alnLengthRatio)));
+                    if (stList_length(trueRefAlignment) > 0 && refLengthRatioHundredthsOffOne < 5 &&
+                            alnLengthRatioHundredthsOffOne < 5) {
                         validReferenceAlignment = TRUE;
                     } else {
-                        st_logInfo(" %s True reference alignment failed. aligned pairs: %"PRId64", ref length ratio (true/polished): %f\n",
-                                logIdentifier, stList_length(trueRefAlignment), refLengthRatio);
+                        st_logInfo(" %s True reference alignment QC failed:  polished length %"PRId64", true ref length"
+                                   " ratio (true/polished) %f, aligned pairs length ratio (true/polished): %f\n",
+                                   logIdentifier, polishedRleConsensus->length, refLengthRatio, alnLengthRatio);
                     }
                 }
 
@@ -481,7 +486,7 @@ int main(int argc, char *argv[]) {
                 char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s", bamChunk->refSeqName,
                         bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd, helenFeatureOutfileBase);
                 FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
-                fastaWrite(polishedReferenceString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
+                fastaWrite(polishedConsensusString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
                 fclose(chunkPolishedRefOutFh);
                 free(chunkPolishedRefFilename);
                 free(chunkPolishedRefContigName);
@@ -502,7 +507,7 @@ int main(int argc, char *argv[]) {
         stList_destruct(rleReads);
         stList_destruct(rleAlignments);
         rleString_destruct(rleReference);
-        rleString_destruct(polishedRLEReference);
+        rleString_destruct(polishedRleConsensus);
         poa_destruct(poa);
         stList_destruct(reads);
         stList_destruct(alignments);

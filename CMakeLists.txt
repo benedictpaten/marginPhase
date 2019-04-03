@@ -31,7 +31,7 @@ set(SONLIB_HEADERS
 set(CPECAN_HEADERS
         externalTools/cPecan/inc
         externalTools/cPecan/tests
-        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src
         )
 
 include_directories(inc)
@@ -339,6 +339,7 @@ add_custom_target(CPECANLASTZ DEPENDS lastz "${PROJECT_SOURCE_DIR}/externalTools
 add_library(son ${SONLIB_SOURCES})
 add_library(cpecan ${CPECAN_SOURCES})
 add_dependencies(cpecan CPECANLASTZ)
+add_dependencies(cpecan lastz)
 target_link_libraries(cpecan m)
 
 

@@ -236,7 +236,8 @@ stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads) {
     return featureList;
 }
 
-void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList *trueRefAlignment, RleString *trueRefRleString) {
+void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList *trueRefAlignment,
+        RleString *trueRefRleString, int64_t *firstMatchedFeaure, int64_t *lastMatchedFeature) {
     /*
      Each index in features represents a character in the final consensus string (which in turn was a single node in the
      final POA which was used to generate the consensus).  This consensus was aligned against the true reference (which
@@ -245,8 +246,12 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
      the position in the trueRefRleString.  So we can iterate over features and the true alignment to assign truth
      labels to each feature.
      */
-    int FPOS = 1;
-    int RPOS = 2;
+    static int FEATURE_POS = 1;
+    static int REFERENCE_POS = 2;
+    *firstMatchedFeaure = -1;
+    *lastMatchedFeature = -1;
+
+    // debug printing TODO remove eventually
     bool TP_DEBUG = FALSE;
     if (TP_DEBUG) fprintf(stderr, "\nAnnotating features with truth:\n");
 
@@ -255,7 +260,7 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
     stIntTuple *currRefAlign = stList_getNext(trueRefAlignItor);
 
     // iterate over features
-    int64_t trueRefPos = stIntTuple_get(currRefAlign, RPOS);
+    int64_t trueRefPos = stIntTuple_get(currRefAlign, REFERENCE_POS);
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
         PoaFeatureSimpleCharacterCount *feature = stList_get(features, featureRefPos);
         PoaFeatureSimpleCharacterCount *prevFeature = NULL;
@@ -274,25 +279,33 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
 
             // debug and sanity checks
             if (TP_DEBUG) fprintf(stderr, "(%4"PRId64"\t%4"PRId64")\t%4"PRId64",%"PRId64"\t%4"PRId64,
-                    (int64_t ) stIntTuple_get(currRefAlign, FPOS), (int64_t ) stIntTuple_get(currRefAlign, RPOS),
+                    (int64_t ) stIntTuple_get(currRefAlign, FEATURE_POS), (int64_t ) stIntTuple_get(currRefAlign, REFERENCE_POS),
                     featureRefPos, featureInsPos, trueRefPos);
-            assert(stIntTuple_get(currRefAlign, FPOS) >= featureRefPos && stIntTuple_get(currRefAlign, RPOS) >= trueRefPos);
+            assert(stIntTuple_get(currRefAlign, FEATURE_POS) >= featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) >= trueRefPos);
 
             // match
-            if (stIntTuple_get(currRefAlign, FPOS) == featureRefPos && stIntTuple_get(currRefAlign, RPOS) == trueRefPos) {
+            if (stIntTuple_get(currRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) == trueRefPos) {
                 if (TP_DEBUG) fprintf(stderr, "\t -> MATCH\n");
                 feature->label = trueRefRleString->rleString[trueRefPos];
                 trueRefPos++;
                 currRefAlign = stList_getNext(trueRefAlignItor);
+                // handle first and last match
+                if (featureInsPos == 0) {
+                    if (*firstMatchedFeaure == -1) {
+                        *firstMatchedFeaure = featureRefPos;
+                    }
+                    *lastMatchedFeature = featureRefPos;
+                }
+
             }
                 // insert
-            else if (trueRefPos < stIntTuple_get(currRefAlign, RPOS)) {
+            else if (trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
                 if (TP_DEBUG) fprintf(stderr, "\t -> INS\n");
                 feature->label = trueRefRleString->rleString[trueRefPos];
                 trueRefPos++;
             }
                 // delete
-            else if (featureRefPos < stIntTuple_get(currRefAlign, FPOS)) {
+            else if (featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS)) {
                 if (TP_DEBUG) fprintf(stderr, "\t -> DEL\n");
                 feature->label = '_';
             }
@@ -308,9 +321,9 @@ void poa_annotateSimpleCharacterCountFeaturesWithTruth(stList *features, stList 
         }
 
         // this catches any true inserts which are not present in the poa / feature list
-        while (currRefAlign != NULL && featureRefPos < stIntTuple_get(currRefAlign, FPOS) && trueRefPos < stIntTuple_get(currRefAlign, RPOS)) {
+        while (currRefAlign != NULL && featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) && trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
             if (TP_DEBUG) fprintf(stderr, "(%4"PRId64"\t%4"PRId64")\t%4"PRId64",%"PRId64"\t%4"PRId64,
-                    (int64_t ) stIntTuple_get(currRefAlign, FPOS), (int64_t ) stIntTuple_get(currRefAlign, RPOS),
+                    (int64_t ) stIntTuple_get(currRefAlign, FEATURE_POS), (int64_t ) stIntTuple_get(currRefAlign, REFERENCE_POS),
                     featureRefPos, featureInsPos, trueRefPos);
             if (TP_DEBUG) fprintf(stderr, "\t -> INS (new)\n");
             // make new empty feature and save truth
@@ -341,14 +354,19 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
         case HFEAT_SIMPLE_WEIGHT :
             // get features
             features = poa_getSimpleCharacterCountFeatures(poa, bamChunkReads);
+            int64_t firstMatchedFeature = 0;
+            int64_t lastMatchedFeature = stList_length(poa->nodes) - 1;
             if (outputLabels) {
-                poa_annotateSimpleCharacterCountFeaturesWithTruth(features, trueRefAlignment, trueRefRleString);
+                poa_annotateSimpleCharacterCountFeaturesWithTruth(features, trueRefAlignment, trueRefRleString,
+                        &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            writeSimpleHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features, type);
+            writeSimpleHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features, type,
+                    firstMatchedFeature, lastMatchedFeature);
 
             #ifdef _HDF5
-            int status = writeSimpleHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features, type);
+            int status = writeSimpleHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features, type,
+                    firstMatchedFeature, lastMatchedFeature);
             if (status) {
                 st_logInfo(" Error writing HELEN features to HDF5 file\n");
             }
@@ -365,7 +383,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 
 
 void writeSimpleHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                 HelenFeatureType type) {
+                                 HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
     char *outputFile = stString_print("%s.tsv", outputFileBase);
     FILE *fH = fopen(outputFile, "w");
@@ -382,7 +400,7 @@ void writeSimpleHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool 
     fprintf(fH, "\tgap_fwd\tgap_rev\n");
 
     // iterate over features
-    for (int64_t i = 0; i < stList_length(features); i++) {
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
         PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
 
         // iterate over all inserts for each assembly position
@@ -446,7 +464,8 @@ typedef struct {
 
 #define HDF5_FEATURE_SIZE 1000
 
-int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features, HelenFeatureType type) {
+int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+        HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
     herr_t      status = 0;
 
@@ -456,7 +475,7 @@ int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool 
 
     // count features, create feature array
     uint64_t featureCount = 0;
-    for (int64_t i = 0; i < stList_length(features); i++) {
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
         PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
         while (feature != NULL) {
             featureCount++;
@@ -482,7 +501,7 @@ int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool 
 
     // add all data to features
     featureCount = 0;
-    for (int64_t i = 0; i < stList_length(features); i++) {
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
         PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
         while (feature != NULL) {
             positionData[featureCount].refPos = feature->refPosition;
@@ -543,8 +562,8 @@ int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool 
 
     for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
         // get start pos
-        int64_t featureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
-        if (featureIndex + 1 == totalFeatureFiles) featureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
+        if (featureIndex + 1 == totalFeatureFiles) chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
 
         // create file
         char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
@@ -558,13 +577,13 @@ int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool 
         hid_t simpleWeightDataset = H5Dcreate (file, "simpleWeight", simpleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
                                                H5P_DEFAULT);
         status |= H5Dwrite (simpleWeightDataset, simpleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                &simpleWeightData[featureStartIdx]);
-        status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &positionData[featureStartIdx]);
+                &simpleWeightData[chunkFeatureStartIdx]);
+        status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &positionData[chunkFeatureStartIdx]);
 
         // if labels, add all these too
         if (outputLabels) {
             hid_t labelDataset = H5Dcreate (file, "label", labelType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelDataset, labelType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &labelData[featureStartIdx]);
+            status |= H5Dwrite (labelDataset, labelType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &labelData[chunkFeatureStartIdx]);
             status |= H5Dclose (labelDataset);
         }
 

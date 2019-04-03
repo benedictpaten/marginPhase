@@ -36,8 +36,8 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                             BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
 
 void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                 HelenFeatureType type);
+                                 HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                 HelenFeatureType type);
+                                 HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
 #endif //MARGINPHASE_HELENFEATURES_H
