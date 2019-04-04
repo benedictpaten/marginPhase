@@ -355,7 +355,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             // get features
             features = poa_getSimpleCharacterCountFeatures(poa, bamChunkReads);
             int64_t firstMatchedFeature = 0;
-            int64_t lastMatchedFeature = stList_length(poa->nodes) - 1;
+            int64_t lastMatchedFeature = stList_length(features) - 1;
             if (outputLabels) {
                 poa_annotateSimpleCharacterCountFeaturesWithTruth(features, trueRefAlignment, trueRefRleString,
                         &firstMatchedFeature, &lastMatchedFeature);
