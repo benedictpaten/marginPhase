@@ -17,7 +17,7 @@ static char *FEATURE_TEST_TRUTH_BAM = "../tests/data/featureTestTruth.bam";
 static char *FEATURE_TEST_TRUTH_SEQ = "ACGATAACCGGTTAAACATCCCGGGTTTCAAACCCCGGGGTTGATTACACAT";
 
 stList *getSimpleWeightFeatureFromTSV(CuTest *testCase, char *tsvFile, bool includesLabels) {
-    stList *features = stList_construct3(0, (void*)PoaFeature_SimpleCharacterCount_destruct);
+    stList *features = stList_construct3(0, (void *) PoaFeature_SimpleWeight_destruct);
 
     FILE *fp = fopen(tsvFile, "r");
     char * line = NULL;
@@ -130,10 +130,76 @@ void test_simpleWeightFeatureGeneration(CuTest *testCase) {
     CuAssertTrue(testCase, totalWeightPerPos > 6.9 && totalWeightPerPos < 7.1);
 }
 
+void test_simpleWeightIndex(CuTest *testCase) {
+
+    int idx;
+    PoaFeatureSimpleWeight *feature = PoaFeature_SimpleWeight_construct(0, 0);
+
+    for (int64_t c = 0; c < SYMBOL_NUMBER; c++) {
+        idx = PoaFeature_SimpleWeight_charIndex((Symbol) c, TRUE);
+        CuAssertTrue(testCase, idx < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+        feature->weights[idx] += 1;
+
+        idx = PoaFeature_SimpleWeight_charIndex((Symbol) c, FALSE);
+        CuAssertTrue(testCase, idx < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+        feature->weights[idx] += 1;
+    }
+
+    idx = PoaFeature_SimpleWeight_gapIndex(TRUE);
+    CuAssertTrue(testCase, idx < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+    feature->weights[idx] += 1;
+
+    idx = PoaFeature_SimpleWeight_gapIndex(FALSE);
+    CuAssertTrue(testCase, idx < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+    feature->weights[idx] += 1;
+
+    for (int64_t i = 0; i < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE; i++) {
+        CuAssertTrue(testCase, feature->weights[i] == 1);
+    }
+
+    PoaFeature_SimpleWeight_destruct(feature);
+
+}
+
+
+void test_RleWeightIndex(CuTest *testCase) {
+
+    int idx;
+    PoaFeatureRleWeight *feature = PoaFeature_RleWeight_construct(0, 0);
+
+    for (int64_t c = 0; c < SYMBOL_NUMBER; c++) {
+        for (int64_t l = 0; l < POAFEATURE_MAX_RUN_LENGTH; l++) {
+            idx = PoaFeature_RleWeight_charIndex((Symbol) c, l, TRUE);
+            CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+            feature->weights[idx] += 1;
+
+            idx = PoaFeature_RleWeight_charIndex((Symbol) c, l, FALSE);
+            CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+            feature->weights[idx] += 1;
+        }
+    }
+
+    idx = PoaFeature_RleWeight_gapIndex(TRUE);
+    CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    feature->weights[idx] += 1;
+
+    idx = PoaFeature_RleWeight_gapIndex(FALSE);
+    CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    feature->weights[idx] += 1;
+
+    for (int64_t i = 0; i < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE; i++) {
+        CuAssertTrue(testCase, feature->weights[i] == 1);
+    }
+
+    PoaFeature_RleWeight_destruct(feature);
+}
+
 CuSuite* featureTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
     SUITE_ADD_TEST(suite, test_simpleWeightFeatureGeneration);
+    SUITE_ADD_TEST(suite, test_simpleWeightIndex);
+    SUITE_ADD_TEST(suite, test_RleWeightIndex);
 
     return suite;
 }

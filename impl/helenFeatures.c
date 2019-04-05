@@ -11,25 +11,63 @@
 
 
 PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos) {
-    PoaFeatureSimpleWeight *scc = st_calloc(1, sizeof(PoaFeatureSimpleWeight));
-    scc->refPosition = refPos;
-    scc->insertPosition = insPos;
-    scc->label = '\0';
-    scc->nextInsert = NULL;
-    return scc;
+    PoaFeatureSimpleWeight *feature = st_calloc(1, sizeof(PoaFeatureSimpleWeight));
+    feature->refPosition = refPos;
+    feature->insertPosition = insPos;
+    feature->label = '\0';
+    feature->nextInsert = NULL;
+    return feature;
 }
 
-void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleWeight *scc) {
-    if (scc->nextInsert != NULL) {
-        PoaFeature_SimpleCharacterCount_destruct(scc->nextInsert);
+void PoaFeature_SimpleWeight_destruct(PoaFeatureSimpleWeight *feature) {
+    if (feature->nextInsert != NULL) {
+        PoaFeature_SimpleWeight_destruct(feature->nextInsert);
     }
-    free(scc);
+    free(feature);
+}
+
+
+PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insPos) {
+    PoaFeatureRleWeight *feature = st_calloc(1, sizeof(PoaFeatureRleWeight));
+    feature->refPosition = refPos;
+    feature->insertPosition = insPos;
+    feature->labelChar = '\0';
+    feature->labelRunLength = 0;
+    feature->nextInsert = NULL;
+}
+
+void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature) {
+    if (feature->nextInsert != NULL) {
+        PoaFeature_RleWeight_destruct(feature->nextInsert);
+    }
+    free(feature);
+}
+
+int PoaFeature_SimpleWeight_charIndex(Symbol character, bool forward) {
+    int pos = character * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    assert(pos < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+    return pos;
+}
+int PoaFeature_SimpleWeight_gapIndex(bool forward) {
+    int pos = POAFEATURE_SYMBOL_GAP_POS * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    assert(pos < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
+    return pos;
+}
+int PoaFeature_RleWeight_charIndex(Symbol character, int64_t runLength, bool forward) {
+    int pos = (character * POAFEATURE_MAX_RUN_LENGTH + runLength) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    assert(pos < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    return pos;
+}
+int PoaFeature_RleWeight_gapIndex(bool forward) {
+    int pos = (POAFEATURE_SYMBOL_GAP_POS * POAFEATURE_MAX_RUN_LENGTH) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    assert(pos < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    return pos;
 }
 
 stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
 
     // initialize feature list
-    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_SimpleCharacterCount_destruct);
+    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_SimpleWeight_destruct);
     for(int64_t i=1; i<stList_length(poa->nodes); i++) {
         stList_append(featureList, PoaFeature_SimpleWeight_construct(i - 1, 0));
     }
@@ -51,8 +89,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
         for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
             double positiveStrandBaseWeight = baseWeights[j * 2 + POS_STRAND_IDX];
             double negativeStrandBaseWeight = baseWeights[j * 2 + NEG_STRAND_IDX];
-            feature->weights[j * 2 + POS_STRAND_IDX] += positiveStrandBaseWeight;
-            feature->weights[j * 2 + NEG_STRAND_IDX] += negativeStrandBaseWeight;
+            feature->weights[PoaFeature_SimpleWeight_charIndex(j, TRUE)] += positiveStrandBaseWeight;
+            feature->weights[PoaFeature_SimpleWeight_charIndex(j, FALSE)] += negativeStrandBaseWeight;
         }
         free(baseWeights);
 
@@ -70,8 +108,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                         break;
                     }
                     PoaFeatureSimpleWeight *delFeature = stList_get(featureList, i + k);
-                    delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] += delete->weightForwardStrand;
-                    delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] += delete->weightReverseStrand;
+                    delFeature->weights[PoaFeature_SimpleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
+                    delFeature->weights[PoaFeature_SimpleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
                 }
             }
         }
@@ -96,8 +134,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                     Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
 
                     // add weights
-                    currFeature->weights[c * 2 + POS_STRAND_IDX] += insert->weightForwardStrand;
-                    currFeature->weights[c * 2 + NEG_STRAND_IDX] += insert->weightReverseStrand;
+                    currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, TRUE)] += insert->weightForwardStrand;
+                    currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, FALSE)] += insert->weightReverseStrand;
 
                     // iterate
                     prevFeature = currFeature;
@@ -109,6 +147,96 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
     free(logIdentifier);
     return featureList;
 }
+
+stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
+
+    // initialize feature list
+    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_RleWeight_destruct);
+    for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+        stList_append(featureList, PoaFeature_RleWeight_construct(i - 1, 0));
+    }
+
+    // for logging (of errors)
+    char *logIdentifier = getLogIdentifier();
+
+    // iterate over all positions
+    for(int64_t i=0; i<stList_length(featureList); i++) {
+
+        // get feature and node
+        PoaFeatureRleWeight* feature = stList_get(featureList, i);
+        PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
+
+        // get weights for all bases, strands
+        double totalWeight, totalPositiveWeight, totalNegativeWeight;
+        double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+                                                                   &totalWeight, &totalPositiveWeight, &totalNegativeWeight);
+        for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+            double positiveStrandBaseWeight = baseWeights[j * 2 + POS_STRAND_IDX];
+            double negativeStrandBaseWeight = baseWeights[j * 2 + NEG_STRAND_IDX];
+
+            //TODO
+
+        }
+        free(baseWeights);
+
+        // Deletes
+        if (stList_length(node->deletes) > 0) {
+
+            // iterate over all deletes
+            for (int64_t j = 0; j < stList_length(node->deletes); j++) {
+                PoaDelete *delete = stList_get(node->deletes, j);
+
+                // Deletes start AFTER the current position, need to add counts/weights to nodes after the current node
+                for (int64_t k = 1; k < delete->length; k++) {
+                    if (i + k >= stList_length(poa->nodes)) {
+                        st_logInfo(" %s Encountered DELETE that occurs after end of POA!\n", logIdentifier);
+                        break;
+                    }
+                    PoaFeatureRleWeight *delFeature = stList_get(featureList, i + k);
+                    //TODO
+                    //delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] += delete->weightForwardStrand;
+                    //delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] += delete->weightReverseStrand;
+                }
+            }
+        }
+
+        // Inserts
+        if (stList_length(node->inserts) > 0) {
+
+            // iterate over all inserts
+            for (int64_t j = 0; j < stList_length(node->inserts); j++) {
+                PoaInsert *insert = stList_get(node->inserts, j);
+
+                // get feature iterator
+                PoaFeatureRleWeight *prevFeature = feature;
+                for (int64_t k = 0; k < strlen(insert->insert); k++) {
+                    // get current feature (or create if necessary)
+                    PoaFeatureRleWeight *currFeature = prevFeature->nextInsert;
+                    if (currFeature == NULL) {
+                        currFeature = PoaFeature_RleWeight_construct(i, k + 1);
+                        prevFeature->nextInsert = currFeature;
+                    }
+
+                    Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
+
+                    // add weights
+                    //TODO
+                    //currFeature->weights[c * 2 + POS_STRAND_IDX] += insert->weightForwardStrand;
+                    //currFeature->weights[c * 2 + NEG_STRAND_IDX] += insert->weightReverseStrand;
+
+                    // iterate
+                    prevFeature = currFeature;
+                }
+            }
+        }
+    }
+
+    free(logIdentifier);
+    return featureList;
+}
+
+
+
 
 void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, stList *trueRefAlignment,
                                                RleString *trueRefRleString, int64_t *firstMatchedFeaure,
@@ -229,6 +357,10 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             #endif
 
             break;
+        case HFEAT_RLE:
+            features = poa_getWeightedRleFeatures(poa, bamChunkReads);
+
+            break;
         default:
             st_errAbort("Unhandled HELEN feature type!\n");
     }
@@ -271,11 +403,11 @@ void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk,
 
             // print weights
             for (int64_t j = 0; j < SYMBOL_NUMBER_NO_N; j++) {
-                fprintf(fH, "\t%7.4f", feature->weights[j * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
-                fprintf(fH, "\t%7.4f", feature->weights[j * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
+                fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_charIndex((Symbol) j, TRUE)] / PAIR_ALIGNMENT_PROB_1);
+                fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_charIndex((Symbol) j, FALSE)] / PAIR_ALIGNMENT_PROB_1);
             }
-            fprintf(fH, "\t%7.4f", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
-            fprintf(fH, "\t%7.4f\n", feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1);
+            fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_gapIndex(TRUE)] / PAIR_ALIGNMENT_PROB_1);
+            fprintf(fH, "\t%7.4f\n", feature->weights[PoaFeature_SimpleWeight_gapIndex(FALSE)] / PAIR_ALIGNMENT_PROB_1);
 
             // iterate
             feature = feature->nextInsert;
@@ -353,14 +485,14 @@ int writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk,
         while (feature != NULL) {
             positionData[featureCount].refPos = feature->refPosition;
             positionData[featureCount].insPos = feature->insertPosition;
-            simpleWeightData[featureCount].wAFwd = feature->weights[symbol_convertCharToSymbol('A') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wARev = feature->weights[symbol_convertCharToSymbol('A') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wCFwd = feature->weights[symbol_convertCharToSymbol('C') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wCRev = feature->weights[symbol_convertCharToSymbol('C') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wGFwd = feature->weights[symbol_convertCharToSymbol('G') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wGRev = feature->weights[symbol_convertCharToSymbol('G') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wTFwd = feature->weights[symbol_convertCharToSymbol('T') * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
-            simpleWeightData[featureCount].wTRev = feature->weights[symbol_convertCharToSymbol('T') * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wAFwd = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('A'), TRUE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wARev = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('A'), FALSE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wCFwd = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('C'), TRUE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wCRev = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('C'), FALSE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGFwd = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('G'), TRUE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wGRev = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('G'), FALSE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wTFwd = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('T'), TRUE)] / PAIR_ALIGNMENT_PROB_1;
+            simpleWeightData[featureCount].wTRev = feature->weights[PoaFeature_SimpleWeight_charIndex(symbol_convertCharToSymbol('T'), FALSE)] / PAIR_ALIGNMENT_PROB_1;
             simpleWeightData[featureCount].wGapFwd = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
             simpleWeightData[featureCount].wGapRev = feature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] / PAIR_ALIGNMENT_PROB_1;
             if (outputLabels) {
@@ -403,9 +535,8 @@ int writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk,
      */
 
     // each file must have exactly 1000 features
-    // TODO I think this is more convoluted than it needs to be
     int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
-    int64_t featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / ((int64_t) (featureCount / HDF5_FEATURE_SIZE)));
+    int64_t featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
 
     for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
         // get start pos
