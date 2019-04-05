@@ -133,9 +133,7 @@ int main(int argc, char *argv[]) {
             outputPoaTsvFile = stString_copy(optarg);
             break;
         case 'f':
-            if (stString_eq(optarg, "simpleCount")) {
-                helenFeatureType = HFEAT_SIMPLE_COUNT;
-            } else if (stString_eq(optarg, "simpleWeight")) {
+            if (stString_eq(optarg, "simpleWeight")) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
             } else {
                 fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
@@ -201,7 +199,7 @@ int main(int argc, char *argv[]) {
     Params *params = params_readParams(paramsFile);
 
     // Set no RLE if appropriate feature type is set
-    if (helenFeatureType == HFEAT_SIMPLE_WEIGHT || helenFeatureType == HFEAT_SIMPLE_COUNT) {
+    if (helenFeatureType == HFEAT_SIMPLE_WEIGHT) {
         if (params->polishParams->useRunLengthEncoding) {
             st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = FALSE;
@@ -400,11 +398,6 @@ int main(int argc, char *argv[]) {
             // get filename
             char *helenFeatureOutfileBase = NULL;
             switch (helenFeatureType) {
-                case HFEAT_SIMPLE_COUNT:
-                    helenFeatureOutfileBase = stString_print("%s.simpleCount.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                            outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
-                            bamChunk->chunkBoundaryEnd);
-                    break;
                 case HFEAT_SIMPLE_WEIGHT:
                     helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
                             outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,

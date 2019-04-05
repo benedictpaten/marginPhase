@@ -33,7 +33,7 @@ stList *getSimpleWeightFeatureFromTSV(CuTest *testCase, char *tsvFile, bool incl
         int64_t refPos = stSafeStrToInt64(stList_get(parts, 0));
         int64_t insPos = stSafeStrToInt64(stList_get(parts, 1));
 
-        PoaFeatureSimpleCharacterCount *feature = PoaFeature_SimpleCharacterCount_construct(refPos, insPos);
+        PoaFeatureSimpleWeight *feature = PoaFeature_SimpleWeight_construct(refPos, insPos);
         stList_append(features, feature);
         if (includesLabels) feature->label = ((char*)stList_get(parts, 2))[0];
 
@@ -96,7 +96,7 @@ void test_simpleWeightFeatureGeneration(CuTest *testCase) {
     double totalFwdWeight = 0.0;
     double totalBkwdWeight = 0.0;
     for (int64_t i = 0; i < stList_length(features); i++) {
-        PoaFeatureSimpleCharacterCount *feature = stList_get(features, i);
+        PoaFeatureSimpleWeight *feature = stList_get(features, i);
 
         // assertions about truth sequence presence
         if (feature->label != '_') {

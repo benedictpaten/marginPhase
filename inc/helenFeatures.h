@@ -12,32 +12,28 @@
  */
 typedef enum {
     HFEAT_NONE=0,
-    HFEAT_SIMPLE_COUNT=1,
-    HFEAT_SIMPLE_WEIGHT=2
+    HFEAT_SIMPLE_WEIGHT=1,
 } HelenFeatureType;
 #define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
-#define POAFEATURE_TOTAL_SIZE ((SYMBOL_NUMBER + 1) * 2) // {A, C, G, T, N, gap} x {fwd, bkwd}
-typedef struct _poaFeatureSimpleCharacterCount PoaFeatureSimpleCharacterCount;
-struct _poaFeatureSimpleCharacterCount {
+#define POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER + 1) * 2) // {A, C, G, T, N, gap} x {fwd, bkwd}
+typedef struct _poaFeatureSimpleWeight PoaFeatureSimpleWeight;
+struct _poaFeatureSimpleWeight {
     int64_t refPosition;
     int64_t insertPosition;
     char label;
-    int64_t counts[POAFEATURE_TOTAL_SIZE];
-    double weights[POAFEATURE_TOTAL_SIZE];
-    PoaFeatureSimpleCharacterCount* nextInsert; //so we can model all inserts after a position
+    double weights[POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE];
+    PoaFeatureSimpleWeight* nextInsert; //so we can model all inserts after a position
 };
 
-PoaFeatureSimpleCharacterCount *PoaFeature_SimpleCharacterCount_construct(int64_t refPos, int64_t insPos);
-void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleCharacterCount *scc);
-int64_t PoaFeature_SimpleCharacterCount_getTotalCount(PoaFeatureSimpleCharacterCount *scc);
-double PoaFeature_SimpleCharacterCount_getTotalWeight(PoaFeatureSimpleCharacterCount *scc);
-stList *poa_getSimpleCharacterCountFeatures(Poa *poa, stList *bamChunkReads);
+PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos);
+void PoaFeature_SimpleCharacterCount_destruct(PoaFeatureSimpleWeight *scc);
+stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads);
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFileBase,
                             BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
 
-void writeSimpleHelenFeaturesTSV(char *outputFile, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                 HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
-int writeSimpleHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                 HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                       HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+int writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                       HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
 #endif //MARGINPHASE_HELENFEATURES_H
