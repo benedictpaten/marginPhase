@@ -4,17 +4,17 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
+#include <stdio.h>
 #include <htsIntegration.h>
 #include "CuTest.h"
 #include "margin.h"
 #include "helenFeatures.h"
-#include <stdio.h>
 
 static char *FEATURE_TEST_PARAMS = "../params/allParams.np.json";
 static char *FEATURE_TEST_BAM = "../tests/data/featureTest.bam";
 static char *FEATURE_TEST_FA = "../tests/data/featureTest.fa";
 static char *FEATURE_TEST_TRUTH_BAM = "../tests/data/featureTestTruth.bam";
-static char *FEATURE_TEST_TRUTH_SEQ = "ACGATAACCGGTTAAACATCCCGGGTTTCAAACCCCGGGGTTGATTACACAT";
+static char *FEATURE_TEST_TRUTH_SEQ = "ACGATAACCGGTTAAACCCCGGGTTTCAAACCCCGGGGTTGATTACACAT";
 
 stList *getSimpleWeightFeatureFromTSV(CuTest *testCase, char *tsvFile, bool includesLabels) {
     stList *features = stList_construct3(0, (void *) PoaFeature_SimpleWeight_destruct);

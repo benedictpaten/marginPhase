@@ -108,6 +108,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                         break;
                     }
                     PoaFeatureSimpleWeight *delFeature = stList_get(featureList, i + k);
+
+                    //TODO += delete->weightXXXStrand / delete->length?
                     delFeature->weights[PoaFeature_SimpleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
                     delFeature->weights[PoaFeature_SimpleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
                 }
@@ -134,6 +136,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                     Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
 
                     // add weights
+                    //TODO += insert->weightXXXStrand / strlen(insert->insert)?
                     currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, TRUE)] += insert->weightForwardStrand;
                     currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, FALSE)] += insert->weightReverseStrand;
 
@@ -148,7 +151,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
     return featureList;
 }
 
-stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
+stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings) {
 
     // initialize feature list
     stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_RleWeight_destruct);
@@ -166,25 +169,26 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
         PoaFeatureRleWeight* feature = stList_get(featureList, i);
         PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
 
-        // get weights for all bases, strands
-        double totalWeight, totalPositiveWeight, totalNegativeWeight;
-        double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
-                                                                   &totalWeight, &totalPositiveWeight, &totalNegativeWeight);
-        for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-            double positiveStrandBaseWeight = baseWeights[j * 2 + POS_STRAND_IDX];
-            double negativeStrandBaseWeight = baseWeights[j * 2 + NEG_STRAND_IDX];
+        // handle each observations
+        for (int64_t o = 0; o < stList_length(node->observations); o++) {
+            // get objects we need
+            PoaBaseObservation *observation = stList_get(node->observations, o);
+            BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
+            RleString *rleString = stList_get(rleStrings, observation->readNo);
 
-            //TODO
-
+            // save weight based on character and runLength
+            Symbol character = symbol_convertCharToSymbol(rleString->rleString[observation->offset]);
+            int64_t runLength = rleString->repeatCounts[observation->offset];
+            feature->weights[PoaFeature_RleWeight_charIndex(character, runLength, bamChunkRead->forwardStrand)] += observation->weight;
         }
-        free(baseWeights);
+
 
         // Deletes
         if (stList_length(node->deletes) > 0) {
 
             // iterate over all deletes
-            for (int64_t j = 0; j < stList_length(node->deletes); j++) {
-                PoaDelete *delete = stList_get(node->deletes, j);
+            for (int64_t d = 0; d < stList_length(node->deletes); d++) {
+                PoaDelete *delete = stList_get(node->deletes, d);
 
                 // Deletes start AFTER the current position, need to add counts/weights to nodes after the current node
                 for (int64_t k = 1; k < delete->length; k++) {
@@ -193,9 +197,10 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
                         break;
                     }
                     PoaFeatureRleWeight *delFeature = stList_get(featureList, i + k);
-                    //TODO
-                    //delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + POS_STRAND_IDX] += delete->weightForwardStrand;
-                    //delFeature->weights[POAFEATURE_SYMBOL_GAP_POS * 2 + NEG_STRAND_IDX] += delete->weightReverseStrand;
+
+                    //TODO += delete->weightXXXStrand / delete->length?
+                    delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
+                    delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightReverseStrand;
                 }
             }
         }
@@ -204,28 +209,39 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
         if (stList_length(node->inserts) > 0) {
 
             // iterate over all inserts
-            for (int64_t j = 0; j < stList_length(node->inserts); j++) {
-                PoaInsert *insert = stList_get(node->inserts, j);
+            for (int64_t n = 0; n < stList_length(node->inserts); n++) {
+                PoaInsert *insert = stList_get(node->inserts, n);
 
-                // get feature iterator
-                PoaFeatureRleWeight *prevFeature = feature;
-                for (int64_t k = 0; k < strlen(insert->insert); k++) {
-                    // get current feature (or create if necessary)
-                    PoaFeatureRleWeight *currFeature = prevFeature->nextInsert;
-                    if (currFeature == NULL) {
-                        currFeature = PoaFeature_RleWeight_construct(i, k + 1);
-                        prevFeature->nextInsert = currFeature;
+                // handle each observation
+                for (int64_t o = 0; o < stList_length(insert->observations); o++) {
+                    // get objects we need
+                    PoaBaseObservation *observation = stList_get(insert->observations, o);
+                    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
+                    RleString *rleString = stList_get(rleStrings, observation->readNo);
+
+                    // get feature iterator
+                    PoaFeatureRleWeight *prevFeature = feature;
+
+                    // iterate over all positions in insert
+                    for (int64_t k = 0; k < strlen(insert->insert); k++) {
+                        // get current feature (or create if necessary)
+                        PoaFeatureRleWeight *currFeature = prevFeature->nextInsert;
+                        if (currFeature == NULL) {
+                            currFeature = PoaFeature_RleWeight_construct(i, k + 1);
+                            prevFeature->nextInsert = currFeature;
+                        }
+
+                        // get character and runLength
+                        int64_t stringPos = observation->offset + k;
+                        assert(stringPos < rleString->length);
+                        Symbol character = symbol_convertCharToSymbol(rleString->rleString[stringPos]);
+                        int64_t runLength = rleString->repeatCounts[stringPos];
+
+                        // save weight for position
+                        //TODO += insert->weightXXXStrand / strlen(insert->insert)?
+                        currFeature->weights[PoaFeature_RleWeight_charIndex(character, runLength,
+                                                                            bamChunkRead->forwardStrand)] += observation->weight;
                     }
-
-                    Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
-
-                    // add weights
-                    //TODO
-                    //currFeature->weights[c * 2 + POS_STRAND_IDX] += insert->weightForwardStrand;
-                    //currFeature->weights[c * 2 + NEG_STRAND_IDX] += insert->weightReverseStrand;
-
-                    // iterate
-                    prevFeature = currFeature;
                 }
             }
         }
@@ -236,9 +252,7 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads) {
 }
 
 
-
-
-void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, stList *trueRefAlignment,
+void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, HelenFeatureType featureType, stList *trueRefAlignment,
                                                RleString *trueRefRleString, int64_t *firstMatchedFeaure,
                                                int64_t *lastMatchedFeature) {
     /*
@@ -261,15 +275,27 @@ void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, stList *trueRef
     // iterate over features
     int64_t trueRefPos = stIntTuple_get(currRefAlign, REFERENCE_POS);
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
-        PoaFeatureSimpleWeight *feature = stList_get(features, featureRefPos);
-        PoaFeatureSimpleWeight *prevFeature = NULL;
+        void *feature = stList_get(features, featureRefPos);
+        void *prevFeature = NULL;
 
         int64_t featureInsPos = 0;
         while (feature != NULL) {
+
             // no more ref bases, everything is gaps
             if (currRefAlign == NULL) {
-                feature->label = '_';
-                feature = feature->nextInsert;
+                switch (featureType) {
+                    case HFEAT_SIMPLE_WEIGHT:
+                        ((PoaFeatureSimpleWeight*)feature)->label = '_';
+                        feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
+                        break;
+                    case HFEAT_RLE_WEIGHT:
+                        ((PoaFeatureRleWeight*)feature)->labelChar = '_';
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 1; //TODO 0?
+                        feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
+                        break;
+                    default:
+                        st_errAbort("Unhandled FeatureType!\n");
+                }
                 continue;
             }
 
@@ -278,7 +304,20 @@ void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, stList *trueRef
 
             // match
             if (stIntTuple_get(currRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) == trueRefPos) {
-                feature->label = trueRefRleString->rleString[trueRefPos];
+                // save label (based on feature type)
+                switch (featureType) {
+                    case HFEAT_SIMPLE_WEIGHT:
+                        ((PoaFeatureSimpleWeight *) feature)->label = trueRefRleString->rleString[trueRefPos];
+                        break;
+                    case HFEAT_RLE_WEIGHT:
+                        ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        break;
+                    default:
+                        st_errAbort("Unhandled FeatureType!\n");
+                }
+
+                // iterate
                 trueRefPos++;
                 currRefAlign = stList_getNext(trueRefAlignItor);
                 // handle first and last match
@@ -288,48 +327,84 @@ void poa_annotateSimpleWeightFeaturesWithTruth(stList *features, stList *trueRef
                     }
                     *lastMatchedFeature = featureRefPos;
                 }
-
             }
-                // insert
+
+            // insert
             else if (trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
-                feature->label = trueRefRleString->rleString[trueRefPos];
+                // apply label
+                switch (featureType) {
+                    case HFEAT_SIMPLE_WEIGHT:
+                        ((PoaFeatureSimpleWeight*)feature)->label = trueRefRleString->rleString[trueRefPos];
+                        break;
+                    case HFEAT_RLE_WEIGHT:
+                        ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        break;
+                    default:
+                        st_errAbort("Unhandled FeatureType!\n");
+                }
                 trueRefPos++;
             }
-                // delete
+
+            // delete
             else if (featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS)) {
-                feature->label = '_';
+                // apply label
+                switch (featureType) {
+                    case HFEAT_SIMPLE_WEIGHT:
+                        ((PoaFeatureSimpleWeight*)feature)->label = '_';
+                        break;
+                    case HFEAT_RLE_WEIGHT:
+                        ((PoaFeatureRleWeight*)feature)->labelChar = '_';
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 1; //TODO 0?
+                        break;
+                    default:
+                        st_errAbort("Unhandled FeatureType!\n");
+                }
             }
-                // programmer error
+
+            // programmer error
             else {
                 st_errAbort("Unhandled case annotating features with true reference characters!\n");
             }
 
             // always iterate over insert features
             prevFeature = feature;
-            feature = feature->nextInsert;
+            switch (featureType) {
+                case HFEAT_SIMPLE_WEIGHT:
+                    feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
+                    break;
+                case HFEAT_RLE_WEIGHT:
+                    feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
+                    break;
+                default:
+                    st_errAbort("Unhandled FeatureType!\n");
+            }
             featureInsPos++;
         }
 
         // this catches any true inserts which are not present in the poa / feature list
         while (currRefAlign != NULL && featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) && trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
-            // make new empty feature and save truth
-            PoaFeatureSimpleWeight *newFeature = PoaFeature_SimpleWeight_construct(featureRefPos, featureInsPos);
-            newFeature->label = trueRefRleString->rleString[trueRefPos];
+            // DO NOT make new empty feature and save truth
+            // TODO remove this once you're sure
+            //PoaFeatureSimpleWeight *newFeature = PoaFeature_SimpleWeight_construct(featureRefPos, featureInsPos);
+            //newFeature->label = trueRefRleString->rleString[trueRefPos];
 
-            // save and iterate
-            prevFeature->nextInsert = newFeature;
-            prevFeature = newFeature;
+            // DO NOT save and DO iterate
+            //prevFeature->nextInsert = newFeature;
+            //prevFeature = newFeature;
+            //featureInsPos++;
             trueRefPos++;
-            featureInsPos++;
         }
     }
 
     stList_destructIterator(trueRefAlignItor);
 }
 
-void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFileBase,
-                            BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString) {
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
+        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString) {
     // prep
+    int64_t firstMatchedFeature = -1;
+    int64_t lastMatchedFeature = -1;
     stList *features = NULL;
     bool outputLabels = trueRefAlignment != NULL && trueRefRleString != NULL;
 
@@ -338,13 +413,16 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
         case HFEAT_SIMPLE_WEIGHT :
             // get features
             features = poa_getSimpleWeightFeatures(poa, bamChunkReads);
-            int64_t firstMatchedFeature = 0;
-            int64_t lastMatchedFeature = stList_length(features) - 1;
+            firstMatchedFeature = 0;
+            lastMatchedFeature = stList_length(features) - 1;
+
+            // get truth (if we have it)
             if (outputLabels) {
-                poa_annotateSimpleWeightFeaturesWithTruth(features, trueRefAlignment, trueRefRleString,
+                poa_annotateSimpleWeightFeaturesWithTruth(features, type, trueRefAlignment, trueRefRleString,
                                                           &firstMatchedFeature, &lastMatchedFeature);
             }
 
+            // write it out
             writeSimpleWeightHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features, type,
                                               firstMatchedFeature, lastMatchedFeature);
 
@@ -357,8 +435,18 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             #endif
 
             break;
-        case HFEAT_RLE:
-            features = poa_getWeightedRleFeatures(poa, bamChunkReads);
+
+        case HFEAT_RLE_WEIGHT:
+            // get features
+            features = poa_getWeightedRleFeatures(poa, bamChunkReads, rleStrings);
+            firstMatchedFeature = 0;
+            lastMatchedFeature = stList_length(features) - 1;
+
+            // get truth (if we have it)
+            if (outputLabels) {
+                poa_annotateSimpleWeightFeaturesWithTruth(features, type, trueRefAlignment, trueRefRleString,
+                                                          &firstMatchedFeature, &lastMatchedFeature);
+            }
 
             break;
         default:

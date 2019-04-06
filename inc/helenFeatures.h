@@ -10,7 +10,7 @@
 typedef enum {
     HFEAT_NONE=0,
     HFEAT_SIMPLE_WEIGHT=1,
-    HFEAT_RLE=2,
+    HFEAT_RLE_WEIGHT=2,
 } HelenFeatureType;
 
 #define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
@@ -32,7 +32,7 @@ struct _poaFeatureRleWeight {
     int64_t refPosition;
     int64_t insertPosition;
     char labelChar;
-    char labelRunLength;
+    int64_t labelRunLength;
     double weights[POAFEATURE_RLE_WEIGHT_TOTAL_SIZE];
     PoaFeatureRleWeight* nextInsert; //so we can model all inserts after a position
 };
@@ -49,10 +49,10 @@ PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insP
 void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature);
 
 stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads);
-stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads);
+stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings);
 
-void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, char *outputFileBase,
-                            BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
+        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
 
 void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                        HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);

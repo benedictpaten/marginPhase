@@ -471,8 +471,8 @@ int main(int argc, char *argv[]) {
                 st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
 
                 // write the actual features (type dependent)
-                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, helenFeatureOutfileBase, bamChunk,
-                                       trueRefAlignment, trueRefRleString);
+                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
+                        bamChunk, trueRefAlignment, trueRefRleString);
 
                 // write the polished chunk in fasta format
                 char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
