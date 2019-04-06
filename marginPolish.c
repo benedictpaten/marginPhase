@@ -46,8 +46,8 @@ void usage() {
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
     fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
-    fprintf(stderr, "                                 simpleCount:  counts alignments for each read\n");
-    fprintf(stderr, "                                 simpleWeight: weighted likelyhood from POA nodes\n");
+    fprintf(stderr, "                                 simpleWeight: weighted likelyhood from POA nodes (non-RLE)\n");
+    fprintf(stderr, "                                 rleWeight:    weighted likelyhood from POA nodes (RLE)\n");
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
@@ -135,6 +135,8 @@ int main(int argc, char *argv[]) {
         case 'f':
             if (stString_eq(optarg, "simpleWeight")) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
+            } else if (stString_eq(optarg, "rleWeight")) {
+                helenFeatureType = HFEAT_RLE_WEIGHT;
             } else {
                 fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
                 usage();
@@ -203,6 +205,11 @@ int main(int argc, char *argv[]) {
         if (params->polishParams->useRunLengthEncoding) {
             st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = FALSE;
+        }
+    } else if (helenFeatureType == HFEAT_RLE_WEIGHT) {
+        if (!params->polishParams->useRunLengthEncoding) {
+            st_logInfo("> Changing runLengthEncoding parameter to TRUE because of HELEN feature type.\n");
+            params->polishParams->useRunLengthEncoding = TRUE;
         }
     }
 
@@ -400,8 +407,13 @@ int main(int argc, char *argv[]) {
             switch (helenFeatureType) {
                 case HFEAT_SIMPLE_WEIGHT:
                     helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                            outputBase, chunkIdx, bamChunk->refSeqName, bamChunk->chunkBoundaryStart,
-                            bamChunk->chunkBoundaryEnd);
+                                                             outputBase, chunkIdx, bamChunk->refSeqName,
+                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+                    break;
+                case HFEAT_RLE_WEIGHT:
+                    helenFeatureOutfileBase = stString_print("%s.rleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                             outputBase, chunkIdx, bamChunk->refSeqName,
+                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
                     break;
                 default:
                     st_errAbort("Unhandled HELEN feature type!\n");

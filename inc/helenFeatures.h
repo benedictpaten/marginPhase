@@ -15,7 +15,7 @@ typedef enum {
 
 #define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
 #define POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER + 1) * 2) // {A,C,G,T,N,gap} x {fwd,bkwd}
-#define POAFEATURE_MAX_RUN_LENGTH 20
+#define POAFEATURE_MAX_RUN_LENGTH 1
 #define POAFEATURE_RLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER * POAFEATURE_MAX_RUN_LENGTH + 1) * 2 ) // ({A,C,G,T,N} x {rlesize} + {gap}) x {fwd,bkwd}
 
 typedef struct _poaFeatureSimpleWeight PoaFeatureSimpleWeight;
@@ -55,9 +55,15 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
 
 void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                       HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+                                       int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
-int writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                       HelenFeatureType type, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                        int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+
+void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                    int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+
+void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                     int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
 #endif //MARGINPHASE_HELENFEATURES_H
