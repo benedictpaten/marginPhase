@@ -15,7 +15,7 @@ typedef enum {
 
 #define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
 #define POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER + 1) * 2) // {A,C,G,T,N,gap} x {fwd,bkwd}
-#define POAFEATURE_MAX_RUN_LENGTH 1
+#define POAFEATURE_MAX_RUN_LENGTH 20
 #define POAFEATURE_RLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER * POAFEATURE_MAX_RUN_LENGTH + 1) * 2 ) // ({A,C,G,T,N} x {rlesize} + {gap}) x {fwd,bkwd}
 
 typedef struct _poaFeatureSimpleWeight PoaFeatureSimpleWeight;

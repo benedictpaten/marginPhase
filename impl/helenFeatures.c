@@ -206,7 +206,7 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleS
 
                     //TODO += delete->weightXXXStrand / delete->length?
                     delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
-                    delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightReverseStrand;
+                    delFeature->weights[PoaFeature_RleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
                 }
             }
         }
@@ -755,11 +755,6 @@ typedef struct {
     int64_t     runLength;
 } helen_features_rleWeight_label_hdf5_record_t;
 
-typedef struct {
-    double      weights[POAFEATURE_RLE_WEIGHT_TOTAL_SIZE - POAFEATURE_MAX_RUN_LENGTH * 2]; // we don't print N's
-} helen_features_rleWeight_hdf5_record_t;
-
-
 void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                         int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
@@ -788,12 +783,15 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
     // get all feature data into an array
     helen_features_position_hdf5_record_t *positionData =
             st_calloc(featureCount, sizeof(helen_features_simple_weight_hdf5_record_t));
-    helen_features_rleWeight_hdf5_record_t *rleWeightData =
-            st_calloc(featureCount, sizeof(helen_features_rleWeight_hdf5_record_t));
     helen_features_rleWeight_label_hdf5_record_t *labelData = NULL;
     if (outputLabels) {
         labelData = st_calloc(featureCount, sizeof(helen_features_rleWeight_label_hdf5_record_t));
     }
+    // different method of storing this data
+    int64_t columnCount = POAFEATURE_RLE_WEIGHT_TOTAL_SIZE - POAFEATURE_MAX_RUN_LENGTH * 2; // don't output 'N' chars
+    double **rleWeightData  = malloc(featureCount*sizeof(double*));
+    rleWeightData[0] = (double*)malloc( columnCount*featureCount*sizeof(double) );
+    for (int64_t i=1; i < featureCount; i++) rleWeightData[i] = rleWeightData[0]+i*columnCount;
 
     // add all data to features
     featureCount = 0;
@@ -806,15 +804,15 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
             for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
                 for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
                     int64_t pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE);
-                    rleWeightData->weights[pos] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
+                    rleWeightData[featureCount][pos] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
                     pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE);
-                    rleWeightData->weights[pos] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
+                    rleWeightData[featureCount][pos] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
                 }
             }
             int64_t pos = PoaFeature_RleWeight_gapIndex(TRUE);
-            rleWeightData->weights[pos - POAFEATURE_MAX_RUN_LENGTH * 2] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
+            rleWeightData[featureCount][pos - POAFEATURE_MAX_RUN_LENGTH * 2] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
             pos = PoaFeature_RleWeight_gapIndex(FALSE);
-            rleWeightData->weights[pos - POAFEATURE_MAX_RUN_LENGTH * 2] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
+            rleWeightData[featureCount][pos - POAFEATURE_MAX_RUN_LENGTH * 2] = feature->weights[pos] / PAIR_ALIGNMENT_PROB_1;
 
             if (outputLabels) {
                 labelData[featureCount].character = feature->labelChar;
@@ -831,32 +829,6 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
      * Get hdf5 data set up
      */
 
-    // create datatypes
-    hid_t rleWeightType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_rleWeight_hdf5_record_t));
-    for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-        for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-            char *column = stString_print("%c_%"PRId64"_fwd", symbol_convertSymbolToChar((Symbol) symbol), runLength);
-            int64_t pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE);
-            status |= H5Tinsert (rleWeightType, column,
-                    HOFFSET (helen_features_rleWeight_hdf5_record_t, weights) + pos * sizeof(double), H5T_NATIVE_DOUBLE);
-            free(column);
-
-            column = stString_print("%c_%"PRId64"_rev", symbol_convertSymbolToChar((Symbol) symbol), runLength);
-            pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE);
-            status |= H5Tinsert (rleWeightType, column,
-                                 HOFFSET (helen_features_rleWeight_hdf5_record_t, weights) + pos * sizeof(double), H5T_NATIVE_DOUBLE);
-            free(column);
-        }
-    }
-    int64_t pos = PoaFeature_RleWeight_gapIndex(TRUE);
-    status |= H5Tinsert (rleWeightType, "gap_fwd",
-                         HOFFSET (helen_features_rleWeight_hdf5_record_t, weights) +
-                                 (pos - POAFEATURE_MAX_RUN_LENGTH * 2) * sizeof(double), H5T_NATIVE_DOUBLE);
-    pos = PoaFeature_RleWeight_gapIndex(FALSE);
-    status |= H5Tinsert (rleWeightType, "gap_rev",
-                         HOFFSET (helen_features_rleWeight_hdf5_record_t, weights) +
-                         (pos - POAFEATURE_MAX_RUN_LENGTH * 2) * sizeof(double), H5T_NATIVE_DOUBLE);
-
     hid_t positionType = H5Tcreate (H5T_COMPOUND, sizeof (helen_features_position_hdf5_record_t));
     status |= H5Tinsert (positionType, "refPos", HOFFSET (helen_features_position_hdf5_record_t, refPos), H5T_NATIVE_INT64);
     status |= H5Tinsert (positionType, "insPos", HOFFSET (helen_features_position_hdf5_record_t, insPos), H5T_NATIVE_INT64);
@@ -865,6 +837,8 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
     status |= H5Tinsert (labelType, "character", HOFFSET (helen_features_rleWeight_label_hdf5_record_t, character), H5T_NATIVE_CHAR);
     status |= H5Tinsert (labelType, "runLength", HOFFSET (helen_features_rleWeight_label_hdf5_record_t, runLength), H5T_NATIVE_INT64);
 
+    hid_t rleWeightType = H5Tcopy(H5T_NATIVE_DOUBLE);
+    status |= H5Tset_order(rleWeightType, H5T_ORDER_LE);
 
     /*
      * Write features to files
@@ -884,15 +858,16 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
         hsize_t dimension = HDF5_FEATURE_SIZE;
-        hid_t space = H5Screate_simple (1, &dimension, NULL);
+        hsize_t rleDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, (hsize_t)columnCount};
+        hid_t space = H5Screate_simple(1, &dimension, NULL);
+        hid_t rleWeightSpace = H5Screate_simple(2, rleDimension, NULL);
 
         // create and write datasets
         hid_t positionDataset = H5Dcreate (file, "position", positionType, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        hid_t rleWeightDataset = H5Dcreate (file, "rleWeight", rleWeightType, space, H5P_DEFAULT, H5P_DEFAULT,
+        hid_t rleWeightDataset = H5Dcreate (file, "rleWeight", rleWeightType, rleWeightSpace, H5P_DEFAULT, H5P_DEFAULT,
                                                H5P_DEFAULT);
-        status |= H5Dwrite (rleWeightDataset, rleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            &rleWeightData[chunkFeatureStartIdx]);
         status |= H5Dwrite (positionDataset, positionType, H5S_ALL, H5S_ALL, H5P_DEFAULT, &positionData[chunkFeatureStartIdx]);
+        status |= H5Dwrite (rleWeightDataset, rleWeightType, H5S_ALL, H5S_ALL, H5P_DEFAULT, rleWeightData[chunkFeatureStartIdx]);
 
         // if labels, add all these too
         if (outputLabels) {
@@ -904,12 +879,16 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         // cleanup
         status |= H5Dclose (positionDataset);
         status |= H5Dclose (rleWeightDataset);
+        status |= H5Sclose (rleWeightSpace);
         status |= H5Sclose (space);
         status |= H5Fclose (file);
         free(outputFile);
     }
 
     // cleanup
+
+    free(rleWeightData[0]);
+    free(rleWeightData);
     status |= H5Tclose (positionType);
     status |= H5Tclose (rleWeightType);
     status |= H5Tclose (labelType);
