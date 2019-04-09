@@ -627,7 +627,7 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
     }
     if (featureCount < HDF5_FEATURE_SIZE) {
         char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
         free(logIdentifier);
         return;
     }
@@ -775,7 +775,7 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
     }
     if (featureCount < HDF5_FEATURE_SIZE) {
         char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
         free(logIdentifier);
         return;
     }

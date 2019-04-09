@@ -461,8 +461,8 @@ int main(int argc, char *argv[]) {
                     double alnLengthRatio = 1.0 * stList_length(trueRefAlignment) / polishedRleConsensus->length;
                     int refLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - refLengthRatio)));
                     int alnLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - alnLengthRatio)));
-                    if (stList_length(trueRefAlignment) > 0 && refLengthRatioHundredthsOffOne < 5 &&
-                            alnLengthRatioHundredthsOffOne < 5) {
+                    if (stList_length(trueRefAlignment) > 0 && refLengthRatioHundredthsOffOne < 10 &&
+                            alnLengthRatioHundredthsOffOne < 10) {
                         validReferenceAlignment = TRUE;
                     } else {
                         st_logInfo(" %s True reference alignment QC failed:  polished length %"PRId64", true ref length"
