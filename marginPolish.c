@@ -45,12 +45,18 @@ void usage() {
     fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
+    fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
     fprintf(stderr, "                                 simpleWeight: weighted likelyhood from POA nodes (non-RLE)\n");
     fprintf(stderr, "                                 rleWeight:    weighted likelyhood from POA nodes (RLE)\n");
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
+    #ifdef _HDF5
+    fprintf(stderr, "    -5 --hdf5Only            : only output H5 feature files.  Default behavior is to output\n");
+    fprintf(stderr, "                               h5, tsv, and fa for each chunk.\n");
+    #endif
+    fprintf(stderr, "\n");
 //    fprintf(stderr, "    -i --outputRepeatCounts  : File to write out the repeat counts [default = NULL]\n");
 //    fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
@@ -67,9 +73,12 @@ int main(int argc, char *argv[]) {
     int numThreads = 0;
     char *outputRepeatCountFile = NULL;
     char *outputPoaTsvFile = NULL;
+
+    // for feature generation
     HelenFeatureType helenFeatureType = HFEAT_NONE;
     char *trueReferenceBam = NULL;
     BamChunker *trueReferenceChunker = NULL;
+    bool fullFeatureOutput = TRUE;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -97,12 +106,13 @@ int main(int argc, char *argv[]) {
                 { "verbose", required_argument, 0, 'v'},
                 { "outputFeatureType", required_argument, 0, 'f'},
                 { "trueReferenceBam", required_argument, 0, 'u'},
+                { "hdf5Only", no_argument, 0, '5'},
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:f:u:hi:j:t:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:f:u:h5i:j:t:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -146,6 +156,11 @@ int main(int argc, char *argv[]) {
         case 'u':
             trueReferenceBam = stString_copy(optarg);
             break;
+        #ifdef _HDF5
+        case '5':
+            fullFeatureOutput = FALSE;
+            break;
+        #endif
         case 't':
             numThreads = atoi(optarg);
             if (numThreads <= 0) {
@@ -484,17 +499,22 @@ int main(int argc, char *argv[]) {
 
                 // write the actual features (type dependent)
                 poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
-                        bamChunk, trueRefAlignment, trueRefRleString);
+                        bamChunk, trueRefAlignment, trueRefRleString, fullFeatureOutput);
 
                 // write the polished chunk in fasta format
-                char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
-                char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s", bamChunk->refSeqName,
-                        bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd, helenFeatureOutfileBase);
-                FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
-                fastaWrite(polishedConsensusString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
-                fclose(chunkPolishedRefOutFh);
-                free(chunkPolishedRefFilename);
-                free(chunkPolishedRefContigName);
+                if (fullFeatureOutput) {
+                    char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
+                    char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s",
+                                                                      bamChunk->refSeqName,
+                                                                      bamChunk->chunkBoundaryStart,
+                                                                      bamChunk->chunkBoundaryEnd,
+                                                                      helenFeatureOutfileBase);
+                    FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
+                    fastaWrite(polishedConsensusString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
+                    fclose(chunkPolishedRefOutFh);
+                    free(chunkPolishedRefFilename);
+                    free(chunkPolishedRefContigName);
+                }
             }
 
             // cleanup

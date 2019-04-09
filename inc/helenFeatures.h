@@ -52,7 +52,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads);
 stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings);
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
-        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString);
+        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString,
+        bool fullFeatureOutput);
 
 void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                        int64_t featureStartIdx, int64_t featureEndIdxInclusive);
