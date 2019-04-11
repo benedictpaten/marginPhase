@@ -33,8 +33,9 @@ struct _poaFeatureRleWeight {
     int64_t insertPosition;
     char labelChar;
     int64_t labelRunLength;
-    double weights[POAFEATURE_RLE_WEIGHT_TOTAL_SIZE];
     PoaFeatureRleWeight* nextInsert; //so we can model all inserts after a position
+    int64_t predictedRunLength;
+    double weights[POAFEATURE_RLE_WEIGHT_TOTAL_SIZE];
 };
 
 int PoaFeature_SimpleWeight_charIndex(Symbol character, bool forward);
@@ -49,11 +50,17 @@ PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insP
 void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature);
 
 stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads);
-stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings);
+stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, RleString *consensusRleString);
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
-        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString,
-        bool fullFeatureOutput);
+        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
+        RleString *trueRefRleString, bool fullFeatureOutput);
+
+void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featureType, stList *trueRefAlignment,
+                                        RleString *trueRefRleString, int64_t *firstMatchedFeaure,
+                                        int64_t *lastMatchedFeature);
+
+void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *alignedPairs, int64_t *Xrl, int64_t *Yrl);
 
 void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                        int64_t featureStartIdx, int64_t featureEndIdxInclusive);
@@ -66,5 +73,7 @@ void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bo
 
 void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                      int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+
+
 
 #endif //MARGINPHASE_HELENFEATURES_H

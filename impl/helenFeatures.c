@@ -33,6 +33,7 @@ PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insP
     feature->insertPosition = insPos;
     feature->labelChar = '\0';
     feature->labelRunLength = 0;
+    feature->predictedRunLength = 0;
     feature->nextInsert = NULL;
     return feature;
 }
@@ -155,7 +156,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
     return featureList;
 }
 
-stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings) {
+stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, RleString *consensusRleString) {
 
     // initialize feature list
     stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_RleWeight_destruct);
@@ -187,6 +188,7 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleS
             if (runLength > POAFEATURE_MAX_RUN_LENGTH) runLength = POAFEATURE_MAX_RUN_LENGTH;
             feature->weights[PoaFeature_RleWeight_charIndex(character, runLength, bamChunkRead->forwardStrand)] += observation->weight;
         }
+        feature->predictedRunLength = consensusRleString->repeatCounts[i];
 
 
         // Deletes
@@ -257,6 +259,133 @@ stList *poa_getWeightedRleFeatures(Poa *poa, stList *bamChunkReads, stList *rleS
 
     free(logIdentifier);
     return featureList;
+}
+
+
+void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *alignedPairs, int64_t *Xrl, int64_t *Yrl) {
+    // should we do run lengths
+    bool handleRunLength = Xrl != NULL && Yrl != NULL;
+
+    // build strings to print
+    int64_t bufferLen = lX + lY;
+    char *alnXStr = st_calloc(bufferLen, sizeof(char));
+    char *alnYStr = st_calloc(bufferLen, sizeof(char));
+    char *alnDesc = st_calloc(bufferLen, sizeof(char));
+    char *rlXStr = NULL;
+    char *rlYStr = NULL;
+    if (handleRunLength) {
+        rlXStr = st_calloc(bufferLen, sizeof(char));
+        rlYStr = st_calloc(bufferLen, sizeof(char));
+    }
+
+    // stats to track
+    int64_t nuclMatches = 0;
+    int64_t nuclMismatches = 0;
+    int64_t nuclXInserts = 0;
+    int64_t nuclYInserts = 0;
+    int64_t rlMatches = 0;
+    int64_t rlMismatches = 0;
+
+
+    // iterate over alignment
+    stListIterator *alignmentItor = stList_getIterator(alignedPairs);
+    stIntTuple *currAlign = stList_getNext(alignmentItor);
+    int64_t posX = stIntTuple_get(currAlign, 1);
+    int64_t posY = stIntTuple_get(currAlign, 2);
+    int64_t outStrPos = 0;
+
+    while (TRUE) {
+        if (currAlign == NULL) break;
+        int64_t currAlignPosX = stIntTuple_get(currAlign, 1);
+        int64_t currAlignPosY = stIntTuple_get(currAlign, 2);
+        // Y gap / X insert
+        if (posX < currAlignPosX) {
+            alnXStr[outStrPos] = X[posX];
+            alnYStr[outStrPos] = '_';
+            alnDesc[outStrPos] = ' ';
+            if (handleRunLength) {
+                rlXStr[outStrPos] = (char) ('0' + Xrl[posX]);
+                rlYStr[outStrPos] = ' ';
+            }
+            posX++;
+            nuclXInserts++;
+        }
+
+        // X gap / Y insert
+        else if (posY < currAlignPosY) {
+            alnXStr[outStrPos] = '_';
+            alnYStr[outStrPos] = Y[posY];
+            alnDesc[outStrPos] = ' ';
+            if (handleRunLength) {
+                rlXStr[outStrPos] = ' ';
+                rlYStr[outStrPos] = (char) ('0' + Yrl[posY]);
+            }
+            posY++;
+            nuclYInserts++;
+        }
+
+        // match
+        else if (posX == currAlignPosX && posY == currAlignPosY) {
+            alnXStr[outStrPos] = X[posX];
+            alnYStr[outStrPos] = Y[posY];
+            if (handleRunLength) {
+                rlXStr[outStrPos] = (char) ('0' + Xrl[posX]);
+                rlYStr[outStrPos] = (char) ('0' + Yrl[posY]);
+            }
+            if (X[posX] == Y[posY]) {
+                nuclMatches++;
+                alnDesc[outStrPos] = '|';
+                if (handleRunLength) {
+                    if (Xrl[posX] == Yrl[posY]) {
+                        rlMatches++;
+                    } else {
+                        rlMismatches++;
+                        alnDesc[outStrPos] = ':';
+                    }
+                }
+            } else {
+                alnDesc[outStrPos] = ' ';
+                nuclMismatches++;
+            }
+            posX++;
+            posY++;
+            currAlign = stList_getNext(alignmentItor);
+        }
+
+        // should never happen
+        else {
+            assert(FALSE);
+        }
+
+        outStrPos++;
+    }
+
+    // print
+    fprintf(stderr, "\n");
+    if (handleRunLength) fprintf(stderr, "%s\n", rlXStr);
+    fprintf(stderr, "%s\n", alnXStr);
+    fprintf(stderr, "%s\n", alnDesc);
+    fprintf(stderr, "%s\n", alnYStr);
+    if (handleRunLength) fprintf(stderr, "%s\n", rlYStr);
+    fprintf(stderr, "Matches:    %"PRId64"\n", nuclMatches);
+    if (handleRunLength) {
+        fprintf(stderr, "  RL Match: %"PRId64"\n", rlMatches);
+        fprintf(stderr, "  RL Miss:  %"PRId64"\n", rlMismatches);
+    }
+    fprintf(stderr, "Mismatches: %"PRId64"\n", nuclMismatches);
+    fprintf(stderr, "X Inserts:  %"PRId64"\n", nuclXInserts);
+    fprintf(stderr, "Y Inserts:  %"PRId64"\n", nuclYInserts);
+    fprintf(stderr, "\n");
+
+    // cleanup
+    free(alnXStr);
+    free(alnYStr);
+    free(alnDesc);
+    if (handleRunLength) {
+        free(rlXStr);
+        free(rlYStr);
+    }
+    stList_destructIterator(alignmentItor);
 }
 
 
@@ -411,8 +540,8 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 }
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
-        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *trueRefRleString,
-        bool fullFeatureOutput) {
+        char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
+        RleString *trueRefRleString, bool fullFeatureOutput) {
     // prep
     int64_t firstMatchedFeature = -1;
     int64_t lastMatchedFeature = -1;
@@ -448,7 +577,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 
         case HFEAT_RLE_WEIGHT:
             // get features
-            features = poa_getWeightedRleFeatures(poa, bamChunkReads, rleStrings);
+            features = poa_getRleWeightFeatures(poa, bamChunkReads, rleStrings, consensusRleString);
             firstMatchedFeature = 0;
             lastMatchedFeature = stList_length(features) - 1;
 
@@ -809,6 +938,7 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
 
     // get all feature data into an array
     int64_t **positionData = getTwoDArrayInt64(featureCount, 2);
+    int64_t **predictedRunLengthData = getTwoDArrayInt64(featureCount, 1);
     int64_t rleColumnCount = POAFEATURE_RLE_WEIGHT_TOTAL_SIZE - POAFEATURE_MAX_RUN_LENGTH * 2; // don't output 'N' chars
     double **rleWeightData = getTwoDArrayDouble(featureCount, rleColumnCount);
     char **labelCharacterData = NULL;
@@ -825,6 +955,7 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         while (feature != NULL) {
             positionData[featureCount][0] = feature->refPosition;
             positionData[featureCount][1] = feature->insertPosition;
+            predictedRunLengthData[featureCount][0] = feature->predictedRunLength;
 
             for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
                 for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
@@ -865,12 +996,14 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
 
     hsize_t metadataDimension[1] = {1};
     hsize_t postionDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 2};
+    hsize_t predictedRunLengthDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
     hsize_t labelCharacterDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
     hsize_t labelRunLengthDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
     hsize_t rleDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, (hsize_t)rleColumnCount};
 
     hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
     hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
+    hid_t predictedRunLengthSpace = H5Screate_simple(1, predictedRunLengthDimension, NULL);
     hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
     hid_t labelRunLengthSpace = H5Screate_simple(2, labelRunLengthDimension, NULL);
     hid_t rleWeightSpace = H5Screate_simple(2, rleDimension, NULL);
@@ -908,6 +1041,10 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         status |= H5Dwrite (positionDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
 
         // write rle data
+        hid_t predictedRunLengthDataset = H5Dcreate (file, "bayesian_run_length_prediction", int64Type,
+                predictedRunLengthSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (predictedRunLengthDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                predictedRunLengthData[chunkFeatureStartIdx]);
         hid_t rleWeightDataset = H5Dcreate (file, "image", doubleType, rleWeightSpace, H5P_DEFAULT, H5P_DEFAULT,
                                                H5P_DEFAULT);
         status |= H5Dwrite (rleWeightDataset, doubleType, H5S_ALL, H5S_ALL, H5P_DEFAULT, rleWeightData[chunkFeatureStartIdx]);
@@ -933,12 +1070,15 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         status |= H5Dclose (contigEndDataset);
         status |= H5Dclose (chunkIndexDataset);
         status |= H5Dclose (positionDataset);
+        status |= H5Dclose (predictedRunLengthDataset);
         status |= H5Dclose (rleWeightDataset);
         status |= H5Fclose (file);
         free(outputFile);
     }
 
     // cleanup
+    free(predictedRunLengthData[0]);
+    free(predictedRunLengthData);
     free(rleWeightData[0]);
     free(rleWeightData);
     free(positionData[0]);
@@ -949,6 +1089,7 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
     status |= H5Tclose (stringType);
     status |= H5Sclose (metadataSpace);
     status |= H5Sclose (positionSpace);
+    status |= H5Sclose (predictedRunLengthSpace);
     status |= H5Sclose (rleWeightSpace);
     status |= H5Sclose (labelRunLengthSpace);
     status |= H5Sclose (labelCharacterSpace);
