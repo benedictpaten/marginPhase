@@ -56,9 +56,11 @@ void usage() {
     fprintf(stderr, "    -5 --hdf5Only            : only output H5 feature files.  Default behavior is to output\n");
     fprintf(stderr, "                               h5, tsv, and fa for each chunk.\n");
     #endif
+
+    fprintf(stderr, "\nMiscellaneous supplementary output options:\n");
+    fprintf(stderr, "    -i --outputRepeatCounts  : Output base to write out the repeat counts [default = NULL]\n");
+    fprintf(stderr, "    -j --outputPoaTsv        : Output base to write out the poa as TSV file [default = NULL]\n");
     fprintf(stderr, "\n");
-//    fprintf(stderr, "    -i --outputRepeatCounts  : File to write out the repeat counts [default = NULL]\n");
-//    fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -71,8 +73,8 @@ int main(int argc, char *argv[]) {
     char *regionStr = NULL;
     int64_t verboseBitstring = -1;
     int numThreads = 0;
-    char *outputRepeatCountFile = NULL;
-    char *outputPoaTsvFile = NULL;
+    char *outputRepeatCountBase = NULL;
+    char *outputPoaTsvBase = NULL;
 
     // for feature generation
     HelenFeatureType helenFeatureType = HFEAT_NONE;
@@ -137,10 +139,10 @@ int main(int argc, char *argv[]) {
             verboseBitstring = atoi(optarg);
             break;
         case 'i':
-        	outputRepeatCountFile = stString_copy(optarg);
+        	outputRepeatCountBase = stString_copy(optarg);
         	break;
         case 'j':
-            outputPoaTsvFile = stString_copy(optarg);
+            outputPoaTsvBase = stString_copy(optarg);
             break;
         case 'f':
             if (stString_eq(optarg, "simpleWeight")) {
@@ -263,16 +265,6 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
     FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
     free(polishedReferenceOutFile);
-
-    // Open optional files for writing out repeat counts and such
-    FILE *outputRepeatCountFileHandle = NULL;
-    if(outputRepeatCountFile != NULL) {
-    	outputRepeatCountFileHandle = fopen(outputRepeatCountFile, "w");
-    }
-    FILE *outputPoaTsvFileHandle = NULL;
-    if(outputPoaTsvFile != NULL) {
-    	outputPoaTsvFileHandle = fopen(outputPoaTsvFile, "w");
-    }
 
     // get chunker for bam.  if regionStr is NULL, it will be ignored
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
@@ -401,15 +393,26 @@ int main(int argc, char *argv[]) {
             poa_print(poa, stderr, rleReads, 5, 5);
         }
 
-        /*TODO multithreading broke this
         // Write any optional outputs about repeat count and POA, etc.
-        if(outputPoaTsvFileHandle != NULL) {
+        if(outputPoaTsvBase != NULL) {
+            char *outputPoaTsvFilename = stString_print("%s.poa.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                                                        outputPoaTsvBase, chunkIdx, bamChunk->refSeqName,
+                                                        bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            FILE *outputPoaTsvFileHandle = fopen(outputPoaTsvFilename, "w");
             poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
+            fclose(outputPoaTsvFileHandle);
+            free(outputPoaTsvFilename);
         }
-        if(outputRepeatCountFileHandle != NULL) {
+        if(outputRepeatCountBase != NULL) {
+            char *outputRepeatCountFilename = stString_print("%s.repeatCount.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
+                                                             outputRepeatCountBase, chunkIdx, bamChunk->refSeqName,
+                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            FILE *outputRepeatCountFileHandle = fopen(outputRepeatCountFilename, "w");
             poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
+            fclose(outputRepeatCountFileHandle);
+            free(outputRepeatCountFilename);
         }
-        */
+
 
         // save polished reference string to chunk output array
         chunkResults[chunkIdx] = polishedConsensusString;
@@ -641,16 +644,6 @@ int main(int argc, char *argv[]) {
     bamChunker_destruct(bamChunker);
     stHash_destruct(referenceSequences);
     params_destruct(params);
-
-    if(outputPoaTsvFileHandle != NULL) {
-    	fclose(outputPoaTsvFileHandle);
-    	free(outputPoaTsvFile);
-    }
-    if(outputRepeatCountFileHandle != NULL) {
-    	fclose(outputRepeatCountFileHandle);
-    	free(outputRepeatCountFile);
-    }
-
 
     if (trueReferenceBam != NULL) free(trueReferenceBam);
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
