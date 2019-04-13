@@ -457,45 +457,40 @@ int main(int argc, char *argv[]) {
                 if (trueAlignmentCount == 1) {
                     BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
 
+                    // align in real space
+                    double alignmentScoreRawSpace;
+                    stList *anchorPairsRawSpace = getBlastPairsForPairwiseAlignmentParameters(
+                            polishedConsensusString, trueRefRead->nucleotides,
+                            strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
+                            params->polishParams->p);
+                    stList *trueRefAlignmentRawSpace = getShiftedMEAAlignment(
+                            polishedConsensusString, trueRefRead->nucleotides, anchorPairsRawSpace,
+                            params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScoreRawSpace);
                     if (st_getLogLevel() == debug) {
-                        // align in real space
-                        double alignmentScoreRawSpace;
-                        stList *anchorPairsRawSpace = getBlastPairsForPairwiseAlignmentParameters(
-                                polishedConsensusString, trueRefRead->nucleotides,
-                                strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
-                                params->polishParams->p);
-                        stList *trueRefAlignmentRawSpace = getShiftedMEAAlignment(
-                                polishedConsensusString, trueRefRead->nucleotides, anchorPairsRawSpace,
-                                params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScoreRawSpace);
                         printMEAAlignment(polishedConsensusString, trueRefRead->nucleotides,
                                           strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
                                           trueRefAlignmentRawSpace, NULL, NULL);
-                        stList_destruct(anchorPairsRawSpace);
                     }
 
 
-                    // convert to rleSpace
+                    // convert to rleSpace if appropriate
                     if (params->polishParams->useRunLengthEncoding) {
                         trueRefRleString = rleString_construct(trueRefRead->nucleotides);
+                        trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus,
+                                trueRefRleString, 1, 2, 0);
+                        if (st_getLogLevel() == debug) {
+                            printMEAAlignment(polishedRleConsensus->rleString, trueRefRleString->rleString,
+                                              strlen(polishedRleConsensus->rleString),
+                                              strlen(trueRefRleString->rleString),
+                                              trueRefAlignment, polishedRleConsensus->repeatCounts,
+                                              trueRefRleString->repeatCounts);
+                        }
+                        stList_destruct(trueRefAlignmentRawSpace);
                     } else {
                         trueRefRleString = rleString_constructNoRLE(trueRefRead->nucleotides);
+                        trueRefAlignment = trueRefAlignmentRawSpace;
                     }
 
-                    // get most likely alignment
-                    double alignmentScore;
-                    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(polishedRleConsensus->rleString,
-                            trueRefRleString->rleString, strlen(polishedRleConsensus->rleString),
-                            strlen(trueRefRleString->rleString), params->polishParams->p);
-                    trueRefAlignment = getShiftedMEAAlignment(polishedRleConsensus->rleString,
-                            trueRefRleString->rleString, anchorPairs, params->polishParams->p,
-                            params->polishParams->sM, 0, 0, &alignmentScore);
-                    if (st_getLogLevel() == debug) {
-                        printMEAAlignment(polishedRleConsensus->rleString, trueRefRleString->rleString,
-                                          strlen(polishedRleConsensus->rleString), strlen(trueRefRleString->rleString),
-                                          trueRefAlignment, polishedRleConsensus->repeatCounts,
-                                          trueRefRleString->repeatCounts);
-                    }
-                    stList_destruct(anchorPairs);
 
                     // we found a single alignment of reference
                     double refLengthRatio = 1.0 * trueRefRleString->length / polishedRleConsensus->length;

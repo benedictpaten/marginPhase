@@ -944,7 +944,8 @@ RleString *expandRLEConsensus(Poa *poa, stList *rlReads, stList *bamChunkReads, 
  * in both underlying sequences (seqX and seqY) into an equivalent run-length encoded space alignment.
  */
 stList *runLengthEncodeAlignment(stList *alignment, RleString *seqX, RleString *seqY);
-
+stList *runLengthEncodeAlignment2(stList *alignment, RleString *seqX, RleString *seqY,
+								  int64_t xIdx, int64_t yIdx, int64_t weightIdx);
 /*
  * Make edited string with given insert. Edit start is the index of the position to insert the string.
  */

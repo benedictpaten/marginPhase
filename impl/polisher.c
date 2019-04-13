@@ -1525,23 +1525,31 @@ RleString *expandRLEConsensus(Poa *poa, stList *rleReads, stList *bamChunkReads,
 }
 
 stList *runLengthEncodeAlignment(stList *alignment,
-							     RleString *seqX, RleString *seqY) {
-	stList *rleAlignment = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
+                                 RleString *seqX, RleString *seqY) {
+    return runLengthEncodeAlignment2(alignment, seqX, seqY, 0, 1, 2);
+}
+stList *runLengthEncodeAlignment2(stList *alignment, RleString *seqX, RleString *seqY,
+        int64_t xIdx, int64_t yIdx, int64_t weightIdx) {
+    stList *rleAlignment = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
 
-	int64_t x=-1, y=-1;
-	for(int64_t i=0; i<stList_length(alignment); i++) {
-		stIntTuple *alignedPair = stList_get(alignment, i);
+    int64_t x=-1, y=-1;
+    for(int64_t i=0; i<stList_length(alignment); i++) {
+        stIntTuple *alignedPair = stList_get(alignment, i);
 
-		int64_t x2 = seqX->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 0)];
-		int64_t y2 = seqY->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 1)];
+        int64_t x2 = seqX->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, xIdx)];
+        int64_t y2 = seqY->nonRleToRleCoordinateMap[stIntTuple_get(alignedPair, yIdx)];
 
-		if(x2 > x && y2 > y) {
-			stList_append(rleAlignment, stIntTuple_construct3(x2, y2, stIntTuple_get(alignedPair, 2)));
-			x = x2; y = y2;
-		}
-	}
+        if(x2 > x && y2 > y) {
+            stIntTuple *it = stIntTuple_construct3(-1, -1, -1);
+            it[xIdx + 1] = x2;
+            it[yIdx + 1] = y2;
+            it[weightIdx + 1] = stIntTuple_get(alignedPair, weightIdx);
+            stList_append(rleAlignment, it);
+            x = x2; y = y2;
+        }
+    }
 
-	return rleAlignment;
+    return rleAlignment;
 }
 
 /*
