@@ -6,7 +6,7 @@
 		  		"transitions": [ 
 		  			0.900000, 0.050000, 0.050000, 
 		  			0.500000, 0.500000, 0.000000, 
-		  			0.500000, 0.000000, 0.500000, 
+		  			0.500000, 0.000000, 0.500000
 		  		],
 		  		
 		  		"emissions": [
@@ -31,9 +31,11 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 100000,
+		  "chunkSize" : 1000,
 		
 		  "chunkBoundary" : 50,
+
+		  "maxDepth" : 12,
 		
 		  "referenceBasePenalty" : 0.5,
 		  

@@ -363,6 +363,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->includeSoftClipping = FALSE; //todo add this in
     params->chunkSize = 0;
     params->chunkBoundary = 0;
+    params->maxDepth = 0;
     params->candidateVariantWeight = 0.2;
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
@@ -440,6 +441,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
                 st_errAbort("ERROR: chunkBoundary parameter must zero or greater\n");
             }
             params->chunkBoundary = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+        }
+        else if (strcmp(keyString, "maxDepth") == 0) {
+            if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+                st_errAbort("ERROR: maxDepth parameter must zero or greater\n");
+            }
+            params->maxDepth = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else if (strcmp(keyString, "candidateVariantWeight") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {

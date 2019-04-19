@@ -26,7 +26,8 @@ BamChunk *bamChunk_copyConstruct(BamChunk *toCopy);
 void bamChunk_destruct(BamChunk *bamChunk);
 
 uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
-
+bool poorMansDownsample(int64_t intendedDepth, BamChunk *bamChunk, stList *reads, stList *alignments,
+                        stList *filteredReads, stList *filteredAlignments, stList *discardedReads, stList *discardedAlignments);
 
 int64_t getAlignedReadLength(bam1_t *aln);
 int64_t getAlignedReadLength2(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip);

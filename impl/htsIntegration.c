@@ -624,6 +624,45 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
     return savedAlignments;
 }
 
+
+bool poorMansDownsample(int64_t intendedDepth, BamChunk *bamChunk, stList *reads, stList *alignments,
+        stList *filteredReads, stList *filteredAlignments, stList *discardedReads, stList *discardedAlignments) {
+
+    // calculate depth
+    int64_t totalNucleotides = 0;
+    for (int64_t i = 0; i < stList_length(reads); i++) {
+        BamChunkRead *bcr = stList_get(reads,i);
+        totalNucleotides += strlen(bcr->nucleotides);
+    }
+    double averageDepth = 1.0 * totalNucleotides / (bamChunk->chunkBoundaryEnd - bamChunk->chunkBoundaryStart);
+
+    // do we need to downsample?
+    if (averageDepth < intendedDepth) {
+        return FALSE;
+    }
+
+    // we do need to downsample
+    char *logIdentifier = getLogIdentifier();
+    st_logInfo(" %s Downsampling chunk with average depth %.2fx to %dx \n", logIdentifier, averageDepth, intendedDepth);
+    free(logIdentifier);
+
+    // keep some ratio of reads
+    double ratioToKeep = intendedDepth / averageDepth;
+    for (int64_t i = 0; i < stList_length(reads); i++) {
+        if (st_random() < ratioToKeep) {
+            stList_append(filteredReads, stList_get(reads, i));
+            stList_append(filteredAlignments, stList_get(alignments, i));
+        } else {
+            stList_append(discardedReads, stList_get(reads, i));
+            stList_append(discardedAlignments, stList_get(alignments, i));
+        }
+    }
+
+    return TRUE;
+}
+
+
+
 /*
  * Helper functions for reading alignment likelihood files.
  */

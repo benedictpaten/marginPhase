@@ -323,6 +323,43 @@ int main(int argc, char *argv[]) {
         stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
         convertToReadsAndAlignments(bamChunk, reads, alignments);
 
+        // do downsampling if appropriate
+        if (params->polishParams->maxDepth > 0) {
+            // get downsampling structures
+            stList *filteredReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+            stList *discardedReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+            stList *filteredAlignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
+            stList *discardedAlignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
+
+            bool didDownsample = poorMansDownsample(params->polishParams->maxDepth, bamChunk, reads, alignments,
+                    filteredReads, filteredAlignments, discardedReads, discardedAlignments);
+
+            // we need to destroy the discarded reads and structures
+            if (didDownsample) {
+                st_logInfo(" %s Downsampled from %"PRId64" to %"PRId64" reads\n", logIdentifier,
+                        stList_length(reads), stList_length(filteredReads));
+                // free all reads and alignments not used
+                stList_destruct(discardedReads);
+                stList_destruct(discardedAlignments);
+                // still has all the old reads, need to not free these
+                stList_setDestructor(reads, NULL);
+                stList_setDestructor(alignments, NULL);
+                stList_destruct(reads);
+                stList_destruct(alignments);
+                // and keep the filtered reads
+                reads = filteredReads;
+                alignments = filteredAlignments;
+            }
+            // no downsampling, we just need to free the (empty) objects
+            else {
+                stList_destruct(filteredReads);
+                stList_destruct(filteredAlignments);
+                stList_destruct(discardedReads);
+                stList_destruct(discardedAlignments);
+            }
+
+        }
+
         Poa *poa = NULL; // The poa alignment
         char *polishedConsensusString = NULL; // The polished reference string
 
