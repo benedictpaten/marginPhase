@@ -1580,7 +1580,7 @@ void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix) {
 
 RepeatSubMatrix *repeatSubMatrix_constructEmpty() {
 	RepeatSubMatrix *repeatSubMatrix = st_calloc(1, sizeof(RepeatSubMatrix));
-	repeatSubMatrix->maximumRepeatLength = 51;
+	repeatSubMatrix->maximumRepeatLength = MAXIMUM_REPEAT_LENGTH;
 	repeatSubMatrix->maxEntry = 2 * SYMBOL_NUMBER_NO_N * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
 	repeatSubMatrix->logProbabilities = st_calloc(repeatSubMatrix->maxEntry, sizeof(double));
 	return repeatSubMatrix;

@@ -118,6 +118,12 @@ double logAddP(double a, double b, bool maxNotSum);
 #define POS_STRAND_IDX 1
 #define NEG_STRAND_IDX 0
 
+/*
+ * Repeat Count
+ */
+
+#define MAXIMUM_REPEAT_LENGTH 51
+
 // Each value is expressed as an unsigned integer scaled linearly from 0 to 2^16-1,
 // with 0 = log(1) and 2^16-1 = -7 = log(0.0000001)
 uint16_t scaleToLogIntegerSubMatrix(double logProb);

@@ -427,7 +427,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         break;
                     case HFEAT_RLE_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = '_';
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 1; //TODO 0?
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
                         feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
                         break;
                     default:
@@ -477,7 +477,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         break;
                     case HFEAT_RLE_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        int64_t trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        if (trueRunLength > POAFEATURE_MAX_RUN_LENGTH) trueRunLength = POAFEATURE_MAX_RUN_LENGTH;
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRunLength;
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -494,7 +496,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         break;
                     case HFEAT_RLE_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = '_';
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 1; //TODO 0?
+                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -765,7 +767,7 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
             feature = feature->nextInsert;
         }
     }
-    if (featureCount < HDF5_FEATURE_SIZE) {
+    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
         char *logIdentifier = getLogIdentifier();
         st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
         free(logIdentifier);
@@ -775,8 +777,8 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
 
     // get all feature data into an array
     int64_t **positionData = getTwoDArrayInt64(featureCount, 2);
-    int64_t rleColumnCount = SYMBOL_NUMBER * 2; //{A, C, T, G, Gap} x {fwd, rev}
-    double **rleWeightData = getTwoDArrayDouble(featureCount, rleColumnCount);
+    int64_t columnCount = SYMBOL_NUMBER * 2; //{A, C, T, G, Gap} x {fwd, rev}
+    double **rleWeightData = getTwoDArrayDouble(featureCount, columnCount);
     char **labelCharacterData = NULL;
     if (outputLabels) {
         labelCharacterData = getTwoDArrayChar(featureCount, 1);
@@ -825,10 +827,13 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
     hid_t stringType = H5Tcopy (H5T_C_S1);
     status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
 
+    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
+    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
+
     hsize_t metadataDimension[1] = {1};
-    hsize_t postionDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 2};
-    hsize_t labelCharacterDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
-    hsize_t rleWeightDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, (hsize_t)rleColumnCount};
+    hsize_t postionDimension[2] = {featureSize, 2};
+    hsize_t labelCharacterDimension[2] = {featureSize, 1};
+    hsize_t rleWeightDimension[2] = {featureSize, (hsize_t) columnCount};
 
     hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
     hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
@@ -841,12 +846,17 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
 
     // each file must have exactly 1000 features
     int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
-    int64_t featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+    int64_t featureOffset = 0;
+    if (featureCount >= HDF5_FEATURE_SIZE) {
+        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+    }
 
     for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
         // get start pos
         int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
-        if (featureIndex + 1 == totalFeatureFiles) chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
+            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        }
 
         // create file
         char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
@@ -929,7 +939,7 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
             feature = feature->nextInsert;
         }
     }
-    if (featureCount < HDF5_FEATURE_SIZE) {
+    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
         char *logIdentifier = getLogIdentifier();
         st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
         free(logIdentifier);
@@ -994,12 +1004,15 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
     hid_t stringType = H5Tcopy (H5T_C_S1);
     status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
 
+    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
+    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
+
     hsize_t metadataDimension[1] = {1};
-    hsize_t postionDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 2};
-    hsize_t predictedRunLengthDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
-    hsize_t labelCharacterDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
-    hsize_t labelRunLengthDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, 1};
-    hsize_t rleDimension[2] = {(hsize_t)HDF5_FEATURE_SIZE, (hsize_t)rleColumnCount};
+    hsize_t postionDimension[2] = {featureSize, 2};
+    hsize_t predictedRunLengthDimension[2] = {featureSize, 1};
+    hsize_t labelCharacterDimension[2] = {featureSize, 1};
+    hsize_t labelRunLengthDimension[2] = {featureSize, 1};
+    hsize_t rleDimension[2] = {featureSize, (hsize_t) rleColumnCount};
 
     hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
     hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
@@ -1015,12 +1028,16 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
 
     // each file must have exactly 1000 features
     int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
-    int64_t featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
-
+    int64_t featureOffset = 0;
+    if (featureCount >= HDF5_FEATURE_SIZE) {
+        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+    }
     for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
         // get start pos
         int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
-        if (featureIndex + 1 == totalFeatureFiles) chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
+            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        }
 
         // create file
         char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
