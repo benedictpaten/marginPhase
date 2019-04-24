@@ -11,6 +11,7 @@ typedef enum {
     HFEAT_NONE=0,
     HFEAT_SIMPLE_WEIGHT=1,
     HFEAT_RLE_WEIGHT=2,
+    HFEAT_NUCL_AND_RL_WEIGHT=3,
 } HelenFeatureType;
 
 #define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER
@@ -73,6 +74,9 @@ void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bo
 
 void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                      int64_t featureStartIdx, int64_t featureEndIdxInclusive);
+
+void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels,
+                                                  stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
 
 

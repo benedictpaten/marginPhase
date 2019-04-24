@@ -47,8 +47,9 @@ void usage() {
 
     fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
-    fprintf(stderr, "                                 simpleWeight: weighted likelyhood from POA nodes (non-RLE)\n");
-    fprintf(stderr, "                                 rleWeight:    weighted likelyhood from POA nodes (RLE)\n");
+    fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
+    fprintf(stderr, "                                 rleWeight:       weighted likelihood from POA nodes (RLE)\n");
+    fprintf(stderr, "                                 nuclAndRlWeight: weighted likelihood, split into nucleotide and run length\n");
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
@@ -149,6 +150,8 @@ int main(int argc, char *argv[]) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
             } else if (stString_eq(optarg, "rleWeight")) {
                 helenFeatureType = HFEAT_RLE_WEIGHT;
+            } else if (stString_eq(optarg, "nuclAndRlWeight")) {
+                helenFeatureType = HFEAT_NUCL_AND_RL_WEIGHT;
             } else {
                 fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
                 usage();
@@ -223,7 +226,7 @@ int main(int argc, char *argv[]) {
             st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = FALSE;
         }
-    } else if (helenFeatureType == HFEAT_RLE_WEIGHT) {
+    } else if (helenFeatureType == HFEAT_RLE_WEIGHT || helenFeatureType == HFEAT_NUCL_AND_RL_WEIGHT) {
         if (!params->polishParams->useRunLengthEncoding) {
             st_logInfo("> Changing runLengthEncoding parameter to TRUE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = TRUE;
@@ -467,6 +470,11 @@ int main(int argc, char *argv[]) {
                     break;
                 case HFEAT_RLE_WEIGHT:
                     helenFeatureOutfileBase = stString_print("%s.rleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                             outputBase, chunkIdx, bamChunk->refSeqName,
+                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+                    break;
+                case HFEAT_NUCL_AND_RL_WEIGHT:
+                    helenFeatureOutfileBase = stString_print("%s.nuclAndRlWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
                                                              outputBase, chunkIdx, bamChunk->refSeqName,
                                                              bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
                     break;
