@@ -96,9 +96,8 @@ int PoaFeature_RleWeight_gapIndex(bool forward) {
 }
 int PoaFeature_SplitRleWeight_charIndex(int64_t maxRunLength, Symbol character, int64_t runLength, bool forward) {
     assert(runLength >= 0);
-    assert(runLength <= POAFEATURE_SPLIT_RLE_MAX);
+    assert(runLength <= maxRunLength);
     int pos = (character * ((int)maxRunLength + 1) + runLength) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
-    assert(pos < POAFEATURE_SPLIT_RLE_WEIGHT_TOTAL_SIZE);
     return pos;
 }
 int PoaFeature_SplitRleWeight_gapIndex(int64_t maxRunLength, bool forward) {
@@ -297,7 +296,7 @@ stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStr
 
 
 void poa_addRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeature, stList *observations,
-        stList *bamChunkReads, stList *rleStrings, int64_t maxRunLength, int64_t observationOffset) {
+        stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength, int64_t observationOffset) {
 
 
     PoaFeatureSplitRleWeight *currFeature = baseFeature;
@@ -332,15 +331,18 @@ void poa_addRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeatu
 
         }
 
-        currentRunLengthIndex++;
-        PoaFeatureSplitRleWeight *prevFeature = currFeature;
-        currFeature = PoaFeature_SplitRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
-                                                          currentRunLengthIndex, maxRunLength);
-        prevFeature->nextRunLength = currFeature;
-        currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] =
-                baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)];
-        currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] =
-                baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)];
+        // update currFeature if we're going ot run again
+        if (beforeMaxObservedRunLength) {
+            currentRunLengthIndex++;
+            PoaFeatureSplitRleWeight *prevFeature = currFeature;
+            currFeature = PoaFeature_SplitRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
+                                                              currentRunLengthIndex, maxRunLength);
+            prevFeature->nextRunLength = currFeature;
+            currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] =
+                    baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)];
+            currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] =
+                    baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)];
+        }
     }
 }
 
@@ -405,7 +407,7 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
                     }
 
                     // save insert run lengths
-                    poa_addRunLengthFeaturesForObservations(currFeature, node->observations, bamChunkReads, rleStrings,
+                    poa_addRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads, rleStrings,
                             maxRunLength, o);
                 }
             }
