@@ -571,6 +571,8 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
         void *feature = stList_get(features, featureRefPos);
         void *prevFeature = NULL;
+        int64_t trueRunLength = -1;
+        PoaFeatureSplitRleWeight* rlFeature = NULL;
 
         int64_t featureInsPos = 0;
         while (feature != NULL) {
@@ -587,6 +589,15 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         ((PoaFeatureRleWeight*)feature)->labelChar = '_';
                         ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
                         feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
+                        break;
+                    case HFEAT_SPLIT_RLE_WEIGHT:
+                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        while (rlFeature != NULL) {
+                            rlFeature->labelChar = '_';
+                            rlFeature->labelRunLength = 0;
+                            rlFeature = rlFeature->nextRunLength;
+                        }
+                        feature = ((PoaFeatureSplitRleWeight*)feature)->nextInsert;
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -607,9 +618,25 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                     case HFEAT_RLE_WEIGHT:
                     case HFEAT_NUCL_AND_RL_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
-                        int64_t trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
                         if (trueRunLength > POAFEATURE_MAX_RUN_LENGTH) trueRunLength = POAFEATURE_MAX_RUN_LENGTH;
                         ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRunLength;
+                        break;
+                    case HFEAT_SPLIT_RLE_WEIGHT:
+                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        while (rlFeature != NULL) {
+                            rlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                            if (trueRunLength <= 0) {
+                                rlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > rlFeature->maxRunLength) {
+                                rlFeature->labelRunLength = rlFeature->maxRunLength;
+                            } else {
+                                rlFeature->labelRunLength = trueRunLength;
+                            }
+                            trueRunLength -= rlFeature->maxRunLength;
+                            rlFeature = rlFeature->nextRunLength;
+                        }
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -637,9 +664,25 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                     case HFEAT_RLE_WEIGHT:
                     case HFEAT_NUCL_AND_RL_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
-                        int64_t trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
                         if (trueRunLength > POAFEATURE_MAX_RUN_LENGTH) trueRunLength = POAFEATURE_MAX_RUN_LENGTH;
                         ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRunLength;
+                        break;
+                    case HFEAT_SPLIT_RLE_WEIGHT:
+                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        while (rlFeature != NULL) {
+                            rlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                            if (trueRunLength <= 0) {
+                                rlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > rlFeature->maxRunLength) {
+                                rlFeature->labelRunLength = rlFeature->maxRunLength;
+                            } else {
+                                rlFeature->labelRunLength = trueRunLength;
+                            }
+                            trueRunLength -= rlFeature->maxRunLength;
+                            rlFeature = rlFeature->nextRunLength;
+                        }
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -658,6 +701,14 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                     case HFEAT_NUCL_AND_RL_WEIGHT:
                         ((PoaFeatureRleWeight*)feature)->labelChar = '_';
                         ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
+                        break;
+                    case HFEAT_SPLIT_RLE_WEIGHT:
+                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        while (rlFeature != NULL) {
+                            rlFeature->labelChar = '_';
+                            rlFeature->labelRunLength = 0;
+                            rlFeature = rlFeature->nextRunLength;
+                        }
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -679,6 +730,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                 case HFEAT_NUCL_AND_RL_WEIGHT:
                     feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
                     break;
+                case HFEAT_SPLIT_RLE_WEIGHT:
+                    feature = ((PoaFeatureSplitRleWeight*)feature)->nextInsert;
+                    break;
                 default:
                     st_errAbort("Unhandled FeatureType!\n");
             }
@@ -686,16 +740,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
         }
 
         // this catches any true inserts which are not present in the poa / feature list
-        while (currRefAlign != NULL && featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) && trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
-            // DO NOT make new empty feature and save truth
-            // TODO remove this once you're sure
-            //PoaFeatureSimpleWeight *newFeature = PoaFeature_SimpleWeight_construct(featureRefPos, featureInsPos);
-            //newFeature->label = trueRefRleString->rleString[trueRefPos];
-
-            // DO NOT save and DO iterate
-            //prevFeature->nextInsert = newFeature;
-            //prevFeature = newFeature;
-            //featureInsPos++;
+        while (currRefAlign != NULL &&
+                featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) &&
+                trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
             trueRefPos++;
         }
     }
@@ -774,8 +821,6 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             features = poa_getSplitRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
             firstMatchedFeature = 0;
             lastMatchedFeature = stList_length(features) - 1;
-            //TODO implement then remove
-            outputLabels = FALSE;
 
             // get truth (if we have it)
             if (outputLabels) {
