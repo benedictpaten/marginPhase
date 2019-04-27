@@ -45,15 +45,17 @@ void usage() {
     fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
+    #ifdef _HDF5
     fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
     fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
     fprintf(stderr, "                                 rleWeight:       weighted likelihood from POA nodes (RLE)\n");
     fprintf(stderr, "                                 nuclAndRlWeight: weighted likelihood, split into nucleotide and run length\n");
+    fprintf(stderr, "                                 splitRleWeight:  weighted likelihood, with run lengths split into chunks\n");
+    fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' type only) [default = %d]\n", POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT);
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
-    #ifdef _HDF5
     fprintf(stderr, "    -5 --hdf5Only            : only output H5 feature files.  Default behavior is to output\n");
     fprintf(stderr, "                               h5, tsv, and fa for each chunk.\n");
     #endif
@@ -82,6 +84,7 @@ int main(int argc, char *argv[]) {
     char *trueReferenceBam = NULL;
     BamChunker *trueReferenceChunker = NULL;
     bool fullFeatureOutput = TRUE;
+    int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -107,9 +110,12 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
+                #ifdef _HDF5
                 { "outputFeatureType", required_argument, 0, 'f'},
                 { "trueReferenceBam", required_argument, 0, 'u'},
                 { "hdf5Only", no_argument, 0, '5'},
+                { "splitRleWeightMaxRL", required_argument, 0, 'L'},
+                #endif
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
@@ -152,6 +158,8 @@ int main(int argc, char *argv[]) {
                 helenFeatureType = HFEAT_RLE_WEIGHT;
             } else if (stString_eq(optarg, "nuclAndRlWeight")) {
                 helenFeatureType = HFEAT_NUCL_AND_RL_WEIGHT;
+            } else if (stString_eq(optarg, "splitRleWeight")) {
+                helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
             } else {
                 fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
                 usage();
@@ -164,6 +172,12 @@ int main(int argc, char *argv[]) {
         #ifdef _HDF5
         case '5':
             fullFeatureOutput = FALSE;
+            break;
+        case 'L':
+            splitWeightMaxRunLength = atoi(optarg);
+            if (splitWeightMaxRunLength <= 0) {
+                st_errAbort("Invalid splitRleWeightMaxRL: %d", splitWeightMaxRunLength);
+            }
             break;
         #endif
         case 't':
@@ -226,7 +240,8 @@ int main(int argc, char *argv[]) {
             st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = FALSE;
         }
-    } else if (helenFeatureType == HFEAT_RLE_WEIGHT || helenFeatureType == HFEAT_NUCL_AND_RL_WEIGHT) {
+    // everthing else requires RLE
+    } else if (helenFeatureType != HFEAT_NONE) {
         if (!params->polishParams->useRunLengthEncoding) {
             st_logInfo("> Changing runLengthEncoding parameter to TRUE because of HELEN feature type.\n");
             params->polishParams->useRunLengthEncoding = TRUE;
@@ -478,6 +493,11 @@ int main(int argc, char *argv[]) {
                                                              outputBase, chunkIdx, bamChunk->refSeqName,
                                                              bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
                     break;
+                case HFEAT_SPLIT_RLE_WEIGHT:
+                    helenFeatureOutfileBase = stString_print("%s.splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                             outputBase, chunkIdx, bamChunk->refSeqName,
+                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+                    break;
                 default:
                     st_errAbort("Unhandled HELEN feature type!\n");
             }
@@ -565,7 +585,8 @@ int main(int argc, char *argv[]) {
 
                 // write the actual features (type dependent)
                 poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
-                        bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput);
+                        bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
+                        splitWeightMaxRunLength);
 
                 // write the polished chunk in fasta format
                 if (fullFeatureOutput) {

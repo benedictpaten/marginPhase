@@ -45,6 +45,32 @@ void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature) {
     free(feature);
 }
 
+
+PoaFeatureSplitRleWeight *PoaFeature_SplitRleWeight_construct(int64_t refPos, int64_t insPos, int64_t rlPos,
+        int64_t maxRunLength) {
+    PoaFeatureSplitRleWeight *feature = st_calloc(1, sizeof(PoaFeatureSplitRleWeight));
+    feature->refPosition = refPos;
+    feature->insertPosition = insPos;
+    feature->runLengthPosition = rlPos;
+    feature->labelChar = '\0';
+    feature->labelRunLength = 0;
+    feature->nextRunLength = NULL;
+    feature->nextInsert = NULL;
+    feature->maxRunLength = maxRunLength;
+    feature->weights = st_calloc(((SYMBOL_NUMBER - 1) * (1 + maxRunLength) + 1) * 2, sizeof(double));
+    return feature;
+}
+void PoaFeature_SplitRleWeight_destruct(PoaFeatureSplitRleWeight *feature) {
+    if (feature->nextRunLength != NULL) {
+        PoaFeature_SplitRleWeight_destruct(feature->nextRunLength);
+    }
+    if (feature->nextInsert != NULL) {
+        PoaFeature_SplitRleWeight_destruct(feature->nextInsert);
+    }
+    free(feature->weights);
+    free(feature);
+}
+
 int PoaFeature_SimpleWeight_charIndex(Symbol character, bool forward) {
     int pos = character * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
     assert(pos < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
@@ -67,6 +93,18 @@ int PoaFeature_RleWeight_gapIndex(bool forward) {
     int pos = (POAFEATURE_SYMBOL_GAP_POS * POAFEATURE_MAX_RUN_LENGTH) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
     assert(pos < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
     return pos;
+}
+int PoaFeature_SplitRleWeight_charIndex(int64_t maxRunLength, Symbol character, int64_t runLength, bool forward) {
+    assert(runLength >= 0);
+    assert(runLength <= POAFEATURE_SPLIT_RLE_MAX);
+    int pos = (character * ((int)maxRunLength + 1) + runLength) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    assert(pos < POAFEATURE_SPLIT_RLE_WEIGHT_TOTAL_SIZE);
+    return pos;
+}
+int PoaFeature_SplitRleWeight_gapIndex(int64_t maxRunLength, bool forward) {
+    int pos = ((SYMBOL_NUMBER - 1) * ((int)maxRunLength + 1)) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    return pos;
+
 }
 
 stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
@@ -114,7 +152,6 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                     }
                     PoaFeatureSimpleWeight *delFeature = stList_get(featureList, i + k);
 
-                    //TODO += delete->weightXXXStrand / delete->length?
                     delFeature->weights[PoaFeature_SimpleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
                     delFeature->weights[PoaFeature_SimpleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
                 }
@@ -141,7 +178,6 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                     Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
 
                     // add weights
-                    //TODO += insert->weightXXXStrand / strlen(insert->insert)?
                     currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, TRUE)] += insert->weightForwardStrand;
                     currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, FALSE)] += insert->weightReverseStrand;
 
@@ -206,7 +242,6 @@ stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStr
                     }
                     PoaFeatureRleWeight *delFeature = stList_get(featureList, i + k);
 
-                    //TODO += delete->weightXXXStrand / delete->length?
                     delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
                     delFeature->weights[PoaFeature_RleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
                 }
@@ -248,10 +283,130 @@ stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStr
                         if (runLength > POAFEATURE_MAX_RUN_LENGTH) runLength = POAFEATURE_MAX_RUN_LENGTH;
 
                         // save weight for position
-                        //TODO += insert->weightXXXStrand / strlen(insert->insert)?
                         currFeature->weights[PoaFeature_RleWeight_charIndex(character, runLength,
                                                                             bamChunkRead->forwardStrand)] += observation->weight;
                     }
+                }
+            }
+        }
+    }
+
+    free(logIdentifier);
+    return featureList;
+}
+
+
+void poa_addRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeature, stList *observations,
+        stList *bamChunkReads, stList *rleStrings, int64_t maxRunLength, int64_t observationOffset) {
+
+
+    PoaFeatureSplitRleWeight *currFeature = baseFeature;
+    int64_t currentRunLengthIndex = 0;
+    bool beforeMaxObservedRunLength = TRUE;
+
+    while (beforeMaxObservedRunLength) {
+        beforeMaxObservedRunLength = FALSE;
+
+        // examine each observation
+        for (int64_t i = 0; i < stList_length(observations); i++) {
+
+            // get data
+            PoaBaseObservation *observation = stList_get(observations, i);
+            RleString *rleString = stList_get(rleStrings, observation->readNo);
+            BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
+            Symbol symbol = symbol_convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
+            int64_t runLength = rleString->repeatCounts[observation->offset + observationOffset];
+            bool forward = bamChunkRead->forwardStrand;
+
+            // get correct run length
+            runLength -= currentRunLengthIndex * maxRunLength;
+            if (runLength < 0) {
+                runLength = 0;
+            } else if (runLength > maxRunLength) {
+                runLength = maxRunLength;
+                beforeMaxObservedRunLength = TRUE;
+            }
+
+            int64_t pos = PoaFeature_SplitRleWeight_charIndex(maxRunLength, symbol, runLength, forward);
+            currFeature->weights[pos] += observation->weight;
+
+        }
+
+        currentRunLengthIndex++;
+        PoaFeatureSplitRleWeight *prevFeature = currFeature;
+        currFeature = PoaFeature_SplitRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
+                                                          currentRunLengthIndex, maxRunLength);
+        prevFeature->nextRunLength = currFeature;
+        currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] =
+                baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)];
+        currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] =
+                baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)];
+    }
+}
+
+
+stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength) {
+    // initialize feature list
+    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_SplitRleWeight_destruct);
+    for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+        stList_append(featureList, PoaFeature_SplitRleWeight_construct(i - 1, 0, 0, maxRunLength));
+    }
+
+    // for logging (of errors)
+    char *logIdentifier = getLogIdentifier();
+
+    // iterate over all positions
+    for(int64_t i=0; i<stList_length(featureList); i++) {
+
+        // get feature and node
+        PoaFeatureSplitRleWeight* feature = stList_get(featureList, i);
+        PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
+
+        // save run length nodes
+        poa_addRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings, maxRunLength, 0);
+
+        // Deletes
+        if (stList_length(node->deletes) > 0) {
+
+            // iterate over all deletes
+            for (int64_t d = 0; d < stList_length(node->deletes); d++) {
+                PoaDelete *delete = stList_get(node->deletes, d);
+
+                // Deletes start AFTER the current position, need to add counts/weights to nodes after the current node
+                for (int64_t k = 1; k < delete->length; k++) {
+                    if (i + k >= stList_length(poa->nodes)) {
+                        st_logInfo(" %s Encountered DELETE that occurs after end of POA!\n", logIdentifier);
+                        break;
+                    }
+                    PoaFeatureSplitRleWeight *delFeature = stList_get(featureList, i + k);
+
+                    delFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] += delete->weightForwardStrand;
+                    delFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] += delete->weightReverseStrand;
+                }
+            }
+        }
+
+        // Inserts
+        if (stList_length(node->inserts) > 0) {
+
+            // iterate over all inserts
+            for (int64_t n = 0; n < stList_length(node->inserts); n++) {
+                PoaInsert *insert = stList_get(node->inserts, n);
+
+                // handle each insert base
+                PoaFeatureSplitRleWeight *prevFeature = feature;
+                for (int64_t o = 0; o < strlen(insert->insert); o++) {
+
+                    // get feature iterator
+                    PoaFeatureSplitRleWeight *currFeature = prevFeature->nextInsert;
+                    if (currFeature == NULL) {
+                        currFeature = PoaFeature_SplitRleWeight_construct(i, o + 1, 0, maxRunLength);
+                        prevFeature->nextInsert = currFeature;
+                    }
+
+                    // save insert run lengths
+                    poa_addRunLengthFeaturesForObservations(currFeature, node->observations, bamChunkReads, rleStrings,
+                            maxRunLength, o);
                 }
             }
         }
@@ -548,7 +703,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
-        RleString *trueRefRleString, bool fullFeatureOutput) {
+        RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength) {
     // prep
     int64_t firstMatchedFeature = -1;
     int64_t lastMatchedFeature = -1;
@@ -609,6 +764,26 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                 writeNucleotideAndRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
                                                              firstMatchedFeature, lastMatchedFeature);
             }
+            #endif
+            break;
+
+        case HFEAT_SPLIT_RLE_WEIGHT:
+            // get features
+            features = poa_getSplitRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
+            firstMatchedFeature = 0;
+            lastMatchedFeature = stList_length(features) - 1;
+            //TODO implement then remove
+            outputLabels = FALSE;
+
+            // get truth (if we have it)
+            if (outputLabels) {
+                poa_annotateHelenFeaturesWithTruth(features, type, trueRefAlignment, trueRefRleString,
+                                                   &firstMatchedFeature, &lastMatchedFeature);
+            }
+
+            #ifdef _HDF5
+            writeSplitRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
+                                                 firstMatchedFeature, lastMatchedFeature, maxRunLength);
             #endif
             break;
         default:
@@ -955,6 +1130,12 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
         free(labelCharacterData[0]);
         free(labelCharacterData);
     }
+
+    if (status) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
+        free(logIdentifier);
+    }
 }
 
 #define MAX_TOTAL_WEIGHT 64.0
@@ -1118,11 +1299,11 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
         hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
         hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigStartDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
         hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigEndDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
         hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (chunkIndexDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
 
         // write position info
         hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -1365,11 +1546,11 @@ void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk
         hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
         hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigStartDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
         hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigEndDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
         hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (chunkIndexDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
 
         // write position info
         hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -1451,4 +1632,226 @@ void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk
         free(logIdentifier);
     }
 }
+
+void writeSplitRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                          int64_t featureStartIdx, int64_t featureEndIdxInclusive, const int64_t maxRunLength) {
+
+    herr_t      status = 0;
+
+    /*
+     * Get feature data set up
+     */
+
+    // count features, create feature array
+    uint64_t featureCount = 0;
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+        PoaFeatureSplitRleWeight *feature = stList_get(features, i);
+        while (feature != NULL) {
+            PoaFeatureSplitRleWeight *rlFeature = feature;
+            while (rlFeature != NULL) {
+                featureCount++;
+                rlFeature = rlFeature->nextRunLength;
+            }
+            feature = feature->nextInsert;
+        }
+    }
+    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+        free(logIdentifier);
+        return;
+    }
+
+    // get all feature data into an array
+    uint32_t **positionData = getTwoDArrayUInt32(featureCount, 3);
+    int64_t rleNucleotideColumnCount = ((SYMBOL_NUMBER - 1) * (maxRunLength + 1) + 1) * 2;
+    uint8_t **normalizationData = getTwoDArrayUInt8(featureCount, 1);
+    uint8_t **imageData = getTwoDArrayUInt8(featureCount, rleNucleotideColumnCount);
+    uint8_t **labelCharacterData = NULL;
+    uint8_t **labelRunLengthData = NULL;
+    if (outputLabels) {
+        labelCharacterData = getTwoDArrayUInt8(featureCount, 1);
+        labelRunLengthData = getTwoDArrayUInt8(featureCount, 1);
+    }
+
+    // add all data to features
+    featureCount = 0;
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+        PoaFeatureSplitRleWeight *refFeature = stList_get(features, i);
+
+        // total weight is calculated for the very first refPos feature, used for all inserts and run lengths
+        double totalWeight = 0;
+        for (int64_t j = 0; j < rleNucleotideColumnCount; j++) {
+            totalWeight += refFeature->weights[j];
+        }
+
+        // iterate over all insert features
+        PoaFeatureSplitRleWeight *insFeature = refFeature;
+        while (insFeature != NULL) {
+
+            // iterate over all run length features
+            PoaFeatureSplitRleWeight *rlFeature = insFeature;
+            while (rlFeature != NULL) {
+                // position
+                positionData[featureCount][0] = (uint32_t) rlFeature->refPosition;
+                positionData[featureCount][1] = (uint32_t) rlFeature->insertPosition;
+                positionData[featureCount][2] = (uint32_t) rlFeature->runLengthPosition;
+
+                // normalization
+                normalizationData[featureCount][0] = convertTotalWeightToUInt8(totalWeight);
+
+                // copy weights over (into normalized uint8 space)
+                for (int64_t j = 0; j < rleNucleotideColumnCount; j++) {
+                    imageData[featureCount][j] =
+                            normalizeWeightToUInt8(totalWeight, rlFeature->weights[j]);
+                }
+
+                // labels
+                if (outputLabels) {
+                    labelCharacterData[featureCount][0] = (uint8_t) (rlFeature->labelChar == '_' ? 0 :
+                            (symbol_convertCharToSymbol(rlFeature->labelChar)) + 1);
+                    labelRunLengthData[featureCount][0] = (uint8_t) rlFeature->labelRunLength;
+                }
+
+                // iterate
+                featureCount++;
+                rlFeature = rlFeature->nextRunLength;
+            }
+            insFeature = insFeature->nextInsert;
+        }
+    }
+
+    /*
+     * Get hdf5 data set up
+     */
+
+
+    hid_t int64Type = H5Tcopy(H5T_NATIVE_UINT32);
+    status |= H5Tset_order(int64Type, H5T_ORDER_LE);
+    hid_t uint32Type = H5Tcopy(H5T_NATIVE_UINT32);
+    status |= H5Tset_order(uint32Type, H5T_ORDER_LE);
+    hid_t uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
+    status |= H5Tset_order(uint8Type, H5T_ORDER_LE);
+    hid_t stringType = H5Tcopy (H5T_C_S1);
+    status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
+
+    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
+    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
+
+    hsize_t metadataDimension[1] = {1};
+    hsize_t postionDimension[2] = {featureSize, 3};
+    hsize_t labelCharacterDimension[2] = {featureSize, 1};
+    hsize_t labelRunLengthDimension[2] = {featureSize, 1};
+    hsize_t normalizationDimension[2] = {featureSize, 1};
+    hsize_t imageDimension[2] = {featureSize, (hsize_t) rleNucleotideColumnCount};
+
+    hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
+    hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
+    hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
+    hid_t labelRunLengthSpace = H5Screate_simple(2, labelRunLengthDimension, NULL);
+    hid_t normalizationSpace = H5Screate_simple(2, normalizationDimension, NULL);
+    hid_t imageSpace = H5Screate_simple(2, imageDimension, NULL);
+
+
+    /*
+     * Write features to files
+     */
+
+    // each file must have exactly 1000 features
+    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
+    int64_t featureOffset = 0;
+    if (featureCount >= HDF5_FEATURE_SIZE) {
+        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+    }
+    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
+        // get start pos
+        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
+        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
+            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        }
+
+        // create file
+        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
+        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+        // write metadata
+        hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
+        hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+        hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+        hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+
+        // write position info
+        hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (positionDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
+
+        // write rle data
+        hid_t imageDataset = H5Dcreate (file, "image", uint8Type, imageSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (imageDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                            imageData[chunkFeatureStartIdx]);
+        hid_t normalizationDataset = H5Dcreate (file, "normalization", uint8Type, normalizationSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (normalizationDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                            normalizationData[chunkFeatureStartIdx]);
+
+        // if labels, add all these too
+        if (outputLabels) {
+            hid_t labelCharacterDataset = H5Dcreate (file, "label_base", uint8Type, labelCharacterSpace, H5P_DEFAULT,
+                                                     H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelCharacterDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                                labelCharacterData[chunkFeatureStartIdx]);
+            hid_t labelRunLengthDataset = H5Dcreate (file, "label_run_length", uint8Type, labelRunLengthSpace,
+                                                     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                                labelRunLengthData[chunkFeatureStartIdx]);
+
+            status |= H5Dclose (labelCharacterDataset);
+            status |= H5Dclose (labelRunLengthDataset);
+        }
+
+        // cleanup
+        status |= H5Dclose (contigDataset);
+        status |= H5Dclose (contigStartDataset);
+        status |= H5Dclose (contigEndDataset);
+        status |= H5Dclose (chunkIndexDataset);
+        status |= H5Dclose (positionDataset);
+        status |= H5Dclose (imageDataset);
+        status |= H5Dclose (normalizationDataset);
+        status |= H5Fclose (file);
+        free(outputFile);
+    }
+
+    // cleanup
+    free(imageData[0]);
+    free(imageData);
+    free(normalizationData[0]);
+    free(normalizationData);
+    free(positionData[0]);
+    free(positionData);
+    status |= H5Tclose (int64Type);
+    status |= H5Tclose (uint32Type);
+    status |= H5Tclose (uint8Type);
+    status |= H5Tclose (stringType);
+    status |= H5Sclose (metadataSpace);
+    status |= H5Sclose (positionSpace);
+    status |= H5Sclose (imageSpace);
+    status |= H5Sclose (normalizationSpace);
+    status |= H5Sclose (labelRunLengthSpace);
+    status |= H5Sclose (labelCharacterSpace);
+    if (outputLabels) {
+        free(labelCharacterData[0]);
+        free(labelCharacterData);
+        free(labelRunLengthData[0]);
+        free(labelRunLengthData);
+    }
+
+    if (status) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
+        free(logIdentifier);
+    }
+}
+
 #endif
