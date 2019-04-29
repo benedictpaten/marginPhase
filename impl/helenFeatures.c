@@ -1755,9 +1755,14 @@ void writeSplitRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChu
 
                 // labels
                 if (outputLabels) {
-                    labelCharacterData[featureCount][0] = (uint8_t) (rlFeature->labelChar == '_' ? 0 :
-                            (symbol_convertCharToSymbol(rlFeature->labelChar)) + 1);
-                    labelRunLengthData[featureCount][0] = (uint8_t) rlFeature->labelRunLength;
+                    Symbol label = symbol_convertCharToSymbol(rlFeature->labelChar);
+                    labelCharacterData[featureCount][0] = (uint8_t) (label == n ? 0 : label + 1);
+                    labelRunLengthData[featureCount][0] = (uint8_t) (label == n ? 0 : rlFeature->labelRunLength);
+                    if (labelRunLengthData[featureCount][0] > maxRunLength) {
+                        st_errAbort("Encountered run length of %d (max %"PRId64") in chunk %s:%"PRId64"-%"PRId64,
+                                    labelRunLengthData[featureCount][0], maxRunLength, bamChunk->refSeqName,
+                                    bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+                    }
                 }
 
                 // iterate
