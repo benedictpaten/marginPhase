@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     char *outputBase = stString_copy("output");
     char *regionStr = NULL;
     int64_t verboseBitstring = -1;
-    int numThreads = 0;
+    int numThreads = 1;
     char *outputRepeatCountBase = NULL;
     char *outputPoaTsvBase = NULL;
 
@@ -85,6 +85,7 @@ int main(int argc, char *argv[]) {
     BamChunker *trueReferenceChunker = NULL;
     bool fullFeatureOutput = TRUE;
     int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
+    void **splitWeightHDF5Files = NULL;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -222,11 +223,10 @@ int main(int argc, char *argv[]) {
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
     # ifdef _OPENMP
-    if (numThreads > 0) {
-        omp_set_num_threads(numThreads);
-    } else {
-        omp_set_num_threads(1);
+    if (numThreads <= 0) {
+        numThreads = 1;
     }
+    omp_set_num_threads(numThreads);
     st_logInfo("Running OpenMP with %d threads.\n", omp_get_max_threads());
     # endif
 
@@ -297,6 +297,12 @@ int main(int argc, char *argv[]) {
         free(trueReferenceBamChunker->bamFile);
         trueReferenceBamChunker->bamFile = stString_copy(trueReferenceBam);
     }
+    #ifdef _HDF5_H
+    if (helenFeatureType == HFEAT_SPLIT_RLE_WEIGHT) {
+        splitWeightHDF5Files = (void**) openSplitRleFeatureHDF5FilesByThreadCount(outputBase, numThreads);
+    }
+    #endif
+
 
     // Polish chunks
     // Each chunk produces a char* as output which is saved here
@@ -586,7 +592,7 @@ int main(int argc, char *argv[]) {
                 // write the actual features (type dependent)
                 poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
                         bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
-                        splitWeightMaxRunLength);
+                        splitWeightMaxRunLength, splitWeightHDF5Files);
 
                 // write the polished chunk in fasta format
                 if (fullFeatureOutput) {
@@ -710,6 +716,13 @@ int main(int argc, char *argv[]) {
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
 
     if (regionStr != NULL) free(regionStr);
+    #ifdef _HDF5_H
+    if (splitWeightHDF5Files != NULL) {
+        for (int64_t i = 0; i < numThreads; i++) {
+            splitRleFeatureHDF5FileInfo_destruct((SplitRleFeatureHDF5FileInfo*) splitWeightHDF5Files[i]);
+        }
+    }
+    #endif
     free(chunkResults);
     free(outputBase);
     free(bamInFile);

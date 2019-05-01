@@ -6,6 +6,9 @@
 #define MARGINPHASE_HELENFEATURES_H
 
 #include "margin.h"
+#ifdef _HDF5
+#include <hdf5.h>
+#endif
 
 typedef enum {
     HFEAT_NONE=0,
@@ -77,7 +80,7 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
-        RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength);
+        RleString *trueRefRleString, bool fullFeatureOutput, int64_t splitWeightMaxRunLength, void** splitWeightHDF5Files);
 
 void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featureType, stList *trueRefAlignment,
                                         RleString *trueRefRleString, int64_t *firstMatchedFeaure,
@@ -100,7 +103,26 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
 void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels,
                                                   stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
-void writeSplitRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                          int64_t featureStartIdx, int64_t featureEndIdxInclusive, int64_t maxRunLength);
+void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfo, char *outputFileBase,
+        BamChunk *bamChunk, bool outputLabels, stList *features,
+        int64_t featureStartIdx, int64_t featureEndIdxInclusive, int64_t maxRunLength);
+
+
+#ifdef _HDF5
+typedef struct _splitRleFeatureHDF5FileInfo SplitRleFeatureHDF5FileInfo;
+struct _splitRleFeatureHDF5FileInfo {
+    char* filename;
+    hid_t file;
+    hid_t int64Type;
+    hid_t uint32Type;
+    hid_t uint8Type;
+    hid_t stringType;
+    hid_t groupPropertyList;
+};
+
+SplitRleFeatureHDF5FileInfo* splitRleFeatureHDF5FileInfo_construct(char *filename);
+void splitRleFeatureHDF5FileInfo_destruct(SplitRleFeatureHDF5FileInfo* fileInfo);
+SplitRleFeatureHDF5FileInfo** openSplitRleFeatureHDF5FilesByThreadCount(char *filenameBase, int64_t threadCount);
+#endif
 
 #endif //MARGINPHASE_HELENFEATURES_H
