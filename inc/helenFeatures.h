@@ -58,6 +58,28 @@ struct _poaFeatureSplitRleWeight {
     int64_t maxRunLength;
 };
 
+
+typedef struct _splitRleFeatureData SplitRleFeatureData;
+struct _splitRleFeatureData {
+    // counts
+    int64_t featureCount;
+    int64_t rleNucleotideColumnCount;
+    // options
+    char* groupName;
+    bool outputLabels;
+    // metadata
+    char* refSeqName;
+    int64_t chunkStartPos;
+    int64_t chunkEndPos;
+    // data
+    uint32_t **positionData;
+    uint8_t **normalizationData;
+    uint8_t **imageData;
+    uint8_t **labelCharacterData;
+    uint8_t **labelRunLengthData;
+};
+
+
 int PoaFeature_SimpleWeight_charIndex(Symbol character, bool forward);
 int PoaFeature_SimpleWeight_gapIndex(bool forward);
 int PoaFeature_RleWeight_charIndex(Symbol character, int64_t runLength, bool forward);
@@ -103,9 +125,13 @@ void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, b
 void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels,
                                                   stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
-void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfo, char *outputFileBase,
-        BamChunk *bamChunk, bool outputLabels, stList *features,
-        int64_t featureStartIdx, int64_t featureEndIdxInclusive, int64_t maxRunLength);
+void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, SplitRleFeatureData *featureData);
+
+SplitRleFeatureData *splitRleFeatureData_construct(char* groupName, BamChunk *bamChunk, bool outputLabels, stList *features,
+                                                   int64_t featureStartIdx, int64_t featureEndIdxInclusive,
+                                                   int64_t maxRunLength);
+void splitRleFeatureData_destruct(SplitRleFeatureData *featureData);
+
 
 
 #ifdef _HDF5
