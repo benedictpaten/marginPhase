@@ -86,6 +86,7 @@ int main(int argc, char *argv[]) {
     bool fullFeatureOutput = TRUE;
     int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
     void **splitWeightHDF5Files = NULL;
+    stList **splitWeightFeatureBuffers = NULL;
 
     // TODO: When done testing, optionally set random seed using st_randomSeed();
 
@@ -235,6 +236,8 @@ int main(int argc, char *argv[]) {
     Params *params = params_readParams(paramsFile);
 
     // Set no RLE if appropriate feature type is set
+    // TODO hardcoded
+    if (helenFeatureType != HFEAT_NONE) helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
     if (helenFeatureType == HFEAT_SIMPLE_WEIGHT) {
         if (params->polishParams->useRunLengthEncoding) {
             st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
@@ -300,6 +303,10 @@ int main(int argc, char *argv[]) {
     #ifdef _HDF5_H
     if (helenFeatureType == HFEAT_SPLIT_RLE_WEIGHT) {
         splitWeightHDF5Files = (void**) openSplitRleFeatureHDF5FilesByThreadCount(outputBase, numThreads);
+        splitWeightFeatureBuffers = st_calloc(numThreads, sizeof(stList*));
+        for (int64_t i = 0; i < numThreads; i++) {
+            splitWeightFeatureBuffers[i] = stList_construct3(0, (void(*)(void*)) splitRleFeatureData_destruct);
+        }
     }
     #endif
 
@@ -481,6 +488,7 @@ int main(int argc, char *argv[]) {
         // HELEN feature outputs
         if (helenFeatureType != HFEAT_NONE) {
             st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
+            /*
             // get filename
             char *helenFeatureOutfileBase = NULL;
             switch (helenFeatureType) {
@@ -506,7 +514,7 @@ int main(int argc, char *argv[]) {
                     break;
                 default:
                     st_errAbort("Unhandled HELEN feature type!\n");
-            }
+            }*/
 
             // necessary to annotate poa with truth (if true reference BAM has been specified)
             stList *trueRefAlignment = NULL;
@@ -587,6 +595,8 @@ int main(int argc, char *argv[]) {
             if (trueReferenceBam != NULL && !validReferenceAlignment) {
                 st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
             } else {
+
+                /* TODO
                 st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
 
                 // write the actual features (type dependent)
@@ -608,10 +618,55 @@ int main(int argc, char *argv[]) {
                     free(chunkPolishedRefFilename);
                     free(chunkPolishedRefContigName);
                 }
+                */
+
+                // generate
+                char *helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                               chunkIdx, bamChunk->refSeqName,
+                                                               bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+
+                stList* features = poa_getSplitRleWeightFeatures(poa, rleReads, rleNucleotides, splitWeightMaxRunLength);
+                int64_t firstMatchedFeature = 0;
+                int64_t lastMatchedFeature = stList_length(features) - 1;
+                bool outputLabels = trueReferenceBam != NULL;
+
+                // get truth (if we have it)
+                if (outputLabels) {
+                    poa_annotateHelenFeaturesWithTruth(features, HFEAT_SPLIT_RLE_WEIGHT, trueRefAlignment, trueRefRleString,
+                                                       &firstMatchedFeature, &lastMatchedFeature);
+                }
+
+                // get features, save to buffer
+                int64_t threadIdx = omp_get_thread_num();
+                SplitRleFeatureData *featureData = splitRleFeatureData_construct(helenFeatureOutfileBase, bamChunk,
+                        outputLabels, features, firstMatchedFeature, lastMatchedFeature, splitWeightMaxRunLength);
+                stList_append(splitWeightFeatureBuffers[threadIdx], featureData);
+
+                // cleanup
+                free(helenFeatureOutfileBase);
+
+
+                // should I write?
+                stList *threadFeatures = splitWeightFeatureBuffers[threadIdx];
+                int64_t bufferSize = stList_length(threadFeatures);
+                if (bufferSize >= numThreads && (bufferSize >= numThreads * 2 || st_random() < 1.0 / numThreads)) {
+                    st_logInfo(" T%02d Writing %"PRId64" HELEN features\n", omp_get_thread_num(), bufferSize);
+                    time_t featureWriteStart = time(NULL);
+                    for (int64_t j = 0; j < bufferSize; j++) {
+                        writeSplitRleWeightHelenFeaturesHDF5(splitWeightHDF5Files[threadIdx], stList_get(threadFeatures, j));
+                    }
+                    stList_destruct(threadFeatures);
+                    splitWeightFeatureBuffers[threadIdx] = stList_construct3(0, (void(*)(void*)) splitRleFeatureData_destruct);
+
+                    // loggit
+                    st_logInfo(" T%02d Wrote %"PRId64" HELEN features in %d sec\n", omp_get_thread_num(), bufferSize,
+                            (int) (time(NULL) - featureWriteStart));
+                }
             }
 
+
+
             // cleanup
-            free(helenFeatureOutfileBase);
             if (trueRefAlignment != NULL) stList_destruct(trueRefAlignment);
             if (trueRefRleString != NULL) rleString_destruct(trueRefRleString);
         }
@@ -632,6 +687,24 @@ int main(int argc, char *argv[]) {
         free(referenceString);
         free(logIdentifier);
     }
+
+    // if we saved features, write out the rest
+    if (splitWeightFeatureBuffers != NULL) {
+        time_t featureWriteStart = time(NULL);
+        int64_t finalFeatureCount = 0;
+        for (int64_t i = 0; i < numThreads; i++) {
+            for (int64_t j = 0; j < stList_length(splitWeightFeatureBuffers[i]); j++) {
+                writeSplitRleWeightHelenFeaturesHDF5(splitWeightHDF5Files[i], stList_get(splitWeightFeatureBuffers[i], j));
+                finalFeatureCount++;
+            }
+            stList_destruct(splitWeightFeatureBuffers[i]);
+        }
+        free(splitWeightFeatureBuffers);
+
+        st_logInfo("> Wrote last %"PRId64" HELEN features in %d sec\n", finalFeatureCount,
+                   (int) (time(NULL) - featureWriteStart));
+    }
+
 
     // merge chunks
     st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);

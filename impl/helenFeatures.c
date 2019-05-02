@@ -752,6 +752,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     stList_destructIterator(trueRefAlignItor);
 }
 
+/*
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
         RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength, void** splitWeightHDF5Files) {
@@ -844,6 +845,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
     //cleanup
     stList_destruct(features);
 }
+*/
 
 
 void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
