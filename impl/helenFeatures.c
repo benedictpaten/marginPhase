@@ -4,6 +4,7 @@
 
 #include "margin.h"
 #include "helenFeatures.h"
+#include "ssw.h"
 
 #ifdef _HDF5
 #include <hdf5.h>
@@ -843,6 +844,87 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 
     //cleanup
     stList_destruct(features);
+}
+
+// this function taken from https://github.com/mengyao/Complete-Striped-Smith-Waterman-Library/blob/master/src/example.c
+stList *alignConsensusAndTruth(char *consensusStr, char *truthStr) {
+
+    int64_t l, m, k;
+    uint8_t match = 2, mismatch = 2, gap_open = 3, gap_extension = 1;	// default parameters for genome sequence alignment
+
+    int64_t consensusLen = strlen(consensusStr);
+    int64_t truthLen = strlen(truthStr);
+
+    s_profile* profile;
+
+    int8_t* num = st_calloc(consensusLen, sizeof(int8_t));	// the read sequence represented in numbers
+    int8_t* ref_num = st_calloc(truthLen, sizeof(int8_t));  // the read sequence represented in numbers
+    s_align* result;
+
+    /* This table is used to transform nucleotide letters into numbers. */
+    static const int8_t nt_table[128] = {
+            4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 0, 4, 1,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 4, 4, 4,  3, 0, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 0, 4, 1,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 4, 4,
+            4, 4, 4, 4,  3, 0, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4
+    };
+
+    // initialize scoring matrix for genome sequences
+    //  A  C  G  T	N (or other ambiguous code)
+    //  2 -2 -2 -2 	0	A
+    // -2  2 -2 -2 	0	C
+    // -2 -2  2 -2 	0	G
+    // -2 -2 -2  2 	0	T
+    //	0  0  0  0  0	N (or other ambiguous code)
+    int8_t* mat = (int8_t*)calloc(25, sizeof(int8_t));
+    for (l = k = 0; l < 4; ++l) {
+        for (m = 0; m < 4; ++m) mat[k++] = (int8_t ) (l == m ? match : - mismatch);	/* weight_match : -weight_mismatch */
+        mat[k++] = 0; // ambiguous base: no penalty
+    }
+    for (m = 0; m < 5; ++m) mat[k++] = 0;
+
+    for (m = 0; m < consensusLen; ++m) num[m] = nt_table[(int) consensusStr[m]];
+    profile = ssw_init(num, (int32_t) consensusLen, mat, 5, 2);
+    for (m = 0; m < truthLen; ++m) ref_num[m] = nt_table[(int) truthStr[m]];
+
+    // Only the 8 bit of the flag is setted. ssw_align will always return the best alignment beginning position and cigar.
+    result = ssw_align (profile, ref_num, (int32_t) truthLen, gap_open, gap_extension, 1, 0, 0, 15);
+
+    // Convert from cigar to aligned pairs
+    int32_t consensusPos = result->read_begin1;
+    int32_t truthPos = result->ref_begin1;
+    stList *alignedPairs = stList_construct3(0, (void(*)(void*)) stIntTuple_destruct);
+    if (result->cigar) {
+        for (int32_t cigIdx = 0; cigIdx < result->cigarLen; cigIdx++) {
+            char letter = cigar_int_to_op(result->cigar[cigIdx]);
+            uint32_t length = cigar_int_to_len(result->cigar[cigIdx]);
+
+            if (letter == 'M') {
+                for (int32_t matchIdx = 0; matchIdx < length; matchIdx++) {
+                    stList_append(alignedPairs, stIntTuple_construct3(0, consensusPos, truthPos));
+                    consensusPos++;
+                    truthPos++;
+                }
+            } else if (letter == 'I') {
+                consensusPos += length;
+            } else if (letter == 'D') {
+                truthPos += length;
+            }
+        }
+    }
+
+    // cleanup
+    align_destroy(result);
+    init_destroy(profile);
+    free(mat);
+    free(ref_num);
+    free(num);
+
+    return alignedPairs;
 }
 
 
@@ -1801,6 +1883,9 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
     hid_t normalizationSpace = H5Screate_simple(2, normalizationDimension, NULL);
     hid_t imageSpace = H5Screate_simple(2, imageDimension, NULL);
 
+    hid_t stringType = H5Tcopy (H5T_C_S1);
+    H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
+
 
     /*
      * Write features to files
@@ -1824,8 +1909,8 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
         hid_t group = H5Gcreate (hdf5FileInfo->file, outputGroup, hdf5FileInfo->groupPropertyList, H5P_DEFAULT, H5P_DEFAULT);
 
         // write metadata
-        hid_t contigDataset = H5Dcreate (group, "contig", hdf5FileInfo->stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigDataset, hdf5FileInfo->stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
+        hid_t contigDataset = H5Dcreate (group, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
         hid_t contigStartDataset = H5Dcreate (group, "contig_start", hdf5FileInfo->int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         status |= H5Dwrite (contigStartDataset, hdf5FileInfo->int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
         hid_t contigEndDataset = H5Dcreate (group, "contig_end", hdf5FileInfo->int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -1885,6 +1970,7 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
     status |= H5Sclose (normalizationSpace);
     status |= H5Sclose (labelRunLengthSpace);
     status |= H5Sclose (labelCharacterSpace);
+    status |= H5Tclose (stringType);
     if (outputLabels) {
         free(labelCharacterData[0]);
         free(labelCharacterData);
@@ -1910,8 +1996,6 @@ SplitRleFeatureHDF5FileInfo* splitRleFeatureHDF5FileInfo_construct(char *filenam
     H5Tset_order(fileInfo->uint32Type, H5T_ORDER_LE);
     fileInfo->uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
     H5Tset_order(fileInfo->uint8Type, H5T_ORDER_LE);
-    fileInfo->stringType = H5Tcopy (H5T_C_S1);
-    H5Tset_size (fileInfo->stringType, 64);
     fileInfo->groupPropertyList = H5Pcreate (H5P_LINK_CREATE);
     H5Pset_create_intermediate_group (fileInfo->groupPropertyList, 1);
     return fileInfo;
@@ -1922,7 +2006,6 @@ void splitRleFeatureHDF5FileInfo_destruct(SplitRleFeatureHDF5FileInfo* fileInfo)
     H5Tclose(fileInfo->int64Type);
     H5Tclose(fileInfo->uint32Type);
     H5Tclose(fileInfo->uint8Type);
-    H5Tclose(fileInfo->stringType);
     H5Pclose(fileInfo->groupPropertyList);
     H5Fclose(fileInfo->file);
     free(fileInfo);

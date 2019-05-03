@@ -82,6 +82,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
         RleString *trueRefRleString, bool fullFeatureOutput, int64_t splitWeightMaxRunLength, void** splitWeightHDF5Files);
 
+stList *alignConsensusAndTruth(char *consensusStr, char *truthStr);
 void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featureType, stList *trueRefAlignment,
                                         RleString *trueRefRleString, int64_t *firstMatchedFeaure,
                                         int64_t *lastMatchedFeature);
@@ -116,7 +117,6 @@ struct _splitRleFeatureHDF5FileInfo {
     hid_t int64Type;
     hid_t uint32Type;
     hid_t uint8Type;
-    hid_t stringType;
     hid_t groupPropertyList;
 };
 

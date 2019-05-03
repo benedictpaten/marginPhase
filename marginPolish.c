@@ -45,7 +45,6 @@ void usage() {
     fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
-    #ifdef _HDF5
     fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
     fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
@@ -58,7 +57,6 @@ void usage() {
     fprintf(stderr, "                               in output.\n");
     fprintf(stderr, "    -5 --hdf5Only            : only output H5 feature files.  Default behavior is to output\n");
     fprintf(stderr, "                               h5, tsv, and fa for each chunk.\n");
-    #endif
 
     fprintf(stderr, "\nMiscellaneous supplementary output options:\n");
     fprintf(stderr, "    -i --outputRepeatCounts  : Output base to write out the repeat counts [default = NULL]\n");
@@ -67,6 +65,7 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
+
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
     char *bamInFile = NULL;
@@ -111,12 +110,10 @@ int main(int argc, char *argv[]) {
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
-                #ifdef _HDF5
                 { "outputFeatureType", required_argument, 0, 'f'},
                 { "trueReferenceBam", required_argument, 0, 'u'},
                 { "hdf5Only", no_argument, 0, '5'},
                 { "splitRleWeightMaxRL", required_argument, 0, 'L'},
-                #endif
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
@@ -170,7 +167,6 @@ int main(int argc, char *argv[]) {
         case 'u':
             trueReferenceBam = stString_copy(optarg);
             break;
-        #ifdef _HDF5
         case '5':
             fullFeatureOutput = FALSE;
             break;
@@ -180,7 +176,6 @@ int main(int argc, char *argv[]) {
                 st_errAbort("Invalid splitRleWeightMaxRL: %d", splitWeightMaxRunLength);
             }
             break;
-        #endif
         case 't':
             numThreads = atoi(optarg);
             if (numThreads <= 0) {
@@ -297,7 +292,7 @@ int main(int argc, char *argv[]) {
         free(trueReferenceBamChunker->bamFile);
         trueReferenceBamChunker->bamFile = stString_copy(trueReferenceBam);
     }
-    #ifdef _HDF5_H
+    #ifdef _HDF5
     if (helenFeatureType == HFEAT_SPLIT_RLE_WEIGHT) {
         splitWeightHDF5Files = (void**) openSplitRleFeatureHDF5FilesByThreadCount(outputBase, numThreads);
     }
@@ -528,15 +523,7 @@ int main(int argc, char *argv[]) {
                 if (trueAlignmentCount == 1) {
                     BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
 
-                    // align in real space
-                    double alignmentScoreRawSpace;
-                    stList *anchorPairsRawSpace = getBlastPairsForPairwiseAlignmentParameters(
-                            polishedConsensusString, trueRefRead->nucleotides,
-                            strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
-                            params->polishParams->p);
-                    stList *trueRefAlignmentRawSpace = getShiftedMEAAlignment(
-                            polishedConsensusString, trueRefRead->nucleotides, anchorPairsRawSpace,
-                            params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScoreRawSpace);
+                    stList *trueRefAlignmentRawSpace = alignConsensusAndTruth(polishedConsensusString, trueRefRead->nucleotides);
                     if (st_getLogLevel() == debug) {
                         printMEAAlignment(polishedConsensusString, trueRefRead->nucleotides,
                                           strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
@@ -716,7 +703,7 @@ int main(int argc, char *argv[]) {
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
 
     if (regionStr != NULL) free(regionStr);
-    #ifdef _HDF5_H
+    #ifdef _HDF5
     if (splitWeightHDF5Files != NULL) {
         for (int64_t i = 0; i < numThreads; i++) {
             splitRleFeatureHDF5FileInfo_destruct((SplitRleFeatureHDF5FileInfo*) splitWeightHDF5Files[i]);
@@ -729,7 +716,8 @@ int main(int argc, char *argv[]) {
     free(referenceFastaFile);
     free(paramsFile);
 
-    //while(1); // Use this for testing for memory leaks
+
+//    while(1); // Use this for testing for memory leaks
 
     return 0;
 }

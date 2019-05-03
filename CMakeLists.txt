@@ -33,12 +33,16 @@ set(CPECAN_HEADERS
         externalTools/cPecan/tests
         externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src
         )
+set(SSW_HEADERS
+        externalTools/ssw/
+        )
 
 include_directories(inc)
 include_directories(externalTools/samtools)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
 include_directories(${CPECAN_HEADERS})
+include_directories(${SSW_HEADERS})
 
 file(GLOB MARGIN_CORE_HEADERS
         inc/*.h
@@ -252,6 +256,10 @@ set(CPECAN_SOURCES
         externalTools/cPecan/tests/pairwiseAlignerTest.c
         )
 
+set(SSW_SOURCES
+        externalTools/ssw/ssw.c
+        )
+
 set(CORE_SOURCE_FILES
         impl/callConsensus.c
         impl/chunker.c
@@ -344,7 +352,7 @@ target_link_libraries(cpecan m)
 
 
 # Build MarginCore Library
-add_library(MarginCore SHARED ${CORE_SOURCE_FILES})
+add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
 target_link_libraries(MarginCore cpecan son)
 
 # Install command for MarginCore
