@@ -820,7 +820,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             break;
 
         case HFEAT_SPLIT_RLE_WEIGHT:
-            // get features
+/*            // get features
             features = poa_getSplitRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
             firstMatchedFeature = 0;
             lastMatchedFeature = stList_length(features) - 1;
@@ -841,6 +841,8 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
             free(fileName);
             splitRleFeatureHDF5FileInfo_destruct(fileInfo);
             #endif
+*/
+            features = stList_construct();
             break;
         default:
             st_errAbort("Unhandled HELEN feature type!\n");
@@ -1910,7 +1912,7 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
 
         // create group
         char *outputGroup = stString_print("images/%s.%"PRId64, outputFileBase, featureIndex);
-        hid_t group = H5Gcreate (hdf5FileInfo->file, outputGroup, hdf5FileInfo->groupPropertyList, H5P_DEFAULT, H5P_DEFAULT);
+        hid_t group = hdf5FileInfo->file;//todo H5Gcreate (hdf5FileInfo->file, outputGroup, hdf5FileInfo->groupPropertyList, H5P_DEFAULT, H5P_DEFAULT);
 
         // write metadata
         hid_t contigDataset = H5Dcreate (group, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -1957,7 +1959,7 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
         status |= H5Dclose (positionDataset);
         status |= H5Dclose (imageDataset);
         status |= H5Dclose (normalizationDataset);
-        status |= H5Gclose (group);
+        //todo status |= H5Gclose (group);
         free(outputGroup);
     }
 
