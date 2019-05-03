@@ -292,12 +292,13 @@ int main(int argc, char *argv[]) {
         free(trueReferenceBamChunker->bamFile);
         trueReferenceBamChunker->bamFile = stString_copy(trueReferenceBam);
     }
+    /*
     #ifdef _HDF5
     if (helenFeatureType == HFEAT_SPLIT_RLE_WEIGHT) {
         splitWeightHDF5Files = (void**) openSplitRleFeatureHDF5FilesByThreadCount(outputBase, numThreads);
     }
     #endif
-
+    */
 
     // Polish chunks
     // Each chunk produces a char* as output which is saved here
@@ -703,6 +704,7 @@ int main(int argc, char *argv[]) {
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
 
     if (regionStr != NULL) free(regionStr);
+    /*
     #ifdef _HDF5
     if (splitWeightHDF5Files != NULL) {
         for (int64_t i = 0; i < numThreads; i++) {
@@ -710,6 +712,7 @@ int main(int argc, char *argv[]) {
         }
     }
     #endif
+    */
     free(chunkResults);
     free(outputBase);
     free(bamInFile);

@@ -833,9 +833,13 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
 
             #ifdef _HDF5
             int64_t threadIdx = omp_get_thread_num();
-            writeSplitRleWeightHelenFeaturesHDF5(splitWeightHDF5Files[threadIdx],
+            char *fileName = stString_print("%s.h5", outputFileBase);
+            SplitRleFeatureHDF5FileInfo *fileInfo = splitRleFeatureHDF5FileInfo_construct(fileName);
+            writeSplitRleWeightHelenFeaturesHDF5(fileInfo, //splitWeightHDF5Files[threadIdx],
                     outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature, lastMatchedFeature,
                     maxRunLength);
+            free(fileName);
+            splitRleFeatureHDF5FileInfo_destruct(fileInfo);
             #endif
             break;
         default:
