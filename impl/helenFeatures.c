@@ -337,14 +337,18 @@ void poa_addRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeatu
         // update currFeature if we're going ot run again
         if (beforeMaxObservedRunLength) {
             currentRunLengthIndex++;
-            PoaFeatureSplitRleWeight *prevFeature = currFeature;
-            currFeature = PoaFeature_SplitRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
-                                                              currentRunLengthIndex, maxRunLength);
-            prevFeature->nextRunLength = currFeature;
-            currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] =
-                    baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)];
-            currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] =
-                    baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)];
+            if (currFeature->nextRunLength != NULL) {
+                currFeature = currFeature->nextRunLength;
+            } else {
+                PoaFeatureSplitRleWeight *prevFeature = currFeature;
+                currFeature = PoaFeature_SplitRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
+                                                                  currentRunLengthIndex, maxRunLength);
+                prevFeature->nextRunLength = currFeature;
+                currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)] =
+                        baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE)];
+                currFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)] =
+                        baseFeature->weights[PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE)];
+            }
         }
     }
 }
