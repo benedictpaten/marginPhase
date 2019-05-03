@@ -495,8 +495,9 @@ int main(int argc, char *argv[]) {
                                                              bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
                     break;
                 case HFEAT_SPLIT_RLE_WEIGHT:
-                    helenFeatureOutfileBase = stString_print("%s.splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                             outputBase, chunkIdx, bamChunk->refSeqName,
+                    // name of folder, not of file
+                    helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                             chunkIdx, bamChunk->refSeqName,
                                                              bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
                     break;
                 default:
