@@ -1481,6 +1481,27 @@ char *rleString_expand(RleString *rleString) {
 	return s;
 }
 
+int64_t getRunLengthMode(Symbol base, stList *observations, stList *rleReads) {
+    stHash *runLengths = stHash_construct();
+    int64_t maxCount = 0;
+    int64_t maxRL = 0;
+    for (int64_t i = 0; i < stList_length(observations); i++) {
+        PoaBaseObservation *obs = stList_get(observations, i);
+        RleString *rleString = stList_get(rleReads, obs->readNo);
+        if (symbol_convertCharToSymbol(rleString->rleString[obs->offset]) != base) continue;
+        int64_t obvsRL = rleString->repeatCounts[obs->offset];
+        int64_t currRlCount = (int64_t) stHash_remove(runLengths, (void*) obvsRL) + 1;
+        if (currRlCount > maxCount) {
+            maxCount = currRlCount;
+            maxRL = obvsRL;
+        }
+        stHash_insert(runLengths, (void*) obvsRL, (void*) currRlCount);
+    }
+    stHash_destruct(runLengths);
+
+    return maxRL;
+}
+
 static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
 	// Pick the base
 	double maxBaseWeight = node->baseWeights[0];
@@ -1492,6 +1513,11 @@ static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, stList *bamC
 		}
 	}
 	char base = symbol_convertSymbolToChar(maxBaseIndex);
+
+	// for an experiment, or case with no repeat matrix
+	if (repeatSubMatrix == NULL) {
+	    return getRunLengthMode(symbol_convertCharToSymbol(base), node->observations, rleReads);
+	}
 
 	// Repeat count
 	double logProbability;

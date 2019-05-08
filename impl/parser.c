@@ -367,6 +367,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->candidateVariantWeight = 0.2;
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
+    params->repeatSubMatrix = NULL;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
@@ -506,7 +507,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     }
 
     if(!gotRepeatCountMatrix) {
-    	st_errAbort("ERROR: Did not find repeat counts specified in json polish params\n");
+    	st_logCritical("ERROR: Did not find repeat counts specified in json polish params! Will default to MODE estimation\n");
     }
     if(!gotHmm) {
     	st_errAbort("ERROR: Did not find HMM specified in json polish params\n");
@@ -528,7 +529,7 @@ void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
 }
 
 void polishParams_destruct(PolishParams *params) {
-	repeatSubMatrix_destruct(params->repeatSubMatrix);
+	if (params->repeatSubMatrix != NULL) repeatSubMatrix_destruct(params->repeatSubMatrix);
 	stateMachine_destruct(params->sM);
 	hmm_destruct(params->hmm);
 	pairwiseAlignmentBandingParameters_destruct(params->p);

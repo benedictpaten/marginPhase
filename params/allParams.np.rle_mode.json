@@ -1,0 +1,145 @@
+{
+	"polish": {
+		  "hmm" : {
+		  		"type" : 2, 
+		  		
+		  		"transitions": [ 
+		  			0.900000, 0.050000, 0.050000, 
+		  			0.500000, 0.500000, 0.000000, 
+		  			0.500000, 0.000000, 0.500000 
+		  		],
+		  		
+		  		"emissions": [
+		  			0.8, 0.066666, 0.066666, 0.066666,
+		  			0.066666, 0.8, 0.066666, 0.066666,
+		  			0.066666, 0.066666, 0.8, 0.066666,
+		  			0.066666, 0.066666, 0.066666, 0.8, 
+		  			
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000, 
+		  			0.025000, 0.025000, 0.025000, 0.025000	
+		  		]
+		  },
+		
+		  "useRunLengthEncoding" : true,
+		
+		  "includeSoftClipping" : false,
+		
+		  "chunkSize" : 1000,
+		
+		  "chunkBoundary" : 50,
+		
+		  "maxDepth" : 64,
+		
+		  "referenceBasePenalty" : 0.5,
+		  
+		  "minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
+		  
+		  "candidateVariantWeight" : 0.18,
+		  
+		  "columnAnchorTrim" : 5,
+		  
+		  "maxConsensusStrings" : 100,
+		  
+		  "maxPoaConsensusIterations" : 0, 
+		  
+		  "minPoaConsensusIterations" : 0,
+			
+		  "maxRealignmentPolishIterations" : 2,
+		
+		  "minRealignmentPolishIterations" : 2, 
+		  
+		  "minReadsToCallConsensus" : 5,
+		  
+		  "filterReadsWhileHaveAtLeastThisCoverage" : 15,
+	
+		  "minAvgBaseQuality" : 10,
+		  
+		  "pairwiseAlignmentParameters" : {
+			    "threshold" : 0.01,
+			    "minDiagsBetweenTraceBack" : 10000,
+			    "traceBackDiagonals" : 40,
+			    "diagonalExpansion" : 10,
+			    "constraintDiagonalTrim" : 0,
+			    "anchorMatrixBiggerThanThis" : 250000,
+			    "repeatMaskMatrixBiggerThanThis" : 250000000,
+			    "splitMatrixBiggerThanThis" : 250000000,
+			    "alignAmbiguityCharacters" : false,
+			    "dynamicAnchorExpansion" : true,
+			    "gapGamma" : 0.5
+		  }
+	},
+	"phase" : {
+		  "alphabet" : [ "Aa", "Cc", "Gg", "Tt", "-" ],
+		
+		  "wildcard" : "Nn",
+		
+		  "haplotypeSubstitutionModel" : [
+		    0.9993, 0.0001, 0.0004, 0.0001, 0.0001,
+		    0.0001, 0.9993, 0.0001, 0.0004, 0.0001,
+		    0.0004, 0.0001, 0.9993, 0.0001, 0.0001,
+		    0.0001, 0.0004, 0.0001, 0.9993, 0.0001,
+		    0.0001, 0.0001, 0.0001, 0.0001, 0.9996
+		  ],
+		
+		  "readErrorModel" : [
+		    0.95956038,    0.00768823,    0.02313562,    0.00951578,    0.00009999,
+		    0.01216431,    0.94530676,    0.00747140,    0.03495754,    0.00009999,
+		    0.03353173,    0.00747909,    0.94699127,    0.01189791,    0.00009999,
+		    0.00950825,    0.02377039,    0.00805501,    0.95856636,    0.00009999,
+		    0.00961502,    0.00961502,    0.00961502,    0.00961502,    0.96153992
+		  ],
+		
+		  "maxNotSumTransitions" : true,
+		
+		  "minPartitionsInAColumn" : 100,
+		
+		  "maxPartitionsInAColumn" : 100,
+		
+		  "minPosteriorProbabilityForPartition" : 0.0,
+		
+		  "maxCoverageDepth" : 64,
+		
+		  "minReadCoverageToSupportPhasingBetweenHeterozygousSites" : 2,
+		
+		  "onDiagonalReadErrorPseudoCount" : 1000,
+		
+		  "offDiagonalReadErrorPseudoCount" : 10,
+		
+		  "trainingIterations" : 0,
+		
+		  "estimateReadErrorProbsEmpirically" : false,
+		
+		  "filterBadReads" : false,
+		
+		  "filterMatchThreshold" : 0.8,
+		
+		  "useReferencePrior" : true,
+		
+		  "includeInvertedPartitions" : true,
+		
+		  "filterLikelyHomozygousSites" : true,
+		
+		  "minSecondMostFrequentBaseFilter" : 0,
+		
+		  "minSecondMostFrequentBaseLogProbFilter" : 20,
+		
+		  "gapCharactersForDeletions" : false,
+		
+		  "filterAReadWithAnyOneOfTheseSamFlagsSet" : 3840,
+		
+		  "compareVCFs" : false,
+		
+		  "writeGVCF" : false,
+		
+		  "roundsOfIterativeRefinement": 10,
+		
+		  "verbose" : 0
+	}
+}
