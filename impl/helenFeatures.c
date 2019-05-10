@@ -12,6 +12,9 @@
 
 #endif
 
+#define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT TRUE
+//#define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT FALSE
+
 
 PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos) {
     PoaFeatureSimpleWeight *feature = st_calloc(1, sizeof(PoaFeatureSimpleWeight));
@@ -1827,6 +1830,14 @@ void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFile
         // iterate over all insert features
         PoaFeatureSplitRleWeight *insFeature = refFeature;
         while (insFeature != NULL) {
+
+            // TODO find out if this is better and keep or remove
+            if (!INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT) {
+                totalWeight = 0;
+                for (int64_t j = 0; j < rleNucleotideColumnCount; j++) {
+                    totalWeight += insFeature->weights[j];
+                }
+            }
 
             // iterate over all run length features
             PoaFeatureSplitRleWeight *rlFeature = insFeature;
