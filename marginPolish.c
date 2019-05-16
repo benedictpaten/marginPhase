@@ -26,12 +26,10 @@
 void usage() {
     fprintf(stderr, "usage: marginPolish <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
     fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
-    fprintf(stderr, "Polishes an assembly using the reads in a BAM file and produces:\n");
-    fprintf(stderr, "    1) a fasta file giving an updated reference.\n");
-    fprintf(stderr, "    2) and (optionally) a SAM/BAM/CRAM file of the reads giving their alignment to the updated reference\n");
+    fprintf(stderr, "Polishes the ASSEMBLY_FASTA using alignments in BAM_FILE.\n");
 
     fprintf(stderr, "\nRequired arguments:\n");
-    fprintf(stderr, "    BAM_FILE BAM_FILE is the alignment of reads to the assembly (or reference).\n");
+    fprintf(stderr, "    BAM_FILE is the alignment of reads to the assembly (or reference).\n");
     fprintf(stderr, "    ASSEMBLY_FASTA is the reference sequence BAM file in fasta format.\n");
     fprintf(stderr, "    PARAMS is the file with marginPolish parameters.\n");
 
