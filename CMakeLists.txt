@@ -1,16 +1,19 @@
-cmake_minimum_required(VERSION 3.7)
-project(marginPhase)
+cmake_minimum_required(VERSION 3.5)
+project(marginPhase VERSION 1.1.0)
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
-#include(FindOpenMP)
-#if(OPENMP_FOUND)
-#    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-#    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-#endif()
+project(marginPhase LANGUAGES C)
+
+include(GNUInstallDirs)
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
+
+###############################
+##### HEADERS AND SOURCES #####
+###############################
 
 set(HTSLIB_HEADERS
         externalTools/htslib
@@ -25,11 +28,30 @@ set(SONLIB_HEADERS
         externalTools/sonLib/externalTools/cutest
         externalTools/sonLib/externalTools/quicktree_1.1/include
         )
+set(CPECAN_HEADERS
+        externalTools/cPecan/inc
+        externalTools/cPecan/tests
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src
+        )
+set(SSW_HEADERS
+        externalTools/ssw/
+        )
 
 include_directories(inc)
+include_directories(externalTools/samtools)
 include_directories(${HTSLIB_HEADERS})
 include_directories(${SONLIB_HEADERS})
-include_directories(externalTools/jsmn)
+include_directories(${CPECAN_HEADERS})
+include_directories(${SSW_HEADERS})
+
+file(GLOB MARGIN_CORE_HEADERS
+        inc/*.h
+        externalTools/sonLib/C/inc/*.h
+        externalTools/sonLib/C/impl/*.h
+        externalTools/sonLib/externalTools/quicktree_1.1/include/*.h
+        externalTools/cPecan/inc/*.h
+        externalTools/cPecan/externalTools/lastz-distribu-1.03.54/src/*.h
+        )
 
 set(HTSLIB_SOURCES
         externalTools/htslib/cram/cram_codecs.c
@@ -73,7 +95,7 @@ set(HTSLIB_SOURCES
         externalTools/htslib/hfile_gcs.c
         externalTools/htslib/hfile_libcurl.c
         externalTools/htslib/hfile_net.c
-        externalTools/htslib/hfile_s3.c
+        #externalTools/htslib/hfile_s3.c
         externalTools/htslib/hts.c
         externalTools/htslib/htsfile.c
         externalTools/htslib/kfunc.c
@@ -117,7 +139,7 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/impl/sonLibHash.c
         externalTools/sonLib/C/impl/sonLibKVDatabase.c
         externalTools/sonLib/C/impl/sonLibKVDatabase_BigRecordFile.c
-        externalTools/sonLib/C/impl/sonLibKVDatabase_KyotoTycoon.cpp
+        #externalTools/sonLib/C/impl/sonLibKVDatabase_KyotoTycoon.cpp
         externalTools/sonLib/C/impl/sonLibKVDatabase_MySql.c
         externalTools/sonLib/C/impl/sonLibKVDatabase_TokyoCabinet.c
         externalTools/sonLib/C/impl/sonLibKVDatabaseConf.c
@@ -138,6 +160,8 @@ set(SONLIB_SOURCES
         externalTools/sonLib/C/impl/stSafeC.c
         externalTools/sonLib/C/impl/stThreadPool.c
         externalTools/sonLib/C/impl/stUnionFind.c
+        externalTools/sonLib/C/impl/stJson.c
+        externalTools/sonLib/C/impl/jsmn.c
         externalTools/sonLib/C/tests/allTests.c
         externalTools/sonLib/C/tests/cigarsTest.c
         externalTools/sonLib/C/tests/fastaCTest.c
@@ -188,78 +212,204 @@ set(SONLIB_SOURCES
         externalTools/sonLib/externalTools/quicktree_1.1/src/util.c
         )
 
-set(SOURCE_FILES
+set(LASTZ_SOURCES
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/align_diffs.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/axt.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/capsule.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/chain.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/cigar.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/continuity_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/coverage_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/diag_hash.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/dna_utilities.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/edit_script.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gapped_extend.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/genpaf.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/gfa.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/identity_dist.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/infer_scores.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lastz.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/lav.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/maf.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/masking.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/output.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/pos_table.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/quantum.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sam.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seed_search.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/seeds.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/segment.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/sequences.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/text_align.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/tweener.c
+        externalTools/cPecan/externalTools/lastz-distrib-1.03.54/src/utilities.c
+        )
+       
+set(CPECAN_SOURCES
+        externalTools/cPecan/impl/multipleAligner.c
+        externalTools/cPecan/impl/pairwiseAligner.c
+        externalTools/cPecan/impl/stateMachine.c
+        externalTools/cPecan/impl/randomSequences.c
+        externalTools/cPecan/tests/allTests.c
+        externalTools/cPecan/tests/multipleAlignerTest.c
+        externalTools/cPecan/tests/pairwiseAlignerLongTest.c
+        externalTools/cPecan/tests/pairwiseAlignerTest.c
+        )
+
+set(SSW_SOURCES
+        externalTools/ssw/ssw.c
+        )
+
+set(CORE_SOURCE_FILES
+        impl/callConsensus.c
+        impl/chunker.c
         impl/column.c
         impl/coordination.c
         impl/emissions.c
         impl/genomeFragment.c
+        impl/helenFeatures.c
         impl/hmm.c
         impl/mergeColumn.c
+        impl/outputWriter.c
+        impl/parser.c
         impl/partitions.c
+        impl/polisher.c
         impl/profileSeq.c
         impl/referencePriorProbs.c
-        impl/parser.c
-        impl/outputWriter.c
-        impl/vcfTools.c
+        impl/view.c
         )
 
 
-# Dependencies for htslib
+set(SOURCE_FILES
+        impl/htsIntegration.c
+        impl/vcfComparison.c
+        externalTools/samtools/bedidx.c
+        )
+
+###############################
+########## LIBRARIES ##########
+###############################
+
+# so we can generate margin.so
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Dependencies
 find_library(ZLIB NAMES z)
 if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'z' library")
+    message(WARNING "Couldn't find the 'z' library")
 endif()
 
 find_library(BZ2LIB bz2)
 if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'bz2' library")
-endif()
-
-find_library(LZMALIB lzma)
-if(${LZMALIB} STREQUAL "LZMALIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'lzma' library")
-endif()
-
-find_library(CURLLIB curl)
-if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'curl' library")
-endif()
-
-find_library(CRYPTOLIB crypto)
-if(${CRYPTOLIB} STREQUAL "CRYPTOLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'crypto' library")
+    message(WARNING "Couldn't find the 'bz2' library")
 endif()
 
 find_library(PTHREADLIB pthread)
 if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
-    message(FATAL_ERROR "Couldn't find the 'pthread' library")
+    message(WARNING "Couldn't find the 'pthread' library")
 endif()
 
+find_library(CURLLIB curl)
+if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
+    message(WARNING "Couldn't find the 'curl' library")
+endif()
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
+
+
+find_package(HDF5)
+if(HDF5_FOUND)
+    include_directories(${HDF5_INCLUDE_DIR})
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_HDF5 ")
+else()
+    message(WARNING "Couldn't find HDF5 library")
+endif()
+
+# LASTZ
+add_library(lastz ${LASTZ_SOURCES})
+target_compile_options(lastz PUBLIC -c -O3 -Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DVERSION_MAJOR=\"1\" -DVERSION_MINOR=\"03\" -DVERSION_SUBMINOR=\"54\" -DREVISION_DATE=\"20140128\" -DSUBVERSION_REV=\"1827:1830\" -Dscore_type='D')
+
+# cPecanLastz
+add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
+        COMMAND cd ${PROJECT_SOURCE_DIR}/externalTools/sonLib && make
+        COMMAND make
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/cPecan/
+)
+add_custom_target(CPECANLASTZ DEPENDS lastz "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz")
+
+# MISC
+add_library(son ${SONLIB_SOURCES})
+add_library(cpecan ${CPECAN_SOURCES})
+add_dependencies(cpecan CPECANLASTZ)
+add_dependencies(cpecan lastz)
+target_link_libraries(cpecan m)
+
+
+# Build MarginCore Library
+add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
+target_link_libraries(MarginCore cpecan son)
+
+# Install command for MarginCore
+set_target_properties(MarginCore PROPERTIES
+        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}"
+        VERSION ${marginPhase_VERSION}
+        SOVERSION ${marginPhase_VERSION})
+install(TARGETS MarginCore
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION include/marginPhase
+        )
+
+# HTSLIB
 add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
         COMMAND autoheader
-        COMMAND ./configure
+        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins
         COMMAND make
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
-
-add_library(son ${SONLIB_SOURCES})
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
-add_library(jsmn externalTools/jsmn/jsmn.c)
+target_link_libraries(hts pthread bz2 z curl)
 
-target_link_libraries(hts pthread crypto bz2 lzma z curl)
+# Build MarginCore Library
+add_library(margin ${SOURCE_FILES})
+target_link_libraries(margin MarginCore hts)
+if (HDF5_FOUND)
+    target_link_libraries(margin ${HDF5_C_LIBRARIES})
+endif()
 
-add_executable(marginPhase marginPhase.c ${SOURCE_FILES})
-target_link_libraries(marginPhase son hts jsmn)
 
-add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES})
-target_link_libraries(vcfCompare son hts jsmn)
+###############################
+######### EXECUTABLES #########
+###############################
 
+add_executable(marginPhase marginPhase.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(marginPhase margin)
+
+add_executable(marginPolish marginPolish.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(marginPolish margin)
+
+add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+target_link_libraries(vcfCompare margin)
 
 enable_testing()
-add_executable(allTests tests/allTests.c tests/marginPhaseTest.c tests/stRPHmmTest.c tests/parserTest.c ${SOURCE_FILES})
-target_link_libraries(allTests hts son jsmn)
-add_test(stRPHmm allTests)
+add_executable(allTests
+        tests/allTests.c
+        tests/marginPhaseTest.c
+        tests/stRPHmmTest.c
+        tests/parserTest.c
+        tests/chunkingTest.c
+        tests/polisherTest.c
+        tests/viewTest.c
+        tests/callConsensusTest.c
+        tests/featureTest.c
+        )
+target_link_libraries(allTests margin)

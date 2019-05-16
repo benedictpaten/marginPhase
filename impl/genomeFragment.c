@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stRPHmm.h"
+#include "margin.h"
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     /*
@@ -155,6 +155,8 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, 
                             "and %" PRIi64 " reads from partition 2 switching to 1\n",
                     iteration, stSet_size(reads1To2), stSet_size(reads2To1));
         if(stSet_size(reads1To2) + stSet_size(reads2To1) == 0) {
+        	stSet_destruct(reads1To2);
+        	stSet_destruct(reads2To1);
             break;
         }
 

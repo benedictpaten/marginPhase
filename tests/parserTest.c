@@ -5,8 +5,8 @@
  */
 
 #include "CuTest.h"
-#include "sonLib.h"
-#include "stRPHmm.h"
+#include "margin.h"
+#include "htsIntegration.h"
 
 /*
  * Test that a bam file is read in correctly.
@@ -19,11 +19,12 @@
  */
 void test_bamReadParsing(CuTest *testCase) {
 
-    char *bamFile = "../tests/NA12878.pb.chr3.5kb.bam";
-    char *paramsFile = "../tests/parsingTest.json";
+    char *bamFile = "../tests/data/NA12878.pb.chr3.5kb.bam";
+    char *paramsFile = "../tests/data/parsingTest.json";
 
-    stBaseMapper *baseMapper = stBaseMapper_construct();
-    stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
+    stBaseMapper *baseMapper = fullParams->baseMapper;
+    stRPHmmParameters *params = fullParams->phaseParams;
 
     // Parse reads for interval
     st_logInfo("> Parsing input reads\n");
@@ -96,8 +97,8 @@ void test_bamReadParsing(CuTest *testCase) {
     int64_t cigarOp = -1;
     int64_t cigarNum = -1;
     int64_t idxInSeq = start_read;
-    char *firstMatches = st_calloc(18, sizeof(char));
-    char *lastMatches = st_calloc(29, sizeof(char));
+    char *firstMatches = st_calloc(19, sizeof(char));
+    char *lastMatches = st_calloc(30, sizeof(char));
     // For each position turn character into profile probability
     // As is, this makes the probability 1 for the base read in, and 0 otherwise
     for (uint32_t i = 0; i < trueLength; i++) {
@@ -163,88 +164,98 @@ void test_bamReadParsing(CuTest *testCase) {
     CuAssertDblEquals(testCase, getProb(p, 4), 0.0, delta);
 
     // Cleanup
-    stBaseMapper_destruct(baseMapper);
-    stRPHmmParameters_destruct(params);
+    params_destruct(fullParams);
     stList_destruct(profileSequences);
 }
 
 
 void test_jsmnParsing(CuTest *testCase) {
 
-    char *paramsFile = "../tests/parsingTest.json";
+    char *paramsFiles[2] = {"../tests/data/parsingTest.json", "../tests/data/parsingTest.allParams.json"};
 
-    stBaseMapper *baseMapper = stBaseMapper_construct();
-    stRPHmmParameters *params = parseParameters(paramsFile, baseMapper);
+    for (int p = 0; p < 2; p++) {
+        char *paramsFile = paramsFiles[p];
 
-    // Check that alphabet was parsed as expected, and that conversions
-    // between types of bases work properlu
-    CuAssertIntEquals(testCase, baseMapper->size, 5);
-    CuAssertStrEquals(testCase, baseMapper->wildcard, "Nn");
+        Params *fullParams = params_readParams2(paramsFile, FALSE, TRUE);
+        stBaseMapper *baseMapper = fullParams->baseMapper;
+        stRPHmmParameters *params = fullParams->phaseParams;
 
-    // Check that numerical bases are mapped to characters correctly
-    CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 0), 'A');
-    CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 1), 'C');
-    CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 2), 'G');
-    CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 3), 'T');
-    CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 4), '-');
+        // Check that alphabet was parsed as expected, and that conversions
+        // between types of bases work properlu
+        CuAssertIntEquals(testCase, baseMapper->size, 5);
+        CuAssertStrEquals(testCase, baseMapper->wildcard, "Nn");
+
+        // Check that numerical bases are mapped to characters correctly
+        CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 0), 'A');
+        CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 1), 'C');
+        CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 2), 'G');
+        CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 3), 'T');
+        CuAssertIntEquals(testCase, stBaseMapper_getCharForValue(baseMapper, 4), '-');
 
 
-    // Check that character bases are mapped to numbers correctly
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'A'), 0);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'a'), 0);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'C'), 1);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'c'), 1);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'G'), 2);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'g'), 2);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'T'), 3);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 't'), 3);
-    CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, '-'), 4);
+        // Check that character bases are mapped to numbers correctly
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'A'), 0);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'a'), 0);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'C'), 1);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'c'), 1);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'G'), 2);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'g'), 2);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 'T'), 3);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, 't'), 3);
+        CuAssertIntEquals(testCase, stBaseMapper_getValueForChar(baseMapper, '-'), 4);
 
-    // Check stRPHmmParameters
+        // Check stRPHmmParameters
 
-    // Check haplotype substitution model and error model parsed correctly
-    // and that the proper values were set in the model parameters
-    double delta = 0.0001;
-    for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++) {
-            if (i < 4 && j < 4) {
-                if (i == j) {
-                    CuAssertDblEquals(testCase, params->hetSubModelSlow[i*5+j], log(0.998), delta);
-                    CuAssertDblEquals(testCase, params->hetSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.998)), delta);
-                    CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i*5+j], log(0.9), delta);
-                    CuAssertDblEquals(testCase, params->readErrorSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.9)), delta);
+        // Check haplotype substitution model and error model parsed correctly
+        // and that the proper values were set in the model parameters
+        double delta = 0.0001;
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                if (i < 4 && j < 4) {
+                    if (i == j) {
+                        CuAssertDblEquals(testCase, params->hetSubModelSlow[i * 5 + j], log(0.998), delta);
+                        CuAssertDblEquals(testCase, params->hetSubModel[i * 5 + j],
+                                          scaleToLogIntegerSubMatrix(log(0.998)), delta);
+                        CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i * 5 + j], log(0.9), delta);
+                        CuAssertDblEquals(testCase, params->readErrorSubModel[i * 5 + j],
+                                          scaleToLogIntegerSubMatrix(log(0.9)), delta);
+                    } else {
+                        CuAssertDblEquals(testCase, params->hetSubModelSlow[i * 5 + j], log(0.000333), delta);
+                        CuAssertDblEquals(testCase, params->hetSubModel[i * 5 + j],
+                                          scaleToLogIntegerSubMatrix(log(0.000333)), delta);
+                        CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i * 5 + j], log(0.01), delta);
+                        CuAssertDblEquals(testCase, params->readErrorSubModel[i * 5 + j],
+                                          scaleToLogIntegerSubMatrix(log(0.01)), delta);
+                    }
+                } else if (i != j) {
+                    CuAssertDblEquals(testCase, params->hetSubModelSlow[i * 5 + j], log(0.001), delta);
+                    CuAssertDblEquals(testCase, params->hetSubModel[i * 5 + j], scaleToLogIntegerSubMatrix(log(0.001)),
+                                      delta);
+                    CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i * 5 + j], log(0.07), delta);
+                    CuAssertDblEquals(testCase, params->readErrorSubModel[i * 5 + j],
+                                      scaleToLogIntegerSubMatrix(log(0.07)), delta);
                 } else {
-                    CuAssertDblEquals(testCase, params->hetSubModelSlow[i*5+j], log(0.000333), delta);
-                    CuAssertDblEquals(testCase, params->hetSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.000333)), delta);
-                    CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i*5+j], log(0.01), delta);
-                    CuAssertDblEquals(testCase, params->readErrorSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.01)), delta);
+                    CuAssertDblEquals(testCase, params->hetSubModelSlow[i * 5 + j], log(0.996), delta);
+                    CuAssertDblEquals(testCase, params->hetSubModel[i * 5 + j], scaleToLogIntegerSubMatrix(log(0.996)),
+                                      delta);
+                    CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i * 5 + j], log(0.72), delta);
+                    CuAssertDblEquals(testCase, params->readErrorSubModel[i * 5 + j],
+                                      scaleToLogIntegerSubMatrix(log(0.72)), delta);
                 }
             }
-            else if (i != j) {
-                CuAssertDblEquals(testCase, params->hetSubModelSlow[i*5+j], log(0.001), delta);
-                CuAssertDblEquals(testCase, params->hetSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.001)), delta);
-                CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i*5+j], log(0.07), delta);
-                CuAssertDblEquals(testCase, params->readErrorSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.07)), delta);
-            } else {
-                CuAssertDblEquals(testCase, params->hetSubModelSlow[i*5+j], log(0.996), delta);
-                CuAssertDblEquals(testCase, params->hetSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.996)), delta);
-                CuAssertDblEquals(testCase, params->readErrorSubModelSlow[i*5+j], log(0.72), delta);
-                CuAssertDblEquals(testCase, params->readErrorSubModel[i*5+j], scaleToLogIntegerSubMatrix(log(0.72)), delta);
-            }
         }
-    }
-    // Check remaining parameters parsed correctly
-    CuAssertTrue(testCase, params->maxNotSumTransitions);
-    CuAssertIntEquals(testCase, params->maxPartitionsInAColumn, 50);
-    CuAssertIntEquals(testCase, params->maxCoverageDepth, 64);
-    CuAssertIntEquals(testCase, params->minReadCoverageToSupportPhasingBetweenHeterozygousSites, 4);
+        // Check remaining parameters parsed correctly
+        CuAssertTrue(testCase, params->maxNotSumTransitions);
+        CuAssertIntEquals(testCase, params->maxPartitionsInAColumn, 50);
+        CuAssertIntEquals(testCase, params->maxCoverageDepth, 64);
+        CuAssertIntEquals(testCase, params->minReadCoverageToSupportPhasingBetweenHeterozygousSites, 4);
 
-    // cleanup
-    stBaseMapper_destruct(baseMapper);
-    stRPHmmParameters_destruct(params);
+        // cleanup
+        params_destruct(fullParams);
+    }
 }
 
-CuSuite *marginPhaseParserTestSuite(void) {
+CuSuite *parserTestSuite(void) {
     st_setLogLevelFromString("debug");
     CuSuite* suite = CuSuiteNew();
 

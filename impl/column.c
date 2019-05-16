@@ -4,7 +4,7 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include "stRPHmm.h"
+#include "margin.h"
 
 /*
  * Read partitioning hmm column (stRPColumn) functions
