@@ -391,14 +391,14 @@ endif()
 ######### EXECUTABLES #########
 ###############################
 
-add_executable(marginPhase marginPhase.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(marginPhase margin)
-
 add_executable(marginPolish marginPolish.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
 target_link_libraries(marginPolish margin)
 
-add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
-target_link_libraries(vcfCompare margin)
+#add_executable(marginPhase marginPhase.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+#target_link_libraries(marginPhase margin)
+
+#add_executable(vcfCompare vcfCompare.c ${SOURCE_FILES} ${CORE_SOURCE_FILES})
+#target_link_libraries(vcfCompare margin)
 
 enable_testing()
 add_executable(allTests

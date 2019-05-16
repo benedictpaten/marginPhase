@@ -7,8 +7,8 @@
 #include "CuTest.h"
 #include "margin.h"
 
-CuSuite *stRPHmmTestSuite(void);
-CuSuite *marginPhaseTestSuite(void);
+//CuSuite *stRPHmmTestSuite(void);
+//CuSuite *marginPhaseTestSuite(void);
 CuSuite* polisherTestSuite(void);
 CuSuite* parserTestSuite(void);
 CuSuite* viewTestSuite(void);
@@ -22,9 +22,9 @@ int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+//	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, parserTestSuite());
-	CuSuiteAddSuite(suite, marginPhaseTestSuite());
 	CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
