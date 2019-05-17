@@ -43,18 +43,19 @@ void usage() {
     fprintf(stderr, "    -r --region              : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                                 Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
 
+    # ifdef _HDF5
     fprintf(stderr, "\nHELEN feature generation options:\n");
-    fprintf(stderr, "    -f --outputFeatureType   : output features of chunks for HELEN.  Valid types:\n");
-    fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
+    fprintf(stderr, "    -f --produceFeatures     : output features for HELEN.\n");
+    fprintf(stderr, "    -F --featureType         : output features of chunks for HELEN.  Valid types:\n");
+    fprintf(stderr, "                                 splitRleWeight:  [default] run lengths split into chunks\n");
+    fprintf(stderr, "                                 nuclAndRlWeight: split into nucleotide and run length (RL across nucleotides)\n");
     fprintf(stderr, "                                 rleWeight:       weighted likelihood from POA nodes (RLE)\n");
-    fprintf(stderr, "                                 nuclAndRlWeight: weighted likelihood, split into nucleotide and run length\n");
-    fprintf(stderr, "                                 splitRleWeight:  weighted likelihood, with run lengths split into chunks\n");
+    fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
     fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' type only) [default = %d]\n", POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT);
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
-    fprintf(stderr, "    -5 --hdf5Only            : only output H5 feature files.  Default behavior is to output\n");
-    fprintf(stderr, "                               h5, tsv, and fa for each chunk.\n");
+    # endif
 
     fprintf(stderr, "\nMiscellaneous supplementary output options:\n");
     fprintf(stderr, "    -i --outputRepeatCounts  : Output base to write out the repeat counts [default = NULL]\n");
@@ -71,7 +72,6 @@ int main(int argc, char *argv[]) {
     char *referenceFastaFile = NULL;
     char *outputBase = stString_copy("output");
     char *regionStr = NULL;
-    int64_t verboseBitstring = -1;
     int numThreads = 1;
     char *outputRepeatCountBase = NULL;
     char *outputPoaTsvBase = NULL;
@@ -80,11 +80,9 @@ int main(int argc, char *argv[]) {
     HelenFeatureType helenFeatureType = HFEAT_NONE;
     char *trueReferenceBam = NULL;
     BamChunker *trueReferenceChunker = NULL;
-    bool fullFeatureOutput = TRUE;
+    bool fullFeatureOutput = FALSE;
     int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
     void **splitWeightHDF5Files = NULL;
-
-    // TODO: When done testing, optionally set random seed using st_randomSeed();
 
     if(argc < 4) {
         free(outputBase);
@@ -107,17 +105,16 @@ int main(int argc, char *argv[]) {
                 #endif
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
-                { "verbose", required_argument, 0, 'v'},
-                { "outputFeatureType", required_argument, 0, 'f'},
+                { "produceFeatures", no_argument, 0, 'f'},
+                { "featureType", required_argument, 0, 'F'},
                 { "trueReferenceBam", required_argument, 0, 'u'},
-                { "hdf5Only", no_argument, 0, '5'},
                 { "splitRleWeightMaxRL", required_argument, 0, 'L'},
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:f:u:h5L:i:j:t:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:fF:u:hL:i:j:t:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -138,16 +135,13 @@ int main(int argc, char *argv[]) {
         case 'r':
             regionStr = stString_copy(optarg);
             break;
-        case 'v':
-            verboseBitstring = atoi(optarg);
-            break;
         case 'i':
         	outputRepeatCountBase = stString_copy(optarg);
         	break;
         case 'j':
             outputPoaTsvBase = stString_copy(optarg);
             break;
-        case 'f':
+        case 'F':
             if (stString_eq(optarg, "simpleWeight")) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
             } else if (stString_eq(optarg, "rleWeight")) {
@@ -165,8 +159,8 @@ int main(int argc, char *argv[]) {
         case 'u':
             trueReferenceBam = stString_copy(optarg);
             break;
-        case '5':
-            fullFeatureOutput = FALSE;
+        case 'f':
+            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_SIMPLE_WEIGHT;
             break;
         case 'L':
             splitWeightMaxRunLength = atoi(optarg);
@@ -191,6 +185,7 @@ int main(int argc, char *argv[]) {
             return 0;
         }
     }
+
     // sanity check (verify files exist)
     if (access(bamInFile, R_OK ) != 0) {
         st_errAbort("Could not read from file: %s\n", bamInFile);
@@ -472,135 +467,15 @@ int main(int argc, char *argv[]) {
         chunkResults[chunkIdx] = polishedConsensusString;
 
         // HELEN feature outputs
+
+        #ifdef _HDF5
         if (helenFeatureType != HFEAT_NONE) {
-            st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
-            // get filename
-            char *helenFeatureOutfileBase = NULL;
-            switch (helenFeatureType) {
-                case HFEAT_SIMPLE_WEIGHT:
-                    helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                             outputBase, chunkIdx, bamChunk->refSeqName,
-                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-                    break;
-                case HFEAT_RLE_WEIGHT:
-                    helenFeatureOutfileBase = stString_print("%s.rleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                             outputBase, chunkIdx, bamChunk->refSeqName,
-                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-                    break;
-                case HFEAT_NUCL_AND_RL_WEIGHT:
-                    helenFeatureOutfileBase = stString_print("%s.nuclAndRlWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                             outputBase, chunkIdx, bamChunk->refSeqName,
-                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-                    break;
-                case HFEAT_SPLIT_RLE_WEIGHT:
-                    // name of folder, not of file
-                    helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                             chunkIdx, bamChunk->refSeqName,
-                                                             bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-                    break;
-                default:
-                    st_errAbort("Unhandled HELEN feature type!\n");
-            }
+            handleHelenFeatures(outputBase, helenFeatureType, trueReferenceBamChunker, splitWeightMaxRunLength,
+                    splitWeightHDF5Files, fullFeatureOutput, trueReferenceBam, params, logIdentifier, chunkIdx,
+                    bamChunk, poa, rleReads, rleNucleotides, polishedConsensusString, polishedRleConsensus);
 
-            // necessary to annotate poa with truth (if true reference BAM has been specified)
-            stList *trueRefAlignment = NULL;
-            RleString *trueRefRleString = NULL;
-            bool validReferenceAlignment = FALSE;
-
-            // get reference chunk
-            if (trueReferenceBam != NULL) {
-                // get alignment of true ref to assembly
-                stList *trueRefReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
-                stList *unused = stList_construct3(0, (void (*)(void *)) stList_destruct);
-                // construct new chunk
-                BamChunk *trueRefBamChunk = bamChunk_copyConstruct(bamChunk);
-                trueRefBamChunk->parent = trueReferenceBamChunker;
-                // get true ref as "read"
-                uint32_t trueAlignmentCount = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
-
-                // poor man's "do we have a unique alignment"
-                if (trueAlignmentCount == 1) {
-                    BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
-
-                    stList *trueRefAlignmentRawSpace = alignConsensusAndTruth(polishedConsensusString, trueRefRead->nucleotides);
-                    if (st_getLogLevel() == debug) {
-                        printMEAAlignment(polishedConsensusString, trueRefRead->nucleotides,
-                                          strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
-                                          trueRefAlignmentRawSpace, NULL, NULL);
-                    }
-
-
-                    // convert to rleSpace if appropriate
-                    if (params->polishParams->useRunLengthEncoding) {
-                        trueRefRleString = rleString_construct(trueRefRead->nucleotides);
-                        trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus,
-                                trueRefRleString, 1, 2, 0);
-                        if (st_getLogLevel() == debug) {
-                            printMEAAlignment(polishedRleConsensus->rleString, trueRefRleString->rleString,
-                                              strlen(polishedRleConsensus->rleString),
-                                              strlen(trueRefRleString->rleString),
-                                              trueRefAlignment, polishedRleConsensus->repeatCounts,
-                                              trueRefRleString->repeatCounts);
-                        }
-                        stList_destruct(trueRefAlignmentRawSpace);
-                    } else {
-                        trueRefRleString = rleString_constructNoRLE(trueRefRead->nucleotides);
-                        trueRefAlignment = trueRefAlignmentRawSpace;
-                    }
-
-
-                    // we found a single alignment of reference
-                    double refLengthRatio = 1.0 * trueRefRleString->length / polishedRleConsensus->length;
-                    double alnLengthRatio = 1.0 * stList_length(trueRefAlignment) / polishedRleConsensus->length;
-                    int refLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - refLengthRatio)));
-                    int alnLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - alnLengthRatio)));
-                    if (stList_length(trueRefAlignment) > 0 && refLengthRatioHundredthsOffOne < 10 &&
-                            alnLengthRatioHundredthsOffOne < 10) {
-                        validReferenceAlignment = TRUE;
-                    } else {
-                        st_logInfo(" %s True reference alignment QC failed:  polished length %"PRId64", true ref length"
-                                   " ratio (true/polished) %f, aligned pairs length ratio (true/polished): %f\n",
-                                   logIdentifier, polishedRleConsensus->length, refLengthRatio, alnLengthRatio);
-                    }
-                }
-
-                stList_destruct(trueRefReads);
-                stList_destruct(unused);
-                bamChunk_destruct(trueRefBamChunk);
-            }
-
-            // either write it, or note that we failed to find a valid reference alignment
-            if (trueReferenceBam != NULL && !validReferenceAlignment) {
-                st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
-            } else {
-                st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
-
-                // write the actual features (type dependent)
-                poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
-                        bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
-                        splitWeightMaxRunLength, splitWeightHDF5Files);
-
-                // write the polished chunk in fasta format
-                if (fullFeatureOutput) {
-                    char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
-                    char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s",
-                                                                      bamChunk->refSeqName,
-                                                                      bamChunk->chunkBoundaryStart,
-                                                                      bamChunk->chunkBoundaryEnd,
-                                                                      helenFeatureOutfileBase);
-                    FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
-                    fastaWrite(polishedConsensusString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
-                    fclose(chunkPolishedRefOutFh);
-                    free(chunkPolishedRefFilename);
-                    free(chunkPolishedRefContigName);
-                }
-            }
-
-            // cleanup
-            free(helenFeatureOutfileBase);
-            if (trueRefAlignment != NULL) stList_destruct(trueRefAlignment);
-            if (trueRefRleString != NULL) rleString_destruct(trueRefRleString);
         }
+        #endif
 
         // report timing
         st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",

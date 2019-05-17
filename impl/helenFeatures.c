@@ -2,15 +2,14 @@
 // Created by tpesout on 3/29/19.
 //
 
+#ifdef _HDF5
+
 #include "margin.h"
+#include "htsIntegration.h"
 #include "helenFeatures.h"
 #include "ssw.h"
-
-#ifdef _HDF5
 #include <hdf5.h>
 #include <omp.h>
-
-#endif
 
 #define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT TRUE
 //#define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT FALSE
@@ -111,6 +110,149 @@ int PoaFeature_SplitRleWeight_gapIndex(int64_t maxRunLength, bool forward) {
     return pos;
 
 }
+
+
+void handleHelenFeatures(
+        // global params
+        char *outputBase, HelenFeatureType helenFeatureType, BamChunker *trueReferenceBamChunker,
+        int64_t splitWeightMaxRunLength, void **splitWeightHDF5Files, bool fullFeatureOutput,
+        char *trueReferenceBam, Params *params,
+
+        // chunk params
+        char *logIdentifier, int64_t chunkIdx, BamChunk *bamChunk, Poa *poa, stList *rleReads, stList *rleNucleotides,
+        char *polishedConsensusString, RleString *polishedRleConsensus) {
+
+    st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
+
+    // get filename
+    char *helenFeatureOutfileBase = NULL;
+    switch (helenFeatureType) {
+        case HFEAT_SIMPLE_WEIGHT:
+            helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     outputBase, chunkIdx, bamChunk->refSeqName,
+                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            break;
+        case HFEAT_RLE_WEIGHT:
+            helenFeatureOutfileBase = stString_print("%s.rleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     outputBase, chunkIdx, bamChunk->refSeqName,
+                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            break;
+        case HFEAT_NUCL_AND_RL_WEIGHT:
+            helenFeatureOutfileBase = stString_print("%s.nuclAndRlWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     outputBase, chunkIdx, bamChunk->refSeqName,
+                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            break;
+        case HFEAT_SPLIT_RLE_WEIGHT:
+            // name of folder, not of file
+            helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     chunkIdx, bamChunk->refSeqName,
+                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            break;
+        default:
+            st_errAbort("Unhandled HELEN feature type!\n");
+    }
+
+    // necessary to annotate poa with truth (if true reference BAM has been specified)
+    stList *trueRefAlignment = NULL;
+    RleString *trueRefRleString = NULL;
+    bool validReferenceAlignment = FALSE;
+
+    // get reference chunk
+    if (trueReferenceBam != NULL) {
+        // get alignment of true ref to assembly
+        stList *trueRefReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+        stList *unused = stList_construct3(0, (void (*)(void *)) stList_destruct);
+        // construct new chunk
+        BamChunk *trueRefBamChunk = bamChunk_copyConstruct(bamChunk);
+        trueRefBamChunk->parent = trueReferenceBamChunker;
+        // get true ref as "read"
+        uint32_t trueAlignmentCount = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
+
+        // poor man's "do we have a unique alignment"
+        if (trueAlignmentCount == 1) {
+            BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
+
+            stList *trueRefAlignmentRawSpace = alignConsensusAndTruth(polishedConsensusString, trueRefRead->nucleotides);
+            if (st_getLogLevel() == debug) {
+                printMEAAlignment(polishedConsensusString, trueRefRead->nucleotides,
+                                  strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
+                                  trueRefAlignmentRawSpace, NULL, NULL);
+            }
+
+
+            // convert to rleSpace if appropriate
+            if (params->polishParams->useRunLengthEncoding) {
+                trueRefRleString = rleString_construct(trueRefRead->nucleotides);
+                trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus,
+                                                             trueRefRleString, 1, 2, 0);
+                if (st_getLogLevel() == debug) {
+                    printMEAAlignment(polishedRleConsensus->rleString, trueRefRleString->rleString,
+                                      strlen(polishedRleConsensus->rleString),
+                                      strlen(trueRefRleString->rleString),
+                                      trueRefAlignment, polishedRleConsensus->repeatCounts,
+                                      trueRefRleString->repeatCounts);
+                }
+                stList_destruct(trueRefAlignmentRawSpace);
+            } else {
+                trueRefRleString = rleString_constructNoRLE(trueRefRead->nucleotides);
+                trueRefAlignment = trueRefAlignmentRawSpace;
+            }
+
+
+            // we found a single alignment of reference
+            double refLengthRatio = 1.0 * trueRefRleString->length / polishedRleConsensus->length;
+            double alnLengthRatio = 1.0 * stList_length(trueRefAlignment) / polishedRleConsensus->length;
+            int refLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - refLengthRatio)));
+            int alnLengthRatioHundredthsOffOne = abs((int) (100 * (1.0 - alnLengthRatio)));
+            if (stList_length(trueRefAlignment) > 0 && refLengthRatioHundredthsOffOne < 10 &&
+                alnLengthRatioHundredthsOffOne < 10) {
+                validReferenceAlignment = TRUE;
+            } else {
+                st_logInfo(" %s True reference alignment QC failed:  polished length %"PRId64", true ref length"
+                           " ratio (true/polished) %f, aligned pairs length ratio (true/polished): %f\n",
+                           logIdentifier, polishedRleConsensus->length, refLengthRatio, alnLengthRatio);
+            }
+        }
+
+        stList_destruct(trueRefReads);
+        stList_destruct(unused);
+        bamChunk_destruct(trueRefBamChunk);
+    }
+
+    // either write it, or note that we failed to find a valid reference alignment
+    if (trueReferenceBam != NULL && !validReferenceAlignment) {
+        st_logInfo(" %s No valid reference alignment was found, skipping HELEN feature output.\n", logIdentifier);
+    } else {
+        st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
+
+        // write the actual features (type dependent)
+        poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
+                               bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
+                               splitWeightMaxRunLength, (SplitRleFeatureHDF5FileInfo**) splitWeightHDF5Files);
+
+        // write the polished chunk in fasta format
+        if (fullFeatureOutput) {
+            char *chunkPolishedRefFilename = stString_print("%s.fa", helenFeatureOutfileBase);
+            char *chunkPolishedRefContigName = stString_print("%s\t%"PRId64"\t%"PRId64"\t%s",
+                                                              bamChunk->refSeqName,
+                                                              bamChunk->chunkBoundaryStart,
+                                                              bamChunk->chunkBoundaryEnd,
+                                                              helenFeatureOutfileBase);
+            FILE *chunkPolishedRefOutFh = fopen(chunkPolishedRefFilename, "w");
+            fastaWrite(polishedConsensusString, chunkPolishedRefContigName, chunkPolishedRefOutFh);
+            fclose(chunkPolishedRefOutFh);
+            free(chunkPolishedRefFilename);
+            free(chunkPolishedRefContigName);
+        }
+    }
+
+    // cleanup
+    free(helenFeatureOutfileBase);
+    if (trueRefAlignment != NULL) stList_destruct(trueRefAlignment);
+    if (trueRefRleString != NULL) rleString_destruct(trueRefRleString);
+}
+
+
 
 stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
 
@@ -762,7 +904,8 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
-        RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength, void** splitWeightHDF5Files) {
+        RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength,
+        SplitRleFeatureHDF5FileInfo** splitWeightHDF5Files) {
     // prep
     int64_t firstMatchedFeature = -1;
     int64_t lastMatchedFeature = -1;
@@ -789,10 +932,8 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                   firstMatchedFeature, lastMatchedFeature);
             }
 
-            #ifdef _HDF5
             writeSimpleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
                                                             firstMatchedFeature, lastMatchedFeature);
-            #endif
 
             break;
 
@@ -815,7 +956,6 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                firstMatchedFeature, lastMatchedFeature);
             }
 
-            #ifdef _HDF5
             if (type == HFEAT_RLE_WEIGHT) {
                 writeRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
                                                 firstMatchedFeature, lastMatchedFeature);
@@ -823,7 +963,6 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                 writeNucleotideAndRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
                                                              firstMatchedFeature, lastMatchedFeature);
             }
-            #endif
             break;
 
         case HFEAT_SPLIT_RLE_WEIGHT:
@@ -838,12 +977,10 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            #ifdef _HDF5
             int64_t threadIdx = omp_get_thread_num();
             writeSplitRleWeightHelenFeaturesHDF5(splitWeightHDF5Files[threadIdx],
                     outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature, lastMatchedFeature,
                     maxRunLength);
-            #endif
             break;
         default:
             st_errAbort("Unhandled HELEN feature type!\n");
@@ -1044,7 +1181,6 @@ void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bo
     free(outputFile);
 }
 
-#ifdef _HDF5
 
 #define HDF5_FEATURE_SIZE 1000
 
@@ -1773,12 +1909,11 @@ void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk
     }
 }
 
-void writeSplitRleWeightHelenFeaturesHDF5(void* hdf5FileInfoVS, char *outputFileBase, BamChunk *bamChunk,
+void writeSplitRleWeightHelenFeaturesHDF5(SplitRleFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
         bool outputLabels, stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive,
         const int64_t maxRunLength) {
 
     herr_t      status = 0;
-    SplitRleFeatureHDF5FileInfo* hdf5FileInfo = (SplitRleFeatureHDF5FileInfo*) hdf5FileInfoVS;
 
     /*
      * Get feature data set up

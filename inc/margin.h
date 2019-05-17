@@ -1104,4 +1104,19 @@ void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList 
  * For logging while multithreading
  */
 char *getLogIdentifier();
+
+/*
+ * HELEN Features
+ */
+
+typedef enum {
+	HFEAT_NONE=0,
+	HFEAT_SIMPLE_WEIGHT=1,
+	HFEAT_RLE_WEIGHT=2,
+	HFEAT_NUCL_AND_RL_WEIGHT=3,
+	HFEAT_SPLIT_RLE_WEIGHT=4,
+} HelenFeatureType;
+
+#define POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT 10
+
 #endif /* ST_RP_HMM_H_ */
