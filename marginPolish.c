@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
             trueReferenceBam = stString_copy(optarg);
             break;
         case 'f':
-            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_SIMPLE_WEIGHT;
+            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
             break;
         case 'L':
             splitWeightMaxRunLength = atoi(optarg);
