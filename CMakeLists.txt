@@ -304,11 +304,6 @@ if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
     message(WARNING "Couldn't find the 'bz2' library")
 endif()
 
-find_library(PTHREADLIB pthread)
-if(${PTHREADLIB} STREQUAL "PTHREADLIB-NOTFOUND")
-    message(WARNING "Couldn't find the 'pthread' library")
-endif()
-
 find_library(CURLLIB curl)
 if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
     message(WARNING "Couldn't find the 'curl' library")
@@ -320,7 +315,6 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
-
 
 find_package(HDF5)
 if(HDF5_FOUND)
@@ -370,7 +364,7 @@ add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
         COMMAND autoheader
-        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins
+        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins --disable-bz2
         COMMAND make
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
@@ -401,15 +395,30 @@ target_link_libraries(marginPolish margin)
 #target_link_libraries(vcfCompare margin)
 
 enable_testing()
-add_executable(allTests
-        tests/allTests.c
-        tests/marginPhaseTest.c
-        tests/stRPHmmTest.c
-        tests/parserTest.c
-        tests/chunkingTest.c
-        tests/polisherTest.c
-        tests/viewTest.c
-        tests/callConsensusTest.c
-        tests/featureTest.c
-        )
+
+if (HDF5_FOUND)
+    add_executable(allTests
+            tests/allTests.c
+            tests/marginPhaseTest.c
+            tests/stRPHmmTest.c
+            tests/parserTest.c
+            tests/chunkingTest.c
+            tests/polisherTest.c
+            tests/viewTest.c
+            tests/callConsensusTest.c
+            tests/featureTest.c
+            )
+else()
+
+    add_executable(allTests
+            tests/allTests.c
+            tests/marginPhaseTest.c
+            tests/stRPHmmTest.c
+            tests/parserTest.c
+            tests/chunkingTest.c
+            tests/polisherTest.c
+            tests/viewTest.c
+            tests/callConsensusTest.c
+            )
+endif()
 target_link_libraries(allTests margin)

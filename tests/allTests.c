@@ -29,7 +29,9 @@ int marginPhaseTests(void) {
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
 	CuSuiteAddSuite(suite, callConsensusTestSuite());
+    #ifdef _HDF5
 	CuSuiteAddSuite(suite, featureTestSuite());
+    #endif
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);
