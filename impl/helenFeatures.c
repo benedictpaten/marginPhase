@@ -713,13 +713,14 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     static int REFERENCE_POS = 2;
     *firstMatchedFeaure = -1;
     *lastMatchedFeature = -1;
+    char *logIdentifier = getLogIdentifier();
 
     // iterate over true ref alignment
     stListIterator *trueRefAlignItor = stList_getIterator(trueRefAlignment);
-    stIntTuple *currRefAlign = stList_getNext(trueRefAlignItor);
+    stIntTuple *currTrueRefAlign = stList_getNext(trueRefAlignItor);
 
     // iterate over features
-    int64_t trueRefPos = stIntTuple_get(currRefAlign, REFERENCE_POS);
+    int64_t trueRefPos = stIntTuple_get(currTrueRefAlign, REFERENCE_POS);
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
         void *feature = stList_get(features, featureRefPos);
         void *prevFeature = NULL;
@@ -730,7 +731,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
         while (feature != NULL) {
 
             // no more ref bases, everything is gaps
-            if (currRefAlign == NULL) {
+            if (currTrueRefAlign == NULL) {
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
                         ((PoaFeatureSimpleWeight*)feature)->label = '_';
@@ -758,10 +759,12 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // sanity checks
-            assert(stIntTuple_get(currRefAlign, FEATURE_POS) >= featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) >= trueRefPos);
+            assert(stIntTuple_get(currTrueRefAlign, FEATURE_POS) >= featureRefPos && stIntTuple_get(currTrueRefAlign, REFERENCE_POS) >= trueRefPos);
 
             // match
-            if (stIntTuple_get(currRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) == trueRefPos) {
+            if (stIntTuple_get(currTrueRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currTrueRefAlign, REFERENCE_POS) == trueRefPos) {
+                st_logDebug(" %s LABEL MATCH  %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // save label (based on feature type)
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
@@ -796,7 +799,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 
                 // iterate
                 trueRefPos++;
-                currRefAlign = stList_getNext(trueRefAlignItor);
+                currTrueRefAlign = stList_getNext(trueRefAlignItor);
                 // handle first and last match
                 if (featureInsPos == 0) {
                     if (*firstMatchedFeaure == -1) {
@@ -807,7 +810,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // insert
-            else if (trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
+            else if (trueRefPos < stIntTuple_get(currTrueRefAlign, REFERENCE_POS)) {
+                st_logDebug(" %s LABEL INSERT %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // apply label
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
@@ -843,7 +848,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // delete
-            else if (featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS)) {
+            else if (featureRefPos < stIntTuple_get(currTrueRefAlign, FEATURE_POS)) {
+                st_logDebug(" %s LABEL DELETE %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // apply label
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
@@ -892,14 +899,15 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
         }
 
         // this catches any true inserts which are not present in the poa / feature list
-        while (currRefAlign != NULL &&
-                featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) &&
-                trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
+        while (currTrueRefAlign != NULL &&
+                featureRefPos < stIntTuple_get(currTrueRefAlign, FEATURE_POS) &&
+                trueRefPos < stIntTuple_get(currTrueRefAlign, REFERENCE_POS)) {
             trueRefPos++;
         }
     }
 
     stList_destructIterator(trueRefAlignItor);
+    free(logIdentifier);
 }
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,

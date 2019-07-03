@@ -319,6 +319,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         int64_t fullRefLen = strlen(fullReferenceString);
+        assert(bamChunk->chunkBoundaryStart <= fullRefLen);
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
                                                       (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
                                                                                            : bamChunk->chunkBoundaryEnd) -
