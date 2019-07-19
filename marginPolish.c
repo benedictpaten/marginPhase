@@ -25,7 +25,7 @@
 
 void usage() {
     fprintf(stderr, "usage: marginPolish <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
-    fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
+    fprintf(stderr, "Version: %s \n\n", MARGIN_POLISH_VERSION_H);
     fprintf(stderr, "Polishes the ASSEMBLY_FASTA using alignments in BAM_FILE.\n");
 
     fprintf(stderr, "\nRequired arguments:\n");

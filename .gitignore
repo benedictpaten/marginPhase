@@ -29,3 +29,4 @@ toil/test-report.xml
 tests/NA12878.pb.chr3.5kb/
 build/
 tmp
+inc/marginVersion.h
