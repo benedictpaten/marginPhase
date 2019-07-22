@@ -11,9 +11,9 @@
 #include "helenFeatures.h"
 
 static char *FEATURE_TEST_PARAMS = "../params/allParams.np.json";
-static char *FEATURE_TEST_BAM = "../tests/data/featureTest.bam";
-static char *FEATURE_TEST_FA = "../tests/data/featureTest.fa";
-static char *FEATURE_TEST_TRUTH_BAM = "../tests/data/featureTestTruth.bam";
+static char *FEATURE_TEST_BAM = "../tests/data/featureTest/featureTest.bam";
+static char *FEATURE_TEST_FA = "../tests/data/featureTest/featureTest.fa";
+static char *FEATURE_TEST_TRUTH_BAM = "../tests/data/featureTest/featureTestTruth.bam";
 static char *FEATURE_TEST_TRUTH_SEQ = "ACGATAACCGGTTAAACCCCGGGTTTCAAACCCCGGGGTTGATTACACAT";
 
 stList *getSimpleWeightFeatureFromTSV(CuTest *testCase, char *tsvFile, bool includesLabels) {
@@ -325,8 +325,8 @@ CuSuite* featureTestSuite(void) {
 
     SUITE_ADD_TEST(suite, test_simpleWeightIndex);
     SUITE_ADD_TEST(suite, test_RleWeightIndex);
-    SUITE_ADD_TEST(suite, test_simpleWeightFeatureGeneration);
-    SUITE_ADD_TEST(suite, test_rleWeightFeatureGeneration);
+//    SUITE_ADD_TEST(suite, test_simpleWeightFeatureGeneration);
+//    SUITE_ADD_TEST(suite, test_rleWeightFeatureGeneration);
 
     return suite;
 }

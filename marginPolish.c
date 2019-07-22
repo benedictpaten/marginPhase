@@ -499,10 +499,19 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
     stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
     char *referenceSequenceName = NULL;
+    int64_t spacerSize = (bamChunker->chunkBoundary == 0 ? 50 : bamChunker->chunkBoundary * 3);
+    char *missingChunkSpacer = st_calloc(spacerSize + 1, sizeof(char));
+    for (int64_t i = 0; i < spacerSize; i++) {
+        missingChunkSpacer[i] = 'N';
+    }
+    missingChunkSpacer[spacerSize] = '\0';
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Get chunk and polished
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
         char* polishedReferenceString = chunkResults[chunkIdx];
+        int64_t prsLen = strlen(polishedReferenceString);
+        st_logInfo(" T%02d_C%05"PRId64" (%.3f): consensus sequence length %"PRId64"\n",
+                omp_get_thread_num(), chunkIdx, 1.0 * chunkIdx / bamChunker->chunkCount, prsLen);
 
 		// If there is no prior chunk for this contig
 		if(referenceSequenceName == NULL) {
@@ -530,6 +539,7 @@ int main(int argc, char *argv[]) {
 		// to remove overlap with the current chunk's polished reference sequence
 		else if(stList_length(polishedReferenceStrings) > 0) {
 			char *previousPolishedReferenceString = stList_peek(polishedReferenceStrings);
+			int64_t pprsLen = strlen(previousPolishedReferenceString);
 
 			// Trim the currrent and previous polished reference strings to remove overlap
 			int64_t prefixStringCropEnd, suffixStringCropStart;
@@ -537,17 +547,34 @@ int main(int argc, char *argv[]) {
 													   bamChunker->chunkBoundary * 2, params->polishParams,
 													   &prefixStringCropEnd, &suffixStringCropStart);
 
-			st_logInfo("  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary * 2, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
-					strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
+			// we have an overlap
+			if (overlapMatchWeight > 0) {
+                st_logInfo(
+                        "  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
+                        "left-trim: %i, right-trim: %i:\n", (int) bamChunker->chunkBoundary * 2,
+                        (float) overlapMatchWeight / PAIR_ALIGNMENT_PROB_1,
+                        strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
 
-			// Crop the suffix of the previous chunk's polished reference string
-			previousPolishedReferenceString[prefixStringCropEnd] = '\0';
+                // Crop the suffix of the previous chunk's polished reference string
+                previousPolishedReferenceString[prefixStringCropEnd] = '\0';
 
-			// Crop the the prefix of the current chunk's polished reference string
-			char *c = polishedReferenceString;
-			polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
-			free(c);
+                // Crop the the prefix of the current chunk's polished reference string
+                char *c = polishedReferenceString;
+                polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
+                free(c);
+
+            // no good alignment, could be missing chunks
+            } else {
+                if (prsLen == 0) {
+                    st_logInfo("  No overlap found. Filling empty chunk with Ns.\n");
+                    char *c = polishedReferenceString;
+                    polishedReferenceString = stString_copy(missingChunkSpacer);
+                    free(c);
+                } else {
+                    st_logInfo("  No overlap found. Filling Ns in stitch position.\n");
+                    stList_append(polishedReferenceStrings, stString_copy("NNNNNNNNNN"));
+                }
+			}
 		}
 
 		// Add the polished sequence to the list of polished reference sequence chunks
@@ -567,6 +594,7 @@ int main(int argc, char *argv[]) {
     	free(referenceSequenceName);
     }
     fclose(polishedReferenceOutFh);
+    free(missingChunkSpacer);
 
     // Cleanup
     st_logInfo("> Finished polishing.\n");
