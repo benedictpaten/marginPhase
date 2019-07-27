@@ -97,14 +97,8 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 
 void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *alignedPairs, int64_t *Xrl, int64_t *Yrl);
 
-void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                       int64_t featureStartIdx, int64_t featureEndIdxInclusive);
-
 void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                         int64_t featureStartIdx, int64_t featureEndIdxInclusive);
-
-void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                    int64_t featureStartIdx, int64_t featureEndIdxInclusive);
 
 void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
                                      int64_t featureStartIdx, int64_t featureEndIdxInclusive);

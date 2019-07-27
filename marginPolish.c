@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <omp.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #include "marginVersion.h"
 #include "margin.h"
@@ -48,8 +49,6 @@ void usage() {
     fprintf(stderr, "    -f --produceFeatures     : output features for HELEN.\n");
     fprintf(stderr, "    -F --featureType         : output features of chunks for HELEN.  Valid types:\n");
     fprintf(stderr, "                                 splitRleWeight:  [default] run lengths split into chunks\n");
-    fprintf(stderr, "                                 nuclAndRlWeight: split into nucleotide and run length (RL across nucleotides)\n");
-    fprintf(stderr, "                                 rleWeight:       weighted likelihood from POA nodes (RLE)\n");
     fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
     fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' type only) [default = %d]\n", POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT);
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
@@ -130,7 +129,14 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'o':
             free(outputBase);
-            outputBase = stString_copy(optarg);
+            struct stat fileStat;
+            int64_t rc = stat(optarg, &fileStat);
+            if (S_ISDIR(fileStat.st_mode)) {
+                if (optarg[strlen(optarg) - 1] == '/') optarg[strlen(optarg) - 1] = '\0';
+                outputBase = stString_print("%s/output", optarg);
+            } else {
+                outputBase = stString_copy(optarg);
+            }
             break;
         case 'r':
             regionStr = stString_copy(optarg);
@@ -144,10 +150,6 @@ int main(int argc, char *argv[]) {
         case 'F':
             if (stString_eq(optarg, "simpleWeight")) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
-            } else if (stString_eq(optarg, "rleWeight")) {
-                helenFeatureType = HFEAT_RLE_WEIGHT;
-            } else if (stString_eq(optarg, "nuclAndRlWeight")) {
-                helenFeatureType = HFEAT_NUCL_AND_RL_WEIGHT;
             } else if (stString_eq(optarg, "splitRleWeight")) {
                 helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
             } else {
@@ -225,14 +227,12 @@ int main(int argc, char *argv[]) {
     // Set no RLE if appropriate feature type is set
     if (helenFeatureType == HFEAT_SIMPLE_WEIGHT) {
         if (params->polishParams->useRunLengthEncoding) {
-            st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
-            params->polishParams->useRunLengthEncoding = FALSE;
+            st_errAbort("Invalid runLengthEncoding parameter because of HELEN feature type.\n");
         }
     // everthing else requires RLE
     } else if (helenFeatureType != HFEAT_NONE) {
         if (!params->polishParams->useRunLengthEncoding) {
-            st_logInfo("> Changing runLengthEncoding parameter to TRUE because of HELEN feature type.\n");
-            params->polishParams->useRunLengthEncoding = TRUE;
+            st_errAbort("Invalid runLengthEncoding parameter because of HELEN feature type.\n");
         }
     }
 
