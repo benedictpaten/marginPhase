@@ -62,6 +62,17 @@ void usage() {
     fprintf(stderr, "\n");
 }
 
+char *getFileBase(char *base, char *defawlt) {
+    struct stat fileStat;
+    int64_t rc = stat(base, &fileStat);
+    if (S_ISDIR(fileStat.st_mode)) {
+        if (optarg[strlen(base) - 1] == '/') optarg[strlen(base) - 1] = '\0';
+        return stString_print("%s/%s", base, defawlt);
+    } else {
+        return stString_copy(base);
+    }
+}
+
 int main(int argc, char *argv[]) {
 
     // Parameters / arguments
@@ -129,23 +140,16 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'o':
             free(outputBase);
-            struct stat fileStat;
-            int64_t rc = stat(optarg, &fileStat);
-            if (S_ISDIR(fileStat.st_mode)) {
-                if (optarg[strlen(optarg) - 1] == '/') optarg[strlen(optarg) - 1] = '\0';
-                outputBase = stString_print("%s/output", optarg);
-            } else {
-                outputBase = stString_copy(optarg);
-            }
+            outputBase = getFileBase(optarg, "output");
             break;
         case 'r':
             regionStr = stString_copy(optarg);
             break;
         case 'i':
-        	outputRepeatCountBase = stString_copy(optarg);
-        	break;
+            outputRepeatCountBase = getFileBase(optarg, "repeatCount");
+            break;
         case 'j':
-            outputPoaTsvBase = stString_copy(optarg);
+            outputPoaTsvBase = getFileBase(optarg, "poa");
             break;
         case 'F':
             if (stString_eq(optarg, "simpleWeight")) {
