@@ -1,7 +1,7 @@
 FROM ubuntu:14.04
 MAINTAINER Trevor Pesout, tpesout@ucsc.edu
 
-ENV GIT_COMMIT=3da2352bbb0cba61201e2902c67d4cb516157588
+ARG git_commit
 
 # update and install dependencies
 RUN apt-get update && \
@@ -22,7 +22,7 @@ WORKDIR /opt
 RUN git clone https://github.com/UCSC-nanopore-cgl/MarginPolish.git && \
     cd /opt/MarginPolish && \
     git fetch && \
-    git checkout $GIT_COMMIT && \
+    git checkout $git_commit && \
     git submodule update --init && \
     rm -rf /opt/MarginPolish/.git
 
