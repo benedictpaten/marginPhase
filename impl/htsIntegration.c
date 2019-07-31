@@ -717,7 +717,8 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
 
     // parse header
     while(!feof(fp)) {
-        fscanf( fp, "%[^\n]\n", line);
+        int scanCount = fscanf( fp, "%[^\n]\n", line);
+        if (scanCount != 1) st_errAbort("Unexpected line scanning header of %s", signalAlignReadLocation);
         if (line[0] == '#') {
             if (line[1] == '#') continue;
             if (strcmp(line, "#CHROM\tPOS\tpA\tpC\tpG\tpT\tp_") != 0) {
@@ -736,8 +737,10 @@ stProfileSeq* getProfileSequenceFromSingleNuclProbFile(char *signalAlignReadLoca
     int64_t randomSeed = st_randomInt64(0,3);
     while(!feof(fp)) {
         // Scan
-        fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
+        int ret = fscanf( fp, "%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\t]\t%[^\n]\n",
                 chromStr, refPosStr, pAStr, pCStr, pGStr, pTStr, pGapStr);
+        if (ret != 7) st_errAbort("Failed to parse line ~%"PRId64" in %s",
+                (int64_t ) stList_length(probabilityList) / 5, signalAlignReadLocation);
 
         // Get reference position
         refPos = atoi(refPosStr);
