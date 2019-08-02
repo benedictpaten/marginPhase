@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
     BamChunker *trueReferenceChunker = NULL;
     bool fullFeatureOutput = FALSE;
     int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
-    void **splitWeightHDF5Files = NULL;
+    void **helenHDF5Files = NULL;
 
     if(argc < 4) {
         free(outputBase);
@@ -290,8 +290,8 @@ int main(int argc, char *argv[]) {
         trueReferenceBamChunker->bamFile = stString_copy(trueReferenceBam);
     }
     #ifdef _HDF5
-    if (helenFeatureType == HFEAT_SPLIT_RLE_WEIGHT) {
-        splitWeightHDF5Files = (void**) openSplitRleFeatureHDF5FilesByThreadCount(outputBase, numThreads);
+    if (helenFeatureType != HFEAT_NONE) {
+        helenHDF5Files = (void**) openHelenFeatureHDF5FilesByThreadCount(outputBase, numThreads);
     }
     #endif
 
@@ -475,8 +475,8 @@ int main(int argc, char *argv[]) {
 
         #ifdef _HDF5
         if (helenFeatureType != HFEAT_NONE) {
-            handleHelenFeatures(outputBase, helenFeatureType, trueReferenceBamChunker, splitWeightMaxRunLength,
-                    splitWeightHDF5Files, fullFeatureOutput, trueReferenceBam, params, logIdentifier, chunkIdx,
+            handleHelenFeatures(helenFeatureType, trueReferenceBamChunker, splitWeightMaxRunLength,
+                    helenHDF5Files, fullFeatureOutput, trueReferenceBam, params, logIdentifier, chunkIdx,
                     bamChunk, poa, rleReads, rleNucleotides, polishedConsensusString, polishedRleConsensus);
 
         }
@@ -611,9 +611,9 @@ int main(int argc, char *argv[]) {
 
     if (regionStr != NULL) free(regionStr);
     #ifdef _HDF5
-    if (splitWeightHDF5Files != NULL) {
+    if (helenHDF5Files != NULL) {
         for (int64_t i = 0; i < numThreads; i++) {
-            splitRleFeatureHDF5FileInfo_destruct((SplitRleFeatureHDF5FileInfo*) splitWeightHDF5Files[i]);
+            HelenFeatureHDF5FileInfo_destruct((HelenFeatureHDF5FileInfo *) helenHDF5Files[i]);
         }
     }
     #endif

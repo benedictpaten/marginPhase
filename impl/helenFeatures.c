@@ -111,11 +111,10 @@ int PoaFeature_SplitRleWeight_gapIndex(int64_t maxRunLength, bool forward) {
 
 }
 
-
 void handleHelenFeatures(
         // global params
-        char *outputBase, HelenFeatureType helenFeatureType, BamChunker *trueReferenceBamChunker,
-        int64_t splitWeightMaxRunLength, void **splitWeightHDF5Files, bool fullFeatureOutput,
+        HelenFeatureType helenFeatureType, BamChunker *trueReferenceBamChunker,
+        int64_t splitWeightMaxRunLength, void **helenHDF5Files, bool fullFeatureOutput,
         char *trueReferenceBam, Params *params,
 
         // chunk params
@@ -128,8 +127,8 @@ void handleHelenFeatures(
     char *helenFeatureOutfileBase = NULL;
     switch (helenFeatureType) {
         case HFEAT_SIMPLE_WEIGHT:
-            helenFeatureOutfileBase = stString_print("%s.simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                     outputBase, chunkIdx, bamChunk->refSeqName,
+            helenFeatureOutfileBase = stString_print("simpleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     chunkIdx, bamChunk->refSeqName,
                                                      bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             break;
         case HFEAT_SPLIT_RLE_WEIGHT:
@@ -218,7 +217,7 @@ void handleHelenFeatures(
         // write the actual features (type dependent)
         poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
                                bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
-                               splitWeightMaxRunLength, (SplitRleFeatureHDF5FileInfo**) splitWeightHDF5Files);
+                               splitWeightMaxRunLength, (HelenFeatureHDF5FileInfo**) helenHDF5Files);
 
         // write the polished chunk in fasta format
         if (fullFeatureOutput) {
@@ -874,12 +873,13 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
         RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength,
-        SplitRleFeatureHDF5FileInfo** splitWeightHDF5Files) {
+        HelenFeatureHDF5FileInfo** helenHDF5Files) {
     // prep
     int64_t firstMatchedFeature = -1;
     int64_t lastMatchedFeature = -1;
     stList *features = NULL;
     bool outputLabels = trueRefAlignment != NULL && trueRefRleString != NULL;
+    int64_t threadIdx = omp_get_thread_num();
 
     // handle differently based on type
     switch (type) {
@@ -895,8 +895,8 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            writeSimpleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
-                                                            firstMatchedFeature, lastMatchedFeature);
+            writeSimpleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx], outputFileBase, bamChunk, outputLabels,
+                    features, firstMatchedFeature, lastMatchedFeature);
 
             break;
 
@@ -912,8 +912,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            int64_t threadIdx = omp_get_thread_num();
-            writeSplitRleWeightHelenFeaturesHDF5(splitWeightHDF5Files[threadIdx],
+            writeSplitRleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx],
                     outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature, lastMatchedFeature,
                     maxRunLength);
             break;
@@ -1058,14 +1057,9 @@ char **getTwoDArrayChar(int64_t rowCount, int64_t columnCount) {
     return array;
 }
 
-void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                        int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
-    herr_t      status = 0;
-
-    /*
-     * Get feature data set up
-     */
+void writeSimpleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
+        BamChunk *bamChunk, bool outputLabels, stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
     // count features, create feature array
     uint64_t featureCount = 0;
@@ -1123,20 +1117,14 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
         }
     }
 
+
     /*
      * Get hdf5 data set up
      */
 
-    hid_t int64Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(int64Type, H5T_ORDER_LE);
-    hid_t uint32Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(uint32Type, H5T_ORDER_LE);
-    hid_t floatType = H5Tcopy(H5T_NATIVE_FLOAT);
-    status |= H5Tset_order(floatType, H5T_ORDER_LE);
-    hid_t uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
-    status |= H5Tset_order(uint8Type, H5T_ORDER_LE);
+    hid_t status;
     hid_t stringType = H5Tcopy (H5T_C_S1);
-    status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
+    status = H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
 
     // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
     hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
@@ -1150,6 +1138,11 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
     hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
     hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
     hid_t rleWeightSpace = H5Screate_simple(2, rleWeightDimension, NULL);
+
+
+
+
+
 
     /*
      * Write features to files
@@ -1169,34 +1162,41 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
             chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
         }
 
-        // create file
-        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
-        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+        // create group
+        char *outputGroup = stString_print("images/%s.%"PRId64, outputFileBase, featureIndex);
+        hid_t group = H5Gcreate (hdf5FileInfo->file, outputGroup, hdf5FileInfo->groupPropertyList, H5P_DEFAULT, H5P_DEFAULT);
 
         // write metadata
-        hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        hid_t contigDataset = H5Dcreate (group, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
-        hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
-        hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
-        hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+        hid_t contigStartDataset = H5Dcreate (group, "contig_start", hdf5FileInfo->int64Type, metadataSpace,
+                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigStartDataset, hdf5FileInfo->int64Type,
+                H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+        hid_t contigEndDataset = H5Dcreate (group, "contig_end", hdf5FileInfo->int64Type, metadataSpace,
+                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigEndDataset, hdf5FileInfo->int64Type,
+                H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+        hid_t chunkIndexDataset = H5Dcreate (group, "feature_chunk_idx", hdf5FileInfo->int64Type, metadataSpace,
+                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (chunkIndexDataset, hdf5FileInfo->int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
 
         // write position info
-        hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (positionDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
+        hid_t positionDataset = H5Dcreate (group, "position", hdf5FileInfo->uint32Type, positionSpace,
+                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (positionDataset, hdf5FileInfo->uint32Type,
+                H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
 
         // write rle data
-        hid_t rleWeightDataset = H5Dcreate (file, "image", floatType, rleWeightSpace, H5P_DEFAULT, H5P_DEFAULT,
-                                            H5P_DEFAULT);
-        status |= H5Dwrite (rleWeightDataset, floatType, H5S_ALL, H5S_ALL, H5P_DEFAULT, rleWeightData[chunkFeatureStartIdx]);
+        hid_t rleWeightDataset = H5Dcreate (group, "image", hdf5FileInfo->floatType, rleWeightSpace,
+                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (rleWeightDataset, hdf5FileInfo->floatType, H5S_ALL, H5S_ALL, H5P_DEFAULT, rleWeightData[chunkFeatureStartIdx]);
 
         // if labels, add all these too
         if (outputLabels) {
-            hid_t labelCharacterDataset = H5Dcreate (file, "label_base", uint8Type, labelCharacterSpace, H5P_DEFAULT,
-                                                     H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelCharacterDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+            hid_t labelCharacterDataset = H5Dcreate (group, "label_base", hdf5FileInfo->uint8Type, labelCharacterSpace,
+                    H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelCharacterDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
                                 labelCharacterData[chunkFeatureStartIdx]);
             status |= H5Dclose (labelCharacterDataset);
         }
@@ -1208,19 +1208,16 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
         status |= H5Dclose (chunkIndexDataset);
         status |= H5Dclose (positionDataset);
         status |= H5Dclose (rleWeightDataset);
-        status |= H5Fclose (file);
-        free(outputFile);
+        status |= H5Gclose (group);
+        free(outputGroup);
     }
+
 
     // cleanup
     free(rleWeightData[0]);
     free(rleWeightData);
     free(positionData[0]);
     free(positionData);
-    status |= H5Tclose (int64Type);
-    status |= H5Tclose (uint32Type);
-    status |= H5Tclose (floatType);
-    status |= H5Tclose (uint8Type);
     status |= H5Tclose (stringType);
     status |= H5Sclose (metadataSpace);
     status |= H5Sclose (rleWeightSpace);
@@ -1238,6 +1235,188 @@ void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk
     }
 }
 
+//
+//
+//void writeSimpleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
+//                                        int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
+//
+//    herr_t      status = 0;
+//
+//    /*
+//     * Get feature data set up
+//     */
+//
+//    // count features, create feature array
+//    uint64_t featureCount = 0;
+//    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+//        PoaFeatureSimpleWeight *feature = stList_get(features, i);
+//        while (feature != NULL) {
+//            featureCount++;
+//            feature = feature->nextInsert;
+//        }
+//    }
+//    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
+//        char *logIdentifier = getLogIdentifier();
+//        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+//        free(logIdentifier);
+//        return;
+//    }
+//
+//
+//    // get all feature data into an array
+//    uint32_t **positionData = getTwoDArrayUInt32(featureCount, 2);
+//    int64_t columnCount = SYMBOL_NUMBER * 2; //{A, C, T, G, Gap} x {fwd, rev}
+//    float **rleWeightData = getTwoDArrayFloat(featureCount, columnCount);
+//    char **labelCharacterData = NULL;
+//    if (outputLabels) {
+//        labelCharacterData = getTwoDArrayChar(featureCount, 1);
+//    }
+//
+//    // add all data to features
+//    featureCount = 0;
+//    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+//        PoaFeatureSimpleWeight *feature = stList_get(features, i);
+//        while (feature != NULL) {
+//            positionData[featureCount][0] = (uint32_t) feature->refPosition;
+//            positionData[featureCount][1] = (uint32_t) feature->insertPosition;
+//
+//            for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
+//                int64_t pos = PoaFeature_SimpleWeight_charIndex((Symbol) symbol, TRUE);
+//                rleWeightData[featureCount][pos] = (float) (feature->weights[pos] / PAIR_ALIGNMENT_PROB_1);
+//                pos = PoaFeature_SimpleWeight_charIndex((Symbol) symbol, FALSE);
+//                rleWeightData[featureCount][pos] = (float) (feature->weights[pos] / PAIR_ALIGNMENT_PROB_1);
+//            }
+//
+//            // weights include 'N' index which is not included in features
+//            int64_t pos = PoaFeature_SimpleWeight_gapIndex(TRUE);
+//            rleWeightData[featureCount][pos - 2] = (float) (feature->weights[pos] / PAIR_ALIGNMENT_PROB_1);
+//            pos = PoaFeature_SimpleWeight_gapIndex(FALSE);
+//            rleWeightData[featureCount][pos - 2] = (float) (feature->weights[pos] / PAIR_ALIGNMENT_PROB_1);
+//
+//            if (outputLabels) {
+//                labelCharacterData[featureCount][0] = feature->label;
+//            }
+//
+//            featureCount++;
+//            feature = feature->nextInsert;
+//        }
+//    }
+//
+//    /*
+//     * Get hdf5 data set up
+//     */
+//
+//    hid_t int64Type = H5Tcopy(H5T_NATIVE_UINT32);
+//    status |= H5Tset_order(int64Type, H5T_ORDER_LE);
+//    hid_t uint32Type = H5Tcopy(H5T_NATIVE_UINT32);
+//    status |= H5Tset_order(uint32Type, H5T_ORDER_LE);
+//    hid_t floatType = H5Tcopy(H5T_NATIVE_FLOAT);
+//    status |= H5Tset_order(floatType, H5T_ORDER_LE);
+//    hid_t uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
+//    status |= H5Tset_order(uint8Type, H5T_ORDER_LE);
+//    hid_t stringType = H5Tcopy (H5T_C_S1);
+//    status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
+//
+//    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
+//    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
+//
+//    hsize_t metadataDimension[1] = {1};
+//    hsize_t postionDimension[2] = {featureSize, 2};
+//    hsize_t labelCharacterDimension[2] = {featureSize, 1};
+//    hsize_t rleWeightDimension[2] = {featureSize, (hsize_t) columnCount};
+//
+//    hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
+//    hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
+//    hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
+//    hid_t rleWeightSpace = H5Screate_simple(2, rleWeightDimension, NULL);
+//
+//    /*
+//     * Write features to files
+//     */
+//
+//    // each file must have exactly 1000 features
+//    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
+//    int64_t featureOffset = 0;
+//    if (featureCount >= HDF5_FEATURE_SIZE) {
+//        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+//    }
+//
+//    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
+//        // get start pos
+//        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
+//        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
+//            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+//        }
+//
+//        // create file
+//        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
+//        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+//
+//        // write metadata
+//        hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+//        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
+//        hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+//        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+//        hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+//        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+//        hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+//        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+//
+//        // write position info
+//        hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+//        status |= H5Dwrite (positionDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
+//
+//        // write rle data
+//        hid_t rleWeightDataset = H5Dcreate (file, "image", floatType, rleWeightSpace, H5P_DEFAULT, H5P_DEFAULT,
+//                                            H5P_DEFAULT);
+//        status |= H5Dwrite (rleWeightDataset, floatType, H5S_ALL, H5S_ALL, H5P_DEFAULT, rleWeightData[chunkFeatureStartIdx]);
+//
+//        // if labels, add all these too
+//        if (outputLabels) {
+//            hid_t labelCharacterDataset = H5Dcreate (file, "label_base", uint8Type, labelCharacterSpace, H5P_DEFAULT,
+//                                                     H5P_DEFAULT, H5P_DEFAULT);
+//            status |= H5Dwrite (labelCharacterDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+//                                labelCharacterData[chunkFeatureStartIdx]);
+//            status |= H5Dclose (labelCharacterDataset);
+//        }
+//
+//        // cleanup
+//        status |= H5Dclose (contigDataset);
+//        status |= H5Dclose (contigStartDataset);
+//        status |= H5Dclose (contigEndDataset);
+//        status |= H5Dclose (chunkIndexDataset);
+//        status |= H5Dclose (positionDataset);
+//        status |= H5Dclose (rleWeightDataset);
+//        status |= H5Fclose (file);
+//        free(outputFile);
+//    }
+//
+//    // cleanup
+//    free(rleWeightData[0]);
+//    free(rleWeightData);
+//    free(positionData[0]);
+//    free(positionData);
+//    status |= H5Tclose (int64Type);
+//    status |= H5Tclose (uint32Type);
+//    status |= H5Tclose (floatType);
+//    status |= H5Tclose (uint8Type);
+//    status |= H5Tclose (stringType);
+//    status |= H5Sclose (metadataSpace);
+//    status |= H5Sclose (rleWeightSpace);
+//    status |= H5Sclose (positionSpace);
+//    status |= H5Sclose (labelCharacterSpace);
+//    if (outputLabels) {
+//        free(labelCharacterData[0]);
+//        free(labelCharacterData);
+//    }
+//
+//    if (status) {
+//        char *logIdentifier = getLogIdentifier();
+//        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
+//        free(logIdentifier);
+//    }
+//}
+
 #define MAX_TOTAL_WEIGHT 64.0
 uint8_t convertTotalWeightToUInt8(double totalWeight) {
     // convert to "depth space"
@@ -1251,489 +1430,8 @@ uint8_t normalizeWeightToUInt8(double totalWeight, double weight) {
     return (uint8_t) (weight / totalWeight * (UINT8_MAX - 1));
 }
 
-void writeRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                     int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
 
-    herr_t      status = 0;
-
-    /*
-     * Get feature data set up
-     */
-
-    // count features, create feature array
-    uint64_t featureCount = 0;
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureRleWeight *feature = stList_get(features, i);
-        while (feature != NULL) {
-            featureCount++;
-            feature = feature->nextInsert;
-        }
-    }
-    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
-        char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
-        free(logIdentifier);
-        return;
-    }
-
-    // get all feature data into an array
-    uint32_t **positionData = getTwoDArrayUInt32(featureCount, 2);
-    uint8_t **predictedRunLengthData = getTwoDArrayUInt8(featureCount, 1);
-    int64_t rleNucleotideColumnCount = POAFEATURE_RLE_WEIGHT_TOTAL_SIZE - POAFEATURE_MAX_RUN_LENGTH * 2; // don't output 'N' chars
-    uint8_t **normalizationData = getTwoDArrayUInt8(featureCount, 1);
-    uint8_t **normalizedRleNucleotideWeights = getTwoDArrayUInt8(featureCount, rleNucleotideColumnCount);
-    char **labelCharacterData = NULL;
-    uint8_t **labelRunLengthData = NULL;
-    if (outputLabels) {
-        labelCharacterData = getTwoDArrayChar(featureCount, 1);
-        labelRunLengthData = getTwoDArrayUInt8(featureCount, 1);
-    }
-
-    // add all data to features
-    featureCount = 0;
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureRleWeight *feature = stList_get(features, i);
-        while (feature != NULL) {
-            positionData[featureCount][0] = (uint32_t) feature->refPosition;
-            positionData[featureCount][1] = (uint32_t) feature->insertPosition;
-            predictedRunLengthData[featureCount][0] = (uint8_t) feature->predictedRunLength;
-
-            // get total weight
-            double totalWeight = 0;
-            int64_t pos;
-            for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-                for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE);
-                    totalWeight += feature->weights[pos];
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE);
-                    totalWeight += feature->weights[pos];
-                }
-            }
-            pos = PoaFeature_RleWeight_gapIndex(TRUE);
-            totalWeight += feature->weights[pos];
-            pos = PoaFeature_RleWeight_gapIndex(FALSE);
-            totalWeight += feature->weights[pos];
-            normalizationData[featureCount][0] = convertTotalWeightToUInt8(totalWeight);
-
-            for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-                for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE);
-                    normalizedRleNucleotideWeights[featureCount][pos] = normalizeWeightToUInt8(totalWeight, feature->weights[pos]);
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE);
-                    normalizedRleNucleotideWeights[featureCount][pos] = normalizeWeightToUInt8(totalWeight, feature->weights[pos]);
-                }
-            }
-            pos = PoaFeature_RleWeight_gapIndex(TRUE);
-            normalizedRleNucleotideWeights[featureCount][pos - POAFEATURE_MAX_RUN_LENGTH * 2] =
-                    normalizeWeightToUInt8(totalWeight, feature->weights[pos]);
-            pos = PoaFeature_RleWeight_gapIndex(FALSE);
-            normalizedRleNucleotideWeights[featureCount][pos - POAFEATURE_MAX_RUN_LENGTH * 2] =
-                    normalizeWeightToUInt8(totalWeight, feature->weights[pos]);
-
-            if (outputLabels) {
-                labelCharacterData[featureCount][0] = feature->labelChar;
-                labelRunLengthData[featureCount][0] = (uint8_t) feature->labelRunLength;
-            }
-
-            featureCount++;
-            feature = feature->nextInsert;
-        }
-    }
-
-    /*
-     * Get hdf5 data set up
-     */
-
-
-    hid_t int64Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(int64Type, H5T_ORDER_LE);
-    hid_t uint32Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(uint32Type, H5T_ORDER_LE);
-    hid_t uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
-    status |= H5Tset_order(uint8Type, H5T_ORDER_LE);
-    hid_t stringType = H5Tcopy (H5T_C_S1);
-    status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
-
-    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
-    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
-
-    hsize_t metadataDimension[1] = {1};
-    hsize_t postionDimension[2] = {featureSize, 2};
-    hsize_t predictedRunLengthDimension[2] = {featureSize, 1};
-    hsize_t labelCharacterDimension[2] = {featureSize, 1};
-    hsize_t labelRunLengthDimension[2] = {featureSize, 1};
-    hsize_t normalizationDimension[2] = {featureSize, 1};
-    hsize_t rleNucleotideDimension[2] = {featureSize, (hsize_t) rleNucleotideColumnCount};
-
-    hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
-    hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
-    hid_t predictedRunLengthSpace = H5Screate_simple(1, predictedRunLengthDimension, NULL);
-    hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
-    hid_t labelRunLengthSpace = H5Screate_simple(2, labelRunLengthDimension, NULL);
-    hid_t normalizationSpace = H5Screate_simple(2, normalizationDimension, NULL);
-    hid_t rleNucleotideSpace = H5Screate_simple(2, rleNucleotideDimension, NULL);
-
-
-    /*
-     * Write features to files
-     */
-
-    // each file must have exactly 1000 features
-    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
-    int64_t featureOffset = 0;
-    if (featureCount >= HDF5_FEATURE_SIZE) {
-        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
-    }
-    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
-        // get start pos
-        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
-        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
-            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
-        }
-
-        // create file
-        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
-        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-
-        // write metadata
-        hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
-        hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
-        hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
-        hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
-
-        // write position info
-        hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (positionDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
-
-        // write rle data
-        hid_t predictedRunLengthDataset = H5Dcreate (file, "bayesian_run_length_prediction", uint8Type,
-                                                     predictedRunLengthSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (predictedRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            predictedRunLengthData[chunkFeatureStartIdx]);
-        hid_t rleWeightDataset = H5Dcreate (file, "image", uint8Type, rleNucleotideSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (rleWeightDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            normalizedRleNucleotideWeights[chunkFeatureStartIdx]);
-        hid_t rleNormalizationDataset = H5Dcreate (file, "normalization", uint8Type, normalizationSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (rleNormalizationDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            normalizationData[chunkFeatureStartIdx]);
-
-        // if labels, add all these too
-        if (outputLabels) {
-            hid_t labelCharacterDataset = H5Dcreate (file, "label_base", uint8Type, labelCharacterSpace, H5P_DEFAULT,
-                                                     H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelCharacterDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                                labelCharacterData[chunkFeatureStartIdx]);
-            hid_t labelRunLengthDataset = H5Dcreate (file, "label_run_length", uint8Type, labelRunLengthSpace,
-                                                     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                                labelRunLengthData[chunkFeatureStartIdx]);
-
-            status |= H5Dclose (labelCharacterDataset);
-            status |= H5Dclose (labelRunLengthDataset);
-        }
-
-        // cleanup
-        status |= H5Dclose (contigDataset);
-        status |= H5Dclose (contigStartDataset);
-        status |= H5Dclose (contigEndDataset);
-        status |= H5Dclose (chunkIndexDataset);
-        status |= H5Dclose (positionDataset);
-        status |= H5Dclose (predictedRunLengthDataset);
-        status |= H5Dclose (rleWeightDataset);
-        status |= H5Dclose (rleNormalizationDataset);
-        status |= H5Fclose (file);
-        free(outputFile);
-    }
-
-    // cleanup
-    free(predictedRunLengthData[0]);
-    free(predictedRunLengthData);
-    free(normalizedRleNucleotideWeights[0]);
-    free(normalizedRleNucleotideWeights);
-    free(normalizationData[0]);
-    free(normalizationData);
-    free(positionData[0]);
-    free(positionData);
-    status |= H5Tclose (int64Type);
-    status |= H5Tclose (uint32Type);
-    status |= H5Tclose (uint8Type);
-    status |= H5Tclose (stringType);
-    status |= H5Sclose (metadataSpace);
-    status |= H5Sclose (positionSpace);
-    status |= H5Sclose (predictedRunLengthSpace);
-    status |= H5Sclose (rleNucleotideSpace);
-    status |= H5Sclose (normalizationSpace);
-    status |= H5Sclose (labelRunLengthSpace);
-    status |= H5Sclose (labelCharacterSpace);
-    if (outputLabels) {
-        free(labelCharacterData[0]);
-        free(labelCharacterData);
-        free(labelRunLengthData[0]);
-        free(labelRunLengthData);
-    }
-
-    if (status) {
-        char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
-        free(logIdentifier);
-    }
-}
-
-
-void writeNucleotideAndRleWeightHelenFeaturesHDF5(char *outputFileBase, BamChunk *bamChunk, bool outputLabels,
-        stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
-
-    herr_t      status = 0;
-
-    /*
-     * Get feature data set up
-     */
-
-    // count features, create feature array
-    uint64_t featureCount = 0;
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureRleWeight *feature = stList_get(features, i);
-        while (feature != NULL) {
-            featureCount++;
-            feature = feature->nextInsert;
-        }
-    }
-    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
-        char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
-        free(logIdentifier);
-        return;
-    }
-
-    // get all feature data into an array
-    uint32_t **positionData = getTwoDArrayUInt32(featureCount, 2);
-    uint8_t **predictedRunLengthData = getTwoDArrayUInt8(featureCount, 1);
-    int64_t runLengthColumnCount = (POAFEATURE_MAX_RUN_LENGTH + 1) * 2; // gaps are rl 0, fwd/rev
-    int64_t nucleotideColumnCount = (SYMBOL_NUMBER) * 2; // actg gap, fwd/rev
-    uint8_t **normalizationData = getTwoDArrayUInt8(featureCount, 1);
-    double **normalizedNucleotidePrep = getTwoDArrayDouble(featureCount, nucleotideColumnCount, TRUE);
-    double **normalizedRunLengthPrep = getTwoDArrayDouble(featureCount, runLengthColumnCount, TRUE);
-    uint8_t **normalizedNucleotideAndRunLengthData = getTwoDArrayUInt8(featureCount, nucleotideColumnCount + runLengthColumnCount);
-    char **labelCharacterData = NULL;
-    uint8_t **labelRunLengthData = NULL;
-    if (outputLabels) {
-        labelCharacterData = getTwoDArrayChar(featureCount, 1);
-        labelRunLengthData = getTwoDArrayUInt8(featureCount, 1);
-    }
-
-    // add all data to features
-    featureCount = 0;
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureRleWeight *feature = stList_get(features, i);
-        while (feature != NULL) {
-            positionData[featureCount][0] = (uint32_t) feature->refPosition;
-            positionData[featureCount][1] = (uint32_t) feature->insertPosition;
-            predictedRunLengthData[featureCount][0] = (uint8_t) feature->predictedRunLength;
-
-            // get total weight
-            double totalWeight = 0;
-            int64_t pos;
-
-            for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-                for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-                    //fwd
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE);
-                    totalWeight += feature->weights[pos];
-                    normalizedNucleotidePrep[featureCount][symbol * 2 + POS_STRAND_IDX] += feature->weights[pos];
-                    normalizedRunLengthPrep[featureCount][runLength * 2 + POS_STRAND_IDX] += feature->weights[pos];
-                    // rev
-                    pos = PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE);
-                    totalWeight += feature->weights[pos];
-                    normalizedNucleotidePrep[featureCount][symbol * 2 + NEG_STRAND_IDX] += feature->weights[pos];
-                    normalizedRunLengthPrep[featureCount][runLength * 2 + NEG_STRAND_IDX] += feature->weights[pos];
-                }
-            }
-            // fwd gap
-            pos = PoaFeature_RleWeight_gapIndex(TRUE);
-            totalWeight += feature->weights[pos];
-            normalizedNucleotidePrep[featureCount][SYMBOL_NUMBER_NO_N * 2 + POS_STRAND_IDX] += feature->weights[pos];
-            normalizedRunLengthPrep[featureCount][POS_STRAND_IDX] += feature->weights[pos];
-            // rev gap
-            pos = PoaFeature_RleWeight_gapIndex(FALSE);
-            totalWeight += feature->weights[pos];
-            normalizedNucleotidePrep[featureCount][SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] += feature->weights[pos];
-            normalizedRunLengthPrep[featureCount][NEG_STRAND_IDX] += feature->weights[pos];
-
-            // save total weight
-            normalizationData[featureCount][0] = convertTotalWeightToUInt8(totalWeight);
-
-            // covert to total weight and save
-            for (int64_t normNuclPos = 0; normNuclPos < nucleotideColumnCount; normNuclPos++) {
-                normalizedNucleotideAndRunLengthData[featureCount][normNuclPos] =
-                        normalizeWeightToUInt8(totalWeight, normalizedNucleotidePrep[featureCount][normNuclPos]);
-            }
-            for (int64_t normRunLenPos = 0; normRunLenPos < runLengthColumnCount; normRunLenPos++) {
-                normalizedNucleotideAndRunLengthData[featureCount][nucleotideColumnCount + normRunLenPos] =
-                        normalizeWeightToUInt8(totalWeight, normalizedRunLengthPrep[featureCount][normRunLenPos]);
-            }
-
-            // save labels if appropriate
-            if (outputLabels) {
-                labelCharacterData[featureCount][0] = feature->labelChar;
-                labelRunLengthData[featureCount][0] = (uint8_t) feature->labelRunLength;
-            }
-
-            featureCount++;
-            feature = feature->nextInsert;
-        }
-    }
-
-    /*
-     * Get hdf5 data set up
-     */
-
-
-    hid_t int64Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(int64Type, H5T_ORDER_LE);
-    hid_t uint32Type = H5Tcopy(H5T_NATIVE_UINT32);
-    status |= H5Tset_order(uint32Type, H5T_ORDER_LE);
-    hid_t uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
-    status |= H5Tset_order(uint8Type, H5T_ORDER_LE);
-    hid_t stringType = H5Tcopy (H5T_C_S1);
-    status |= H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
-
-    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
-    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
-
-    hsize_t metadataDimension[1] = {1};
-    hsize_t postionDimension[2] = {featureSize, 2};
-    hsize_t predictedRunLengthDimension[2] = {featureSize, 1};
-    hsize_t labelCharacterDimension[2] = {featureSize, 1};
-    hsize_t labelRunLengthDimension[2] = {featureSize, 1};
-    hsize_t normalizationDimension[2] = {featureSize, 1};
-    hsize_t nucleotideAndRunLengthDimension[2] = {featureSize, (hsize_t) (nucleotideColumnCount + runLengthColumnCount)};
-
-    hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
-    hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
-    hid_t predictedRunLengthSpace = H5Screate_simple(1, predictedRunLengthDimension, NULL);
-    hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
-    hid_t labelRunLengthSpace = H5Screate_simple(2, labelRunLengthDimension, NULL);
-    hid_t normalizationSpace = H5Screate_simple(2, normalizationDimension, NULL);
-    hid_t nucleotideAndRunLengthSpace = H5Screate_simple(2, nucleotideAndRunLengthDimension, NULL);
-
-
-    /*
-     * Write features to files
-     */
-
-    // each file must have exactly 1000 features
-    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
-    int64_t featureOffset = 0;
-    if (featureCount >= HDF5_FEATURE_SIZE) {
-        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
-    }
-    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
-        // get start pos
-        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
-        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
-            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
-        }
-
-        // create file
-        char *outputFile = stString_print("%s.%"PRId64".h5", outputFileBase, featureIndex);
-        hid_t file = H5Fcreate (outputFile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-
-        // write metadata
-        hid_t contigDataset = H5Dcreate (file, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
-        hid_t contigStartDataset = H5Dcreate (file, "contig_start", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigStartDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
-        hid_t contigEndDataset = H5Dcreate (file, "contig_end", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (contigEndDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
-        hid_t chunkIndexDataset = H5Dcreate (file, "feature_chunk_idx", int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (chunkIndexDataset, int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
-
-        // write position info
-        hid_t positionDataset = H5Dcreate (file, "position", uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (positionDataset, uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
-
-        // write rle data
-        hid_t predictedRunLengthDataset = H5Dcreate (file, "bayesian_run_length_prediction", uint8Type,
-                                                     predictedRunLengthSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (predictedRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            predictedRunLengthData[chunkFeatureStartIdx]);
-        hid_t nucleotideAndRunLengthDataset = H5Dcreate (file, "image", uint8Type, nucleotideAndRunLengthSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (nucleotideAndRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            normalizedNucleotideAndRunLengthData[chunkFeatureStartIdx]);
-        hid_t normalizationDataset = H5Dcreate (file, "normalization", uint8Type, normalizationSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status |= H5Dwrite (normalizationDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                            normalizationData[chunkFeatureStartIdx]);
-
-        // if labels, add all these too
-        if (outputLabels) {
-            hid_t labelCharacterDataset = H5Dcreate (file, "label_base", uint8Type, labelCharacterSpace, H5P_DEFAULT,
-                                                     H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelCharacterDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                                labelCharacterData[chunkFeatureStartIdx]);
-            hid_t labelRunLengthDataset = H5Dcreate (file, "label_run_length", uint8Type, labelRunLengthSpace,
-                                                     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-            status |= H5Dwrite (labelRunLengthDataset, uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                                labelRunLengthData[chunkFeatureStartIdx]);
-
-            status |= H5Dclose (labelCharacterDataset);
-            status |= H5Dclose (labelRunLengthDataset);
-        }
-
-        // cleanup
-        status |= H5Dclose (contigDataset);
-        status |= H5Dclose (contigStartDataset);
-        status |= H5Dclose (contigEndDataset);
-        status |= H5Dclose (chunkIndexDataset);
-        status |= H5Dclose (positionDataset);
-        status |= H5Dclose (predictedRunLengthDataset);
-        status |= H5Dclose (nucleotideAndRunLengthDataset);
-        status |= H5Dclose (normalizationDataset);
-        status |= H5Fclose (file);
-        free(outputFile);
-    }
-
-    // cleanup
-    free(predictedRunLengthData[0]);
-    free(predictedRunLengthData);
-    free(normalizedNucleotidePrep[0]);
-    free(normalizedNucleotidePrep);
-    free(normalizedNucleotideAndRunLengthData[0]);
-    free(normalizedRunLengthPrep[0]);
-    free(normalizedRunLengthPrep);
-    free(normalizationData[0]);
-    free(normalizationData);
-    free(positionData[0]);
-    free(positionData);
-    status |= H5Tclose (int64Type);
-    status |= H5Tclose (uint32Type);
-    status |= H5Tclose (uint8Type);
-    status |= H5Tclose (stringType);
-    status |= H5Sclose (metadataSpace);
-    status |= H5Sclose (positionSpace);
-    status |= H5Sclose (predictedRunLengthSpace);
-    status |= H5Sclose (nucleotideAndRunLengthSpace);
-    status |= H5Sclose (normalizationSpace);
-    status |= H5Sclose (labelRunLengthSpace);
-    status |= H5Sclose (labelCharacterSpace);
-    if (outputLabels) {
-        free(labelCharacterData[0]);
-        free(labelCharacterData);
-        free(labelRunLengthData[0]);
-        free(labelRunLengthData);
-    }
-
-    if (status) {
-        char *logIdentifier = getLogIdentifier();
-        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
-        free(logIdentifier);
-    }
-}
-
-void writeSplitRleWeightHelenFeaturesHDF5(SplitRleFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
+void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
         bool outputLabels, stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive,
         const int64_t maxRunLength) {
 
@@ -1960,8 +1658,8 @@ void writeSplitRleWeightHelenFeaturesHDF5(SplitRleFeatureHDF5FileInfo* hdf5FileI
 }
 
 
-SplitRleFeatureHDF5FileInfo* splitRleFeatureHDF5FileInfo_construct(char *filename) {
-    SplitRleFeatureHDF5FileInfo *fileInfo = st_calloc(1, sizeof(SplitRleFeatureHDF5FileInfo));
+HelenFeatureHDF5FileInfo* HelenFeatureHDF5FileInfo_construct(char *filename) {
+    HelenFeatureHDF5FileInfo *fileInfo = st_calloc(1, sizeof(HelenFeatureHDF5FileInfo));
     fileInfo->filename = stString_copy(filename);
     fileInfo->file = H5Fcreate (filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     fileInfo->int64Type = H5Tcopy(H5T_NATIVE_UINT32);
@@ -1970,26 +1668,29 @@ SplitRleFeatureHDF5FileInfo* splitRleFeatureHDF5FileInfo_construct(char *filenam
     H5Tset_order(fileInfo->uint32Type, H5T_ORDER_LE);
     fileInfo->uint8Type = H5Tcopy(H5T_NATIVE_UINT8);
     H5Tset_order(fileInfo->uint8Type, H5T_ORDER_LE);
+    fileInfo->floatType = H5Tcopy(H5T_NATIVE_FLOAT);
+    H5Tset_order(fileInfo->floatType, H5T_ORDER_LE);
     fileInfo->groupPropertyList = H5Pcreate (H5P_LINK_CREATE);
     H5Pset_create_intermediate_group (fileInfo->groupPropertyList, 1);
     return fileInfo;
 }
 
-void splitRleFeatureHDF5FileInfo_destruct(SplitRleFeatureHDF5FileInfo* fileInfo) {
+void HelenFeatureHDF5FileInfo_destruct(HelenFeatureHDF5FileInfo *fileInfo) {
     free(fileInfo->filename);
     H5Tclose(fileInfo->int64Type);
     H5Tclose(fileInfo->uint32Type);
     H5Tclose(fileInfo->uint8Type);
+    H5Tclose(fileInfo->floatType);
     H5Pclose(fileInfo->groupPropertyList);
     H5Fclose(fileInfo->file);
     free(fileInfo);
 }
 
-SplitRleFeatureHDF5FileInfo** openSplitRleFeatureHDF5FilesByThreadCount(char *filenameBase, int64_t threadCount) {
-    SplitRleFeatureHDF5FileInfo** infoArray = st_calloc(threadCount, sizeof(SplitRleFeatureHDF5FileInfo*));
+HelenFeatureHDF5FileInfo** openHelenFeatureHDF5FilesByThreadCount(char *filenameBase, int64_t threadCount) {
+    HelenFeatureHDF5FileInfo** infoArray = st_calloc(threadCount, sizeof(HelenFeatureHDF5FileInfo*));
     for (int64_t i = 0; i < threadCount; i++) {
         char *filename = stString_print("%s.T%02"PRId64".h5", filenameBase, i);
-        infoArray[i] = splitRleFeatureHDF5FileInfo_construct(filename);
+        infoArray[i] = HelenFeatureHDF5FileInfo_construct(filename);
         free(filename);
     }
     return infoArray;
