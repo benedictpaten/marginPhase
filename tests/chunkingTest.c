@@ -8,7 +8,7 @@
 #include "CuTest.h"
 #include "margin.h"
 
-#define INPUT_BAM "../tests/data/chunkingTest.bam"
+#define INPUT_BAM "../tests/data/chunkingTest/chunkingTest.bam"
 
 static PolishParams* getParameters(uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClipping) {
     PolishParams *params = st_calloc(1, sizeof(PolishParams));

@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <omp.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #include "marginVersion.h"
 #include "margin.h"
@@ -25,7 +26,7 @@
 
 void usage() {
     fprintf(stderr, "usage: marginPolish <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
-    fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
+    fprintf(stderr, "Version: %s \n\n", MARGIN_POLISH_VERSION_H);
     fprintf(stderr, "Polishes the ASSEMBLY_FASTA using alignments in BAM_FILE.\n");
 
     fprintf(stderr, "\nRequired arguments:\n");
@@ -48,8 +49,6 @@ void usage() {
     fprintf(stderr, "    -f --produceFeatures     : output features for HELEN.\n");
     fprintf(stderr, "    -F --featureType         : output features of chunks for HELEN.  Valid types:\n");
     fprintf(stderr, "                                 splitRleWeight:  [default] run lengths split into chunks\n");
-    fprintf(stderr, "                                 nuclAndRlWeight: split into nucleotide and run length (RL across nucleotides)\n");
-    fprintf(stderr, "                                 rleWeight:       weighted likelihood from POA nodes (RLE)\n");
     fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
     fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' type only) [default = %d]\n", POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT);
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
@@ -61,6 +60,17 @@ void usage() {
     fprintf(stderr, "    -i --outputRepeatCounts  : Output base to write out the repeat counts [default = NULL]\n");
     fprintf(stderr, "    -j --outputPoaTsv        : Output base to write out the poa as TSV file [default = NULL]\n");
     fprintf(stderr, "\n");
+}
+
+char *getFileBase(char *base, char *defawlt) {
+    struct stat fileStat;
+    int64_t rc = stat(base, &fileStat);
+    if (S_ISDIR(fileStat.st_mode)) {
+        if (optarg[strlen(base) - 1] == '/') optarg[strlen(base) - 1] = '\0';
+        return stString_print("%s/%s", base, defawlt);
+    } else {
+        return stString_copy(base);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -130,24 +140,20 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'o':
             free(outputBase);
-            outputBase = stString_copy(optarg);
+            outputBase = getFileBase(optarg, "output");
             break;
         case 'r':
             regionStr = stString_copy(optarg);
             break;
         case 'i':
-        	outputRepeatCountBase = stString_copy(optarg);
-        	break;
+            outputRepeatCountBase = getFileBase(optarg, "repeatCount");
+            break;
         case 'j':
-            outputPoaTsvBase = stString_copy(optarg);
+            outputPoaTsvBase = getFileBase(optarg, "poa");
             break;
         case 'F':
             if (stString_eq(optarg, "simpleWeight")) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
-            } else if (stString_eq(optarg, "rleWeight")) {
-                helenFeatureType = HFEAT_RLE_WEIGHT;
-            } else if (stString_eq(optarg, "nuclAndRlWeight")) {
-                helenFeatureType = HFEAT_NUCL_AND_RL_WEIGHT;
             } else if (stString_eq(optarg, "splitRleWeight")) {
                 helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
             } else {
@@ -225,14 +231,12 @@ int main(int argc, char *argv[]) {
     // Set no RLE if appropriate feature type is set
     if (helenFeatureType == HFEAT_SIMPLE_WEIGHT) {
         if (params->polishParams->useRunLengthEncoding) {
-            st_logInfo("> Changing runLengthEncoding parameter to FALSE because of HELEN feature type.\n");
-            params->polishParams->useRunLengthEncoding = FALSE;
+            st_errAbort("Invalid runLengthEncoding parameter because of HELEN feature type.\n");
         }
     // everthing else requires RLE
     } else if (helenFeatureType != HFEAT_NONE) {
         if (!params->polishParams->useRunLengthEncoding) {
-            st_logInfo("> Changing runLengthEncoding parameter to TRUE because of HELEN feature type.\n");
-            params->polishParams->useRunLengthEncoding = TRUE;
+            st_errAbort("Invalid runLengthEncoding parameter because of HELEN feature type.\n");
         }
     }
 
@@ -319,6 +323,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         int64_t fullRefLen = strlen(fullReferenceString);
+        assert(bamChunk->chunkBoundaryStart <= fullRefLen);
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
                                                       (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
                                                                                            : bamChunk->chunkBoundaryEnd) -
@@ -498,10 +503,19 @@ int main(int argc, char *argv[]) {
     st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
     stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
     char *referenceSequenceName = NULL;
+    int64_t spacerSize = (bamChunker->chunkBoundary == 0 ? 50 : bamChunker->chunkBoundary * 3);
+    char *missingChunkSpacer = st_calloc(spacerSize + 1, sizeof(char));
+    for (int64_t i = 0; i < spacerSize; i++) {
+        missingChunkSpacer[i] = 'N';
+    }
+    missingChunkSpacer[spacerSize] = '\0';
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Get chunk and polished
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
         char* polishedReferenceString = chunkResults[chunkIdx];
+        int64_t prsLen = strlen(polishedReferenceString);
+        st_logInfo(" T%02d_C%05"PRId64" (%.3f): consensus sequence length %"PRId64"\n",
+                omp_get_thread_num(), chunkIdx, 1.0 * chunkIdx / bamChunker->chunkCount, prsLen);
 
 		// If there is no prior chunk for this contig
 		if(referenceSequenceName == NULL) {
@@ -529,6 +543,7 @@ int main(int argc, char *argv[]) {
 		// to remove overlap with the current chunk's polished reference sequence
 		else if(stList_length(polishedReferenceStrings) > 0) {
 			char *previousPolishedReferenceString = stList_peek(polishedReferenceStrings);
+			int64_t pprsLen = strlen(previousPolishedReferenceString);
 
 			// Trim the currrent and previous polished reference strings to remove overlap
 			int64_t prefixStringCropEnd, suffixStringCropStart;
@@ -536,17 +551,34 @@ int main(int argc, char *argv[]) {
 													   bamChunker->chunkBoundary * 2, params->polishParams,
 													   &prefixStringCropEnd, &suffixStringCropStart);
 
-			st_logInfo("  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-					"left-trim: %i, right-trim: %i:\n", (int)bamChunker->chunkBoundary * 2, (float)overlapMatchWeight/PAIR_ALIGNMENT_PROB_1,
-					strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
+			// we have an overlap
+			if (overlapMatchWeight > 0) {
+                st_logInfo(
+                        "  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
+                        "left-trim: %i, right-trim: %i:\n", (int) bamChunker->chunkBoundary * 2,
+                        (float) overlapMatchWeight / PAIR_ALIGNMENT_PROB_1,
+                        strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
 
-			// Crop the suffix of the previous chunk's polished reference string
-			previousPolishedReferenceString[prefixStringCropEnd] = '\0';
+                // Crop the suffix of the previous chunk's polished reference string
+                previousPolishedReferenceString[prefixStringCropEnd] = '\0';
 
-			// Crop the the prefix of the current chunk's polished reference string
-			char *c = polishedReferenceString;
-			polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
-			free(c);
+                // Crop the the prefix of the current chunk's polished reference string
+                char *c = polishedReferenceString;
+                polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
+                free(c);
+
+            // no good alignment, could be missing chunks
+            } else {
+                if (prsLen == 0) {
+                    st_logInfo("  No overlap found. Filling empty chunk with Ns.\n");
+                    char *c = polishedReferenceString;
+                    polishedReferenceString = stString_copy(missingChunkSpacer);
+                    free(c);
+                } else {
+                    st_logInfo("  No overlap found. Filling Ns in stitch position.\n");
+                    stList_append(polishedReferenceStrings, stString_copy("NNNNNNNNNN"));
+                }
+			}
 		}
 
 		// Add the polished sequence to the list of polished reference sequence chunks
@@ -566,6 +598,7 @@ int main(int argc, char *argv[]) {
     	free(referenceSequenceName);
     }
     fclose(polishedReferenceOutFh);
+    free(missingChunkSpacer);
 
     // Cleanup
     st_logInfo("> Finished polishing.\n");

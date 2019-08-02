@@ -132,16 +132,6 @@ void handleHelenFeatures(
                                                      outputBase, chunkIdx, bamChunk->refSeqName,
                                                      bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             break;
-        case HFEAT_RLE_WEIGHT:
-            helenFeatureOutfileBase = stString_print("%s.rleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                     outputBase, chunkIdx, bamChunk->refSeqName,
-                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-            break;
-        case HFEAT_NUCL_AND_RL_WEIGHT:
-            helenFeatureOutfileBase = stString_print("%s.nuclAndRlWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
-                                                     outputBase, chunkIdx, bamChunk->refSeqName,
-                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
-            break;
         case HFEAT_SPLIT_RLE_WEIGHT:
             // name of folder, not of file
             helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
@@ -713,13 +703,14 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     static int REFERENCE_POS = 2;
     *firstMatchedFeaure = -1;
     *lastMatchedFeature = -1;
+    char *logIdentifier = getLogIdentifier();
 
     // iterate over true ref alignment
     stListIterator *trueRefAlignItor = stList_getIterator(trueRefAlignment);
-    stIntTuple *currRefAlign = stList_getNext(trueRefAlignItor);
+    stIntTuple *currTrueRefAlign = stList_getNext(trueRefAlignItor);
 
     // iterate over features
-    int64_t trueRefPos = stIntTuple_get(currRefAlign, REFERENCE_POS);
+    int64_t trueRefPos = stIntTuple_get(currTrueRefAlign, REFERENCE_POS);
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
         void *feature = stList_get(features, featureRefPos);
         void *prevFeature = NULL;
@@ -730,17 +721,11 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
         while (feature != NULL) {
 
             // no more ref bases, everything is gaps
-            if (currRefAlign == NULL) {
+            if (currTrueRefAlign == NULL) {
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
                         ((PoaFeatureSimpleWeight*)feature)->label = '_';
                         feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
-                        break;
-                    case HFEAT_RLE_WEIGHT:
-                    case HFEAT_NUCL_AND_RL_WEIGHT:
-                        ((PoaFeatureRleWeight*)feature)->labelChar = '_';
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
-                        feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
                         rlFeature = ((PoaFeatureSplitRleWeight*)feature);
@@ -758,21 +743,16 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // sanity checks
-            assert(stIntTuple_get(currRefAlign, FEATURE_POS) >= featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) >= trueRefPos);
+            assert(stIntTuple_get(currTrueRefAlign, FEATURE_POS) >= featureRefPos && stIntTuple_get(currTrueRefAlign, REFERENCE_POS) >= trueRefPos);
 
             // match
-            if (stIntTuple_get(currRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currRefAlign, REFERENCE_POS) == trueRefPos) {
+            if (stIntTuple_get(currTrueRefAlign, FEATURE_POS) == featureRefPos && stIntTuple_get(currTrueRefAlign, REFERENCE_POS) == trueRefPos) {
+                st_logDebug(" %s LABEL MATCH  %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // save label (based on feature type)
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
                         ((PoaFeatureSimpleWeight *) feature)->label = trueRefRleString->rleString[trueRefPos];
-                        break;
-                    case HFEAT_RLE_WEIGHT:
-                    case HFEAT_NUCL_AND_RL_WEIGHT:
-                        ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
-                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
-                        if (trueRunLength > POAFEATURE_MAX_RUN_LENGTH) trueRunLength = POAFEATURE_MAX_RUN_LENGTH;
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRunLength;
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
                         rlFeature = ((PoaFeatureSplitRleWeight*)feature);
@@ -796,7 +776,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
 
                 // iterate
                 trueRefPos++;
-                currRefAlign = stList_getNext(trueRefAlignItor);
+                currTrueRefAlign = stList_getNext(trueRefAlignItor);
                 // handle first and last match
                 if (featureInsPos == 0) {
                     if (*firstMatchedFeaure == -1) {
@@ -807,18 +787,13 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // insert
-            else if (trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
+            else if (trueRefPos < stIntTuple_get(currTrueRefAlign, REFERENCE_POS)) {
+                st_logDebug(" %s LABEL INSERT %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // apply label
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
                         ((PoaFeatureSimpleWeight*)feature)->label = trueRefRleString->rleString[trueRefPos];
-                        break;
-                    case HFEAT_RLE_WEIGHT:
-                    case HFEAT_NUCL_AND_RL_WEIGHT:
-                        ((PoaFeatureRleWeight*)feature)->labelChar = trueRefRleString->rleString[trueRefPos];
-                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
-                        if (trueRunLength > POAFEATURE_MAX_RUN_LENGTH) trueRunLength = POAFEATURE_MAX_RUN_LENGTH;
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = trueRunLength;
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
                         rlFeature = ((PoaFeatureSplitRleWeight*)feature);
@@ -843,16 +818,13 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // delete
-            else if (featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS)) {
+            else if (featureRefPos < stIntTuple_get(currTrueRefAlign, FEATURE_POS)) {
+                st_logDebug(" %s LABEL DELETE %c trueRefPos:%"PRId64" featureRefPos:%"PRId64" featureInsPos:%"PRId64"\n",
+                           logIdentifier, featureInsPos == 0 ? ' ' : 'I', trueRefPos, featureRefPos, featureInsPos);
                 // apply label
                 switch (featureType) {
                     case HFEAT_SIMPLE_WEIGHT:
                         ((PoaFeatureSimpleWeight*)feature)->label = '_';
-                        break;
-                    case HFEAT_RLE_WEIGHT:
-                    case HFEAT_NUCL_AND_RL_WEIGHT:
-                        ((PoaFeatureRleWeight*)feature)->labelChar = '_';
-                        ((PoaFeatureRleWeight*)feature)->labelRunLength = 0;
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
                         rlFeature = ((PoaFeatureSplitRleWeight*)feature);
@@ -878,10 +850,6 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                 case HFEAT_SIMPLE_WEIGHT:
                     feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
                     break;
-                case HFEAT_RLE_WEIGHT:
-                case HFEAT_NUCL_AND_RL_WEIGHT:
-                    feature = ((PoaFeatureRleWeight*)feature)->nextInsert;
-                    break;
                 case HFEAT_SPLIT_RLE_WEIGHT:
                     feature = ((PoaFeatureSplitRleWeight*)feature)->nextInsert;
                     break;
@@ -892,14 +860,15 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
         }
 
         // this catches any true inserts which are not present in the poa / feature list
-        while (currRefAlign != NULL &&
-                featureRefPos < stIntTuple_get(currRefAlign, FEATURE_POS) &&
-                trueRefPos < stIntTuple_get(currRefAlign, REFERENCE_POS)) {
+        while (currTrueRefAlign != NULL &&
+                featureRefPos < stIntTuple_get(currTrueRefAlign, FEATURE_POS) &&
+                trueRefPos < stIntTuple_get(currTrueRefAlign, REFERENCE_POS)) {
             trueRefPos++;
         }
     }
 
     stList_destructIterator(trueRefAlignItor);
+    free(logIdentifier);
 }
 
 void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
@@ -926,43 +895,9 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            // write it out
-            if (fullFeatureOutput) {
-                writeSimpleWeightHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features,
-                                                  firstMatchedFeature, lastMatchedFeature);
-            }
-
             writeSimpleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
                                                             firstMatchedFeature, lastMatchedFeature);
 
-            break;
-
-        case HFEAT_RLE_WEIGHT:
-        case HFEAT_NUCL_AND_RL_WEIGHT:
-            // get features
-            features = poa_getRleWeightFeatures(poa, bamChunkReads, rleStrings, consensusRleString);
-            firstMatchedFeature = 0;
-            lastMatchedFeature = stList_length(features) - 1;
-
-            // get truth (if we have it)
-            if (outputLabels) {
-                poa_annotateHelenFeaturesWithTruth(features, type, trueRefAlignment, trueRefRleString,
-                                                   &firstMatchedFeature, &lastMatchedFeature);
-            }
-
-            // write it out
-            if (fullFeatureOutput) {
-                writeRleWeightHelenFeaturesTSV(outputFileBase, bamChunk, outputLabels, features,
-                                               firstMatchedFeature, lastMatchedFeature);
-            }
-
-            if (type == HFEAT_RLE_WEIGHT) {
-                writeRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
-                                                firstMatchedFeature, lastMatchedFeature);
-            } else {
-                writeNucleotideAndRleWeightHelenFeaturesHDF5(outputFileBase, bamChunk, outputLabels, features,
-                                                             firstMatchedFeature, lastMatchedFeature);
-            }
             break;
 
         case HFEAT_SPLIT_RLE_WEIGHT:
@@ -1070,117 +1005,6 @@ stList *alignConsensusAndTruth(char *consensusStr, char *truthStr) {
 
     return alignedPairs;
 }
-
-
-void writeSimpleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                       int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
-
-    char *outputFile = stString_print("%s.tsv", outputFileBase);
-    FILE *fH = fopen(outputFile, "w");
-
-    // print header
-    fprintf(fH, "##contig:%s\n", bamChunk->refSeqName);
-    fprintf(fH, "##contigStartPos:%"PRId64"\n", bamChunk->chunkBoundaryStart);
-    fprintf(fH, "##contigEndPos:%"PRId64"\n", bamChunk->chunkBoundaryEnd);
-    fprintf(fH, "#refPos\tinsPos");
-    if (outputLabels) fprintf(fH, "\tlabel");
-    for (int64_t i = 0; i < SYMBOL_NUMBER_NO_N; i++) {
-        fprintf(fH, "\t%c_fwd\t%c_rev", symbol_convertSymbolToChar((Symbol)i), symbol_convertSymbolToChar((Symbol)i));
-    }
-    fprintf(fH, "\tgap_fwd\tgap_rev\n");
-
-    // iterate over features
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureSimpleWeight *feature = stList_get(features, i);
-
-        // iterate over all inserts for each assembly position
-        while (feature != NULL) {
-
-            // position and label
-            fprintf(fH, "%"PRId64, feature->refPosition);
-            fprintf(fH, "\t%"PRId64, feature->insertPosition);
-            if (outputLabels) {
-                fprintf(fH, "\t%c", feature->label);
-            }
-
-            // print weights
-            for (int64_t j = 0; j < SYMBOL_NUMBER_NO_N; j++) {
-                fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_charIndex((Symbol) j, TRUE)] / PAIR_ALIGNMENT_PROB_1);
-                fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_charIndex((Symbol) j, FALSE)] / PAIR_ALIGNMENT_PROB_1);
-            }
-            fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_SimpleWeight_gapIndex(TRUE)] / PAIR_ALIGNMENT_PROB_1);
-            fprintf(fH, "\t%7.4f\n", feature->weights[PoaFeature_SimpleWeight_gapIndex(FALSE)] / PAIR_ALIGNMENT_PROB_1);
-
-            // iterate
-            feature = feature->nextInsert;
-        }
-    }
-
-    fclose(fH);
-    free(outputFile);
-}
-
-
-void writeRleWeightHelenFeaturesTSV(char *outputFileBase, BamChunk *bamChunk, bool outputLabels, stList *features,
-                                       int64_t featureStartIdx, int64_t featureEndIdxInclusive) {
-
-    char *outputFile = stString_print("%s.tsv", outputFileBase);
-    FILE *fH = fopen(outputFile, "w");
-
-    // print header
-    fprintf(fH, "##contig:%s\n", bamChunk->refSeqName);
-    fprintf(fH, "##contigStartPos:%"PRId64"\n", bamChunk->chunkBoundaryStart);
-    fprintf(fH, "##contigEndPos:%"PRId64"\n", bamChunk->chunkBoundaryEnd);
-    fprintf(fH, "#refPos\tinsPos");
-    if (outputLabels) {
-        fprintf(fH, "\tlabelChar");
-        fprintf(fH, "\tlabelRunLength");
-    }
-    for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-        for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-            fprintf(fH, "\t%c_%"PRId64"_fwd\t%c_%"PRId64"_rev", symbol_convertSymbolToChar((Symbol)symbol), runLength,
-                    symbol_convertSymbolToChar((Symbol)symbol), runLength);
-        }
-    }
-    fprintf(fH, "\tgap_fwd\tgap_rev\n");
-
-    // iterate over features
-    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
-        PoaFeatureRleWeight *feature = stList_get(features, i);
-
-        // iterate over all inserts for each assembly position
-        while (feature != NULL) {
-
-            // position and label
-            fprintf(fH, "%"PRId64, feature->refPosition);
-            fprintf(fH, "\t%"PRId64, feature->insertPosition);
-            if (outputLabels) {
-                fprintf(fH, "\t%c", feature->labelChar);
-                fprintf(fH, "\t%"PRId64, feature->labelRunLength);
-            }
-
-            // print weights
-            for (int64_t symbol = 0; symbol < SYMBOL_NUMBER_NO_N; symbol++) {
-                for (int64_t runLength = 1; runLength <= POAFEATURE_MAX_RUN_LENGTH; runLength++) {
-                    fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, TRUE)] / PAIR_ALIGNMENT_PROB_1);
-                    fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_RleWeight_charIndex((Symbol) symbol, runLength, FALSE)] / PAIR_ALIGNMENT_PROB_1);
-                }
-            }
-
-            for (int64_t j = 0; j < SYMBOL_NUMBER_NO_N; j++) {
-            }
-            fprintf(fH, "\t%7.4f", feature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] / PAIR_ALIGNMENT_PROB_1);
-            fprintf(fH, "\t%7.4f\n", feature->weights[PoaFeature_RleWeight_gapIndex(FALSE)] / PAIR_ALIGNMENT_PROB_1);
-
-            // iterate
-            feature = feature->nextInsert;
-        }
-    }
-
-    fclose(fH);
-    free(outputFile);
-}
-
 
 #define HDF5_FEATURE_SIZE 1000
 

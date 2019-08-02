@@ -984,9 +984,9 @@ int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char
 }
 
 void test_polish5kb_rle(CuTest *testCase) {
-    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/realData/NA12878.np.chr3.5kb.bam";
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
@@ -995,9 +995,9 @@ void test_polish5kb_rle(CuTest *testCase) {
 }
 
 void test_polish5kb_no_rle(CuTest *testCase) {
-    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/realData/NA12878.np.chr3.5kb.bam";
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
@@ -1006,9 +1006,9 @@ void test_polish5kb_no_rle(CuTest *testCase) {
 }
 
 void test_polish5kb_no_region(CuTest *testCase) {
-    char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
+    char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
     bool verbose = false;
-    char *bamFile = "../tests/data/NA12878.np.chr3.5kb.bam";
+    char *bamFile = "../tests/data/realData/NA12878.np.chr3.5kb.bam";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
     int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose);
@@ -1016,14 +1016,59 @@ void test_polish5kb_no_region(CuTest *testCase) {
 }
 
 void test_polish100kb(CuTest *testCase) {
-	char *referenceFile = "../tests/data/hg19.chr3.9mb.fa";
+	char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
 	bool verbose = false;
-	char *bamFile = "../tests/data/NA12878.np.chr3.100kb.4.bam";
+	char *bamFile = "../tests/data/realData/NA12878.np.chr3.100kb.4.bam";
 	char *region = "chr3:8100000-8200000";
 
 	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
 	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
 	CuAssertTrue(testCase, i == 0);
+}
+
+void checkLargeGapOutput(CuTest *testCase) {
+	//read output file, find non-n sequence
+	char *outputFile = "output.fa";
+	FILE *fh = fopen(outputFile, "r");
+	stHash *referenceSequences = fastaReadToMap(fh);  //valgrind says blocks from this allocation are "still reachable"
+	fclose(fh);
+	char *polished = stHash_search(referenceSequences, "chr3");
+	stList *splitByNs = stString_splitByString(polished, "N");
+	CuAssertTrue(testCase, stList_length(splitByNs) > 2);
+
+	for (int64_t i = 0; i<stList_length(splitByNs); i++) {
+		int64_t partLength = strlen(stList_get(splitByNs, i));
+		CuAssertTrue(testCase, partLength == 0 || (partLength > 1900 && partLength < 2100));
+	}
+
+	stList_destruct(splitByNs);
+	stHash_destruct(referenceSequences);
+}
+
+void test_largeGap(CuTest *testCase) {
+	char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
+	bool verbose = false;
+	char *bamFile = "../tests/data/largeGapTest/largeGapTest.bam";
+	char *region = "chr3:10000-17000";
+
+	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
+	CuAssertTrue(testCase, i == 0);
+
+	checkLargeGapOutput(testCase);
+}
+
+void test_largeGap2(CuTest *testCase) {
+	char *referenceFile = "../tests/data/realData/hg19.chr3.9mb.fa";
+	bool verbose = false;
+	char *bamFile = "../tests/data/largeGapTest/largeGapTest2.bam";
+	char *region = "chr3:10000-17000";
+
+	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
+	CuAssertTrue(testCase, i == 0);
+
+	checkLargeGapOutput(testCase);
 }
 
 CuSuite* polisherTestSuite(void) {
@@ -1052,6 +1097,9 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
+
+    SUITE_ADD_TEST(suite, test_largeGap);
+    SUITE_ADD_TEST(suite, test_largeGap2);
 
     return suite;
 }

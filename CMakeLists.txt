@@ -8,6 +8,20 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 
 
 project(marginPhase LANGUAGES C)
 
+# configure a header file to pass some of the CMake settings
+set (POLISH_VERSION_MAJOR 1)
+set (POLISH_VERSION_MINOR 0)
+execute_process(
+        COMMAND git log -1 --format=%h
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+configure_file (
+        "${PROJECT_SOURCE_DIR}/inc/marginVersion.h.in"
+        "${PROJECT_SOURCE_DIR}/inc/marginVersion.h"
+)
+
 include(GNUInstallDirs)
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 

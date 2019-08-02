@@ -154,6 +154,22 @@ With these parameters, we find that 2GB of memory per thread is sufficient to ru
 Across 13 whole-genome runs, we averaged roughly 350 CPU hours per gigabase of assembled sequence.
 
 
+### Docker ###
+There is a MarginPolish Docker container provided at `docker.io/tpesout/margin_polish`.  To run, the directory with your input files must be mounted onto the `/data` directory in the container.  An example run:
+
+```
+docker run -v </your/current/directory>:/data tpesout/margin_polish:latest --help
+docker run -v </your/current/directory>:/data tpesout/margin_polish:latest input.bam input.assembly params.json -t 16 -f
+```
+
+The entrypoint is to a script which redirects output to a file called `marginPolish.log`.  This also contains output from the `time` program documenting runtime and max memory usage.
+
+The image can be built by navigating to the `docker/` directory and running `make`.  Alternatively, the image can be acquired by running
+ 
+```
+docker pull tpesout/margin_polish:latest
+```
+
 ## Miscellaneous ##
 
 ### MarginPhase ###
