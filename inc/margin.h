@@ -1095,6 +1095,11 @@ BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t
 BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
+typedef struct _readSubstring {
+	char *readSubstring;
+	double qualValue;
+} ReadSubstring;
+
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
@@ -1184,5 +1189,58 @@ void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
 
 void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
 				stList **readsPartition1, stList **readsPartition2, Params *params);
+
+/*
+ * Bubble graphs
+ */
+
+typedef struct _bubble {
+	uint64_t refStart; //First inclusive position
+	uint64_t length; // Length of the reference sub-sequence covered by the bubble
+	char *refAllele; // The current reference allele
+	uint64_t alleleNo; // Number of alleles
+	char **alleles; // Array of allele strings
+	uint64_t readNo; // Number of reads overlapping bubble
+	ReadSubstring **reads; // Array of read substrings aligned to the bubble
+	float *alleleReadSupports; // An array of log-likelihoods giving the support of
+	// each allele for each read
+} Bubble;
+
+typedef struct _bubbleGraph {
+	char *refString; // The reference string
+	uint64_t refLength; // The length of the reference string
+	uint64_t bubbleNo; // The number of bubbles
+	Bubble *bubbles; // An array of bubbles
+} BubbleGraph;
+
+/*
+ * Get a consensus sequences from the bubble graph by picking the highest
+ * likelihood allele at each bubble.
+ */
+char *bubbleGraph_getConsensus(BubbleGraph *bg, int64_t **poaToConsensusMap,
+		PolishParams *polishParams);
+
+/*
+ * Create a bubble graph from a POA.
+ */
+BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, PolishParams *params);
+
+void bubbleGraph_destruct(BubbleGraph *bg);
+
+/*
+ * Prints a quick view of the bubble graph for debugging/browsing.
+ */
+void bubbleGraph_print(BubbleGraph *bg, FILE *fh);
+
+/*
+ * The the index in b->alleles of the allele with highest likelihood
+ * given the reads
+ */
+int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b);
+
+/*
+ * Gets the likelihood of a given allele giving rise to the reads.
+ */
+double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele);
 
 #endif /* ST_RP_HMM_H_ */

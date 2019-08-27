@@ -1003,7 +1003,7 @@ void test_polish100kb(CuTest *testCase) {
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_poa_augment_example);
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign);
@@ -1024,7 +1024,11 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
-    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);*/
+
+    //SUITE_ADD_TEST(suite, test_polish5kb_rle);
+    //SUITE_ADD_TEST(suite, test_polish100kb);
+    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
 
     return suite;
 }

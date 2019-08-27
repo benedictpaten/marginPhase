@@ -1794,11 +1794,6 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 	return consensusSubstrings;
 }
 
-typedef struct _readSubstring {
-	char *readSubstring;
-	double qualValue;
-} ReadSubstring;
-
 ReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, PolishParams *params) {
 	assert(length >= 0);
 
@@ -2161,7 +2156,7 @@ bool *getFilteredAnchorPositions(Poa *poa, double *candidateWeights, PolishParam
 		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 			totalAnchorNo += anchors[i] ? 1 : 0;
 		}
-		st_logDebug("In poa_polish got %" PRIi64 " anchors for ref seq of length %" PRIi64 ", that's one every: %f bases\n",
+		st_logDebug("Creating filtered anchor positions got: %" PRIi64 " anchors for ref seq of length: %" PRIi64 ", that's one every: %f bases\n",
 					totalAnchorNo, stList_length(poa->nodes), stList_length(poa->nodes)/(double)totalAnchorNo);
 	}
 
@@ -2220,7 +2215,6 @@ void poa_polishP(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to,
 	// Cleanup
 	free(existingConsensusSubstring);
 
-
 	// Updare consensus string length
 	*consensusStringLength += strlen(consensusSubstring);
 }
@@ -2232,6 +2226,15 @@ char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 	 * map back to the input poa reference sequence.
 	 */
 
+	BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, bamChunkReads, params);
+
+	char *newConsensusString = bubbleGraph_getConsensus(bg, poaToConsensusMap, params);
+
+	bubbleGraph_destruct(bg);
+
+	return newConsensusString;
+
+/*
 	// Setup
 	double *candidateWeights = getCandidateWeights(poa, params);
 
@@ -2303,7 +2306,7 @@ char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 	free(anchors);
 	stList_destruct(consensusSubstrings);
 
-	return newConsensusString;
+	return newConsensusString; */
 }
 
 Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params) {
@@ -2434,4 +2437,249 @@ Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *refer
 	poa = poa_realignIterative3(poa, bamChunkReads, polishParams, 0,
 			polishParams->minRealignmentPolishIterations, polishParams->maxRealignmentPolishIterations);
 	return poa;
+}
+
+/*
+ * Bubble graphs
+ */
+
+double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele) {
+	double logLikelihood = 0.0;
+	for(int64_t i=0; i<b->readNo; i++) {
+		logLikelihood += b->alleleReadSupports[allele*b->readNo + i];
+	}
+	return logLikelihood;
+}
+
+int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b) {
+	int64_t maxAllele = 0;
+	assert(b->alleleNo > 0);
+	double maxAlleleLikelihood = bubble_getLogLikelihoodOfAllele(b, 0);
+	for(int64_t i=1; i<b->alleleNo; i++) {
+		double alleleLikelihood = bubble_getLogLikelihoodOfAllele(b, i);
+		if(alleleLikelihood > maxAlleleLikelihood) {
+			maxAllele = i;
+			maxAlleleLikelihood = alleleLikelihood;
+		}
+	}
+	return maxAllele;
+}
+
+char *bubbleGraph_getConsensus(BubbleGraph *bg, int64_t **poaToConsensusMap,
+		PolishParams *polishParams) {
+
+	// Map to track alignment between the new consensus sequence and the current reference sequence
+	*poaToConsensusMap = st_malloc(bg->refLength * sizeof(int64_t));
+	for(int64_t i=0; i<bg->refLength; i++) {
+		(*poaToConsensusMap)[i] = -1;
+	}
+
+	// Substrings of the consensus string that when concatenated form the overall consensus string
+	stList *consensusSubstrings = stList_construct3(0, free);
+	int64_t j=0; // Index in the consensus substring
+	int64_t k=0; // Index in the reference string
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		Bubble *b = &(bg->bubbles[i]);
+
+		// Add prefix after the last bubble (or start) but before the new bubble start
+		if(k < b->refStart) {
+			stList_append(consensusSubstrings, stString_getSubString(bg->refString, k, b->refStart-k));
+			do {
+				(*poaToConsensusMap)[k++] = j++;
+			} while(k < b->refStart);
+		}
+
+		// Add the bubble string itself
+		char *consensusSubstring = stString_copy(b->alleles[bubble_getIndexOfHighestLikelihoodAllele(b)]);
+		stList_append(consensusSubstrings, consensusSubstring);
+
+		if(st_getLogLevel() >= debug) {
+			if(strcmp(consensusSubstring, b->refAllele) != 0) {
+				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64
+							", \nexisting string:\t%s\nnew string:\t\t%s\n", k, k+b->length,
+							b->refAllele, consensusSubstring);
+
+				for(int64_t j=0; j<b->alleleNo; j++) {
+					st_logDebug("\tGot allele: \t%s with log-likelihood: %f\n",
+							b->alleles[j], bubble_getLogLikelihoodOfAllele(b, j));
+				}
+
+				for(int64_t j=0; j<b->readNo; j++) {
+					st_logDebug("\tGot read: \t%s, q-value: %f\n", b->reads[j]->readSubstring, b->reads[j]->qualValue);
+				}
+			}
+		}
+
+		// Check if the same as the existing reference
+		// in which case we can maintain the alignment
+		if(strcmp(b->refAllele, consensusSubstring) == 0) {
+			do {
+				(*poaToConsensusMap)[k++] = j++;
+			} while(k < b->refStart + b->length);
+		}
+		else {
+			// Otherwise just update coordinates
+			k += b->length;
+			j += strlen(consensusSubstring);
+		}
+	}
+
+	// Add the suffix of the reference after the last bubble
+	if(k < bg->refLength) {
+		stList_append(consensusSubstrings, stString_getSubString(bg->refString, k, bg->refLength-k));
+		do {
+			(*poaToConsensusMap)[k++] = j++;
+		} while(k < bg->refLength);
+	}
+
+	// Build the new consensus string by concatenating the constituent pieces
+	char *newConsensusString = stString_join2("", consensusSubstrings);
+	assert(strlen(newConsensusString) == j);
+
+	// Cleanup
+	stList_destruct(consensusSubstrings);
+
+	return newConsensusString;
+}
+
+BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, PolishParams *params) {
+	// Setup
+	double *candidateWeights = getCandidateWeights(poa, params);
+
+	// Log info about the alignment
+	if(st_getLogLevel() >= info) {
+		double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
+		double totalCandidateWeight = 0.0;
+		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
+			totalCandidateWeight += candidateWeights[i];
+		}
+		st_logDebug("Got avg. coverage: %f for region of length: %" PRIi64 " and avg. candidate weight of: %f\n",
+				avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes), totalCandidateWeight/(PAIR_ALIGNMENT_PROB_1*stList_length(poa->nodes)));
+	}
+
+	// Sort the base observations to make the getReadSubstrings function work
+	sortBaseObservations(poa);
+
+	// Identify anchor points, represented as a binary array, one bit for each POA node
+	bool *anchors = getFilteredAnchorPositions(poa, candidateWeights, params);
+
+	// Make a list of bubbles
+	stList *bubbles = stList_construct3(0, free);
+	int64_t pAnchor = 0; // Previous anchor, starting from first position of POA, which is the prefix "N"
+	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+		if(anchors[i]) { // If position i is an anchor
+			assert(i > pAnchor);
+			if(i-pAnchor != 1)  { // In case anchors are not trivially adjacent there exists a potential bubble
+				// with start coordinate on the reference sequence of pAnchor and length pAnchor-i
+
+				// Calculate the list of alleles
+				stList *alleles = NULL;
+				double weightAdjustment = 1.0;
+				do {
+					alleles = getCandidateConsensusSubstrings(poa, pAnchor+1, i,
+							candidateWeights, weightAdjustment, params->maxConsensusStrings);
+					weightAdjustment *= 1.5; // Increase the candidate weight by 50%
+				} while(alleles == NULL);
+
+				// Get existing reference string
+				char *existingRefSubstring = getExistingSubstring(poa, pAnchor+1, i);
+				assert(strlen(existingRefSubstring) == i-pAnchor-1);
+
+				// If it is not trivial because it contains more than one allele, or an allele different
+				// to the reference
+				if(stList_length(alleles) > 1 || strcmp(stList_peek(alleles), existingRefSubstring) != 0) {
+
+					Bubble *b = st_malloc(sizeof(Bubble)); // Make a bubble and add to list of bubbles
+					stList_append(bubbles, b);
+
+					// Set the coordinates
+					b->refStart = pAnchor;
+					b->length = i-pAnchor-1;
+					assert(b->length > 0);
+
+					// The reference allele
+					b->refAllele = existingRefSubstring;
+
+					// Now copy the alleles list to the bubble's array of alleles
+					b->alleleNo = stList_length(alleles);
+					b->alleles = st_malloc(sizeof(char *) * b->alleleNo);
+					for(int64_t j=0; j<b->alleleNo; j++) {
+						b->alleles[j] = stList_pop(alleles);
+					}
+
+					// Get read substrings
+					stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, pAnchor+1, i, params);
+					b->readNo = stList_length(readSubstrings);
+					b->reads = st_malloc(sizeof(ReadSubstring *) * b->readNo);
+					for(int64_t j=0; j<b->readNo; j++) {
+						b->reads[j] = stList_pop(readSubstrings);
+					}
+					stList_destruct(readSubstrings);
+
+					// Get allele supports
+					b->alleleReadSupports = st_calloc(b->readNo*b->alleleNo, sizeof(float));
+					stList *anchorPairs = stList_construct(); // Currently empty
+					for(int64_t j=0; j<b->alleleNo; j++) {
+						for(int64_t k=0; k<b->readNo; k++) {
+							b->alleleReadSupports[j*b->readNo + k] =
+					computeForwardProbability(b->alleles[j], b->reads[k]->readSubstring, anchorPairs, params->p, params->sM, 0, 0);
+						}
+					}
+					stList_destruct(anchorPairs);
+				}
+				// Cleanup
+				else {
+					free(existingRefSubstring);
+				}
+				stList_destruct(alleles);
+			}
+			// Update previous anchor
+			pAnchor = i;
+		}
+	}
+
+	// Build the the graph
+	BubbleGraph *bg = st_malloc(sizeof(BubbleGraph));
+	bg->refString = poa->refString;
+	bg->refLength = stList_length(poa->nodes)-1;
+	// Copy the bubbles
+	bg->bubbleNo = stList_length(bubbles);
+	bg->bubbles = st_calloc(bg->bubbleNo, sizeof(Bubble)); // allocate bubbles
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		bg->bubbles[i] = *(Bubble *)stList_get(bubbles, i);
+	}
+
+	// Cleanup
+	free(anchors);
+	free(candidateWeights);
+	stList_destruct(bubbles);
+
+	return bg;
+}
+
+void bubbleGraph_destruct(BubbleGraph *bg) {
+	// Clean up the memory for each bubble
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		Bubble *b = &(bg->bubbles[i]);
+		// Cleanup the reads
+		for(int64_t j=0; j<b->readNo; j++) {
+			free(b->reads[j]);
+		}
+		free(b->reads);
+		// Cleanup the alleles
+		for(int64_t j=0; j<b->alleleNo; j++) {
+			free(b->alleles[j]);
+		}
+		free(b->alleles);
+		// Cleanup the allele supports
+		free(b->alleleReadSupports);
+		// Cleanup the reference allele
+		free(b->refAllele);
+	}
+	free(bg->bubbles);
+	free(bg);
+}
+
+void bubbleGraph_print(BubbleGraph *bg, FILE *fh) {
+
 }
