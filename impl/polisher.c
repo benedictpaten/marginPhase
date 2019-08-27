@@ -1977,78 +1977,6 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 	return filterReadSubstrings(readSubstrings, params);
 }
 
-char *getBestConsensusSubstring(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to, double *candidateWeights, PolishParams *params) {
-	/*
-	 * Heuristically searches for the best consensus substring between from (inclusive) and to (exclusive).
-	 * Does so by enumerating candidate variants in interval and then building and test all possible resulting
-	 * consensus substrings
-	 */
-	if(to-from > 1000) { // If region to be anchored is too long give up
-		return getExistingSubstring(poa, from, to);
-	}
-
-	// Get consensus substrings, ensuring we use a candidate weight that does not cause us to evaluate more than
-	// a maximum number of strings.
-	stList *consensusSubstrings = NULL;
-	double weightAdjustment = 1.0;
-	do {
-		consensusSubstrings = getCandidateConsensusSubstrings(poa, from, to, candidateWeights, weightAdjustment, params->maxConsensusStrings);
-		weightAdjustment *= 1.5; // Increase the candidate weight by 50%
-	} while(consensusSubstrings == NULL);
-
-	char *consensusSubstring = stList_pop(consensusSubstrings);
-
-	if(stList_length(consensusSubstrings) > 0) {
-		// Get read substrings
-		stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, from, to, params);
-
-		if(stList_length(readSubstrings) < params->minReadsToCallConsensus) {
-			// If there are not sufficient numbers of sequences to call the consensus
-			stList_destruct(readSubstrings);
-			stList_destruct(consensusSubstrings);
-			free(consensusSubstring);
-			return getExistingSubstring(poa, from, to);
-		}
-
-		if(st_getLogLevel() >= debug) {
-			st_logDebug("Got %" PRIi64 " consensus strings from: %" PRIi64 " to %" PRIi64 " with %" PRIi64 " reads\n",
-						stList_length(consensusSubstrings)+1, from, to, stList_length(readSubstrings));
-			for(int64_t i=0; i<stList_length(readSubstrings); i++) {
-				ReadSubstring *rs = stList_get(readSubstrings, i);
-				st_logDebug("\tGot read substring: %s %f\n", rs->readSubstring, rs->qualValue);
-			}
-		}
-
-		// Assess likelihood of each remaining substring in turn,
-		// keeping the most probable
-		double maxLogProb = computeLogLikelihoodOfConsensusString(consensusSubstring, readSubstrings, params);
-
-		st_logDebug("\tFor consensus-string %s got log-prob: %f\n", consensusSubstring, maxLogProb);
-
-		while(stList_length(consensusSubstrings) > 0) {
-			char *c = stList_pop(consensusSubstrings);
-			double logProb = computeLogLikelihoodOfConsensusString(c, readSubstrings, params);
-			st_logDebug("\tFor consensus-string %s got log-prob: %f\n", c, logProb);
-			if(logProb > maxLogProb) {
-				maxLogProb = logProb;
-				free(consensusSubstring);
-				consensusSubstring = c;
-			}
-			else {
-				free(c);
-			}
-		}
-
-		// Cleanup
-		stList_destruct(readSubstrings);
-	}
-
-	// Cleanup
-	stList_destruct(consensusSubstrings);
-
-	return consensusSubstring;
-}
-
 // Code to create anchors
 
 double *getCandidateWeights(Poa *poa, PolishParams *params) {
@@ -2165,67 +2093,12 @@ bool *getFilteredAnchorPositions(Poa *poa, double *candidateWeights, PolishParam
 
 // Core polishing logic functions
 
-void poa_polishP(Poa *poa, stList *bamChunkReads, int64_t from, int64_t to,
-					stList *consensusSubstrings, int64_t *consensusStringLength,
-					int64_t *poaToConsensusMap, double *candidateWeights, PolishParams *params) {
-	// Get existing reference string
-	char *existingConsensusSubstring = getExistingSubstring(poa, from, to);
-
-	// Get best consensus substring
-	char *consensusSubstring = getBestConsensusSubstring(poa, bamChunkReads, from, to, candidateWeights, params);
-
-	// Add new best consensus substring to the growing new consensus string
-	stList_append(consensusSubstrings, consensusSubstring);
-
-	// Now update the alignment between the existing reference substring and the new consensus sequences
-
-	if(stString_eq(existingConsensusSubstring, consensusSubstring)) {
-		// If the new and old strings are the same then copy the alignment across
-		for(int64_t i=0; i<to-from; i++) {
-			if(from + i > 0 && *consensusStringLength + i > 0) { // The > 0 checks are to avoid including alignments to the "N" prefix
-				poaToConsensusMap[from + i - 1] = *consensusStringLength + i - 1;
-			}
-		}
-	}
-	else {
-		st_logDebug("In poa polish got anchors, from: %" PRIi64 " to: %" PRIi64
-					", \nexisting string:\t%s\nnew string:\t\t%s\n", from, to,
-					existingConsensusSubstring, consensusSubstring);
-
-		// Create alignment between new and old consensus strings and update the map
-		double alignmentScore;
-		stList *l = stList_construct(); // Empty set of alignment anchors
-		stList *alignedPairs = getShiftedMEAAlignment(existingConsensusSubstring, consensusSubstring, l, params->p, params->sM,
-												   0, 0, &alignmentScore);
-		stList_destruct(l);
-
-		for(int64_t k=0; k<stList_length(alignedPairs); k++) {
-			stIntTuple *alignedPair = stList_get(alignedPairs, k);
-			// Only take high confidence aligned pairs in updated map
-			if(((double)stIntTuple_get(alignedPair, 0))/PAIR_ALIGNMENT_PROB_1 > 0.99
-					&& from + stIntTuple_get(alignedPair, 1) > 0 && *consensusStringLength + stIntTuple_get(alignedPair, 2) > 0) {
-				// The > 0 checks are to avoid including alignments to the "N" prefix
-				poaToConsensusMap[from + stIntTuple_get(alignedPair, 1) - 1] = *consensusStringLength + stIntTuple_get(alignedPair, 2) - 1;
-			}
-		}
-
-		stList_destruct(alignedPairs);
-	}
-
-	// Cleanup
-	free(existingConsensusSubstring);
-
-	// Updare consensus string length
-	*consensusStringLength += strlen(consensusSubstring);
-}
-
 char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 				  int64_t **poaToConsensusMap) {
 	/*
 	 * As pao_polish, but returns the polished reference string and a
 	 * map back to the input poa reference sequence.
 	 */
-
 	BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, bamChunkReads, params);
 
 	char *newConsensusString = bubbleGraph_getConsensus(bg, poaToConsensusMap, params);
@@ -2233,80 +2106,6 @@ char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
 	bubbleGraph_destruct(bg);
 
 	return newConsensusString;
-
-/*
-	// Setup
-	double *candidateWeights = getCandidateWeights(poa, params);
-
-	if(st_getLogLevel() >= info) {
-		double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
-		double totalCandidateWeight = 0.0;
-		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-			totalCandidateWeight += candidateWeights[i];
-		}
-		st_logDebug("Got avg. coverage: %f for region of length: %" PRIi64 " and avg. candidate weight of: %f\n",
-				avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes), totalCandidateWeight/(PAIR_ALIGNMENT_PROB_1*stList_length(poa->nodes)));
-	}
-
-	// Sort the base observations to make the getReadSubstrings function work
-	sortBaseObservations(poa);
-
-	// Identify anchor points, represented as a binary array, one bit for each POA node
-	bool *anchors = getFilteredAnchorPositions(poa, candidateWeights, params);
-
-	// Map to track alignment between the new consensus sequence and the poa reference sequence
-	*poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
-	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
-		(*poaToConsensusMap)[i] = -1;
-	}
-
-	// Substrings of the consensus string that when concatenated form the overall consensus string
-	stList *consensusSubstrings = stList_construct3(0, free);
-	int64_t j=0; // Length of the growing consensus substring
-
-	// Enumerate candidate variant combinations between anchors
-
-	int64_t pAnchor = 0; // Previous anchor, starting from first position of POA, which is the prefix "N"
-	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
-		if(anchors[i]) { // If position i is an anchor
-			// In case anchors are trivially adjacent
-			if(i-pAnchor == 1)  {
-				stList_append(consensusSubstrings, stString_print("%c", ((PoaNode *)stList_get(poa->nodes, pAnchor))->base));
-				if(i > 0 && j > 0) {
-					(*poaToConsensusMap)[i-1] = j-1;
-				}
-				j++;
-			}
-			else {
-				poa_polishP(poa, bamChunkReads, pAnchor, i,
-							consensusSubstrings, &j, *poaToConsensusMap, candidateWeights, params);
-			}
-
-			// Update previous anchor
-			pAnchor = i;
-		}
-	}
-
-	// Deal with the suffix
-	poa_polishP(poa, bamChunkReads, pAnchor, stList_length(poa->nodes),
-				consensusSubstrings, &j, *poaToConsensusMap, candidateWeights, params);
-
-	// Build the new consensus string by concatenating the constituent pieces
-	char *newConsensusString = stString_join2("", consensusSubstrings);
-
-	// Remove the prefix "N" character (which is the first position of any POA)
-	assert(strlen(newConsensusString) >= 1);
-	assert(newConsensusString[0] == 'N');
-	char *c = newConsensusString;
-	newConsensusString = stString_copy(&(newConsensusString[1]));
-	free(c);
-
-	// Cleanup
-	free(candidateWeights);
-	free(anchors);
-	stList_destruct(consensusSubstrings);
-
-	return newConsensusString; */
 }
 
 Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params) {
@@ -2490,9 +2289,12 @@ char *bubbleGraph_getConsensus(BubbleGraph *bg, int64_t **poaToConsensusMap,
 		}
 
 		// Add the bubble string itself
-		char *consensusSubstring = stString_copy(b->alleles[bubble_getIndexOfHighestLikelihoodAllele(b)]);
+		// Noting, if there are not sufficient numbers of sequences to call the consensus
+		// use the current reference sequence
+		char *consensusSubstring = stString_copy(b->readNo < polishParams->minReadsToCallConsensus ?
+				b->refAllele : b->alleles[bubble_getIndexOfHighestLikelihoodAllele(b)]);
 		stList_append(consensusSubstrings, consensusSubstring);
-
+		
 		if(st_getLogLevel() >= debug) {
 			if(strcmp(consensusSubstring, b->refAllele) != 0) {
 				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64
