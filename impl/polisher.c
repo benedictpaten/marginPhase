@@ -2441,14 +2441,23 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 	}
 
 	// Build the the graph
+
 	BubbleGraph *bg = st_malloc(sizeof(BubbleGraph));
 	bg->refString = poa->refString;
 	bg->refLength = stList_length(poa->nodes)-1;
+
 	// Copy the bubbles
 	bg->bubbleNo = stList_length(bubbles);
 	bg->bubbles = st_calloc(bg->bubbleNo, sizeof(Bubble)); // allocate bubbles
 	for(int64_t i=0; i<bg->bubbleNo; i++) {
 		bg->bubbles[i] = *(Bubble *)stList_get(bubbles, i);
+	}
+
+	// Fill in the bubble allele offsets
+	int64_t alleleOffset = 0;
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		bg->bubbles[i].alleleOffset = alleleOffset;
+		alleleOffset += bg->bubbles[i].alleleNo;
 	}
 
 	// Cleanup

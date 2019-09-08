@@ -7,56 +7,15 @@
 #include "margin.h"
 
 /*
- * Character alphabet and substitutions
+ * Allele alphabet and substitutions
  */
 
-uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to) {
+uint16_t *stSite_getSubstitutionProb(stSite *site, int64_t from, int64_t to) {
     /*
-     * Gets the (log) substitution probability of getting the derived (to) character
-     * given the source (from/haplotype) character.
+     * Gets the (log) substitution probability of getting the derived (to) allele
+     * given the source (from/haplotype) allele.
      */
-    return &matrix[from * ALPHABET_SIZE + to];
-}
-
-double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to) {
-    /*
-     * As getSubstitutionProb.
-     */
-    return &matrix[from * ALPHABET_SIZE + to];
-}
-
-uint16_t scaleToLogIntegerSubMatrix(double logProb) {
-    /*
-     * Convert log probability into scaled form for substitution matrix.
-     */
-    assert(logProb <= 0);
-    if(logProb < -12) {
-        st_errAbort("Attempting to set a substitution probability smaller than x=0.00001 (log(x) ~= -12)");
-    }
-    return round(ALPHABET_MIN_SUBSTITUTION_PROB * (-logProb/12.0));
-}
-
-double invertScaleToLogIntegerSubMatrix(int64_t i) {
-    /*
-     * Invert scaled form to log probability.
-     */
-    return (12.0 * ((double)-i))/ALPHABET_MIN_SUBSTITUTION_PROB;
-}
-
-void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
-                         int64_t sourceCharacterIndex,
-                         int64_t derivedCharacterIndex, double prob) {
-    /*
-     * Sets the substitution probability, scaling it appropriately by taking the log and then
-     * storing as integer (see definition)
-     */
-    if(prob <= 0 || prob > 1.0) {
-        st_errAbort("Attempting to set substitution probability out of 0-1 range");
-    }
-    *getSubstitutionProb(logSubMatrix, sourceCharacterIndex, derivedCharacterIndex)
-            = scaleToLogIntegerSubMatrix(log(prob));
-    *getSubstitutionProbSlow(logSubMatrixSlow, sourceCharacterIndex, derivedCharacterIndex)
-            = log(prob);
+    return &site->substitutionLogProbs[from * site->alleleNumber + to];
 }
 
 /*
@@ -97,48 +56,51 @@ inline int popcount64(uint64_t x) {
 }
 
 static inline uint64_t *retrieveBitCountVector(uint64_t *bitCountVector,
-                                               int64_t position, int64_t characterIndex, int64_t bit) {
+                                               uint64_t siteOffset, uint64_t allele, uint64_t bit) {
     /*
-     * Returns a pointer to a bit count vector for a given position (offset in the column),
-     * character index and bit.
+     * Returns a pointer to a bit count vector for a given site, allele and bit.
      */
-    return &bitCountVector[position * ALPHABET_CHARACTER_BITS * ALPHABET_SIZE
-                           + characterIndex * ALPHABET_CHARACTER_BITS
-                           + bit];
+	return &bitCountVector[siteOffset * ALLELE_LOG_PROB_BITS
+	                           + allele * ALLELE_LOG_PROB_BITS
+	                           + bit];
 }
 
-uint64_t calculateBitCountVector(uint8_t **seqs, int64_t depth,
-                                 int64_t position, int64_t characterIndex, int64_t bit) {
+uint64_t calculateBitCountVector(uint8_t **seqs, uint64_t depth,
+                                 uint64_t siteOffset, uint64_t allele, uint64_t bit) {
     /*
-     * Calculates the bit count vector for a given position, character index and bit.
+     * Calculates the bit count vector for a given site, allele and bit.
      */
     uint64_t bitCountVector = 0;
-    for(int64_t i=0; i<depth; i++) {
-        uint8_t *p = &(seqs[i][ALPHABET_SIZE * position]);
-        bitCountVector |= ((((uint64_t)p[characterIndex] >> bit) & 1) << i);
+    for(uint64_t i=0; i<depth; i++) {
+    	uint8_t *p = &(seqs[i][siteOffset]);
+        bitCountVector |= ((((uint64_t)p[allele] >> bit) & 1) << i);
     }
 
     return bitCountVector;
 }
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth,
-                                   int64_t *activePositions, int64_t totalActivePositions) {
+uint64_t *calculateCountBitVectors(uint8_t **seqs, stReference *ref,
+								   uint64_t firstSite, uint64_t length, uint64_t depth) {
     /*
-     * Calculates the bit count vector for every active position, character and bit in the column.
+     * Calculates the bit count vector for every site, allele and bit in the given range of sites.
      */
 
-    // Array of bit vectors, for each position, for each character and for each bit in uint8_t
-    uint64_t *bitCountVectors = st_malloc(totalActivePositions * ALPHABET_SIZE *
-                                          ALPHABET_CHARACTER_BITS * sizeof(uint64_t));
+	// Index of first (inclusive) and last (exclusive) allele in the column
+	uint64_t firstAllele = ref->sites[firstSite].alleleOffset;
+	uint64_t lastAllele = firstSite+length < ref->length ? ref->sites[firstSite+length].alleleOffset : ref->totalAlleles;
 
-    // For each position
-    for(int64_t i=0; i<totalActivePositions; i++) {
-        // For each character
-        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
+    // Array of bit vectors, for each site, for each allele and for each bit in uint8_t
+    uint64_t *bitCountVectors = st_malloc((lastAllele-firstAllele) * ALLELE_LOG_PROB_BITS * sizeof(uint64_t));
+
+    // For each site
+    for(uint64_t i=firstSite; i<firstSite+length; i++) {
+        // For each allele
+    	uint64_t firstAlleleOfSite = ref->sites[i].alleleOffset;
+        for(uint64_t j=0; j<ref->sites[i].alleleNumber; j++) {
             // For each bit
-            for(int64_t k=0; k<ALPHABET_CHARACTER_BITS; k++) {
-                *retrieveBitCountVector(bitCountVectors, i, j, k) =
-                        calculateBitCountVector(seqs, depth, activePositions[i], j, k);
+            for(uint64_t k=0; k<ALLELE_LOG_PROB_BITS; k++) {
+                *retrieveBitCountVector(bitCountVectors, firstAlleleOfSite - firstAllele, j, k) =
+                        calculateBitCountVector(seqs, depth, firstAlleleOfSite, j, k);
             }
         }
     }
@@ -146,433 +108,187 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth,
     return bitCountVectors;
 }
 
-uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
-                                   int64_t position, int64_t characterIndex) {
+uint64_t getLogProbOfAllele(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
+							uint64_t siteOffset, uint64_t allele) {
     /*
-     * Returns the number of instances of a character, given by characterIndex,
-     * at the given position within the column for the given partition.
-     * Returns value scaled between 0 and ALPHABET_MAX_PROB, where the return value divided by ALPHABET_MAX_PROB
-     * is the expected number of instances of the given character in the given subpartition of the column.
+     * Returns the -log prob of the reads in a given partition being generated by a given allele.
      */
-    uint64_t *j = retrieveBitCountVector(bitCountVectors, position, characterIndex, 0);
-    uint64_t expectedCount = popcount64(j[0] & partition);
+    uint64_t *j = retrieveBitCountVector(bitCountVectors, siteOffset, allele, 0);
+    uint64_t negLogProb = popcount64(j[0] & partition);
 
-    for(int64_t i=1; i<ALPHABET_CHARACTER_BITS; i++) {
-        expectedCount += (popcount64(j[i] & partition) << i);
+    for(uint64_t i=1; i<ALLELE_LOG_PROB_BITS; i++) {
+        negLogProb += (popcount64(j[i] & partition) << i);
     }
 
-    assert(expectedCount >= 0.0);
-    assert((double)expectedCount / ALPHABET_MAX_PROB <= depth);
-    return expectedCount;
-}
-
-static inline uint64_t getLogProbOfReadCharacters(uint16_t *logSubMatrix, uint64_t *expectedInstanceNumbers,
-                                                  int64_t sourceCharacterIndex) {
-    /*
-     * Get the log probability of a given source character given the expected number of instances of
-     * each character in the reads.
-     */
-    uint16_t *j = getSubstitutionProb(logSubMatrix, sourceCharacterIndex, 0);
-    uint64_t logCharacterProb = j[0] * expectedInstanceNumbers[0];
-
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logCharacterProb += j[i] * expectedInstanceNumbers[i];
-    }
-
-    return logCharacterProb;
+    return negLogProb;
 }
 
 static inline uint64_t minP(uint64_t a, uint64_t b) {
     return a < b ? a : b;
 }
 
-static inline void columnIndexLogHapProbability(stRPColumn *column, uint64_t index,
-                                                uint64_t partition, uint64_t *bitCountVectors,
-                                                stRPHmmParameters *params,
-                                                uint64_t *rootCharacterProbs) {
+static inline void alleleLogHapProbabilities(stRPColumn *column, stSite *site, uint64_t siteOffset,
+                                             uint64_t partition, uint64_t *bitCountVectors,
+                                             uint64_t *alleleLogProbs) {
     /*
-     * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
+     * For each allele calculate the -log probability of the
+     * sub-partition.
      */
-    // For each possible read character calculate the expected number of instances in the
-    // partition and store counts in an array
-    uint64_t expectedInstanceNumbers[ALPHABET_SIZE];
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
-                                                               column->depth, partition, index, i);
+    for(uint64_t i=0; i<site->alleleNumber; i++) {
+        alleleLogProbs[i] = getLogProbOfAllele(bitCountVectors, column->depth, partition, siteOffset, i);
     }
+}
 
-    // Calculate the probability of the read characters for each possible haplotype character
-    uint64_t characterProbsHap[ALPHABET_SIZE];
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        characterProbsHap[i] = getLogProbOfReadCharacters(params->readErrorSubModel, expectedInstanceNumbers, i);
-    }
+static inline void ancestorHapProbabilities(stSite *site, uint64_t *alleleLogProbs,
+                                        uint64_t *ancestorAlleleProbs) {
+    /*
+     * Get the -log probabilities of the ancestor alleles for a given set of allele log probabilities.
+     */
 
-    // Calculate the probability of haplotype characters and read characters for each root character
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        uint16_t *j = getSubstitutionProb(params->hetSubModel, i, 0);
-        rootCharacterProbs[i] = characterProbsHap[0] + j[0] * ALPHABET_MAX_PROB;
-        for(int64_t k=1; k<ALPHABET_SIZE; k++) {
-            rootCharacterProbs[i] =
-                    minP(rootCharacterProbs[i],
-                         characterProbsHap[k] + j[k] * ALPHABET_MAX_PROB);
+    // Calculate the probability of haplotype alleles and read alleles for each ancestor allele
+    for(uint64_t i=0; i<site->alleleNumber; i++) {
+        uint16_t *j = stSite_getSubstitutionProb(site, i, 0);
+        ancestorAlleleProbs[i] = alleleLogProbs[0] + j[0];
+        for(uint64_t k=1; k<site->alleleNumber; k++) {
+            ancestorAlleleProbs[i] =
+                    minP(ancestorAlleleProbs[i],
+                         alleleLogProbs[k] + j[k]);
         }
     }
 }
 
-static inline uint64_t columnIndexLogProbability(stRPColumn *column, uint64_t index,
-                                                 uint64_t partition, uint64_t *bitCountVectors,
-                                                 uint16_t *referencePriorProbs,
-                                                 stRPHmmParameters *params) {
+static inline uint64_t genotypeLogProbability(stRPColumn *column, stSite *site, uint64_t siteOffset,
+                                                 uint64_t partition, uint64_t *bitCountVectors) {
     /*
-     * Get the probability of the characters in a given position within a column for a given partition.
+     * Get the -log probability of the alleles in a given position within a column for a given partition.
      */
-    // Get the sum of log probabilities of the derived characters over the possible source characters
-    uint64_t rootCharacterProbsHap1[ALPHABET_SIZE];
-    columnIndexLogHapProbability(column, index,
-                                 partition, bitCountVectors, params, rootCharacterProbsHap1);
-    uint64_t rootCharacterProbsHap2[ALPHABET_SIZE];
-    columnIndexLogHapProbability(column, index,
-                                 ~partition, bitCountVectors, params, rootCharacterProbsHap2);
+    // Get the sum of log probabilities of the derived alleles over the possible source alleles
 
-    // Combine the probabilities to calculate the overall probability of a given position in a column
-    uint64_t logColumnProb = rootCharacterProbsHap1[0]
-                             + rootCharacterProbsHap2[0]
-                             + referencePriorProbs[0] * ALPHABET_MAX_PROB;
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logColumnProb = minP(logColumnProb,
-                             rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i] + referencePriorProbs[i] * ALPHABET_MAX_PROB);
-        // + (i == ALPHABET_SIZE-1 ? scaleToLogIntegerSubMatrix(0.001) : 0));
+	// For each allele calculate the log probability of the
+	// partition and store counts in an array
+	uint64_t alleleLogProbsHap1[site->alleleNumber];
+	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap1);
+	uint64_t alleleLogProbsHap2[site->alleleNumber];
+	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap2);
+
+    uint64_t ancestorAlleleProbsHap1[site->alleleNumber];
+    ancestorHapProbabilities(site, alleleLogProbsHap1, ancestorAlleleProbsHap1);
+    uint64_t ancestorAlleleProbsHap2[site->alleleNumber];
+    ancestorHapProbabilities(site, alleleLogProbsHap2, ancestorAlleleProbsHap2);
+
+    // Combine the probabilities to calculate the overall probability of the genotype
+    uint64_t logGenotypeProb = ancestorAlleleProbsHap1[0] + ancestorAlleleProbsHap2[0] + site->allelePriorLogProbs[0];
+    for(uint64_t i=1; i<site->alleleNumber; i++) {
+        logGenotypeProb = minP(logGenotypeProb,
+                             ancestorAlleleProbsHap1[i] + ancestorAlleleProbsHap2[i] + site->allelePriorLogProbs[i]);
     }
 
-    return logColumnProb;
+    return logGenotypeProb;
 }
 
 double emissionLogProbability(stRPColumn *column,
-                              stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
+                              stRPCell *cell, uint64_t *bitCountVectors, stReference *ref,
                               stRPHmmParameters *params) {
     /*
      * Get the log probability of a set of reads for a given column.
      */
     assert(column->length > 0);
     uint64_t logPartitionProb = 0;
-    for(int64_t i=0; i<column->totalActivePositions; i++) {
+	uint64_t firstAllele = ref->sites[column->refStart].alleleOffset;
+    for(uint64_t i=column->refStart; i<column->refStart+column->length; i++) {
+    	stSite *site = &(ref->sites[i]);
+    	uint64_t siteOffset = site->alleleOffset - firstAllele;
 
         // Get the reference prior probabilities
-        int64_t j = column->refStart + column->activePositions[i] - referencePriorProbs->refStart;
-        uint16_t *rProbs = &referencePriorProbs->profileProbs[j * ALPHABET_SIZE];
-
-        logPartitionProb += columnIndexLogProbability(column, i, cell->partition, bitCountVectors, rProbs, params);
+        logPartitionProb += genotypeLogProbability(column, site, siteOffset, cell->partition, bitCountVectors);
     }
 
-    return invertScaleToLogIntegerSubMatrix(logPartitionProb)/ALPHABET_MAX_PROB;
+    return -((double)logPartitionProb);
 }
 
 /*
  * Functions for calculating genotypes/haplotypes
  */
 
-double getLogProbOfReadCharactersSlow(double *logSubMatrix, uint64_t *expectedInstanceNumbers,
-                                      int64_t sourceCharacterIndex) {
+static uint64_t getMLAllele(stSite *site, uint64_t *alleleLogProbs, uint64_t maxProbAncestorAllele) {
     /*
-     * Get the log probability of a given source character given the expected number of instances of
-     * each character in the reads.
+     * Return the allele with maximum probability for a given ancestor allele.
      */
-    double logCharacterProb = *getSubstitutionProbSlow(logSubMatrix, sourceCharacterIndex, 0) *
-                              ((double)expectedInstanceNumbers[0]);
-
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logCharacterProb += *getSubstitutionProbSlow(logSubMatrix, sourceCharacterIndex, i) *
-                            ((double)expectedInstanceNumbers[i]);
-    }
-
-    return logCharacterProb/ALPHABET_MAX_PROB;
-}
-
-void columnIndexLogHapProbabilitySlow(stRPColumn *column, uint64_t index,
-                                      uint64_t partition, uint64_t *bitCountVectors,
-                                      stRPHmmParameters *params, double *characterProbsHap) {
-    /*
-     * Get the probabilities of the haplotype characters for a given read sub-partition and a haplotype.
-     */
-    // For each possible read character calculate the expected number of instances in the
-    // partition and store counts in an array
-    uint64_t expectedInstanceNumbers[ALPHABET_SIZE];
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        expectedInstanceNumbers[i] = getExpectedInstanceNumber(bitCountVectors,
-                                                               column->depth, partition, index, i);
-    }
-
-    // Calculate the probability of the read characters for each possible haplotype character
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        characterProbsHap[i] = getLogProbOfReadCharactersSlow(params->readErrorSubModelSlow, expectedInstanceNumbers, i);
-    }
-}
-
-void calculateRootCharacterProbs(double *characterProbsHap, stRPHmmParameters *params,
-                                 double *rootCharacterProbs, bool maxNotSum) {
-    /*
-     * Calculate the probability of haplotype characters and read characters for each root character
-     * given the probability of each individual haplotype character
-     */
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        rootCharacterProbs[i] = characterProbsHap[0] +
-                                *getSubstitutionProbSlow(params->hetSubModelSlow, i, 0);
-        for(int64_t j=1; j<ALPHABET_SIZE; j++) {
-            rootCharacterProbs[i] =
-                    logAddP(rootCharacterProbs[i],
-                            characterProbsHap[j] +
-                            *getSubstitutionProbSlow(params->hetSubModelSlow, i, j),
-                            maxNotSum);
+    uint64_t maxAllele = 0;
+    uint64_t maxProb = alleleLogProbs[0] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, 0);
+    for(uint64_t i=1; i<site->alleleNumber; i++) {
+        double hapProb = alleleLogProbs[i] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, i);
+        if(hapProb > maxProb) {
+            maxProb = hapProb;
+            maxAllele = i;
         }
     }
+    return maxAllele;
 }
 
-void columnIndexLogRootHapProbabilitySlow(stRPColumn *column, uint64_t index,
-                                          uint64_t partition, uint64_t *bitCountVectors,
-                                          stRPHmmParameters *params, double *rootCharacterProbs, bool maxNotSum) {
+static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t index, uint64_t partition,
+                                   	      stRPColumn *column, uint64_t *bitCountVectors, stSite *site, uint64_t siteOffset) {
     /*
-     * Get the probabilities of the "root" characters for a given read sub-partition and a haplotype.
-     */
-    double characterProbsHap[ALPHABET_SIZE];
-
-    columnIndexLogHapProbabilitySlow(column, index,
-                                     partition, bitCountVectors, params, characterProbsHap);
-
-    calculateRootCharacterProbs(characterProbsHap, params, rootCharacterProbs, maxNotSum);
-}
-
-double columnIndexLogProbabilitySlow(stRPColumn *column, uint64_t index,
-                                     uint64_t partition, uint64_t *bitCountVectors, uint16_t *referencePriorProbs,
-                                     stRPHmmParameters *params, bool maxNotSum) {
-    /*
-     * Get the probability of a the characters in a given position within a column for a given partition.
-     */
-    // Get the sum of log probabilities of the derived characters over the possible source characters
-    double rootCharacterProbsHap1[ALPHABET_SIZE];
-    columnIndexLogRootHapProbabilitySlow(column, index,
-                                         partition, bitCountVectors, params, rootCharacterProbsHap1, maxNotSum);
-    double rootCharacterProbsHap2[ALPHABET_SIZE];
-    columnIndexLogRootHapProbabilitySlow(column, index,
-                                         ~partition, bitCountVectors, params, rootCharacterProbsHap2, maxNotSum);
-
-    // Combine the probabilities to calculate the overall probability of a given position in a column
-    double logColumnProb = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0] +
-                           invertScaleToLogIntegerSubMatrix(referencePriorProbs[0]);
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        logColumnProb = logAddP(logColumnProb, rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i] +
-                                               invertScaleToLogIntegerSubMatrix(referencePriorProbs[i]), maxNotSum);
-    }
-
-    return logColumnProb; // + log(1.0/params->alphabetSize);
-}
-
-double emissionLogProbabilitySlow(stRPColumn *column,
-                                  stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-                                  stRPHmmParameters *params, bool maxNotSum) {
-    /*
-     * Get the log probability of a set of reads for a given column.
-     */
-    assert(column->length > 0);
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[(column->refStart - referencePriorProbs->refStart) * ALPHABET_SIZE];
-    double logPartitionProb = columnIndexLogProbabilitySlow(column, 0,
-                                                            cell->partition, bitCountVectors, rProbs, params, maxNotSum);
-
-    for(int64_t i=1; i<column->length; i++) {
-        rProbs = &rProbs[ALPHABET_SIZE]; // Move to the next column of the reference prior
-        logPartitionProb += columnIndexLogProbabilitySlow(column, i,
-                                                          cell->partition, bitCountVectors, rProbs, params, maxNotSum);
-    }
-    return logPartitionProb;
-}
-
-uint64_t getMLHapChar(double *characterProbsHap,
-                      stRPHmmParameters *params,
-                      int64_t rootChar) {
-    /*
-     * Return the haplotype character with maximum probability.
-     */
-    uint64_t maxProbHapChar = 0;
-
-    double maxHapProb = characterProbsHap[0] +
-                        *getSubstitutionProbSlow(params->hetSubModelSlow,
-                                                 rootChar, 0);
-
-    for(uint64_t i=1; i<ALPHABET_SIZE; i++) {
-        double hapProb = characterProbsHap[i] +
-                         *getSubstitutionProbSlow(params->hetSubModelSlow,
-                                                  rootChar, i);
-        if(hapProb > maxHapProb) {
-            maxHapProb = hapProb;
-            maxProbHapChar = i;
-        }
-    }
-
-    return maxProbHapChar;
-}
-
-double getHaplotypeProb(double characterReadProb,
-                        uint64_t hapChar, double *rootCharacterProbsOtherHap, stRPHmmParameters *params,
-                        uint16_t *referencePriorProbs) {
-    /*
-     * Return the probability of the tree given that the haplotype character was hapChar
-     */
-
-    double logHapProb = ST_MATH_LOG_ZERO;
-
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        logHapProb = stMath_logAdd(logHapProb, characterReadProb
-                                               + *getSubstitutionProbSlow(params->hetSubModelSlow, i, hapChar)
-                                               + rootCharacterProbsOtherHap[i]
-                                               + invertScaleToLogIntegerSubMatrix(referencePriorProbs[i]));
-    }
-
-    return logHapProb;
-}
-
-uint8_t getReadDepth(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition, int64_t index) {
-    /*
-     * Calculates the read depth at a given position.
-     */
-    uint8_t readDepth = 0;
-    for (int64_t i = 0; i < ALPHABET_SIZE; i++) {
-        readDepth += getExpectedInstanceNumber(bitCountVectors, depth, partition, index, i) / ALPHABET_MAX_PROB;
-    }
-    return readDepth;
-}
-
-void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t partition,
-                                   stRPColumn *column, stRPHmmParameters *params,
-                                   stReferencePriorProbs *referencePriorProbs,
-                                   uint64_t *bitCountVectors, uint64_t index) {
-    /*
-     * Computes the most probable haplotype characters / genotype and associated posterior
+     * Computes the most probable haplotype alleles / genotype and associated posterior
      * probabilities for a given position within a cell/column.
      */
 
-    int64_t rProbsIndex = column->refStart - referencePriorProbs->refStart + index;
-    uint16_t *rProbs = &referencePriorProbs->profileProbs[rProbsIndex*ALPHABET_SIZE];
+	// Get the log-prob of ancestral alleles
 
-    // Get the haplotype characters that are most probable given the root character
-    double characterProbsHap1[ALPHABET_SIZE];
-    double characterProbsHap2[ALPHABET_SIZE];
+	// For each allele calculate the log probability of the
+	// partition and store counts in an array
+	uint64_t alleleLogProbsHap1[site->alleleNumber];
+	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap1);
+	uint64_t alleleLogProbsHap2[site->alleleNumber];
+	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap2);
 
-    columnIndexLogHapProbabilitySlow(column, index,
-                                     partition, bitCountVectors,
-                                     params, characterProbsHap1);
+	uint64_t ancestorAlleleProbsHap1[site->alleleNumber];
+	ancestorHapProbabilities(site, alleleLogProbsHap1, ancestorAlleleProbsHap1);
+	uint64_t ancestorAlleleProbsHap2[site->alleleNumber];
+	ancestorHapProbabilities(site, alleleLogProbsHap2, ancestorAlleleProbsHap2);
 
-    columnIndexLogHapProbabilitySlow(column, index,
-                                     ~partition, bitCountVectors,
-                                     params, characterProbsHap2);
+	// Combine the probabilities to calculate the log prob of the ml ancestor allele
+	uint64_t maxLogColumnProb = ancestorAlleleProbsHap1[0] + ancestorAlleleProbsHap2[0] + site->allelePriorLogProbs[0];
+	uint64_t ancestorAllele = 0;
+	for(uint64_t i=1; i<site->alleleNumber; i++) {
+		uint64_t j = ancestorAlleleProbsHap1[i] + ancestorAlleleProbsHap2[i] + site->allelePriorLogProbs[i];
+		if(maxLogColumnProb > j) {
+			maxLogColumnProb = j;
+			ancestorAllele = i;
+		}
+	}
 
-    // Get the root character with maximum posterior probability.
+	// Given ml ancestor allele, figure prob of haplotype alleles
+	uint64_t hapAllele1  = getMLAllele(site, alleleLogProbsHap1, ancestorAllele);
+	uint64_t hapAllele2  = getMLAllele(site, alleleLogProbsHap1, ancestorAllele);
 
-    // Get the sum of log probabilities of the derived characters over the possible source characters
-    double rootCharacterProbsHap1[ALPHABET_SIZE];
-    double rootCharacterProbsHap2[ALPHABET_SIZE];
-
-    calculateRootCharacterProbs(characterProbsHap1, params,
-                                rootCharacterProbsHap1, 0);
-    calculateRootCharacterProbs(characterProbsHap2, params,
-                                rootCharacterProbsHap2, 0);
-
-    // Combine the probabilities to calculate the overall probability of a given partition of
-    // read characters and the root character with maximum posterior prob
-    double logColumnProbSum = rootCharacterProbsHap1[0] + rootCharacterProbsHap2[0] +
-                              invertScaleToLogIntegerSubMatrix(rProbs[0]);
-    double logColumnProbMax = logColumnProbSum;
-    int64_t maxProbRootChar = 0;
-    for(int64_t i=1; i<ALPHABET_SIZE; i++) {
-        double logColumnProb = rootCharacterProbsHap1[i] + rootCharacterProbsHap2[i] +
-                               invertScaleToLogIntegerSubMatrix(rProbs[i]);
-        logColumnProbSum = stMath_logAdd(logColumnProbSum, logColumnProb);
-        if(logColumnProb > logColumnProbMax) {
-            logColumnProbMax = logColumnProb;
-            maxProbRootChar = i;
-        }
-    }
-
-    int64_t j = column->refStart + index - gF->refStart;
-
-    // Get the haplotype characters with highest posterior probability.
-    uint64_t hapChar1  = getMLHapChar(characterProbsHap1, params, maxProbRootChar);
-    gF->haplotypeString1[j] = hapChar1;
-    uint64_t hapChar2 = getMLHapChar(characterProbsHap2, params, maxProbRootChar);
-    gF->haplotypeString2[j] = hapChar2;
-
-    // Calculate haplotype probabilities
-    gF->haplotypeProbs1[j] = (float) exp(getHaplotypeProb(characterProbsHap1[hapChar1],
-                                                          hapChar1, rootCharacterProbsHap2, params, rProbs)
-                                         - logColumnProbSum);
-    gF->haplotypeProbs2[j] = (float) exp(getHaplotypeProb(characterProbsHap2[hapChar2],
-                                                          hapChar2, rootCharacterProbsHap1, params, rProbs)
-                                         - logColumnProbSum);
-
-    // Get combined genotype
-    gF->genotypeString[j] = hapChar1 < hapChar2 ? hapChar1 * ALPHABET_SIZE + hapChar2 :
-                            hapChar2 * ALPHABET_SIZE + hapChar1;
-
-    // Calculate genotype posterior probability
-    double genotypeProb = ST_MATH_LOG_ZERO;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        genotypeProb = stMath_logAdd(genotypeProb,
-                                     characterProbsHap1[hapChar1] + characterProbsHap2[hapChar2] +
-                                     *getSubstitutionProbSlow(params->hetSubModelSlow, i, hapChar1) +
-                                     *getSubstitutionProbSlow(params->hetSubModelSlow, i, hapChar2) +
-                                     invertScaleToLogIntegerSubMatrix(rProbs[i]));
-    }
-    gF->genotypeProbs[j] = (float) exp(genotypeProb - logColumnProbSum);
-
-    // Fill in genotype likelihoods array
-    for (int64_t c1=0; c1<ALPHABET_SIZE; c1++) {
-        for (int64_t c2=0; c2<ALPHABET_SIZE; c2++) {
-            double genotypeProbability = ST_MATH_LOG_ZERO;
-            for (int64_t i=0; i<ALPHABET_SIZE; i++) {
-                genotypeProbability = stMath_logAdd(genotypeProbability,
-                                                   characterProbsHap1[c1] + characterProbsHap2[c2] +
-                                                   *getSubstitutionProbSlow(params->hetSubModelSlow, i, c1) +
-                                                   *getSubstitutionProbSlow(params->hetSubModelSlow, i, c2) +
-                                                   invertScaleToLogIntegerSubMatrix(rProbs[i]));
-            }
-            float genotypeLikelihood = -10 * log10f((float) exp(genotypeProbability - logColumnProbSum));
-            if (genotypeLikelihood > 1000) genotypeLikelihood = 1000;
-            if (genotypeLikelihood <= 0) genotypeLikelihood = 0;
-            gF->genotypeLikelihoods[j][c1*ALPHABET_SIZE+c2] = genotypeLikelihood;
-        }
-    }
-
-    // Update reference sequence and read depth info
-     gF->referenceSequence[j] = referencePriorProbs->referenceSequence[rProbsIndex];
-    gF->hap1Depth[j] = getReadDepth(bitCountVectors, column->depth, partition, index);
-    gF->hap2Depth[j] = getReadDepth(bitCountVectors, column->depth, ~partition, index);
-    gF->alleleCountsHap1[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, partition, index, hapChar1) / ALPHABET_MAX_PROB;
-    gF->alleleCountsHap2[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, ~partition, index, hapChar1) / ALPHABET_MAX_PROB;
-    gF->allele2CountsHap1[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, partition, index, hapChar2) / ALPHABET_MAX_PROB;
-    gF->allele2CountsHap2[j] = getExpectedInstanceNumber(bitCountVectors, column->depth, ~partition, index, hapChar2) / ALPHABET_MAX_PROB;
+	// Fill in the genome fragment
+	gF->haplotypeString1[index] = hapAllele1;
+	gF->haplotypeString2[index] = hapAllele2;
+	// Get combined genotype
+	gF->genotypeString[index] = hapAllele1 < hapAllele2 ? hapAllele1 * site->alleleNumber + hapAllele2 :
+							hapAllele2 * site->alleleNumber + hapAllele1;
+	gF->genotypeProbs[index] = maxLogColumnProb;
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
-                           stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
+                           stRPColumn *column, stRPHmmParameters *params) {
     /*
-     * Computes the most probable haplotype characters / genotypes and associated posterior
+     * Computes the most probable haplotype alleles / genotypes and associated posterior
      * probabilities for a given interval defined by a cell/column. Fills in these values in the
      * genome fragment argument.
      */
     
-    //  Following makes an array in which all positions are marked active
-    int64_t activePositions[column->length];
-    for(int64_t i=0; i<column->length; i++) {
-        activePositions[i] = i;
-    }
-
     // Calculate the bit vectors
-    uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                                                         activePositions, column->length);
+    uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, gF->reference, column->refStart,
+    				column->length, column->depth);
 
     assert(column->length > 0);
-
+    uint64_t firstAllele = gF->reference->sites[column->refStart].alleleOffset;
     for(uint64_t i=0; i<column->length; i++) {
-        fillInPredictedGenomePosition(gF, partition, column, params,
-                                      referencePriorProbs, bitCountVectors, i);
+		stSite *site = &(gF->reference->sites[i+column->refStart]);
+        fillInPredictedGenomePosition(gF, i, partition, column,
+                                      bitCountVectors, site, site->alleleOffset-firstAllele);
     }
 
     // Cleanup

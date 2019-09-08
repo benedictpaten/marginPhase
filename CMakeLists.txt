@@ -254,14 +254,11 @@ set(SOURCE_FILES
         impl/genomeFragment.c
         impl/hmm.c
         impl/mergeColumn.c
-        impl/outputWriter.c
         impl/parser.c
         impl/partitions.c
         impl/polisher.c
         impl/view.c
         impl/profileSeq.c
-        impl/referencePriorProbs.c
-        impl/vcfTools.c
         externalTools/samtools/bedidx.c
         )
 
@@ -335,18 +332,12 @@ target_link_libraries(margin cpecan son hts)
 ######### EXECUTABLES #########
 ###############################
 
-add_executable(marginPhase marginPhase.c )
-target_link_libraries(marginPhase margin)
 
-#TODO uncomment after compilation errors are fixed
 add_executable(marginPolish marginPolish.c )
 target_link_libraries(marginPolish margin)
 
 file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-add_executable(vcfCompare vcfCompare.c )
-target_link_libraries(vcfCompare margin)
 
 enable_testing()
 add_executable(allTests

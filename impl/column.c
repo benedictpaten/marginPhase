@@ -11,7 +11,7 @@
  */
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs) {
+        stProfileSeq **seqHeaders, uint8_t **seqs) {
 
     stRPColumn *column = st_calloc(1, sizeof(stRPColumn));
 
@@ -26,27 +26,6 @@ stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth
 
     // Initially contains not states
     column->head = NULL;
-
-    // Work out which positions in the column are non-filtered
-
-    // First the active positions
-    column->totalActivePositions = 0;
-    for(int64_t i=0; i<column->length; i++) {
-        if(rProbs->referencePositionsIncluded[column->refStart + i - rProbs->refStart]) {
-            column->totalActivePositions++;
-        }
-    }
-
-    // Now create the array of active positions
-    column->activePositions = st_calloc(column->totalActivePositions, sizeof(int64_t));
-    int64_t k=0;
-    for(int64_t i=0; i<column->length; i++) {
-        int64_t j = column->refStart + i - rProbs->refStart;
-        if(rProbs->referencePositionsIncluded[j]) {
-            column->activePositions[k++] = i; // Positions are relative to the start of the reference
-        }
-    }
-    assert(k == column->totalActivePositions);
 
     return column;
 }
@@ -63,7 +42,6 @@ void stRPColumn_destruct(stRPColumn *column) {
 
     free(column->seqHeaders);
     free(column->seqs);
-    free(column->activePositions);
 
     free(column);
 }
@@ -79,7 +57,7 @@ void stRPColumn_print(stRPColumn *column, FILE *fileHandle, bool includeCells) {
             column->refStart, column->length, column->depth,
             (float)column->totalLogProb);
     for(int64_t i=0; i<column->depth; i++) {
-        stProfileSeq_print(column->seqHeaders[i], fileHandle, 0);
+        stProfileSeq_print(column->seqHeaders[i], fileHandle);
     }
     if(includeCells) {
         stRPCell *cell = column->head;
@@ -100,13 +78,16 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     memcpy(seqHeaders, column->seqHeaders, sizeof(stProfileSeq *) * column->depth);
     uint8_t **seqs = st_malloc(sizeof(uint8_t *) * column->depth);
     // Update the pointers to the seqs
+    uint64_t firstAllele = hmm->ref->sites[column->refStart].alleleOffset;
+    assert(column->refStart + firstHalfLength < hmm->ref->length);
+    uint64_t lastAllele = hmm->ref->sites[column->refStart + firstHalfLength].alleleOffset;
     for(int64_t i=0; i<column->depth; i++) {
-        seqs[i] = &(column->seqs[i][firstHalfLength * ALPHABET_SIZE]);
+        seqs[i] = &(column->seqs[i][lastAllele - firstAllele]);
     }
     assert(firstHalfLength > 0); // Non-zero length for first half
     assert(column->length-firstHalfLength > 0); // Non-zero length for second half
     stRPColumn *rColumn = stRPColumn_construct(column->refStart+firstHalfLength,
-            column->length-firstHalfLength, column->depth, seqHeaders, seqs, hmm->referencePriorProbs);
+            column->length-firstHalfLength, column->depth, seqHeaders, seqs);
 
     // Create merge column
     uint64_t acceptMask = makeAcceptMask(column->depth);
