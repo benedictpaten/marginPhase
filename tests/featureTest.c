@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <htsIntegration.h>
+#include <sys/stat.h>
 #include "CuTest.h"
 #include "margin.h"
 #include "helenFeatures.h"
@@ -24,8 +25,9 @@ int64_t polishingFeatureTest(char *bamFile, char *referenceFile, char *paramsFil
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
     char *featureTruthCmd = featureTruth == NULL ? stString_copy("") : stString_print("--trueReferenceBam %s", featureTruth) ;
-    char *command = stString_print("./marginPolish %s %s %s --outputBase %s %s -F %s %s",
-            bamFile, referenceFile, paramsFile, outputName, logString, featureType, featureTruthCmd);
+    char *featureTypeCmd = featureType == NULL ? stString_copy("-f") : stString_print("-F %s", featureType);
+    char *command = stString_print("./marginPolish %s %s %s --outputBase %s %s %s %s",
+            bamFile, referenceFile, paramsFile, outputName, logString, featureTypeCmd, featureTruthCmd);
     st_logInfo("> Running command: %s\n", command);
     fprintf(stderr, "> Running command: %s\n", command);
 
@@ -36,39 +38,76 @@ int64_t polishingFeatureTest(char *bamFile, char *referenceFile, char *paramsFil
 }
 
 
+void test_defaultFeatureGeneration(CuTest *testCase) {
+
+    struct stat st;
+    char *outputName = "test.default";
+    char *expectedOutputFa = stString_print("%s.fa", outputName);
+    char *expectedOutputFeature = stString_print("%s.T00.h5", outputName);
+
+    CuAssertTrue(testCase, access(expectedOutputFa, R_OK ) == 0 || remove(expectedOutputFa) != 0);
+    CuAssertTrue(testCase, access(expectedOutputFeature, R_OK ) == 0 || remove(expectedOutputFeature) != 0);
+
+    st_logInfo("\n\nTesting default feature polishing on %s and %s\n", FEATURE_TEST_BAM, FEATURE_TEST_FA);
+    int64_t retCode = polishingFeatureTest(FEATURE_TEST_BAM, FEATURE_TEST_FA, FEATURE_TEST_PARAMS, NULL,
+                                           NULL, outputName, FALSE);
+
+    CuAssertTrue(testCase, retCode == 0);
+    CuAssertTrue(testCase, access(expectedOutputFa, F_OK ) == 0);
+    stat(expectedOutputFa, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
+    CuAssertTrue(testCase, access(expectedOutputFeature, F_OK ) == 0);
+    stat(expectedOutputFeature, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
+}
+
 void test_simpleWeightFeatureGeneration(CuTest *testCase) {
 
+    struct stat st;
     char *featureType = "simpleWeight";
     char *outputName = "test.simpleWeightFeature";
+    char *expectedOutputFa = stString_print("%s.fa", outputName);
+    char *expectedOutputFeature = stString_print("%s.simpleWeight.C00000.feature_contig-0-50.0.h5", outputName);
+
+    CuAssertTrue(testCase, access(expectedOutputFa, R_OK ) == 0 || remove(expectedOutputFa) != 0);
+    CuAssertTrue(testCase, access(expectedOutputFeature, R_OK ) == 0 || remove(expectedOutputFeature) != 0);
+
     st_logInfo("\n\nTesting %s feature polishing on %s and %s\n", featureType, FEATURE_TEST_BAM, FEATURE_TEST_FA);
     int64_t retCode = polishingFeatureTest(FEATURE_TEST_BAM, FEATURE_TEST_FA, FEATURE_TEST_NO_RLE_PARAMS,
                                            featureType, NULL, outputName, FALSE);
 
-    char *expectedOutputFa = stString_print("%s.fa", outputName);
-    char *expectedOutputFeature = stString_print("%s.T00.h5", outputName);
     CuAssertTrue(testCase, retCode == 0);
     CuAssertTrue(testCase, access(expectedOutputFa, F_OK ) == 0);
+    stat(expectedOutputFa, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
     CuAssertTrue(testCase, access(expectedOutputFeature, F_OK ) == 0);
-    remove(expectedOutputFa);
-    remove(expectedOutputFeature);
+    stat(expectedOutputFeature, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
 }
 
 
 void test_splitRleWeightFeatureGeneration(CuTest *testCase) {
 
+    struct stat st;
     char *featureType = "splitRleWeight";
     char *outputName = "test.splitRleWeightFeature";
+    char *expectedOutputFa = stString_print("%s.fa", outputName);
+    char *expectedOutputFeature = stString_print("%s.T00.h5", outputName);
+
+    CuAssertTrue(testCase, access(expectedOutputFa, R_OK ) == 0 || remove(expectedOutputFa) != 0);
+    CuAssertTrue(testCase, access(expectedOutputFeature, R_OK ) == 0 || remove(expectedOutputFeature) != 0);
+
     st_logInfo("\n\nTesting %s feature polishing on %s and %s\n", featureType, FEATURE_TEST_BAM, FEATURE_TEST_FA);
     int64_t retCode = polishingFeatureTest(FEATURE_TEST_BAM, FEATURE_TEST_FA, FEATURE_TEST_PARAMS, featureType,
             NULL, outputName, FALSE);
 
-    char *expectedOutputFa = stString_print("%s.fa", outputName);
-    char *expectedOutputFeature = stString_print("%s.T00.h5", outputName);
     CuAssertTrue(testCase, retCode == 0);
     CuAssertTrue(testCase, access(expectedOutputFa, F_OK ) == 0);
+    stat(expectedOutputFa, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
     CuAssertTrue(testCase, access(expectedOutputFeature, F_OK ) == 0);
-    remove(expectedOutputFa);
-    remove(expectedOutputFeature);
+    stat(expectedOutputFeature, &st);
+    CuAssertTrue(testCase, st.st_size > 0);
 }
 
 void test_simpleWeightIndex(CuTest *testCase) {
@@ -142,6 +181,7 @@ CuSuite* featureTestSuite(void) {
 
     SUITE_ADD_TEST(suite, test_simpleWeightIndex);
     SUITE_ADD_TEST(suite, test_RleWeightIndex);
+    SUITE_ADD_TEST(suite, test_defaultFeatureGeneration);
     SUITE_ADD_TEST(suite, test_simpleWeightFeatureGeneration);
     SUITE_ADD_TEST(suite, test_splitRleWeightFeatureGeneration);
 
