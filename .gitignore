@@ -8,7 +8,6 @@ cmake_install.cmake
 libhts.a
 libson.a
 marginPhase
-Makefile
 vcfCompare
 marginPhase.cbp
 libjsmn.a
