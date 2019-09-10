@@ -1020,6 +1020,10 @@ void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
  */
 int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,
 				      int64_t *prefixStringCropEnd, int64_t *suffixStringCropStart);
+char *mergeContigChunksThreaded(char **chunks, int64_t startIdx, int64_t endIdxExclusive, int64_t numThreads,
+								int64_t overlap, Params *params, char *missingChunkSpacer);
+char *mergeContigChunks(char **chunks, int64_t startIdx, int64_t endIdxExclusive,
+								int64_t overlap, Params *params, char *missingChunkSpacer);
 
 /*
  * View functions

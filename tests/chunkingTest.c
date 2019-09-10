@@ -9,6 +9,7 @@
 #include "margin.h"
 
 #define INPUT_BAM "../tests/data/chunkingTest/chunkingTest.bam"
+#define INPUT_PARAMS "../params/allParams.np.json"
 
 static PolishParams* getParameters(uint64_t chunkSize, uint64_t chunkBoundary, bool includeSoftClipping) {
     PolishParams *params = st_calloc(1, sizeof(PolishParams));
@@ -913,6 +914,58 @@ static void test_readAlignmentsWithSoftclippingChunkEnd(CuTest *testCase) {
 }
 
 
+void test_mergeContigChunks(CuTest *testCase) {
+    Params *params = params_readParams(INPUT_PARAMS);
+    char **chunks = st_calloc(4, sizeof(char*));
+    chunks[0] = stString_copy("AAAAAAAACC");
+    chunks[1] = stString_copy("AACCCCCCCCGG");
+    chunks[2] = stString_copy("CCGGGGGGGGTT");
+    chunks[3] = stString_copy("GGTTTTTTTT");
+    char* contig = mergeContigChunks(chunks, 0, 4, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, "AAAAAAAACCCCCCCCGGGGGGGGTTTTTTTT") == 0);
+}
+
+
+void test_mergeContigChunksThreaded(CuTest *testCase) {
+    Params *params = params_readParams(INPUT_PARAMS);
+    char *chunks[16];// = st_calloc(16, sizeof(char*));
+    chunks[0] = stString_copy("AAAAAAAACC");
+    chunks[1] = stString_copy("AACCCCCCCCGG");
+    chunks[2] = stString_copy("CCGGGGGGGGTT");
+    chunks[3] = stString_copy("GGTTTTTTTTAA");
+    chunks[4] = stString_copy("TTAAAAAAAACC");
+    chunks[5] = stString_copy("AACCCCCCCCGG");
+    chunks[6] = stString_copy("CCGGGGGGGGTT");
+    chunks[7] = stString_copy("GGTTTTTTTTAA");
+    chunks[8] = stString_copy("TTAAAAAAAACC");
+    chunks[9] = stString_copy("AACCCCCCCCGG");
+    chunks[10] = stString_copy("CCGGGGGGGGTT");
+    chunks[11] = stString_copy("GGTTTTTTTTAA");
+    chunks[12] = stString_copy("TTAAAAAAAACC");
+    chunks[13] = stString_copy("AACCCCCCCCGG");
+    chunks[14] = stString_copy("CCGGGGGGGGTT");
+    chunks[15] = stString_copy("GGTTTTTTTT");
+    char *truth = "AAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTT";
+    char* contig;
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 1, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 2, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 3, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 4, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 5, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 6, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0);
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 7, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0 );
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 8, 4, params, "NNNNNN");
+    CuAssertTrue(testCase, strcmp(contig, truth) == 0 );
+}
+
+
 
 
 
@@ -931,6 +984,8 @@ CuSuite* chunkingTestSuite(void) {
     SUITE_ADD_TEST(suite, test_readAlignmentsWithSoftclippingChunkStart);
     SUITE_ADD_TEST(suite, test_readAlignmentsWithoutSoftclippingChunkEnd);
     SUITE_ADD_TEST(suite, test_readAlignmentsWithSoftclippingChunkEnd);
+    SUITE_ADD_TEST(suite, test_mergeContigChunks);
+    SUITE_ADD_TEST(suite, test_mergeContigChunksThreaded);
 
     return suite;
 }

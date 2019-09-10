@@ -501,102 +501,49 @@ int main(int argc, char *argv[]) {
 
     // merge chunks
     st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
-    stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
-    char *referenceSequenceName = NULL;
+    assert(bamChunker->chunkCount > 0);
+    int64_t contigStartIdx = 0;
+    char *referenceSequenceName = stString_copy(bamChunker_getChunk(bamChunker, 0)->refSeqName);
+
+    // for filling missing chunks with N's
     int64_t spacerSize = (bamChunker->chunkBoundary == 0 ? 50 : bamChunker->chunkBoundary * 3);
     char *missingChunkSpacer = st_calloc(spacerSize + 1, sizeof(char));
     for (int64_t i = 0; i < spacerSize; i++) {
         missingChunkSpacer[i] = 'N';
     }
     missingChunkSpacer[spacerSize] = '\0';
-    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
-        // Get chunk and polished
-        BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
-        char* polishedReferenceString = chunkResults[chunkIdx];
-        int64_t prsLen = strlen(polishedReferenceString);
-        st_logInfo(" T%02d_C%05"PRId64" (%.3f): consensus sequence length %"PRId64"\n",
-                omp_get_thread_num(), chunkIdx, 1.0 * chunkIdx / bamChunker->chunkCount, prsLen);
+    
+    // find which chunks belong to each contig, merge each contig threaded, write out
+    for (chunkIdx = 1; chunkIdx <= bamChunker->chunkCount; chunkIdx++) {
+        
+        // we encountered the last chunk in the contig (end of list or new refSeqName)
+        if (chunkIdx == bamChunker->chunkCount || !stString_eq(referenceSequenceName,
+                bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName)) {
 
-		// If there is no prior chunk for this contig
-		if(referenceSequenceName == NULL) {
-			polishedReferenceStrings = stList_construct3(0, free);
-			referenceSequenceName = stString_copy(bamChunk->refSeqName);
-		}
-		// Else, print the prior reference sequence if current chunk not part of that sequence
-		else if(!stString_eq(bamChunk->refSeqName, referenceSequenceName)) {
-			assert(stList_length(polishedReferenceStrings) > 0);
+            // log progress
+            st_logInfo(" T%02d_C%05"PRId64" (%.3f): merging %"PRId64" chunks for contig %s\n",
+                   omp_get_thread_num(), contigStartIdx, 1.0 * contigStartIdx / bamChunker->chunkCount,
+                   chunkIdx - contigStartIdx, referenceSequenceName);
+            
+            // generate and save sequence
+            char *contigSequence = mergeContigChunksThreaded(chunkResults, contigStartIdx, chunkIdx, numThreads, 
+                    bamChunker->chunkBoundary * 2, params, missingChunkSpacer);
+            fastaWrite(contigSequence, referenceSequenceName, polishedReferenceOutFh);
 
-			// Write the previous polished reference string out
-			char *s = stString_join2("", polishedReferenceStrings);
-			fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
+            // Clean up
+            free(contigSequence);
+            free(referenceSequenceName);
 
-			// Clean up
-			free(s);
-			stList_destruct(polishedReferenceStrings);
-			free(referenceSequenceName);
-
-			// Reset for next reference sequence
-			polishedReferenceStrings = stList_construct3(0, free);
-			referenceSequenceName = stString_copy(bamChunk->refSeqName);
-		}
-		// If there was a previous chunk then trim it's polished reference sequence
-		// to remove overlap with the current chunk's polished reference sequence
-		else if(stList_length(polishedReferenceStrings) > 0) {
-			char *previousPolishedReferenceString = stList_peek(polishedReferenceStrings);
-			int64_t pprsLen = strlen(previousPolishedReferenceString);
-
-			// Trim the currrent and previous polished reference strings to remove overlap
-			int64_t prefixStringCropEnd, suffixStringCropStart;
-			int64_t overlapMatchWeight = removeOverlap(previousPolishedReferenceString, polishedReferenceString,
-													   bamChunker->chunkBoundary * 2, params->polishParams,
-													   &prefixStringCropEnd, &suffixStringCropStart);
-
-			// we have an overlap
-			if (overlapMatchWeight > 0) {
-                st_logInfo(
-                        "  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-                        "left-trim: %i, right-trim: %i:\n", (int) bamChunker->chunkBoundary * 2,
-                        (float) overlapMatchWeight / PAIR_ALIGNMENT_PROB_1,
-                        strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
-
-                // Crop the suffix of the previous chunk's polished reference string
-                previousPolishedReferenceString[prefixStringCropEnd] = '\0';
-
-                // Crop the the prefix of the current chunk's polished reference string
-                char *c = polishedReferenceString;
-                polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
-                free(c);
-
-            // no good alignment, could be missing chunks
-            } else {
-                if (prsLen == 0) {
-                    st_logInfo("  No overlap found. Filling empty chunk with Ns.\n");
-                    char *c = polishedReferenceString;
-                    polishedReferenceString = stString_copy(missingChunkSpacer);
-                    free(c);
-                } else {
-                    st_logInfo("  No overlap found. Filling Ns in stitch position.\n");
-                    stList_append(polishedReferenceStrings, stString_copy("NNNNNNNNNN"));
-                }
-			}
-		}
-
-		// Add the polished sequence to the list of polished reference sequence chunks
-		stList_append(polishedReferenceStrings, polishedReferenceString);
-
+            // Reset for next reference sequence
+            if (chunkIdx != bamChunker->chunkCount) {
+                contigStartIdx = chunkIdx;
+                referenceSequenceName = stString_copy(bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName);
+            }
+        }
+        // nothing to do otherwise, just wait until end or new contig
     }
 
-    // Write out the last chunk
-    if(referenceSequenceName != NULL) {
-    	// Write the previous polished reference string out
-    	char *s = stString_join2("", polishedReferenceStrings);
-    	fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
-
-    	// Clean up
-    	free(s);
-    	stList_destruct(polishedReferenceStrings);
-    	free(referenceSequenceName);
-    }
+    // everything has been written, cleanup merging infrastructure
     fclose(polishedReferenceOutFh);
     free(missingChunkSpacer);
 
