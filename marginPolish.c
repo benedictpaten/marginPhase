@@ -62,6 +62,23 @@ void usage() {
     fprintf(stderr, "\n");
 }
 
+char *getTimeDescriptorFromSeconds(int64_t seconds) {
+    int64_t minutes = (int64_t) (seconds / 60);
+    int64_t hours = (int64_t) (minutes / 60);
+    char *timeDescriptor;
+
+    if (hours > 0) {
+        timeDescriptor = stString_print("%"PRId64"h %"PRId64"m", hours,
+                                        minutes - (hours * 60));
+    } else if (minutes > 0) {
+        timeDescriptor = stString_print("%"PRId64"m %"PRId64"s", minutes,
+                                        seconds - (minutes * 60));
+    } else {
+        timeDescriptor = stString_print("%"PRId64"s", seconds);
+    }
+    return timeDescriptor;
+}
+
 char *getFileBase(char *base, char *defawlt) {
     struct stat fileStat;
     int64_t rc = stat(base, &fileStat);
@@ -214,6 +231,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialization from arguments
+    time_t startTime = time(NULL);
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
     # ifdef _OPENMP
@@ -303,7 +321,7 @@ int main(int argc, char *argv[]) {
     // multiproccess the chunks, save to results
     int64_t chunkIdx;
     int64_t lastReportedPercentage = 0;
-    time_t startTime = time(NULL);
+    time_t polishStartTime = time(NULL);
     #pragma omp parallel for schedule(dynamic,1)
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Time all chunks
@@ -334,22 +352,10 @@ int main(int argc, char *argv[]) {
 
         if (logProgress) {
             // log progress
-            int64_t timeTaken = (int64_t) (time(NULL) - startTime);
+            int64_t timeTaken = (int64_t) (time(NULL) - polishStartTime);
             int64_t secondsRemaining = (int64_t) floor(1.0 * timeTaken / currentPercentage * (100 - currentPercentage));
-            int64_t minutesRemaining = (int64_t) floor(secondsRemaining / 60);
-            int64_t hoursRemaining = (int64_t) floor(minutesRemaining / 60);
-            char *timeDescriptor;
-            if (secondsRemaining == 0 && currentPercentage <= 50) {
-                timeDescriptor = stString_print("unknown");
-            } else if (hoursRemaining > 0) {
-                timeDescriptor = stString_print("%"PRId64"h %"PRId64"m", hoursRemaining,
-                        minutesRemaining - (hoursRemaining * 60));
-            } else if (minutesRemaining > 0) {
-                timeDescriptor = stString_print("%"PRId64"m %"PRId64"s", minutesRemaining,
-                        secondsRemaining - (minutesRemaining * 60));
-            } else {
-                timeDescriptor = stString_print("%"PRId64"s", secondsRemaining);
-            }
+            char *timeDescriptor = (secondsRemaining == 0 && currentPercentage <= 50 ?
+                    stString_print("unknown") : getTimeDescriptorFromSeconds(secondsRemaining));
             st_logCritical("> Polishing %2"PRId64"%% complete (%"PRId64"/%"PRId64").  Estimated time remaining: %s\n",
                     currentPercentage, chunkIdx, bamChunker->chunkCount, timeDescriptor);
             free(timeDescriptor);
@@ -544,7 +550,7 @@ int main(int argc, char *argv[]) {
     int64_t contigStartIdx = 0;
     char *referenceSequenceName = stString_copy(bamChunker_getChunk(bamChunker, 0)->refSeqName);
     lastReportedPercentage = 0;
-    startTime = time(NULL);
+    time_t mergeStartTime = time(NULL);
 
     // for filling missing chunks with N's
     int64_t spacerSize = (bamChunker->chunkBoundary == 0 ? 50 : bamChunker->chunkBoundary * 3);
@@ -573,24 +579,13 @@ int main(int argc, char *argv[]) {
             int64_t currentPercentage = (int64_t) (100 * chunkIdx / bamChunker->chunkCount);
             if (currentPercentage != lastReportedPercentage) {
                 lastReportedPercentage = currentPercentage;
-                int64_t timeTaken = (int64_t) (time(NULL) - startTime);
+                int64_t timeTaken = (int64_t) (time(NULL) - mergeStartTime);
                 int64_t secondsRemaining = (int64_t) floor(1.0 * timeTaken / currentPercentage * (100 - currentPercentage));
-                int64_t minutesRemaining = (int64_t) floor(secondsRemaining / 60);
-                int64_t hoursRemaining = (int64_t) floor(minutesRemaining / 60);
-                char *timeDescriptor;
-                if (secondsRemaining == 0 && currentPercentage <= 50) {
-                    timeDescriptor = stString_print("unknown");
-                } else if (hoursRemaining > 0) {
-                    timeDescriptor = stString_print("%"PRId64"h %"PRId64"m", hoursRemaining,
-                            minutesRemaining - (hoursRemaining * 60));
-                } else if (minutesRemaining > 0) {
-                    timeDescriptor = stString_print("%"PRId64"m %"PRId64"s", minutesRemaining,
-                            secondsRemaining - (minutesRemaining * 60));
-                } else {
-                    timeDescriptor = stString_print("%"PRId64"s", secondsRemaining);
-                }
+                char *timeDescriptor = (secondsRemaining == 0 && currentPercentage <= 50 ?
+                                        stString_print("unknown") : getTimeDescriptorFromSeconds(secondsRemaining));
                 st_logCritical("> Merging %2"PRId64"%% complete (%"PRId64"/%"PRId64").  Estimated time remaining: %s\n",
                         currentPercentage, chunkIdx, bamChunker->chunkCount, timeDescriptor);
+                free(timeDescriptor);
             }
 
             // Clean up
@@ -609,16 +604,16 @@ int main(int argc, char *argv[]) {
     // everything has been written, cleanup merging infrastructure
     fclose(polishedReferenceOutFh);
     free(missingChunkSpacer);
+    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+        free(chunkResults[chunkIdx]);
+    }
 
     // Cleanup
-    st_logCritical("> Finished polishing.\n");
     bamChunker_destruct(bamChunker);
     stHash_destruct(referenceSequences);
     params_destruct(params);
-
     if (trueReferenceBam != NULL) free(trueReferenceBam);
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
-
     if (regionStr != NULL) free(regionStr);
     #ifdef _HDF5
     if (splitWeightHDF5Files != NULL) {
@@ -633,6 +628,10 @@ int main(int argc, char *argv[]) {
     free(referenceFastaFile);
     free(paramsFile);
 
+    // log completion
+    char *timeDescriptor = getTimeDescriptorFromSeconds(time(NULL) - startTime);
+    st_logCritical("> Finished polishing in %s.\n", timeDescriptor);
+    free(timeDescriptor);
 
 //    while(1); // Use this for testing for memory leaks
 
