@@ -62,6 +62,23 @@ void usage() {
     fprintf(stderr, "\n");
 }
 
+char *getTimeDescriptorFromSeconds(int64_t seconds) {
+    int64_t minutes = (int64_t) (seconds / 60);
+    int64_t hours = (int64_t) (minutes / 60);
+    char *timeDescriptor;
+
+    if (hours > 0) {
+        timeDescriptor = stString_print("%"PRId64"h %"PRId64"m", hours,
+                                        minutes - (hours * 60));
+    } else if (minutes > 0) {
+        timeDescriptor = stString_print("%"PRId64"m %"PRId64"s", minutes,
+                                        seconds - (minutes * 60));
+    } else {
+        timeDescriptor = stString_print("%"PRId64"s", seconds);
+    }
+    return timeDescriptor;
+}
+
 char *getFileBase(char *base, char *defawlt) {
     struct stat fileStat;
     int64_t rc = stat(base, &fileStat);
@@ -76,7 +93,7 @@ char *getFileBase(char *base, char *defawlt) {
 int main(int argc, char *argv[]) {
 
     // Parameters / arguments
-    char *logLevelString = stString_copy("info");
+    char *logLevelString = stString_copy("critical");
     char *bamInFile = NULL;
     char *paramsFile = NULL;
     char *referenceFastaFile = NULL;
@@ -214,6 +231,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialization from arguments
+    time_t startTime = time(NULL);
     st_setLogLevelFromString(logLevelString);
     free(logLevelString);
     # ifdef _OPENMP
@@ -221,11 +239,11 @@ int main(int argc, char *argv[]) {
         numThreads = 1;
     }
     omp_set_num_threads(numThreads);
-    st_logInfo("Running OpenMP with %d threads.\n", omp_get_max_threads());
+    st_logCritical("Running OpenMP with %d threads.\n", omp_get_max_threads());
     # endif
 
     // Parse parameters
-    st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
+    st_logCritical("> Parsing model parameters from file: %s\n", paramsFile);
     Params *params = params_readParams(paramsFile);
 
     // Set no RLE if appropriate feature type is set
@@ -246,7 +264,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Parse reference as map of header string to nucleotide sequences
-    st_logInfo("> Parsing reference sequences from file: %s\n", referenceFastaFile);
+    st_logCritical("> Parsing reference sequences from file: %s\n", referenceFastaFile);
     FILE *fh = fopen(referenceFastaFile, "r");
     stHash *referenceSequences = fastaReadToMap(fh);  //valgrind says blocks from this allocation are "still reachable"
     fclose(fh);
@@ -272,13 +290,13 @@ int main(int argc, char *argv[]) {
 
     // Open output files
     char *polishedReferenceOutFile = stString_print("%s.fa", outputBase);
-    st_logInfo("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
+    st_logCritical("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
     FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
     free(polishedReferenceOutFile);
 
     // get chunker for bam.  if regionStr is NULL, it will be ignored
     BamChunker *bamChunker = bamChunker_construct2(bamInFile, regionStr, params->polishParams);
-    st_logInfo("> Set up bam chunker with chunk size %i and overlap %i (for region=%s), resulting in %i total chunks\n",
+    st_logCritical("> Set up bam chunker with chunk size %i and overlap %i (for region=%s), resulting in %i total chunks\n",
     		   (int)bamChunker->chunkSize, (int)bamChunker->chunkBoundary, regionStr == NULL ? "all" : regionStr,
     		   bamChunker->chunkCount);
 
@@ -302,19 +320,46 @@ int main(int argc, char *argv[]) {
 
     // multiproccess the chunks, save to results
     int64_t chunkIdx;
+    int64_t lastReportedPercentage = 0;
+    time_t polishStartTime = time(NULL);
     #pragma omp parallel for schedule(dynamic,1)
     for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         // Time all chunks
-        time_t start = time(NULL);
+        time_t chunkStartTime = time(NULL);
 
         // Get chunk
         BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
+
+        // logging
         char *logIdentifier;
+        bool logProgress = FALSE;
+        int64_t currentPercentage = (int64_t) (100 * chunkIdx / bamChunker->chunkCount);
         # ifdef _OPENMP
         logIdentifier = stString_print(" T%02d_C%05"PRId64, omp_get_thread_num(), chunkIdx);
+        if (omp_get_thread_num() == 0) {
+            if (currentPercentage != lastReportedPercentage) {
+                logProgress = TRUE;
+                lastReportedPercentage = currentPercentage;
+            }
+        }
         # else
         logIdentifier = stString_copy("");
+        if (currentPercentage != lastReportedPercentage) {
+            logProgress = TRUE;
+            lastReportedPercentage = currentPercentage;
+        }
         # endif
+
+        if (logProgress) {
+            // log progress
+            int64_t timeTaken = (int64_t) (time(NULL) - polishStartTime);
+            int64_t secondsRemaining = (int64_t) floor(1.0 * timeTaken / currentPercentage * (100 - currentPercentage));
+            char *timeDescriptor = (secondsRemaining == 0 && currentPercentage <= 50 ?
+                    stString_print("unknown") : getTimeDescriptorFromSeconds(secondsRemaining));
+            st_logCritical("> Polishing %2"PRId64"%% complete (%"PRId64"/%"PRId64").  Estimated time remaining: %s\n",
+                    currentPercentage, chunkIdx, bamChunker->chunkCount, timeDescriptor);
+            free(timeDescriptor);
+        }
 
         // Get reference string for chunk of alignment
         char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
@@ -484,7 +529,7 @@ int main(int argc, char *argv[]) {
 
         // report timing
         st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",
-                   logIdentifier, stList_length(reads), totalNucleotides >> 10, (int) (time(NULL) - start));
+                   logIdentifier, stList_length(reads), totalNucleotides >> 10, (int) (time(NULL) - chunkStartTime));
 
         // Cleanup
         stList_destruct(rleNucleotides);
@@ -499,116 +544,76 @@ int main(int argc, char *argv[]) {
         free(logIdentifier);
     }
 
-    // merge chunks
-    st_logInfo("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
-    stList *polishedReferenceStrings = NULL; // The polished reference strings, one for each chunk
-    char *referenceSequenceName = NULL;
+
+    // prep for merge
+    assert(bamChunker->chunkCount > 0);
+    int64_t contigStartIdx = 0;
+    char *referenceSequenceName = stString_copy(bamChunker_getChunk(bamChunker, 0)->refSeqName);
+    lastReportedPercentage = 0;
+    time_t mergeStartTime = time(NULL);
+
+    // for filling missing chunks with N's
     int64_t spacerSize = (bamChunker->chunkBoundary == 0 ? 50 : bamChunker->chunkBoundary * 3);
     char *missingChunkSpacer = st_calloc(spacerSize + 1, sizeof(char));
     for (int64_t i = 0; i < spacerSize; i++) {
         missingChunkSpacer[i] = 'N';
     }
     missingChunkSpacer[spacerSize] = '\0';
-    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
-        // Get chunk and polished
-        BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
-        char* polishedReferenceString = chunkResults[chunkIdx];
-        int64_t prsLen = strlen(polishedReferenceString);
-        st_logInfo(" T%02d_C%05"PRId64" (%.3f): consensus sequence length %"PRId64"\n",
-                omp_get_thread_num(), chunkIdx, 1.0 * chunkIdx / bamChunker->chunkCount, prsLen);
 
-		// If there is no prior chunk for this contig
-		if(referenceSequenceName == NULL) {
-			polishedReferenceStrings = stList_construct3(0, free);
-			referenceSequenceName = stString_copy(bamChunk->refSeqName);
-		}
-		// Else, print the prior reference sequence if current chunk not part of that sequence
-		else if(!stString_eq(bamChunk->refSeqName, referenceSequenceName)) {
-			assert(stList_length(polishedReferenceStrings) > 0);
+    // merge chunks
+    st_logCritical("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
 
-			// Write the previous polished reference string out
-			char *s = stString_join2("", polishedReferenceStrings);
-			fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
+    // find which chunks belong to each contig, merge each contig threaded, write out
+    for (chunkIdx = 1; chunkIdx <= bamChunker->chunkCount; chunkIdx++) {
+        
+        // we encountered the last chunk in the contig (end of list or new refSeqName)
+        if (chunkIdx == bamChunker->chunkCount || !stString_eq(referenceSequenceName,
+                bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName)) {
 
-			// Clean up
-			free(s);
-			stList_destruct(polishedReferenceStrings);
-			free(referenceSequenceName);
+            // generate and save sequence
+            char *contigSequence = mergeContigChunksThreaded(chunkResults, contigStartIdx, chunkIdx, numThreads, 
+                    bamChunker->chunkBoundary * 2, params, missingChunkSpacer);
+            fastaWrite(contigSequence, referenceSequenceName, polishedReferenceOutFh);
 
-			// Reset for next reference sequence
-			polishedReferenceStrings = stList_construct3(0, free);
-			referenceSequenceName = stString_copy(bamChunk->refSeqName);
-		}
-		// If there was a previous chunk then trim it's polished reference sequence
-		// to remove overlap with the current chunk's polished reference sequence
-		else if(stList_length(polishedReferenceStrings) > 0) {
-			char *previousPolishedReferenceString = stList_peek(polishedReferenceStrings);
-			int64_t pprsLen = strlen(previousPolishedReferenceString);
+            // log progress
+            int64_t currentPercentage = (int64_t) (100 * chunkIdx / bamChunker->chunkCount);
+            if (currentPercentage != lastReportedPercentage) {
+                lastReportedPercentage = currentPercentage;
+                int64_t timeTaken = (int64_t) (time(NULL) - mergeStartTime);
+                int64_t secondsRemaining = (int64_t) floor(1.0 * timeTaken / currentPercentage * (100 - currentPercentage));
+                char *timeDescriptor = (secondsRemaining == 0 && currentPercentage <= 50 ?
+                                        stString_print("unknown") : getTimeDescriptorFromSeconds(secondsRemaining));
+                st_logCritical("> Merging %2"PRId64"%% complete (%"PRId64"/%"PRId64").  Estimated time remaining: %s\n",
+                        currentPercentage, chunkIdx, bamChunker->chunkCount, timeDescriptor);
+                free(timeDescriptor);
+            }
 
-			// Trim the currrent and previous polished reference strings to remove overlap
-			int64_t prefixStringCropEnd, suffixStringCropStart;
-			int64_t overlapMatchWeight = removeOverlap(previousPolishedReferenceString, polishedReferenceString,
-													   bamChunker->chunkBoundary * 2, params->polishParams,
-													   &prefixStringCropEnd, &suffixStringCropStart);
+            // Clean up
+            free(contigSequence);
+            free(referenceSequenceName);
 
-			// we have an overlap
-			if (overlapMatchWeight > 0) {
-                st_logInfo(
-                        "  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-                        "left-trim: %i, right-trim: %i:\n", (int) bamChunker->chunkBoundary * 2,
-                        (float) overlapMatchWeight / PAIR_ALIGNMENT_PROB_1,
-                        strlen(previousPolishedReferenceString) - prefixStringCropEnd, suffixStringCropStart);
-
-                // Crop the suffix of the previous chunk's polished reference string
-                previousPolishedReferenceString[prefixStringCropEnd] = '\0';
-
-                // Crop the the prefix of the current chunk's polished reference string
-                char *c = polishedReferenceString;
-                polishedReferenceString = stString_copy(&(polishedReferenceString[suffixStringCropStart]));
-                free(c);
-
-            // no good alignment, could be missing chunks
-            } else {
-                if (prsLen == 0) {
-                    st_logInfo("  No overlap found. Filling empty chunk with Ns.\n");
-                    char *c = polishedReferenceString;
-                    polishedReferenceString = stString_copy(missingChunkSpacer);
-                    free(c);
-                } else {
-                    st_logInfo("  No overlap found. Filling Ns in stitch position.\n");
-                    stList_append(polishedReferenceStrings, stString_copy("NNNNNNNNNN"));
-                }
-			}
-		}
-
-		// Add the polished sequence to the list of polished reference sequence chunks
-		stList_append(polishedReferenceStrings, polishedReferenceString);
-
+            // Reset for next reference sequence
+            if (chunkIdx != bamChunker->chunkCount) {
+                contigStartIdx = chunkIdx;
+                referenceSequenceName = stString_copy(bamChunker_getChunk(bamChunker, chunkIdx)->refSeqName);
+            }
+        }
+        // nothing to do otherwise, just wait until end or new contig
     }
 
-    // Write out the last chunk
-    if(referenceSequenceName != NULL) {
-    	// Write the previous polished reference string out
-    	char *s = stString_join2("", polishedReferenceStrings);
-    	fastaWrite(s, referenceSequenceName, polishedReferenceOutFh);
-
-    	// Clean up
-    	free(s);
-    	stList_destruct(polishedReferenceStrings);
-    	free(referenceSequenceName);
-    }
+    // everything has been written, cleanup merging infrastructure
     fclose(polishedReferenceOutFh);
     free(missingChunkSpacer);
+    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+        free(chunkResults[chunkIdx]);
+    }
 
     // Cleanup
-    st_logInfo("> Finished polishing.\n");
     bamChunker_destruct(bamChunker);
     stHash_destruct(referenceSequences);
     params_destruct(params);
-
     if (trueReferenceBam != NULL) free(trueReferenceBam);
     if (trueReferenceBamChunker != NULL) bamChunker_destruct(trueReferenceBamChunker);
-
     if (regionStr != NULL) free(regionStr);
     #ifdef _HDF5
     if (helenHDF5Files != NULL) {
@@ -623,6 +628,10 @@ int main(int argc, char *argv[]) {
     free(referenceFastaFile);
     free(paramsFile);
 
+    // log completion
+    char *timeDescriptor = getTimeDescriptorFromSeconds(time(NULL) - startTime);
+    st_logCritical("> Finished polishing in %s.\n", timeDescriptor);
+    free(timeDescriptor);
 
 //    while(1); // Use this for testing for memory leaks
 
