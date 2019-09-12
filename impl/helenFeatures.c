@@ -11,10 +11,6 @@
 #include <hdf5.h>
 #include <omp.h>
 
-#define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT TRUE
-//#define INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT FALSE
-
-
 PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos) {
     PoaFeatureSimpleWeight *feature = st_calloc(1, sizeof(PoaFeatureSimpleWeight));
     feature->refPosition = refPos;
@@ -31,7 +27,7 @@ void PoaFeature_SimpleWeight_destruct(PoaFeatureSimpleWeight *feature) {
     free(feature);
 }
 
-
+//todo deprecated
 PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insPos) {
     PoaFeatureRleWeight *feature = st_calloc(1, sizeof(PoaFeatureRleWeight));
     feature->refPosition = refPos;
@@ -43,6 +39,8 @@ PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insP
     return feature;
 }
 
+
+//todo deprecated
 void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature) {
     if (feature->nextInsert != NULL) {
         PoaFeature_RleWeight_destruct(feature->nextInsert);
@@ -73,6 +71,35 @@ void PoaFeature_SplitRleWeight_destruct(PoaFeatureSplitRleWeight *feature) {
         PoaFeature_SplitRleWeight_destruct(feature->nextInsert);
     }
     free(feature->weights);
+    free(feature);
+}
+
+
+
+PoaFeatureChannelRleWeight *PoaFeature_ChannelRleWeight_construct(int64_t refPos, int64_t insPos, int64_t rlPos,
+                                                                  int64_t maxRunLength) {
+    PoaFeatureChannelRleWeight *feature = st_calloc(1, sizeof(PoaFeatureChannelRleWeight));
+    feature->refPosition = refPos;
+    feature->insertPosition = insPos;
+    feature->runLengthPosition = rlPos;
+    feature->labelChar = '\0';
+    feature->labelRunLength = 0;
+    feature->nextRunLength = NULL;
+    feature->nextInsert = NULL;
+    feature->maxRunLength = maxRunLength;
+    feature->nucleotideWeights = st_calloc((SYMBOL_NUMBER) * 2, sizeof(double));
+    feature->runLengthWeights = st_calloc((SYMBOL_NUMBER - 1) * (1 + maxRunLength) * 2, sizeof(double));
+    return feature;
+}
+void PoaFeature_ChannelRleWeight_destruct(PoaFeatureChannelRleWeight *feature) {
+    if (feature->nextRunLength != NULL) {
+        PoaFeature_ChannelRleWeight_destruct(feature->nextRunLength);
+    }
+    if (feature->nextInsert != NULL) {
+        PoaFeature_ChannelRleWeight_destruct(feature->nextInsert);
+    }
+    free(feature->nucleotideWeights);
+    free(feature->runLengthWeights);
     free(feature);
 }
 
@@ -108,7 +135,21 @@ int PoaFeature_SplitRleWeight_charIndex(int64_t maxRunLength, Symbol character, 
 int PoaFeature_SplitRleWeight_gapIndex(int64_t maxRunLength, bool forward) {
     int pos = ((SYMBOL_NUMBER - 1) * ((int)maxRunLength + 1)) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
     return pos;
+}
 
+int PoaFeature_ChannelRleWeight_charNuclIndex(Symbol character, bool forward) {
+    int pos = character * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    return pos;
+}
+int PoaFeature_ChannelRleWeight_gapNuclIndex(bool forward) {
+    int pos = (SYMBOL_NUMBER - 1) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    return pos;
+}
+int PoaFeature_ChannelRleWeight_charRLIndex(int64_t maxRunLength, Symbol character, int64_t runLength, bool forward) {
+    assert(runLength >= 0);
+    assert(runLength <= maxRunLength);
+    int pos = (character * ((int)maxRunLength + 1) + runLength) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    return pos;
 }
 
 void handleHelenFeatures(
@@ -134,6 +175,12 @@ void handleHelenFeatures(
         case HFEAT_SPLIT_RLE_WEIGHT:
             // name of folder, not of file
             helenFeatureOutfileBase = stString_print("splitRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
+                                                     chunkIdx, bamChunk->refSeqName,
+                                                     bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            break;
+        case HFEAT_CHANNEL_RLE_WEIGHT:
+            // name of folder, not of file
+            helenFeatureOutfileBase = stString_print("channelRleWeight.C%05"PRId64".%s-%"PRId64"-%"PRId64,
                                                      chunkIdx, bamChunk->refSeqName,
                                                      bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             break;
@@ -432,8 +479,9 @@ stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStr
 }
 
 
-void poa_addRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeature, stList *observations,
-        stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength, int64_t observationOffset) {
+void poa_addSplitRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeature, stList *observations,
+                                                  stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength,
+                                                  int64_t observationOffset) {
 
 
     PoaFeatureSplitRleWeight *currFeature = baseFeature;
@@ -506,7 +554,8 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
         PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
 
         // save run length nodes
-        poa_addRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings, maxRunLength, 0);
+        poa_addSplitRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings,
+                                                     maxRunLength, 0);
 
         // Deletes
         if (stList_length(node->deletes) > 0) {
@@ -548,8 +597,143 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
                     }
 
                     // save insert run lengths
-                    poa_addRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads, rleStrings,
-                            maxRunLength, o);
+                    poa_addSplitRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads,
+                                                                 rleStrings,
+                                                                 maxRunLength, o);
+                }
+            }
+        }
+    }
+
+    free(logIdentifier);
+    return featureList;
+}
+
+
+
+void poa_addChannelRunLengthFeaturesForObservations(PoaFeatureChannelRleWeight *baseFeature, stList *observations,
+                                                    stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength,
+                                                    int64_t observationOffset) {
+
+    PoaFeatureChannelRleWeight *currFeature = baseFeature;
+    int64_t currentRunLengthIndex = 0;
+    bool beforeMaxObservedRunLength = TRUE;
+
+    while (beforeMaxObservedRunLength) {
+        beforeMaxObservedRunLength = FALSE;
+
+        // examine each observation
+        for (int64_t i = 0; i < stList_length(observations); i++) {
+
+            // get data
+            PoaBaseObservation *observation = stList_get(observations, i);
+            RleString *rleString = stList_get(rleStrings, observation->readNo);
+            BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
+            Symbol symbol = symbol_convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
+            int64_t runLength = rleString->repeatCounts[observation->offset + observationOffset];
+            bool forward = bamChunkRead->forwardStrand;
+
+            // get correct run length
+            runLength -= currentRunLengthIndex * maxRunLength;
+            if (runLength < 0) {
+                runLength = 0;
+            } else if (runLength > maxRunLength) {
+                runLength = maxRunLength;
+                beforeMaxObservedRunLength = TRUE;
+            }
+
+            // save weight for both nucleotide totals and runLenght totals
+            int64_t nuclPos = PoaFeature_ChannelRleWeight_charNuclIndex(symbol, forward);
+            int64_t runLengthPos = PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, symbol, runLength, forward);
+            currFeature->nucleotideWeights[nuclPos] += observation->weight;
+            currFeature->runLengthWeights[runLengthPos] += observation->weight;
+
+        }
+
+        // update currFeature if we're going ot run again
+        if (beforeMaxObservedRunLength) {
+            currentRunLengthIndex++;
+            if (currFeature->nextRunLength != NULL) {
+                currFeature = currFeature->nextRunLength;
+            } else {
+                PoaFeatureChannelRleWeight *prevFeature = currFeature;
+                currFeature = PoaFeature_ChannelRleWeight_construct(baseFeature->refPosition, baseFeature->insertPosition,
+                                                                    currentRunLengthIndex, maxRunLength);
+                prevFeature->nextRunLength = currFeature;
+                currFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(TRUE)] =
+                        baseFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(TRUE)];
+                currFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(FALSE)] =
+                        baseFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(FALSE)];
+            }
+        }
+    }
+}
+
+stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, int64_t maxRunLength) {
+    // initialize feature list
+    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_ChannelRleWeight_destruct);
+    for(int64_t i=1; i<stList_length(poa->nodes); i++) {
+        stList_append(featureList, PoaFeature_ChannelRleWeight_construct(i - 1, 0, 0, maxRunLength));
+    }
+
+    // for logging (of errors)
+    char *logIdentifier = getLogIdentifier();
+
+    // iterate over all positions
+    for(int64_t i=0; i<stList_length(featureList); i++) {
+
+        // get feature and node
+        PoaFeatureChannelRleWeight* feature = stList_get(featureList, i);
+        PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
+
+        // save run length nodes
+        poa_addChannelRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings,
+                                                       maxRunLength, 0);
+
+        // Deletes
+        if (stList_length(node->deletes) > 0) {
+
+            // iterate over all deletes
+            for (int64_t d = 0; d < stList_length(node->deletes); d++) {
+                PoaDelete *delete = stList_get(node->deletes, d);
+
+                // Deletes start AFTER the current position, need to add counts/weights to nodes after the current node
+                for (int64_t k = 1; k < delete->length; k++) {
+                    if (i + k >= stList_length(poa->nodes)) {
+                        st_logCritical(" %s Encountered DELETE that occurs after end of POA!\n", logIdentifier);
+                        break;
+                    }
+                    PoaFeatureChannelRleWeight *delFeature = stList_get(featureList, i + k);
+
+                    delFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(TRUE)] +=
+                            delete->weightForwardStrand;
+                    delFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(FALSE)] +=
+                            delete->weightReverseStrand;
+                }
+            }
+        }
+
+        // Inserts
+        if (stList_length(node->inserts) > 0) {
+
+            // iterate over all inserts
+            for (int64_t n = 0; n < stList_length(node->inserts); n++) {
+                PoaInsert *insert = stList_get(node->inserts, n);
+
+                // handle each insert base
+                PoaFeatureChannelRleWeight *prevFeature = feature;
+                for (int64_t o = 0; o < strlen(insert->insert); o++) {
+
+                    // get feature iterator
+                    PoaFeatureChannelRleWeight *currFeature = prevFeature->nextInsert;
+                    if (currFeature == NULL) {
+                        currFeature = PoaFeature_ChannelRleWeight_construct(i, o + 1, 0, maxRunLength);
+                        prevFeature->nextInsert = currFeature;
+                    }
+
+                    // save insert run lengths
+                    poa_addChannelRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads,
+                                                                   rleStrings, maxRunLength, o);
                 }
             }
         }
@@ -712,9 +896,9 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     int64_t trueRefPos = stIntTuple_get(currTrueRefAlign, REFERENCE_POS);
     for (int64_t featureRefPos = 0; featureRefPos < stList_length(features); featureRefPos++) {
         void *feature = stList_get(features, featureRefPos);
-        void *prevFeature = NULL;
         int64_t trueRunLength = -1;
-        PoaFeatureSplitRleWeight* rlFeature = NULL;
+        PoaFeatureSplitRleWeight* srlFeature = NULL;
+        PoaFeatureChannelRleWeight* crlFeature = NULL;
 
         int64_t featureInsPos = 0;
         while (feature != NULL) {
@@ -727,13 +911,22 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
-                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
-                        while (rlFeature != NULL) {
-                            rlFeature->labelChar = '_';
-                            rlFeature->labelRunLength = 0;
-                            rlFeature = rlFeature->nextRunLength;
+                        srlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        while (srlFeature != NULL) {
+                            srlFeature->labelChar = '_';
+                            srlFeature->labelRunLength = 0;
+                            srlFeature = srlFeature->nextRunLength;
                         }
                         feature = ((PoaFeatureSplitRleWeight*)feature)->nextInsert;
+                        break;
+                    case HFEAT_CHANNEL_RLE_WEIGHT:
+                        crlFeature = ((PoaFeatureChannelRleWeight*)feature);
+                        while (crlFeature != NULL) {
+                            crlFeature->labelChar = '_';
+                            crlFeature->labelRunLength = 0;
+                            crlFeature = crlFeature->nextRunLength;
+                        }
+                        feature = ((PoaFeatureChannelRleWeight*)feature)->nextInsert;
                         break;
                     default:
                         st_errAbort("Unhandled FeatureType!\n");
@@ -754,19 +947,35 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         ((PoaFeatureSimpleWeight *) feature)->label = trueRefRleString->rleString[trueRefPos];
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
-                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        srlFeature = ((PoaFeatureSplitRleWeight*)feature);
                         trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
-                        while (rlFeature != NULL) {
-                            rlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                        while (srlFeature != NULL) {
+                            srlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
                             if (trueRunLength <= 0) {
-                                rlFeature->labelRunLength = 0;
-                            } else if (trueRunLength > rlFeature->maxRunLength) {
-                                rlFeature->labelRunLength = rlFeature->maxRunLength;
+                                srlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > srlFeature->maxRunLength) {
+                                srlFeature->labelRunLength = srlFeature->maxRunLength;
                             } else {
-                                rlFeature->labelRunLength = trueRunLength;
+                                srlFeature->labelRunLength = trueRunLength;
                             }
-                            trueRunLength -= rlFeature->maxRunLength;
-                            rlFeature = rlFeature->nextRunLength;
+                            trueRunLength -= srlFeature->maxRunLength;
+                            srlFeature = srlFeature->nextRunLength;
+                        }
+                        break;
+                    case HFEAT_CHANNEL_RLE_WEIGHT:
+                        crlFeature = ((PoaFeatureChannelRleWeight*)feature);
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        while (crlFeature != NULL) {
+                            crlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                            if (trueRunLength <= 0) {
+                                crlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > crlFeature->maxRunLength) {
+                                crlFeature->labelRunLength = crlFeature->maxRunLength;
+                            } else {
+                                crlFeature->labelRunLength = trueRunLength;
+                            }
+                            trueRunLength -= crlFeature->maxRunLength;
+                            crlFeature = crlFeature->nextRunLength;
                         }
                         break;
                     default:
@@ -795,19 +1004,35 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         ((PoaFeatureSimpleWeight*)feature)->label = trueRefRleString->rleString[trueRefPos];
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
-                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        srlFeature = ((PoaFeatureSplitRleWeight*)feature);
                         trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
-                        while (rlFeature != NULL) {
-                            rlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                        while (srlFeature != NULL) {
+                            srlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
                             if (trueRunLength <= 0) {
-                                rlFeature->labelRunLength = 0;
-                            } else if (trueRunLength > rlFeature->maxRunLength) {
-                                rlFeature->labelRunLength = rlFeature->maxRunLength;
+                                srlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > srlFeature->maxRunLength) {
+                                srlFeature->labelRunLength = srlFeature->maxRunLength;
                             } else {
-                                rlFeature->labelRunLength = trueRunLength;
+                                srlFeature->labelRunLength = trueRunLength;
                             }
-                            trueRunLength -= rlFeature->maxRunLength;
-                            rlFeature = rlFeature->nextRunLength;
+                            trueRunLength -= srlFeature->maxRunLength;
+                            srlFeature = srlFeature->nextRunLength;
+                        }
+                        break;
+                    case HFEAT_CHANNEL_RLE_WEIGHT:
+                        crlFeature = ((PoaFeatureChannelRleWeight*)feature);
+                        trueRunLength = trueRefRleString->repeatCounts[trueRefPos];
+                        while (crlFeature != NULL) {
+                            crlFeature->labelChar = trueRefRleString->rleString[trueRefPos];
+                            if (trueRunLength <= 0) {
+                                crlFeature->labelRunLength = 0;
+                            } else if (trueRunLength > crlFeature->maxRunLength) {
+                                crlFeature->labelRunLength = crlFeature->maxRunLength;
+                            } else {
+                                crlFeature->labelRunLength = trueRunLength;
+                            }
+                            trueRunLength -= crlFeature->maxRunLength;
+                            crlFeature = crlFeature->nextRunLength;
                         }
                         break;
                     default:
@@ -826,11 +1051,19 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
                         ((PoaFeatureSimpleWeight*)feature)->label = '_';
                         break;
                     case HFEAT_SPLIT_RLE_WEIGHT:
-                        rlFeature = ((PoaFeatureSplitRleWeight*)feature);
-                        while (rlFeature != NULL) {
-                            rlFeature->labelChar = '_';
-                            rlFeature->labelRunLength = 0;
-                            rlFeature = rlFeature->nextRunLength;
+                        srlFeature = ((PoaFeatureSplitRleWeight*)feature);
+                        while (srlFeature != NULL) {
+                            srlFeature->labelChar = '_';
+                            srlFeature->labelRunLength = 0;
+                            srlFeature = srlFeature->nextRunLength;
+                        }
+                        break;
+                    case HFEAT_CHANNEL_RLE_WEIGHT:
+                        crlFeature = ((PoaFeatureChannelRleWeight*)feature);
+                        while (crlFeature != NULL) {
+                            crlFeature->labelChar = '_';
+                            crlFeature->labelRunLength = 0;
+                            crlFeature = crlFeature->nextRunLength;
                         }
                         break;
                     default:
@@ -844,13 +1077,15 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
             }
 
             // always iterate over insert features
-            prevFeature = feature;
             switch (featureType) {
                 case HFEAT_SIMPLE_WEIGHT:
                     feature = ((PoaFeatureSimpleWeight*)feature)->nextInsert;
                     break;
                 case HFEAT_SPLIT_RLE_WEIGHT:
                     feature = ((PoaFeatureSplitRleWeight*)feature)->nextInsert;
+                    break;
+                case HFEAT_CHANNEL_RLE_WEIGHT:
+                    feature = ((PoaFeatureChannelRleWeight*)feature)->nextInsert;
                     break;
                 default:
                     st_errAbort("Unhandled FeatureType!\n");
@@ -916,6 +1151,24 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                     outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature, lastMatchedFeature,
                     maxRunLength);
             break;
+
+        case HFEAT_CHANNEL_RLE_WEIGHT:
+            // get features
+            features = poa_getChannelRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
+            firstMatchedFeature = 0;
+            lastMatchedFeature = stList_length(features) - 1;
+
+            // get truth (if we have it)
+            if (outputLabels) {
+                poa_annotateHelenFeaturesWithTruth(features, type, trueRefAlignment, trueRefRleString,
+                                                   &firstMatchedFeature, &lastMatchedFeature);
+            }
+
+            writeChannelRleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx],
+                                                 outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature,
+                                                 lastMatchedFeature, maxRunLength);
+            break;
+
         default:
             st_errAbort("Unhandled HELEN feature type!\n");
     }
@@ -1044,6 +1297,19 @@ uint8_t **getTwoDArrayUInt8(int64_t rowCount, int64_t columnCount) {
     array[0] = (uint8_t*) st_calloc(columnCount * rowCount, sizeof(uint8_t) );
     for (int64_t i=1; i < rowCount; i++) {
         array[i] = array[0] + i*columnCount;
+    }
+    return array;
+}
+
+uint8_t ***getThreeDArrayUInt8(int64_t depthCount, int64_t rowCount, int64_t columnCount) {
+    uint8_t ***array  = st_calloc(depthCount, sizeof(uint8_t**));
+    array[0] = (uint8_t**) st_calloc(depthCount * rowCount, sizeof(uint8_t*) );
+    array[0][0] = (uint8_t*) st_calloc(depthCount * rowCount * columnCount, sizeof(uint8_t) );
+    for (int64_t i=0; i < depthCount; i++) {
+        array[i] = array[0] + i*rowCount;
+        for (int64_t j=0; j < rowCount; j++) {
+            array[i][j] = (array[0][0] + i*rowCount*columnCount + j*columnCount);
+        }
     }
     return array;
 }
@@ -1432,8 +1698,8 @@ uint8_t normalizeWeightToUInt8(double totalWeight, double weight) {
 
 
 void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
-        bool outputLabels, stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive,
-        const int64_t maxRunLength) {
+                                          bool outputLabels, stList *features, int64_t featureStartIdx, int64_t featureEndIdxInclusive,
+                                          const int64_t maxRunLength) {
 
     herr_t      status = 0;
 
@@ -1487,14 +1753,6 @@ void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo
         // iterate over all insert features
         PoaFeatureSplitRleWeight *insFeature = refFeature;
         while (insFeature != NULL) {
-
-            // TODO find out if this is better and keep or remove
-            if (!INSERT_NORMALIZATION_FROM_BASE_NODE_WEIGHT) {
-                totalWeight = 0;
-                for (int64_t j = 0; j < rleNucleotideColumnCount; j++) {
-                    totalWeight += insFeature->weights[j];
-                }
-            }
 
             // iterate over all run length features
             PoaFeatureSplitRleWeight *rlFeature = insFeature;
@@ -1656,6 +1914,268 @@ void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo
         free(logIdentifier);
     }
 }
+
+
+
+void writeChannelRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
+        BamChunk *bamChunk, bool outputLabels, stList *features, int64_t featureStartIdx,
+        int64_t featureEndIdxInclusive, const int64_t maxRunLength) {
+
+    herr_t      status = 0;
+
+    /*
+     * Get feature data set up
+     */
+
+    // count features, create feature array
+    uint64_t featureCount = 0;
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+        PoaFeatureChannelRleWeight *feature = stList_get(features, i);
+        while (feature != NULL) {
+            PoaFeatureChannelRleWeight *rlFeature = feature;
+            while (rlFeature != NULL) {
+                featureCount++;
+                rlFeature = rlFeature->nextRunLength;
+            }
+            feature = feature->nextInsert;
+        }
+    }
+    if (featureCount < HDF5_FEATURE_SIZE && outputLabels) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Feature count %"PRId64" less than minimum of %d\n", logIdentifier, featureCount, HDF5_FEATURE_SIZE);
+        free(logIdentifier);
+        return;
+    }
+
+    // sizes
+    int64_t nucleotideColumnCount = SYMBOL_NUMBER * 2; //ACGTGap x {fwd,bwd}
+    int64_t runLengthColumnCount = (maxRunLength + 1) * 2; //(runLenght + 0) x {fwd,bwd}
+
+    // get all feature data into an array
+    uint32_t **positionData = getTwoDArrayUInt32(featureCount, 3);
+    uint8_t **normalizationData = getTwoDArrayUInt8(featureCount, 1);
+    uint8_t **nucleotideData = getTwoDArrayUInt8(featureCount, nucleotideColumnCount);
+    uint8_t ***runLengthData = getThreeDArrayUInt8(featureCount, runLengthColumnCount, (SYMBOL_NUMBER - 1));
+    //uint8_t ***runLengthData = getThreeDArrayUInt8(featureCount, (SYMBOL_NUMBER - 1), runLengthColumnCount);
+    uint8_t **labelCharacterData = NULL;
+    uint8_t **labelRunLengthData = NULL;
+    if (outputLabels) {
+        labelCharacterData = getTwoDArrayUInt8(featureCount, 1);
+        labelRunLengthData = getTwoDArrayUInt8(featureCount, 1);
+    }
+
+    // add all data to features
+    featureCount = 0;
+    for (int64_t i = featureStartIdx; i <= featureEndIdxInclusive; i++) {
+        PoaFeatureChannelRleWeight *refFeature = stList_get(features, i);
+
+        // total weight is calculated for the very first refPos feature, used for all inserts and run lengths
+        double totalWeight = 0;
+        for (int64_t j = 0; j < nucleotideColumnCount; j++) {
+            totalWeight += refFeature->nucleotideWeights[j];
+        }
+
+        // iterate over all insert features
+        PoaFeatureChannelRleWeight *insFeature = refFeature;
+        while (insFeature != NULL) {
+
+            // iterate over all run length features
+            PoaFeatureChannelRleWeight *rlFeature = insFeature;
+            while (rlFeature != NULL) {
+                // position
+                positionData[featureCount][0] = (uint32_t) rlFeature->refPosition;
+                positionData[featureCount][1] = (uint32_t) rlFeature->insertPosition;
+                positionData[featureCount][2] = (uint32_t) rlFeature->runLengthPosition;
+
+                // normalization
+                normalizationData[featureCount][0] = convertTotalWeightToUInt8(totalWeight);
+
+                // copy weights over (into normalized uint8 space)
+                for (int64_t c = 0; c < SYMBOL_NUMBER - 1; c++) {
+                    // overall nucl count
+                    nucleotideData[featureCount][c * 2 + POS_STRAND_IDX] = normalizeWeightToUInt8(totalWeight,
+                            rlFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_charNuclIndex(c, TRUE)]);
+                    nucleotideData[featureCount][c * 2 + NEG_STRAND_IDX] = normalizeWeightToUInt8(totalWeight,
+                            rlFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_charNuclIndex(c, FALSE)]);
+
+                    // run length counts
+                    for (int64_t r = 0; r <= maxRunLength; r++) {
+                        runLengthData[featureCount][r * 2 + POS_STRAND_IDX][c] =
+                                normalizeWeightToUInt8(totalWeight, rlFeature->runLengthWeights[
+                                        PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, c, r, TRUE)]);
+                        runLengthData[featureCount][r * 2 + NEG_STRAND_IDX][c] =
+                                normalizeWeightToUInt8(totalWeight, rlFeature->runLengthWeights[
+                                        PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, c, r, FALSE)]);
+
+                        //runLengthData[featureCount][c][r * 2 + POS_STRAND_IDX] =
+                        //        normalizeWeightToUInt8(totalWeight, rlFeature->runLengthWeights[
+                        //                PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, c, r, TRUE)]);
+                        //runLengthData[featureCount][c][r * 2 + NEG_STRAND_IDX] =
+                        //        normalizeWeightToUInt8(totalWeight, rlFeature->runLengthWeights[
+                        //                PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, c, r, FALSE)]);
+                    }
+                }
+                // gap counts
+                nucleotideData[featureCount][SYMBOL_NUMBER_NO_N * 2 + 0 + POS_STRAND_IDX] = normalizeWeightToUInt8(
+                        totalWeight, rlFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(TRUE)]);
+                nucleotideData[featureCount][SYMBOL_NUMBER_NO_N * 2 + NEG_STRAND_IDX] = normalizeWeightToUInt8(
+                        totalWeight, rlFeature->nucleotideWeights[PoaFeature_ChannelRleWeight_gapNuclIndex(FALSE)]);
+
+                // labels
+                if (outputLabels) {
+                    Symbol label = symbol_convertCharToSymbol(rlFeature->labelChar);
+                    labelCharacterData[featureCount][0] = (uint8_t) (label == n ? 0 : label + 1);
+                    labelRunLengthData[featureCount][0] = (uint8_t) (label == n ? 0 : rlFeature->labelRunLength);
+                    if (labelRunLengthData[featureCount][0] > maxRunLength) {
+                        st_errAbort("Encountered run length of %d (max %"PRId64") in chunk %s:%"PRId64"-%"PRId64,
+                                    labelRunLengthData[featureCount][0], maxRunLength, bamChunk->refSeqName,
+                                    bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+                    }
+                }
+
+                // iterate
+                featureCount++;
+                rlFeature = rlFeature->nextRunLength;
+            }
+            insFeature = insFeature->nextInsert;
+        }
+    }
+
+    /*
+     * Get hdf5 data set up
+     */
+
+
+    // so that we can produce chunks smaller than HDF5_FEATURE_SIZE (not used during training)
+    hsize_t featureSize = (hsize_t) (featureCount < HDF5_FEATURE_SIZE ? featureCount : HDF5_FEATURE_SIZE);
+
+    hsize_t metadataDimension[1] = {1};
+    hsize_t postionDimension[2] = {featureSize, 3};
+    hsize_t labelCharacterDimension[2] = {featureSize, 1};
+    hsize_t labelRunLengthDimension[2] = {featureSize, 1};
+    hsize_t normalizationDimension[2] = {featureSize, 1};
+    hsize_t nucleotideDimension[2] = {featureSize, (hsize_t) nucleotideColumnCount};
+    hsize_t runLengthDimension[3] = {featureSize, (hsize_t) runLengthColumnCount, (hsize_t) SYMBOL_NUMBER - 1};
+//    hsize_t runLengthDimension[3] = {featureSize, (hsize_t) SYMBOL_NUMBER - 1, (hsize_t) runLengthColumnCount};
+
+    hid_t metadataSpace = H5Screate_simple(1, metadataDimension, NULL);
+    hid_t positionSpace = H5Screate_simple(2, postionDimension, NULL);
+    hid_t labelCharacterSpace = H5Screate_simple(2, labelCharacterDimension, NULL);
+    hid_t labelRunLengthSpace = H5Screate_simple(2, labelRunLengthDimension, NULL);
+    hid_t normalizationSpace = H5Screate_simple(2, normalizationDimension, NULL);
+    hid_t nucleotideSpace = H5Screate_simple(2, nucleotideDimension, NULL);
+    hid_t runLengthSpace = H5Screate_simple(3, runLengthDimension, NULL);
+
+    hid_t stringType = H5Tcopy (H5T_C_S1);
+    H5Tset_size (stringType, strlen(bamChunk->refSeqName) + 1);
+
+
+    /*
+     * Write features to files
+     */
+
+    // each file must have exactly 1000 features
+    int64_t totalFeatureFiles = (int64_t) (featureCount / HDF5_FEATURE_SIZE) + (featureCount % HDF5_FEATURE_SIZE == 0 ? 0 : 1);
+    int64_t featureOffset = 0;
+    if (featureCount >= HDF5_FEATURE_SIZE) {
+        featureOffset = (int64_t) ((HDF5_FEATURE_SIZE * totalFeatureFiles - featureCount) / (int64_t) (featureCount / HDF5_FEATURE_SIZE));
+    }
+    for (int64_t featureIndex = 0; featureIndex < totalFeatureFiles; featureIndex++) {
+        // get start pos
+        int64_t chunkFeatureStartIdx = (HDF5_FEATURE_SIZE * featureIndex) - (featureOffset * featureIndex);
+        if (featureIndex + 1 == totalFeatureFiles && featureCount >= HDF5_FEATURE_SIZE) {
+            chunkFeatureStartIdx = featureCount - HDF5_FEATURE_SIZE;
+        }
+
+        // create group
+        char *outputGroup = stString_print("images/%s.%"PRId64, outputFileBase, featureIndex);
+        hid_t group = H5Gcreate (hdf5FileInfo->file, outputGroup, hdf5FileInfo->groupPropertyList, H5P_DEFAULT, H5P_DEFAULT);
+
+        // write metadata
+        hid_t contigDataset = H5Dcreate (group, "contig", stringType, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigDataset, stringType, H5S_ALL, H5S_ALL, H5P_DEFAULT, bamChunk->refSeqName);
+        hid_t contigStartDataset = H5Dcreate (group, "contig_start", hdf5FileInfo->int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigStartDataset, hdf5FileInfo->int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryStart);
+        hid_t contigEndDataset = H5Dcreate (group, "contig_end", hdf5FileInfo->int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (contigEndDataset, hdf5FileInfo->int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &bamChunk->chunkBoundaryEnd);
+        hid_t chunkIndexDataset = H5Dcreate (group, "feature_chunk_idx", hdf5FileInfo->int64Type, metadataSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (chunkIndexDataset, hdf5FileInfo->int64Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, &featureIndex);
+
+        // write position info
+        hid_t positionDataset = H5Dcreate (group, "position", hdf5FileInfo->uint32Type, positionSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (positionDataset, hdf5FileInfo->uint32Type, H5S_ALL, H5S_ALL, H5P_DEFAULT, positionData[chunkFeatureStartIdx]);
+
+        // write nucl, rl, and norm data
+        hid_t nucleotideDataset = H5Dcreate (group, "nucleotide", hdf5FileInfo->uint8Type, nucleotideSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (nucleotideDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                            nucleotideData[chunkFeatureStartIdx]);
+        hid_t runLengthDataset = H5Dcreate (group, "runLengths", hdf5FileInfo->uint8Type, runLengthSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (runLengthDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                            runLengthData[chunkFeatureStartIdx][0]);
+        hid_t normalizationDataset = H5Dcreate (group, "normalization", hdf5FileInfo->uint8Type, normalizationSpace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        status |= H5Dwrite (normalizationDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                            normalizationData[chunkFeatureStartIdx]);
+
+        // if labels, add all these too
+        if (outputLabels) {
+            hid_t labelCharacterDataset = H5Dcreate (group, "label_base", hdf5FileInfo->uint8Type, labelCharacterSpace, H5P_DEFAULT,
+                                                     H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelCharacterDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                                labelCharacterData[chunkFeatureStartIdx]);
+            hid_t labelRunLengthDataset = H5Dcreate (group, "label_run_length", hdf5FileInfo->uint8Type, labelRunLengthSpace,
+                                                     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+            status |= H5Dwrite (labelRunLengthDataset, hdf5FileInfo->uint8Type, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                                labelRunLengthData[chunkFeatureStartIdx]);
+
+            status |= H5Dclose (labelCharacterDataset);
+            status |= H5Dclose (labelRunLengthDataset);
+        }
+
+        // cleanup
+        status |= H5Dclose (contigDataset);
+        status |= H5Dclose (contigStartDataset);
+        status |= H5Dclose (contigEndDataset);
+        status |= H5Dclose (chunkIndexDataset);
+        status |= H5Dclose (positionDataset);
+        status |= H5Dclose (nucleotideDataset);
+        status |= H5Dclose (runLengthDataset);
+        status |= H5Dclose (normalizationDataset);
+        status |= H5Gclose (group);
+        free(outputGroup);
+    }
+
+    // cleanup
+    free(nucleotideData[0]);
+    free(nucleotideData);
+    free(runLengthData[0][0]);
+    free(runLengthData[0]);
+    free(runLengthData);
+    free(normalizationData[0]);
+    free(normalizationData);
+    free(positionData[0]);
+    free(positionData);
+    status |= H5Sclose (metadataSpace);
+    status |= H5Sclose (positionSpace);
+    status |= H5Sclose (nucleotideSpace);
+    status |= H5Sclose (runLengthSpace);
+    status |= H5Sclose (normalizationSpace);
+    status |= H5Sclose (labelRunLengthSpace);
+    status |= H5Sclose (labelCharacterSpace);
+    status |= H5Tclose (stringType);
+    if (outputLabels) {
+        free(labelCharacterData[0]);
+        free(labelCharacterData);
+        free(labelRunLengthData[0]);
+        free(labelRunLengthData);
+    }
+
+    if (status) {
+        char *logIdentifier = getLogIdentifier();
+        st_logInfo(" %s Error writing HELEN features to HDF5 files: %s\n", logIdentifier, outputFileBase);
+        free(logIdentifier);
+    }
+}
+
 
 
 HelenFeatureHDF5FileInfo* HelenFeatureHDF5FileInfo_construct(char *filename) {

@@ -142,45 +142,104 @@ void test_simpleWeightIndex(CuTest *testCase) {
 }
 
 
-void test_RleWeightIndex(CuTest *testCase) {
+void test_splitRleWeightIndex(CuTest *testCase) {
 
     int idx;
-    PoaFeatureRleWeight *feature = PoaFeature_RleWeight_construct(0, 0);
+    int maxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
+    int maxIndex = ((SYMBOL_NUMBER - 1) * (1 + maxRunLength) + 1) * 2;
+    PoaFeatureSplitRleWeight *feature = PoaFeature_SplitRleWeight_construct(0, 0, 0, maxRunLength);
 
-    for (int64_t c = 0; c < SYMBOL_NUMBER; c++) {
-        for (int64_t l = 1; l <= POAFEATURE_MAX_RUN_LENGTH; l++) {
-            idx = PoaFeature_RleWeight_charIndex((Symbol) c, l, TRUE);
-            CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    for (int64_t c = 0; c < SYMBOL_NUMBER - 1; c++) {
+        for (int64_t l = 0; l <= maxRunLength; l++) {
+            idx = PoaFeature_SplitRleWeight_charIndex(maxRunLength, (Symbol) c, l, TRUE);
+            CuAssertTrue(testCase, idx < maxIndex);
             feature->weights[idx] += 1;
 
-            idx = PoaFeature_RleWeight_charIndex((Symbol) c, l, FALSE);
-            CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+            idx = PoaFeature_SplitRleWeight_charIndex(maxRunLength, (Symbol) c, l, FALSE);
+            CuAssertTrue(testCase, idx < maxIndex);
             feature->weights[idx] += 1;
         }
     }
 
-    idx = PoaFeature_RleWeight_gapIndex(TRUE);
-    CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    idx = PoaFeature_SplitRleWeight_gapIndex(maxRunLength, TRUE);
+    CuAssertTrue(testCase, idx < maxIndex);
     feature->weights[idx] += 1;
 
-    idx = PoaFeature_RleWeight_gapIndex(FALSE);
-    CuAssertTrue(testCase, idx < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
+    idx = PoaFeature_SplitRleWeight_gapIndex(maxRunLength, FALSE);
+    CuAssertTrue(testCase, idx < maxIndex);
     feature->weights[idx] += 1;
 
-    for (int64_t i = 0; i < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE; i++) {
+    for (int64_t i = 0; i < maxIndex; i++) {
         if (feature->weights[i] != 1) {
             CuAssertTrue(testCase, feature->weights[i] == 1);
         }
     }
 
-    PoaFeature_RleWeight_destruct(feature);
+    PoaFeature_SplitRleWeight_destruct(feature);
+}
+
+
+void test_channelRleWeightIndex(CuTest *testCase) {
+
+//    int PoaFeature_ChannelRleWeight_charNuclIndex(Symbol character, bool forward);
+//    int PoaFeature_ChannelRleWeight_gapNuclIndex(bool forward);
+//    int PoaFeature_ChannelRleWeight_charRLIndex(int64_t maxRunLength, Symbol character, int64_t runLength, bool forward);
+
+    int idx;
+    int maxRunLength = POAFEATURE_CHANNEL_MAX_RUN_LENGTH_DEFAULT;
+    int maxNuclIndex = (SYMBOL_NUMBER) * 2;
+    int maxRLIndex = (SYMBOL_NUMBER - 1) * (1 + maxRunLength) * 2;
+    PoaFeatureChannelRleWeight *feature = PoaFeature_ChannelRleWeight_construct(0, 0, 0, maxRunLength);
+
+    for (int64_t c = 0; c < SYMBOL_NUMBER - 1; c++) {
+        idx = PoaFeature_ChannelRleWeight_charNuclIndex(c, TRUE);
+        CuAssertTrue(testCase, idx < maxNuclIndex);
+        feature->nucleotideWeights[idx] += 1;
+
+        idx = PoaFeature_ChannelRleWeight_charNuclIndex(c, FALSE);
+        CuAssertTrue(testCase, idx < maxNuclIndex);
+        feature->nucleotideWeights[idx] += 1;
+
+        for (int64_t l = 0; l <= maxRunLength; l++) {
+            idx = PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, (Symbol) c, l, TRUE);
+            CuAssertTrue(testCase, idx < maxRLIndex);
+            feature->runLengthWeights[idx] += 1;
+
+            idx = PoaFeature_ChannelRleWeight_charRLIndex(maxRunLength, (Symbol) c, l, FALSE);
+            CuAssertTrue(testCase, idx < maxRLIndex);
+            feature->runLengthWeights[idx] += 1;
+        }
+    }
+
+    idx = PoaFeature_ChannelRleWeight_gapNuclIndex(TRUE);
+    CuAssertTrue(testCase, idx < maxNuclIndex);
+    feature->nucleotideWeights[idx] += 1;
+
+    idx = PoaFeature_ChannelRleWeight_gapNuclIndex(FALSE);
+    CuAssertTrue(testCase, idx < maxNuclIndex);
+    feature->nucleotideWeights[idx] += 1;
+
+    for (int64_t i = 0; i < maxNuclIndex; i++) {
+        if (feature->nucleotideWeights[i] != 1) {
+            CuAssertTrue(testCase, feature->nucleotideWeights[i] == 1);
+        }
+    }
+
+    for (int64_t i = 0; i < maxRLIndex; i++) {
+        if (feature->runLengthWeights[i] != 1) {
+            CuAssertTrue(testCase, feature->runLengthWeights[i] == 1);
+        }
+    }
+
+    PoaFeature_ChannelRleWeight_destruct(feature);
 }
 
 CuSuite* featureTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
     SUITE_ADD_TEST(suite, test_simpleWeightIndex);
-    SUITE_ADD_TEST(suite, test_RleWeightIndex);
+    SUITE_ADD_TEST(suite, test_splitRleWeightIndex);
+    SUITE_ADD_TEST(suite, test_channelRleWeightIndex);
     SUITE_ADD_TEST(suite, test_defaultFeatureGeneration);
     SUITE_ADD_TEST(suite, test_simpleWeightFeatureGeneration);
     SUITE_ADD_TEST(suite, test_splitRleWeightFeatureGeneration);

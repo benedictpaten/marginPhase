@@ -48,9 +48,12 @@ void usage() {
     fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --produceFeatures     : output features for HELEN.\n");
     fprintf(stderr, "    -F --featureType         : output features of chunks for HELEN.  Valid types:\n");
-    fprintf(stderr, "                                 splitRleWeight:  [default] run lengths split into chunks\n");
-    fprintf(stderr, "                                 simpleWeight:    weighted likelihood from POA nodes (non-RLE)\n");
-    fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' type only) [default = %d]\n", POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT);
+    fprintf(stderr, "                                 channelRleWeight: [default] run lengths split into per-nucleotide channels\n");
+    fprintf(stderr, "                                 splitRleWeight:   run lengths split into chunks\n");
+    fprintf(stderr, "                                 simpleWeight:     weighted likelihood from POA nodes (non-RLE)\n");
+    fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' and 'channelRleWeight' types) \n");
+    fprintf(stderr, "                                 [splitRleWeight default = %d, channelRleWeight default = %d]\n",
+            POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT, POAFEATURE_CHANNEL_MAX_RUN_LENGTH_DEFAULT);
     fprintf(stderr, "    -u --trueReferenceBam    : true reference aligned to ASSEMBLY_FASTA, for HELEN\n");
     fprintf(stderr, "                               features.  Setting this parameter will include labels\n");
     fprintf(stderr, "                               in output.\n");
@@ -108,7 +111,7 @@ int main(int argc, char *argv[]) {
     char *trueReferenceBam = NULL;
     BamChunker *trueReferenceChunker = NULL;
     bool fullFeatureOutput = FALSE;
-    int64_t splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
+    int64_t splitWeightMaxRunLength = 0;
     void **helenHDF5Files = NULL;
 
     if(argc < 4) {
@@ -173,6 +176,8 @@ int main(int argc, char *argv[]) {
                 helenFeatureType = HFEAT_SIMPLE_WEIGHT;
             } else if (stString_eq(optarg, "splitRleWeight")) {
                 helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
+            } else if (stString_eq(optarg, "channelRleWeight")) {
+                helenFeatureType = HFEAT_CHANNEL_RLE_WEIGHT;
             } else {
                 fprintf(stderr, "Unrecognized featureType for HELEN: %s\n\n", optarg);
                 usage();
@@ -183,7 +188,7 @@ int main(int argc, char *argv[]) {
             trueReferenceBam = stString_copy(optarg);
             break;
         case 'f':
-            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
+            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_CHANNEL_RLE_WEIGHT;
             break;
         case 'L':
             splitWeightMaxRunLength = atoi(optarg);
@@ -241,6 +246,18 @@ int main(int argc, char *argv[]) {
     omp_set_num_threads(numThreads);
     st_logCritical("Running OpenMP with %d threads.\n", omp_get_max_threads());
     # endif
+    if (helenFeatureType != HFEAT_NONE && splitWeightMaxRunLength == 0) {
+        switch (helenFeatureType) {
+            case HFEAT_SPLIT_RLE_WEIGHT:
+                splitWeightMaxRunLength = POAFEATURE_SPLIT_MAX_RUN_LENGTH_DEFAULT;
+                break;
+            case HFEAT_CHANNEL_RLE_WEIGHT:
+                splitWeightMaxRunLength = POAFEATURE_CHANNEL_MAX_RUN_LENGTH_DEFAULT;
+                break;
+            default:
+                break;
+        }
+    }
 
     // Parse parameters
     st_logCritical("> Parsing model parameters from file: %s\n", paramsFile);
@@ -620,6 +637,7 @@ int main(int argc, char *argv[]) {
         for (int64_t i = 0; i < numThreads; i++) {
             HelenFeatureHDF5FileInfo_destruct((HelenFeatureHDF5FileInfo *) helenHDF5Files[i]);
         }
+        free(helenHDF5Files);
     }
     #endif
     free(chunkResults);
