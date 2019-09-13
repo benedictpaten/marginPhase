@@ -342,7 +342,6 @@ file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
 enable_testing()
 add_executable(allTests
         tests/allTests.c
-        tests/marginPhaseTest.c
         tests/stRPHmmTest.c
         tests/parserTest.c
         tests/chunkingTest.c

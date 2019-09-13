@@ -8,7 +8,6 @@
 #include "margin.h"
 
 #define RANDOM_TEST_NO 2
-static char *polishParamsFile = "../params/allParams.np.json";
 
 stSite getRandomSite(uint64_t alleleOffset) {
 	/*
@@ -18,7 +17,13 @@ stSite getRandomSite(uint64_t alleleOffset) {
 	site.alleleOffset = alleleOffset;
 	site.alleleNumber = st_randomInt(1, 10);
 	site.allelePriorLogProbs = st_calloc(site.alleleNumber, sizeof(uint16_t)); // Make all the probs flat log 1.0
-	site.substitutionLogProbs = st_calloc(site.alleleNumber*site.alleleNumber, sizeof(uint16_t)); // Ditto
+	site.substitutionLogProbs = st_calloc(site.alleleNumber*site.alleleNumber, sizeof(uint16_t));
+	// todo: fix substitution costs
+	for(uint64_t i=0; i<site.alleleNumber; i++) {
+		for(uint64_t j=0; j<site.alleleNumber; j++) {
+			site.substitutionLogProbs[i*site.alleleNumber + j] = i == j ? 0 : 0;
+		}
+	}
 
 	return site;
 }
@@ -72,9 +77,9 @@ stProfileSeq *getRandomProfileSeq(stReference *ref, uint64_t *hapSeq,
         // Haplotype base or error at random
         uint64_t allele = st_random() < readErrorRate ? st_randomInt(0, site->alleleNumber) : hapSeq[start+i];
         // Fill in the profile probabilities according to the chosen base
-        // Here make all alleles except the chosen one have log-likelihood -20
+        // Here make all alleles except the chosen one have log-likelihood -100
         for(uint64_t j=0; j<site->alleleNumber; j++) {
-        	*stProfileSeq_getProb(pSeq, start + i, j) = 20;
+        	*stProfileSeq_getProb(pSeq, start + i, j) = 100;
         }
         *stProfileSeq_getProb(pSeq, start + i, allele) = 0;
     }
@@ -83,8 +88,7 @@ stProfileSeq *getRandomProfileSeq(stReference *ref, uint64_t *hapSeq,
 }
 
 static stRPHmmParameters *getHmmParams(int64_t maxPartitionsInAColumn,
-        double hetRate, double readErrorRate,
-        bool maxNotSumTransitions, int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
+        double readErrorRate, bool maxNotSumTransitions, int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites) {
     stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
 
     params->maxNotSumTransitions = maxNotSumTransitions;
@@ -101,10 +105,8 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         stList *profileSeqs1, stList *profileSeqs2,
         int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
         int64_t minReferenceLength, int64_t maxReferenceLength,
-        int64_t minCoverage, int64_t maxCoverage,
-        int64_t minReadLength, int64_t maxReadLength,
-        double hetRate, double readErrorRate,
-        stRPHmmParameters *params) {
+        int64_t minCoverage, int64_t maxCoverage, int64_t minReadLength,
+		int64_t maxReadLength, double readErrorRate, stRPHmmParameters *params) {
     /*
      * Simulate reference sequences, haplotypes and derived reads, represented as profile
      * sequences, placing the results in the argument lists.
@@ -131,7 +133,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
         // Create read sequences to given coverage
         int64_t coverage = st_randomInt(minCoverage, maxCoverage+1);
         int64_t totalBasesToSimulate = coverage * referenceLength;
-//        fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
+// fprintf(stderr, "Total bases to simulate: %" PRIi64 " for coverage: %" PRIi64 "\n", totalBasesToSimulate, coverage);
         while(totalBasesToSimulate > 0) {
             // Randomly pick a haplotype sequence to template from
             uint64_t *hapSeq = hap1;
@@ -146,7 +148,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
 
             stList_append(readSeqs, pSeq);
             totalBasesToSimulate -= readLength;
-            //fprintf(stderr, "Simulating read from haplotype: %s\n", hapSeq);
+// fprintf(stderr, "Simulating read from haplotype: %s\n", hapSeq);
             //stProfileSeq_print(pSeq, stderr, 1);
         }
 
@@ -158,7 +160,7 @@ static void simulateReads(stList *referenceSeqs, stList *hapSeqs1, stList *hapSe
 static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int64_t maxReferenceSeqNumber,
         int64_t minReferenceLength, int64_t maxReferenceLength, int64_t minCoverage, int64_t maxCoverage,
         int64_t minReadLength, int64_t maxReadLength,
-        int64_t maxPartitionsInAColumn, double hetRate, double readErrorRate,
+        int64_t maxPartitionsInAColumn, double readErrorRate,
         bool maxNotSumTransitions, bool splitHmmsWherePhasingUncertain,
         int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites,
         bool printHmm) {
@@ -188,14 +190,12 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             "\tminReadLength: %" PRIi64 "\n"
             "\tmaxReadLength: %" PRIi64 "\n"
             "\tmaxPartitionsInAColumn: %" PRIi64 "\n"
-            "\thetRate: %f\n"
             "\treadErrorRate: %f\n"
             "\tmaxNotSumTransitions: %i\n"
             "\tsplitHmmsWherePhasingUncertain: %i\n",
             minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength,
-            maxPartitionsInAColumn, (float)hetRate, (float)readErrorRate,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, (float)readErrorRate,
             maxNotSumTransitions, splitHmmsWherePhasingUncertain);
 
     int64_t totalProfile1SeqsOverAllTests = 0;
@@ -209,7 +209,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
         fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
-                hetRate, readErrorRate, maxNotSumTransitions,
+                readErrorRate, maxNotSumTransitions,
                 minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
         stList *referenceSeqs = stList_construct3(0, (void (*)(void *))stReference_destruct);
@@ -227,7 +227,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                         minReferenceLength, maxReferenceLength,
                         minCoverage, maxCoverage,
                         minReadLength, maxReadLength,
-                        hetRate, readErrorRate, params);
+                        readErrorRate, params);
 
         stList *profileSeqs = stList_construct();
         stList_appendAll(profileSeqs, profileSeqs1);
@@ -473,8 +473,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                     cell = cell->nCell;
                 }
 
-                if(!maxNotSumTransitions) {
-                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
+				if(!maxNotSumTransitions) {
+                	CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
                 }
                 if(column->nColumn == NULL) {
                     break;
@@ -495,7 +495,7 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 }
                 stHash_destructIterator(it);
                 if(!maxNotSumTransitions) {
-                    CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
+                	CuAssertDblEquals(testCase, 1.0, totalProb, 0.1);
                 }
                 column = mColumn->nColumn;
             }
@@ -604,8 +604,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
 
             totalPartitionError += partitionErrors;
 
-            totalProfile1SeqsOverAllTests += stList_length(profileSeqs1);
-            totalProfile2SeqsOverAllTests += stList_length(profileSeqs2);
+            totalProfile1SeqsOverAllTests += stSet_size(profileSeqsPartition1);
+            totalProfile2SeqsOverAllTests += stSet_size(profileSeqsPartition2);
             totalPartitionErrorsOverAllTests += partitionErrors;
 
             /*
@@ -624,8 +624,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             assert(stString_eq(stList_get(tokens, 0), "Reference"));
             int64_t refSeqIndex = stSafeStrToInt64(stList_peek(tokens));
             stList_destruct(tokens);
-            char *hap1Seq = stList_get(hapSeqs1, refSeqIndex);
-            char *hap2Seq = stList_get(hapSeqs2, refSeqIndex);
+            uint64_t *hap1Seq = stList_get(hapSeqs1, refSeqIndex);
+            uint64_t *hap2Seq = stList_get(hapSeqs2, refSeqIndex);
 
             int64_t correctGenotypes = 0;
             int64_t totalHets = 0;
@@ -646,8 +646,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
             	uint64_t alleleNumber = s->alleleNumber;
                 // Check genotype
                 CuAssertTrue(testCase, gF->genotypeString[j] <= alleleNumber*alleleNumber);
-                char hap1Char = hap1Seq[j + gF->refStart];
-                char hap2Char = hap2Seq[j + gF->refStart];
+                uint64_t hap1Char = hap1Seq[j + gF->refStart];
+                uint64_t hap2Char = hap2Seq[j + gF->refStart];
                 uint64_t trueGenotype = hap1Char < hap2Char ? hap1Char * alleleNumber + hap2Char : hap2Char * alleleNumber + hap1Char;
 
                 totalHets += hap1Char != hap2Char ? 1 : 0;
@@ -662,8 +662,8 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
                 }
 
                 // Check genotype posterior probability
-                CuAssertTrue(testCase, gF->genotypeProbs[j] >= 0.0);
-                CuAssertTrue(testCase, gF->genotypeProbs[j] <= 1.0);
+                CuAssertTrue(testCase, gF->genotypeProbs[j] <= 0.0);
+                //CuAssertTrue(testCase, gF->genotypeProbs[j] <= 1.0);
 
                 // Check haplotypes
                 CuAssertTrue(testCase, gF->haplotypeString1[j] <= alleleNumber);
@@ -748,9 +748,9 @@ static void test_systemTest(CuTest *testCase, int64_t minReferenceSeqNumber, int
     fprintf(stderr, " For %i tests there were avg. %f hap 1 sequences and avg. %f hap 2 sequences there were "
             " avg. %f partition errors in %" PRIi64 " seconds \n",
                     RANDOM_TEST_NO,
-                    (float)totalProfile1SeqsOverAllTests/RANDOM_TEST_NO,
-                    (float)totalProfile2SeqsOverAllTests/RANDOM_TEST_NO,
-                    (float)totalPartitionErrorsOverAllTests/RANDOM_TEST_NO,
+                    ((float)totalProfile1SeqsOverAllTests)/RANDOM_TEST_NO,
+                    ((float)totalProfile2SeqsOverAllTests)/RANDOM_TEST_NO,
+                    ((float)totalPartitionErrorsOverAllTests)/RANDOM_TEST_NO,
                     totalTime);
 }
 
@@ -764,16 +764,15 @@ void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
     int64_t minReadLength = 1000;
     int64_t maxReadLength = 1000;
     int64_t maxPartitionsInAColumn = 50;
-    double hetRate = 0.001;
-    double readErrorRate = 0.1;
+    double readErrorRate = 0.05;
     bool maxNotSumTransitions = 0;
-    bool splitHmmsWherePhasingUncertain = 0;
+    bool splitHmmsWherePhasingUncertain = 1;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
     bool printHmm = 1;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, readErrorRate,
             maxNotSumTransitions, splitHmmsWherePhasingUncertain,
             minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
@@ -781,23 +780,22 @@ void test_systemSingleReferenceFullLengthReads(CuTest *testCase) {
 void test_systemSingleReferenceFixedLengthReads(CuTest *testCase) {
     int64_t minReferenceSeqNumber = 1;
     int64_t maxReferenceSeqNumber = 1;
-    int64_t minReferenceLength = 40000;
-    int64_t maxReferenceLength = 40000;
+    int64_t minReferenceLength = 3000;
+    int64_t maxReferenceLength = 3000;
     int64_t minCoverage = 30;
     int64_t maxCoverage = 30;
-    int64_t minReadLength = 3000;
-    int64_t maxReadLength = 3000;
+    int64_t minReadLength = 300;
+    int64_t maxReadLength = 300;
     int64_t maxPartitionsInAColumn = 50;
-    double hetRate = 0.0007;
     double readErrorRate = 0.05;
-    bool maxNotSumTransitions = 0;
+    bool maxNotSumTransitions = 1;
     bool splitHmmsWherePhasingUncertain = 1;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 3;
     bool printHmm = 0;
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, readErrorRate,
             maxNotSumTransitions, splitHmmsWherePhasingUncertain,
             minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
@@ -810,10 +808,9 @@ void test_systemSingleReference(CuTest *testCase) {
     int64_t minCoverage = 30;
     int64_t maxCoverage = 30;
     int64_t minReadLength = 10;
-    int64_t maxReadLength = 300;
+    int64_t maxReadLength = 40;
     int64_t maxPartitionsInAColumn = 50;
-    double hetRate = 0.01;
-    double readErrorRate = 0.01;
+    double readErrorRate = 0.05;
     bool maxNotSumTransitions = 0;
     bool splitHmmsWherePhasingUncertain = 1;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites = 15;
@@ -822,8 +819,7 @@ void test_systemSingleReference(CuTest *testCase) {
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
             minReadLength, maxReadLength, maxPartitionsInAColumn,
-            hetRate, readErrorRate,
-            maxNotSumTransitions, splitHmmsWherePhasingUncertain,
+            readErrorRate, maxNotSumTransitions, splitHmmsWherePhasingUncertain,
             minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
 
@@ -837,7 +833,6 @@ void test_systemMultipleReferences(CuTest *testCase) {
     int64_t minReadLength = 10;
     int64_t maxReadLength = 300;
     int64_t maxPartitionsInAColumn = 50;
-    double hetRate = 0.01;
     double readErrorRate = 0.01;
     bool maxNotSumTransitions = 0;
     bool splitHmmsWherePhasingUncertain = 1;
@@ -846,7 +841,7 @@ void test_systemMultipleReferences(CuTest *testCase) {
 
     test_systemTest(testCase, minReferenceSeqNumber, maxReferenceSeqNumber,
             minReferenceLength, maxReferenceLength, minCoverage, maxCoverage,
-            minReadLength, maxReadLength, maxPartitionsInAColumn, hetRate, readErrorRate,
+            minReadLength, maxReadLength, maxPartitionsInAColumn, readErrorRate,
             maxNotSumTransitions, splitHmmsWherePhasingUncertain,
             minReadCoverageToSupportPhasingBetweenHeterozygousSites, printHmm);
 }
@@ -862,7 +857,7 @@ void test_popCount64(CuTest *testCase) {
     CuAssertIntEquals(testCase, popcount64(0x1111111111111111), 16);
 }
 
-static double getLogProbOfAlleleSimple(stReference *ref,
+static uint64_t getLogProbOfAlleleSimple(stReference *ref,
 		uint8_t **seqs, uint64_t partition,
         int64_t depth, int64_t length,
         int64_t site, int64_t allele) {
@@ -872,7 +867,7 @@ static double getLogProbOfAlleleSimple(stReference *ref,
             expectation += seqs[i][ref->sites[site].alleleOffset + allele];
         }
     }
-    return (double)expectation;
+    return expectation;
 }
 
 static uint64_t getRandomPartition(int64_t depth) {
@@ -912,6 +907,8 @@ void test_bitCountVectors(CuTest *testCase) {
           getLogProbOfAllele(countBitVectors, depth, partition, ref->sites[i].alleleOffset, j),
                             getLogProbOfAlleleSimple(ref, seqs, partition, depth,
                                     ref->length, i, j));
+//st_uglyf("Hello, site: %i allele: %i value: %i\n", i, j, getLogProbOfAlleleSimple(ref, seqs, partition, depth,
+//                ref->length, i, j));
 
                 }
             }
@@ -948,7 +945,6 @@ void test_getOverlappingComponents(CuTest *testCase) {
     int64_t minReadLength = 100;
     int64_t maxReadLength = 100;
     int64_t maxPartitionsInAColumn = 100;
-    double hetRate = 0.02;
     double readErrorRate = 0.01;
     bool maxNotSumTransitions = 0;
 
@@ -956,8 +952,7 @@ void test_getOverlappingComponents(CuTest *testCase) {
         fprintf(stderr, "Starting test iteration: #%" PRIi64 "\n", test);
 
         stRPHmmParameters *params = getHmmParams(maxPartitionsInAColumn,
-                        hetRate, readErrorRate,
-                        maxNotSumTransitions, 0);
+                        readErrorRate, maxNotSumTransitions, 0);
 
         stList *referenceSeqs = stList_construct3(0, free);
         stList *hapSeqs1 = stList_construct3(0, free);
@@ -974,7 +969,7 @@ void test_getOverlappingComponents(CuTest *testCase) {
                         minReferenceLength, maxReferenceLength,
                         minCoverage, maxCoverage,
                         minReadLength, maxReadLength,
-                        hetRate, readErrorRate, params);
+                        readErrorRate, params);
 
         // Make simple hmms
         stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, NULL);

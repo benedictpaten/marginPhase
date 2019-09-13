@@ -37,7 +37,8 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
 
         // If hmm1 and hmm2 are on different references, then hmm2 is the closest non-overlapping
         // hmm to hmm1 in reference space
-        if(hmm1->ref != hmm2->ref) {
+        i = strcmp(hmm1->ref->referenceName, hmm2->ref->referenceName);
+        if(i != 0) {
             break;
         }
 

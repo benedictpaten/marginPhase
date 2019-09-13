@@ -95,12 +95,12 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, stReference *ref,
     // For each site
     for(uint64_t i=firstSite; i<firstSite+length; i++) {
         // For each allele
-    	uint64_t firstAlleleOfSite = ref->sites[i].alleleOffset;
+    	uint64_t siteOffset = ref->sites[i].alleleOffset - firstAllele;
         for(uint64_t j=0; j<ref->sites[i].alleleNumber; j++) {
             // For each bit
             for(uint64_t k=0; k<ALLELE_LOG_PROB_BITS; k++) {
-                *retrieveBitCountVector(bitCountVectors, firstAlleleOfSite - firstAllele, j, k) =
-                        calculateBitCountVector(seqs, depth, firstAlleleOfSite, j, k);
+                *retrieveBitCountVector(bitCountVectors, siteOffset, j, k) =
+                        calculateBitCountVector(seqs, depth, siteOffset, j, k);
             }
         }
     }
@@ -169,7 +169,7 @@ static inline uint64_t genotypeLogProbability(stRPColumn *column, stSite *site, 
 	uint64_t alleleLogProbsHap1[site->alleleNumber];
 	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap1);
 	uint64_t alleleLogProbsHap2[site->alleleNumber];
-	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap2);
+	alleleLogHapProbabilities(column, site, siteOffset, ~partition, bitCountVectors, alleleLogProbsHap2);
 
     uint64_t ancestorAlleleProbsHap1[site->alleleNumber];
     ancestorHapProbabilities(site, alleleLogProbsHap1, ancestorAlleleProbsHap1);
@@ -218,7 +218,7 @@ static uint64_t getMLAllele(stSite *site, uint64_t *alleleLogProbs, uint64_t max
     uint64_t maxProb = alleleLogProbs[0] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, 0);
     for(uint64_t i=1; i<site->alleleNumber; i++) {
         double hapProb = alleleLogProbs[i] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, i);
-        if(hapProb > maxProb) {
+        if(hapProb < maxProb) {
             maxProb = hapProb;
             maxAllele = i;
         }
@@ -226,12 +226,17 @@ static uint64_t getMLAllele(stSite *site, uint64_t *alleleLogProbs, uint64_t max
     return maxAllele;
 }
 
-static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t index, uint64_t partition,
-                                   	      stRPColumn *column, uint64_t *bitCountVectors, stSite *site, uint64_t siteOffset) {
+static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t siteIndex, uint64_t partition,
+                                   	      stRPColumn *column, uint64_t *bitCountVectors) {
     /*
      * Computes the most probable haplotype alleles / genotype and associated posterior
      * probabilities for a given position within a cell/column.
      */
+
+	// Coordinates
+	stSite *site = &(gF->reference->sites[siteIndex]);
+	uint64_t firstAllele = gF->reference->sites[column->refStart].alleleOffset;
+	uint64_t siteOffset = site->alleleOffset-firstAllele;
 
 	// Get the log-prob of ancestral alleles
 
@@ -240,7 +245,7 @@ static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t index, 
 	uint64_t alleleLogProbsHap1[site->alleleNumber];
 	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap1);
 	uint64_t alleleLogProbsHap2[site->alleleNumber];
-	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap2);
+	alleleLogHapProbabilities(column, site, siteOffset, ~partition, bitCountVectors, alleleLogProbsHap2);
 
 	uint64_t ancestorAlleleProbsHap1[site->alleleNumber];
 	ancestorHapProbabilities(site, alleleLogProbsHap1, ancestorAlleleProbsHap1);
@@ -252,23 +257,24 @@ static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t index, 
 	uint64_t ancestorAllele = 0;
 	for(uint64_t i=1; i<site->alleleNumber; i++) {
 		uint64_t j = ancestorAlleleProbsHap1[i] + ancestorAlleleProbsHap2[i] + site->allelePriorLogProbs[i];
-		if(maxLogColumnProb > j) {
+		if(maxLogColumnProb < j) {
 			maxLogColumnProb = j;
 			ancestorAllele = i;
 		}
 	}
 
 	// Given ml ancestor allele, figure prob of haplotype alleles
-	uint64_t hapAllele1  = getMLAllele(site, alleleLogProbsHap1, ancestorAllele);
-	uint64_t hapAllele2  = getMLAllele(site, alleleLogProbsHap1, ancestorAllele);
+	uint64_t hapAllele1 = getMLAllele(site, alleleLogProbsHap1, ancestorAllele);
+	uint64_t hapAllele2 = getMLAllele(site, alleleLogProbsHap2, ancestorAllele);
 
+	uint64_t k = siteIndex-gF->refStart;
 	// Fill in the genome fragment
-	gF->haplotypeString1[index] = hapAllele1;
-	gF->haplotypeString2[index] = hapAllele2;
+	gF->haplotypeString1[k] = hapAllele1;
+	gF->haplotypeString2[k] = hapAllele2;
 	// Get combined genotype
-	gF->genotypeString[index] = hapAllele1 < hapAllele2 ? hapAllele1 * site->alleleNumber + hapAllele2 :
+	gF->genotypeString[k] = hapAllele1 < hapAllele2 ? hapAllele1 * site->alleleNumber + hapAllele2 :
 							hapAllele2 * site->alleleNumber + hapAllele1;
-	gF->genotypeProbs[index] = maxLogColumnProb;
+	gF->genotypeProbs[k] = -((float)maxLogColumnProb);
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
@@ -284,11 +290,9 @@ void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
     				column->length, column->depth);
 
     assert(column->length > 0);
-    uint64_t firstAllele = gF->reference->sites[column->refStart].alleleOffset;
     for(uint64_t i=0; i<column->length; i++) {
-		stSite *site = &(gF->reference->sites[i+column->refStart]);
-        fillInPredictedGenomePosition(gF, i, partition, column,
-                                      bitCountVectors, site, site->alleleOffset-firstAllele);
+        fillInPredictedGenomePosition(gF, i+column->refStart, partition, column,
+                                      bitCountVectors);
     }
 
     // Cleanup

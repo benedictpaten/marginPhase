@@ -9,7 +9,6 @@
 /*
  * Read partitioning hmm column (stRPColumn) functions
  */
-
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
         stProfileSeq **seqHeaders, uint8_t **seqs) {
 
@@ -79,7 +78,6 @@ void stRPColumn_split(stRPColumn *column, int64_t firstHalfLength, stRPHmm *hmm)
     uint8_t **seqs = st_malloc(sizeof(uint8_t *) * column->depth);
     // Update the pointers to the seqs
     uint64_t firstAllele = hmm->ref->sites[column->refStart].alleleOffset;
-    assert(column->refStart + firstHalfLength < hmm->ref->length);
     uint64_t lastAllele = hmm->ref->sites[column->refStart + firstHalfLength].alleleOffset;
     for(int64_t i=0; i<column->depth; i++) {
         seqs[i] = &(column->seqs[i][lastAllele - firstAllele]);

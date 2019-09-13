@@ -274,7 +274,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
      */
 
     // Checks
-    if(leftHmm->ref != rightHmm->ref) {
+    if(!stString_eq(leftHmm->ref->referenceName, rightHmm->ref->referenceName)) {
         st_errAbort("Attempting to fuse two hmms not on the same reference sequence");
     }
 
@@ -524,7 +524,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
      */
 
     // Do sanity checks that the two hmms have been aligned
-    if(hmm1->ref != hmm2->ref) {
+    if(!stString_eq(hmm1->ref->referenceName, hmm2->ref->referenceName)) {
         st_errAbort("Trying to create cross product of two HMMs "
                 "on different reference sequences");
     }
@@ -818,8 +818,8 @@ static void stRPHmm_forward(stRPHmm *hmm) {
     // Iterate through columns from first to last
     while(1) {
         // Get the bit count vectors for the column
-        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, hmm->ref, column->depth,
-                column->refStart, column->length);
+        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, hmm->ref,
+                column->refStart, column->length, column->depth);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
