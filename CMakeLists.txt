@@ -3,7 +3,7 @@ project(marginPhase VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address -static-libasan")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
 project(marginPhase LANGUAGES C)
@@ -308,20 +308,6 @@ set(SOURCE_FILES
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Dependencies
-find_library(ZLIB NAMES z)
-if(${ZLIB} STREQUAL "ZLIB-NOTFOUND")
-    message(WARNING "Couldn't find the 'z' library")
-endif()
-
-find_library(BZ2LIB bz2)
-if(${BZ2LIB} STREQUAL "BZ2LIB-NOTFOUND")
-    message(WARNING "Couldn't find the 'bz2' library")
-endif()
-
-find_library(CURLLIB curl)
-if(${CURLLIB} STREQUAL "CURLLIB-NOTFOUND")
-    message(WARNING "Couldn't find the 'curl' library")
-endif()
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -378,14 +364,14 @@ add_custom_command(
         OUTPUT "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h"
         COMMAND autoconf
         COMMAND autoheader
-        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins --disable-bz2
+        COMMAND ./configure --disable-lzma --disable-s3 --disable-plugins --disable-bz2 --disable-libcurl
         COMMAND make
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/externalTools/htslib/
 )
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
-target_link_libraries(hts pthread bz2 z curl)
+target_link_libraries(hts pthread )
 
 # Build MarginCore Library
 add_library(margin ${SOURCE_FILES})
