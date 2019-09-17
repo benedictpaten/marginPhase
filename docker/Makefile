@@ -1,7 +1,7 @@
 # Definitions
 git_commit ?= $(shell git log --pretty=oneline -n 1 | cut -f1 -d " ")
 name = tpesout/margin_polish
-version = 1.0.0
+version = 1.1.0
 tag = ${version}--${git_commit}
 
 # Steps
