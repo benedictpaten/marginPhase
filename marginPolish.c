@@ -364,11 +364,15 @@ int main(int argc, char *argv[]) {
         // Get reference string for chunk of alignment
         char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
         if (fullReferenceString == NULL) {
-            st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
-            continue;
+            st_errAbort("ERROR: Reference sequence missing from reference map: %s. Perhaps the BAM and REF are mismatched?",
+                    bamChunk->refSeqName);
         }
         int64_t fullRefLen = strlen(fullReferenceString);
-        assert(bamChunk->chunkBoundaryStart <= fullRefLen);
+        if (bamChunk->chunkBoundaryStart > fullRefLen) {
+            st_errAbort("ERROR: Reference sequence %s has length %"PRId64", chunk %"PRId64" has start position %"
+            PRId64". Perhaps the BAM and REF are mismatched?",
+                    bamChunk->refSeqName, fullRefLen, chunkIdx, bamChunk->chunkBoundaryStart);
+        }
         char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
                                                       (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
                                                                                            : bamChunk->chunkBoundaryEnd) -
