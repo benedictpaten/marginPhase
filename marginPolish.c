@@ -20,11 +20,11 @@
  */
 
 void usage() {
-    fprintf(stderr, "usage: marginPolish <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
+    fprintf(stderr, "usage: margin <BAM_FILE> <ASSEMBLY_FASTA> <PARAMS> [options]\n");
     fprintf(stderr, "Version: %s \n\n", MARGINPHASE_MARGIN_PHASE_VERSION_H);
-    fprintf(stderr, "Polishes an assembly using the reads in a BAM file and produces:\n");
+    fprintf(stderr, "Polishes an assembly using the reads in a BAM file and produces using a haploid or diploid model:\n");
     fprintf(stderr, "    1) a fasta file giving an updated reference.\n");
-    fprintf(stderr, "    2) and (optionally) a SAM/BAM/CRAM file of the reads giving their alignment to the updated reference\n");
+    fprintf(stderr, "    2) and (optionally) a set of outputs useful further polishing algorithms\n");
 
     fprintf(stderr, "\nRequired arguments:\n");
     fprintf(stderr, "    BAM_FILE BAM_FILE is the alignment of reads to the assembly (or reference).\n");
@@ -33,11 +33,11 @@ void usage() {
 
     fprintf(stderr, "\nDefault options:\n");
     fprintf(stderr, "    -h --help              : Print this help screen\n");
+    fprintf(stderr, "    -d --diploid           : Do diploid polishing, outputting two polished sequences per reference sequence\n");
     fprintf(stderr, "    -a --logLevel          : Set the log level [default = info]\n");
     fprintf(stderr, "    -o --outputBase        : Name to use for output files [default = output]\n");
     fprintf(stderr, "    -r --region            : If set, will only compute for given chromosomal region.\n");
     fprintf(stderr, "                               Format: chr:start_pos-end_pos (chr3:2000-3000).\n");
-
     fprintf(stderr, "    -i --outputRepeatCounts        : File to write out the repeat counts [default = NULL]\n");
     fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
@@ -45,6 +45,7 @@ void usage() {
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
+    bool diploid = 0; // By default assuume a haploid model
     char *bamInFile = NULL;
     char *paramsFile = NULL;
     char *referenceFastaFile = NULL;
@@ -70,6 +71,7 @@ int main(int argc, char *argv[]) {
         static struct option long_options[] = {
                 { "logLevel", required_argument, 0, 'a' },
                 { "help", no_argument, 0, 'h' },
+				{ "diploid", no_argument, 0, 'd'},
                 { "outputBase", required_argument, 0, 'o'},
                 { "region", required_argument, 0, 'r'},
                 { "verbose", required_argument, 0, 'v'},
@@ -78,7 +80,7 @@ int main(int argc, char *argv[]) {
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hi:j:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:hdi:j:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -92,6 +94,9 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage();
             return 0;
+        case 'h':
+            diploid = 1;
+            break;
         case 'o':
             free(outputBase);
             outputBase = stString_copy(optarg);
@@ -119,6 +124,7 @@ int main(int argc, char *argv[]) {
     free(logLevelString);
 
     // Parse parameters
+    st_logInfo("> Using the diploid model: %s\n", diploid ? "True" : "False");
     st_logInfo("> Parsing model parameters from file: %s\n", paramsFile);
     FILE *fh = fopen(paramsFile, "r");
     Params *params = params_readParams(fh);
@@ -209,9 +215,6 @@ int main(int argc, char *argv[]) {
 
 		if(params->polishParams->useRunLengthEncoding) {
 			st_logInfo("> Running polishing algorithm using run-length encoding\n");
-
-			// Run-length encoded polishing
-
 			// Do run length encoding (RLE)
 
 			// First RLE the reference

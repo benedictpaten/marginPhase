@@ -796,6 +796,7 @@ typedef struct _bamChunk {
 typedef struct _bamChunkRead {
 	char *readName;          	// read name
 	char *nucleotides;			// nucleotide string
+	uint16_t *repeatCounts; 	// Count of repeat for each position in nucleotides
 	int64_t readLength;
 	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length readLength
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
@@ -817,10 +818,13 @@ BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t
 BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
-typedef struct _readSubstring {
-	char *readSubstring;
+typedef struct _bamChunkReadSubstring {
+	BamChunkRead *read; // The parent read from which the substring arises from
+	uint64_t start; // The 0 based offset of the start position in the parent read (inclusive)
+	uint64_t length; // The length of the substring
+	char *readSubstring; // TODO: Test not generating this but getting via method
 	double qualValue;
-} ReadSubstring;
+} BamChunkReadSubstring;
 
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
@@ -906,13 +910,6 @@ void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
 							   RleString *refString, stList *rleStrings, FILE *fh);
 
 /*
- * Phase to polish functions
- */
-
-void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
-				stList **readsPartition1, stList **readsPartition2, Params *params);
-
-/*
  * Bubble graphs
  */
 
@@ -923,7 +920,7 @@ typedef struct _bubble {
 	uint64_t alleleNo; // Number of alleles
 	char **alleles; // Array of allele strings
 	uint64_t readNo; // Number of reads overlapping bubble
-	ReadSubstring **reads; // Array of read substrings aligned to the bubble
+	BamChunkReadSubstring **reads; // Array of read substrings aligned to the bubble
 	float *alleleReadSupports; // An array of log-likelihoods giving the support of
 	// each allele for each read
 	uint64_t alleleOffset; // The index of the first allele in this bubble
@@ -939,11 +936,17 @@ typedef struct _bubbleGraph {
 } BubbleGraph;
 
 /*
+ * Get a consensus path through bubble graph by picking the highest
+ * likelihood allele at each bubble. Returned as a string of bg->refLength integers,
+ * each denoting a chosen allele.
+ */
+uint64_t *bubbleGraph_getConsensusPath(BubbleGraph *bg, PolishParams *polishParams);
+
+/*
  * Get a consensus sequences from the bubble graph by picking the highest
  * likelihood allele at each bubble.
  */
-char *bubbleGraph_getConsensus(BubbleGraph *bg, int64_t **poaToConsensusMap,
-		PolishParams *polishParams);
+char *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
 /*
  * Create a bubble graph from a POA.
@@ -967,5 +970,21 @@ int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b);
  * Gets the likelihood of a given allele giving rise to the reads.
  */
 double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele);
+
+/*
+ * Gets a set of profile sequences for the reads aligned to the bubble graph.
+ * Allows them to then be phased.
+ */
+stList *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
+
+/*
+ * Gets an stReference that can be used for phasing.
+ */
+stReference *bubbleGraph_getReference(BubbleGraph *bg);
+
+/*
+ * Phase bubble graph.
+ */
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, Params *params);
 
 #endif /* ST_RP_HMM_H_ */

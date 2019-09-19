@@ -259,6 +259,7 @@ set(SOURCE_FILES
         impl/polisher.c
         impl/view.c
         impl/profileSeq.c
+        impl/bubbleGraph.c
         externalTools/samtools/bedidx.c
         )
 

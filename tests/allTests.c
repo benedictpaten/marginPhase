@@ -14,7 +14,6 @@ CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
 CuSuite* callConsensusTestSuite(void);
 
-
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
