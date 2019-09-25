@@ -345,7 +345,7 @@ add_dependencies(cpecan lastz)
 target_link_libraries(cpecan m)
 
 
-# Build MarginCore Library
+# Build MarginCore Library (for external use)
 add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
 target_link_libraries(MarginCore cpecan son)
 
@@ -356,7 +356,7 @@ set_target_properties(MarginCore PROPERTIES
         SOVERSION ${marginPhase_VERSION})
 install(TARGETS MarginCore
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        PUBLIC_HEADER DESTINATION include/marginPhase
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/marginPhase
         )
 
 # HTSLIB
@@ -373,9 +373,9 @@ add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
 target_link_libraries(hts pthread )
 
-# Build MarginCore Library
-add_library(margin ${SOURCE_FILES})
-target_link_libraries(margin MarginCore hts)
+# Build margin library
+add_library(margin ${SOURCE_FILES} ${CORE_SOURCE_FILES} ${SSW_SOURCES})
+target_link_libraries(margin cpecan son hts)
 if (HDF5_FOUND)
     target_link_libraries(margin ${HDF5_C_LIBRARIES})
 endif()

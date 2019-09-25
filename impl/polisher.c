@@ -1653,7 +1653,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 		}
 	}
 	if(maxRepeatLength >= repeatSubMatrix->maximumRepeatLength) {
-		st_logCritical("Got overlong repeat observation: %" PRIi64 ", ignoring this and cutting off overlong repeat counts to max\n", maxRepeatLength);
+		st_logInfo("Got overlong repeat observation: %" PRIi64 ", ignoring this and cutting off overlong repeat counts to max\n", maxRepeatLength);
 		maxRepeatLength = repeatSubMatrix->maximumRepeatLength-1;
 	}
 
