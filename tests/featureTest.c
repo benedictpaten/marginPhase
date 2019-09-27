@@ -67,7 +67,7 @@ void test_simpleWeightFeatureGeneration(CuTest *testCase) {
     char *featureType = "simpleWeight";
     char *outputName = "test.simpleWeightFeature";
     char *expectedOutputFa = stString_print("%s.fa", outputName);
-    char *expectedOutputFeature = stString_print("%s.simpleWeight.C00000.feature_contig-0-50.0.h5", outputName);
+    char *expectedOutputFeature = stString_print("%s.T00.h5", outputName);
 
     CuAssertTrue(testCase, access(expectedOutputFa, R_OK ) == 0 || remove(expectedOutputFa) != 0);
     CuAssertTrue(testCase, access(expectedOutputFeature, R_OK ) == 0 || remove(expectedOutputFeature) != 0);
@@ -115,7 +115,7 @@ void test_simpleWeightIndex(CuTest *testCase) {
     int idx;
     PoaFeatureSimpleWeight *feature = PoaFeature_SimpleWeight_construct(0, 0);
 
-    for (int64_t c = 0; c < SYMBOL_NUMBER; c++) {
+    for (int64_t c = 0; c < SYMBOL_NUMBER_NO_N; c++) {
         idx = PoaFeature_SimpleWeight_charIndex((Symbol) c, TRUE);
         CuAssertTrue(testCase, idx < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
         feature->weights[idx] += 1;

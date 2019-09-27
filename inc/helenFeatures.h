@@ -9,7 +9,7 @@
 #include "margin.h"
 #include <hdf5.h>
 
-#define POAFEATURE_SYMBOL_GAP_POS_ SYMBOL_NUMBER_NO_N
+#define POAFEATURE_SYMBOL_GAP_POS SYMBOL_NUMBER_NO_N
 #define POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER) * 2) // {A,C,G,T,gap} x {fwd,bkwd}
 #define POAFEATURE_MAX_RUN_LENGTH (MAXIMUM_REPEAT_LENGTH - 1)
 #define POAFEATURE_RLE_WEIGHT_TOTAL_SIZE ((SYMBOL_NUMBER * POAFEATURE_MAX_RUN_LENGTH + 1) * 2 ) // ({A,C,G,T,N} x {rlesize} + {gap}) x {fwd,bkwd}
@@ -21,18 +21,6 @@ struct _poaFeatureSimpleWeight {
     char label;
     double weights[POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE];
     PoaFeatureSimpleWeight* nextInsert; //so we can model all inserts after a position
-};
-
-//todo deprecated
-typedef struct _poaFeatureRleWeight PoaFeatureRleWeight;
-struct _poaFeatureRleWeight {
-    int64_t refPosition;
-    int64_t insertPosition;
-    char labelChar;
-    int64_t labelRunLength;
-    PoaFeatureRleWeight* nextInsert; //so we can model all inserts after a position
-    int64_t predictedRunLength;
-    double weights[POAFEATURE_RLE_WEIGHT_TOTAL_SIZE];
 };
 
 typedef struct _poaFeatureSplitRleWeight PoaFeatureSplitRleWeight;
@@ -89,9 +77,6 @@ int PoaFeature_ChannelRleWeight_charRLIndex(int64_t maxRunLength, Symbol charact
 
 PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos);
 void PoaFeature_SimpleWeight_destruct(PoaFeatureSimpleWeight *feature);
-
-PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insPos);
-void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature);
 
 PoaFeatureSplitRleWeight *PoaFeature_SplitRleWeight_construct(int64_t refPos, int64_t insPos, int64_t rlPos, int64_t maxRunLength);
 void PoaFeature_SplitRleWeight_destruct(PoaFeatureSplitRleWeight *feature);

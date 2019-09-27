@@ -24,11 +24,11 @@ int marginPhaseTests(void) {
 
 	/*CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseTestSuite());*/
-//	CuSuiteAddSuite(suite, parserTestSuite());
-//	CuSuiteAddSuite(suite, polisherTestSuite());
-//	CuSuiteAddSuite(suite, viewTestSuite());
-//	CuSuiteAddSuite(suite, chunkingTestSuite());
-//	CuSuiteAddSuite(suite, callConsensusTestSuite());
+	CuSuiteAddSuite(suite, parserTestSuite());
+	CuSuiteAddSuite(suite, polisherTestSuite());
+	CuSuiteAddSuite(suite, viewTestSuite());
+	CuSuiteAddSuite(suite, chunkingTestSuite());
+	CuSuiteAddSuite(suite, callConsensusTestSuite());
     #ifdef _HDF5
 	CuSuiteAddSuite(suite, featureTestSuite());
     #endif

@@ -27,28 +27,6 @@ void PoaFeature_SimpleWeight_destruct(PoaFeatureSimpleWeight *feature) {
     free(feature);
 }
 
-//todo deprecated
-PoaFeatureRleWeight *PoaFeature_RleWeight_construct(int64_t refPos, int64_t insPos) {
-    PoaFeatureRleWeight *feature = st_calloc(1, sizeof(PoaFeatureRleWeight));
-    feature->refPosition = refPos;
-    feature->insertPosition = insPos;
-    feature->labelChar = '\0';
-    feature->labelRunLength = 0;
-    feature->predictedRunLength = 0;
-    feature->nextInsert = NULL;
-    return feature;
-}
-
-
-//todo deprecated
-void PoaFeature_RleWeight_destruct(PoaFeatureRleWeight *feature) {
-    if (feature->nextInsert != NULL) {
-        PoaFeature_RleWeight_destruct(feature->nextInsert);
-    }
-    free(feature);
-}
-
-
 PoaFeatureSplitRleWeight *PoaFeature_SplitRleWeight_construct(int64_t refPos, int64_t insPos, int64_t rlPos,
         int64_t maxRunLength) {
     PoaFeatureSplitRleWeight *feature = st_calloc(1, sizeof(PoaFeatureSplitRleWeight));
@@ -108,23 +86,8 @@ int PoaFeature_SimpleWeight_charIndex(Symbol character, bool forward) {
     return pos;
 }
 int PoaFeature_SimpleWeight_gapIndex(bool forward) {
-    int pos = POAFEATURE_SYMBOL_GAP_POS_ * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
+    int pos = POAFEATURE_SYMBOL_GAP_POS * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
     assert(pos < POAFEATURE_SIMPLE_WEIGHT_TOTAL_SIZE);
-    return pos;
-}
-//TODO deprecated
-int PoaFeature_RleWeight_charIndex(Symbol character, int64_t runLength, bool forward) {
-    assert(runLength > 0);
-    assert(runLength <= POAFEATURE_MAX_RUN_LENGTH);
-    runLength -= 1;
-    int pos = (character * POAFEATURE_MAX_RUN_LENGTH + runLength) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
-    assert(pos < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
-    return pos;
-}
-//TODO deprecated
-int PoaFeature_RleWeight_gapIndex(bool forward) {
-    int pos = (POAFEATURE_SYMBOL_GAP_POS_ * POAFEATURE_MAX_RUN_LENGTH) * 2 + (forward ? POS_STRAND_IDX : NEG_STRAND_IDX);
-    assert(pos < POAFEATURE_RLE_WEIGHT_TOTAL_SIZE);
     return pos;
 }
 int PoaFeature_SplitRleWeight_charIndex(int64_t maxRunLength, Symbol character, int64_t runLength, bool forward) {
@@ -369,109 +332,6 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
 
                     // iterate
                     prevFeature = currFeature;
-                }
-            }
-        }
-    }
-
-    free(logIdentifier);
-    return featureList;
-}
-
-stList *poa_getRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, RleString *consensusRleString) {
-
-    // initialize feature list
-    stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_RleWeight_destruct);
-    for(int64_t i=1; i<stList_length(poa->nodes); i++) {
-        stList_append(featureList, PoaFeature_RleWeight_construct(i - 1, 0));
-    }
-
-    // for logging (of errors)
-    char *logIdentifier = getLogIdentifier();
-
-    // iterate over all positions
-    for(int64_t i=0; i<stList_length(featureList); i++) {
-
-        // get feature and node
-        PoaFeatureRleWeight* feature = stList_get(featureList, i);
-        PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
-
-        // handle each observations
-        for (int64_t o = 0; o < stList_length(node->observations); o++) {
-            // get objects we need
-            PoaBaseObservation *observation = stList_get(node->observations, o);
-            BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
-            RleString *rleString = stList_get(rleStrings, observation->readNo);
-
-            // save weight based on character and runLength
-            Symbol character = symbol_convertCharToSymbol(rleString->rleString[observation->offset]);
-            int64_t runLength = rleString->repeatCounts[observation->offset];
-            if (runLength == 0) continue;
-            if (runLength > POAFEATURE_MAX_RUN_LENGTH) runLength = POAFEATURE_MAX_RUN_LENGTH;
-            feature->weights[PoaFeature_RleWeight_charIndex(character, runLength, bamChunkRead->forwardStrand)] += observation->weight;
-        }
-        feature->predictedRunLength = consensusRleString->repeatCounts[i];
-
-
-        // Deletes
-        if (stList_length(node->deletes) > 0) {
-
-            // iterate over all deletes
-            for (int64_t d = 0; d < stList_length(node->deletes); d++) {
-                PoaDelete *delete = stList_get(node->deletes, d);
-
-                // Deletes start AFTER the current position, need to add counts/weights to nodes after the current node
-                for (int64_t k = 1; k < delete->length; k++) {
-                    if (i + k >= stList_length(poa->nodes)) {
-                        st_logInfo(" %s Encountered DELETE that occurs after end of POA!\n", logIdentifier);
-                        break;
-                    }
-                    PoaFeatureRleWeight *delFeature = stList_get(featureList, i + k);
-
-                    delFeature->weights[PoaFeature_RleWeight_gapIndex(TRUE)] += delete->weightForwardStrand;
-                    delFeature->weights[PoaFeature_RleWeight_gapIndex(FALSE)] += delete->weightReverseStrand;
-                }
-            }
-        }
-
-        // Inserts
-        if (stList_length(node->inserts) > 0) {
-
-            // iterate over all inserts
-            for (int64_t n = 0; n < stList_length(node->inserts); n++) {
-                PoaInsert *insert = stList_get(node->inserts, n);
-
-                // handle each observation
-                for (int64_t o = 0; o < stList_length(insert->observations); o++) {
-                    // get objects we need
-                    PoaBaseObservation *observation = stList_get(insert->observations, o);
-                    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
-                    RleString *rleString = stList_get(rleStrings, observation->readNo);
-
-                    // get feature iterator
-                    PoaFeatureRleWeight *prevFeature = feature;
-
-                    // iterate over all positions in insert
-                    for (int64_t k = 0; k < strlen(insert->insert); k++) {
-                        // get current feature (or create if necessary)
-                        PoaFeatureRleWeight *currFeature = prevFeature->nextInsert;
-                        if (currFeature == NULL) {
-                            currFeature = PoaFeature_RleWeight_construct(i, k + 1);
-                            prevFeature->nextInsert = currFeature;
-                        }
-
-                        // get character and runLength
-                        int64_t stringPos = observation->offset + k;
-                        assert(stringPos < rleString->length);
-                        Symbol character = symbol_convertCharToSymbol(rleString->rleString[stringPos]);
-                        int64_t runLength = rleString->repeatCounts[stringPos];
-                        if (runLength == 0) continue;
-                        if (runLength > POAFEATURE_MAX_RUN_LENGTH) runLength = POAFEATURE_MAX_RUN_LENGTH;
-
-                        // save weight for position
-                        currFeature->weights[PoaFeature_RleWeight_charIndex(character, runLength,
-                                                                            bamChunkRead->forwardStrand)] += observation->weight;
-                    }
                 }
             }
         }
