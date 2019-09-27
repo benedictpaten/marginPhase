@@ -221,7 +221,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 
 	char *reference = "GATACAGCGGG";
 	BamChunkRead *read = bamChunkRead_construct();
-    read->nucleotides = stString_copy("GATTACAGCG");
+    read->rleRead = rleString_construct_no_rle("GATTACAGCG");
 
 	stList *reads = stList_construct3(0,(void (*)(void *))bamChunkRead_destruct);
 	stList_append(reads, read);
@@ -382,7 +382,7 @@ static void test_poa_realign(CuTest *testCase) {
 		double *baseWeights = st_calloc(SYMBOL_NUMBER*strlen(reference), sizeof(double));
 
 		for(int64_t i=0; i<readNumber; i++) {
-			char *read = ((BamChunkRead*)stList_get(reads, i))->nucleotides;
+			char *read = ((BamChunkRead*)stList_get(reads, i))->rleRead->rleString;
 
 			// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 			stList *matches = NULL, *inserts = NULL, *deletes = NULL;
@@ -492,16 +492,7 @@ typedef struct _alignmentMetrics {
 } AlignmentMetrics;
 
 static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, char *reference,
-		stList *originalReads, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics) {
-	stList *reads = stList_construct();
-	stList *rleStrings = stList_construct3(0, (void (*)(void *))rleString_destruct);
-	for(int64_t i=0; i<stList_length(originalReads); i++) {
-		BamChunkRead* bcr = stList_get(originalReads, i);
-		RleString *rleString = rleString_construct(bcr->nucleotides);
-		stList_append(rleStrings, rleString);
-		stList_append(reads, bamChunkRead_construct2(stString_copy(bcr->readName), stString_copy(rleString->rleString),
-                                                     NULL, bcr->forwardStrand, NULL));
-	}
+		stList *reads, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics) {
 	RleString *rleReference = rleString_construct(reference);
 	RleString *rleTrueReference = rleString_construct(trueReference);
 
@@ -529,7 +520,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	//Poa *poaReads2 = poa_realignIterative(reads2, NULL, poaRefined->refString, polishParams);
 
 	// Look at non-rle comparison
-	RleString *consensusRleString = expandRLEConsensus(poaRefined, rleStrings, reads, polishParams->repeatSubMatrix);
+	RleString *consensusRleString = expandRLEConsensus(poaRefined, reads, polishParams->repeatSubMatrix);
 	char *nonRLEConsensusString = rleString_expand(consensusRleString);
 	rleString_destruct(consensusRleString);
 
@@ -595,7 +586,7 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 
 		poa_printTSV(poa, stderr, reads, 2, 0);
 
-		poa_printRepeatCounts(poa, stderr, rleStrings, reads);
+		poa_printRepeatCounts(poa, stderr, reads);
 	}
 
 	// Cleanup
@@ -603,10 +594,8 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	poa_destruct(poaTrue);
-	stList_destruct(reads);
 	rleString_destruct(rleTrueReference);
 	rleString_destruct(rleReference);
-	stList_destruct(rleStrings);
 	free(nonRLEConsensusString);
 	//poa_destruct(poaReads1);
 	//poa_destruct(poaReads2);
@@ -785,19 +774,19 @@ void test_poa_realign_ecoli_many_examples_no_rle(CuTest *testCase) {
 static void test_rleString_example(CuTest *testCase, const char *testStr,
 		int64_t rleLength, int64_t nonRleLength,
 		const char *testStrRLE, const int64_t *repeatCounts,
-		const int64_t *rleToNonRleCoordinateMap, const int64_t *nonRleToRleCoordinateMap) {
+		const int64_t *nonRleToRleCoordinateMap) {
 	RleString *rleString = rleString_construct((char *)testStr);
+	uint64_t *nonRleToRleCoordinateMap2 = rleString_getNonRleToRleCoordinateMap(rleString);
 
 	CuAssertIntEquals(testCase, rleLength, rleString->length);
 	CuAssertStrEquals(testCase, testStrRLE, rleString->rleString);
 	for(int64_t i=0; i<rleLength; i++) {
 		CuAssertIntEquals(testCase, repeatCounts[i], rleString->repeatCounts[i]);
-		CuAssertIntEquals(testCase, rleToNonRleCoordinateMap[i], rleString->rleToNonRleCoordinateMap[i]);
 	}
 
 	CuAssertIntEquals(testCase, nonRleLength, rleString->nonRleLength);
 	for(int64_t i=0; i<nonRleLength; i++) {
-		CuAssertIntEquals(testCase, nonRleToRleCoordinateMap[i], rleString->nonRleToRleCoordinateMap[i]);
+		CuAssertIntEquals(testCase, nonRleToRleCoordinateMap[i], nonRleToRleCoordinateMap2[i]);
 	}
 
 	char *expandedRleString = rleString_expand(rleString);
@@ -805,20 +794,21 @@ static void test_rleString_example(CuTest *testCase, const char *testStr,
 
 	free(expandedRleString);
 	rleString_destruct(rleString);
+	free(nonRleToRleCoordinateMap2);
 }
 
 static void test_rleString_examples(CuTest *testCase) {
 	test_rleString_example(testCase, "GATTACAGGGGTT", 8, 13, "GATACAGT", (const int64_t[]){ 1,1,2,1,1,1,4,2 },
-			(const int64_t[]){ 0,1,2,4,5,6,7,11 }, (const int64_t[]){ 0,1,2,2,3,4,5,6,6,6,6,7,7 });
+			(const int64_t[]){ 0,1,2,2,3,4,5,6,6,6,6,7,7 });
 
 	test_rleString_example(testCase, "TTTTT", 1, 5, "T", (const int64_t[]){ 5 },
-			(const int64_t[]){ 0 }, (const int64_t[]){ 0,0,0,0,0 });
+			(const int64_t[]){ 0,0,0,0,0 });
 
 	test_rleString_example(testCase, "", 0, 0, "", (const int64_t[]){ 1 },
-			(const int64_t[]){ 0 }, (const int64_t[]){ 0 });
+			(const int64_t[]){ 0 });
 
 	test_rleString_example(testCase, "TTTTTCC", 2, 7, "TC", (const int64_t[]){ 5, 2 },
-			(const int64_t[]){ 0,5 }, (const int64_t[]){ 0,0,0,0,0,1,1 });
+			(const int64_t[]){ 0,0,0,0,0,1,1 });
 }
 
 void checkStringsAndFree(CuTest *testCase, const char *expected, char *temp) {

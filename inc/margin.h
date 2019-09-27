@@ -577,8 +577,7 @@ void poa_printTSV(Poa *poa, FILE *fH,
 /*
  * Print repeat count observations.
  */
-void poa_printRepeatCounts(Poa *poa, FILE *fH,
-		stList *rleReads, stList *bamChunkReads);
+void poa_printRepeatCounts(Poa *poa, FILE *fH, stList *bamChunkReads);
 
 /*
  * Prints some summary stats on the POA.
@@ -668,23 +667,17 @@ double poa_getInsertTotalWeight(Poa *poa);
  */
 double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa);
 
-/*
- * Functions for run-length encoding/decoding with POAs
- */
-
 // Data structure for representing RLE strings
 struct _rleString {
 	char *rleString; //Run-length-encoded (RLE) string
-	int64_t *repeatCounts; // Count of repeat for each position in rleString
-	int64_t *rleToNonRleCoordinateMap; // For each position in the RLE string the corresponding, left-most position
-	// in the expanded non-RLE string
-	int64_t *nonRleToRleCoordinateMap; // For each position in the expanded non-RLE string the corresponding position
-	// in the RLE string
-	int64_t length; // Length of the rleString
-	int64_t nonRleLength; // Length of the expanded non-rle string
+	uint64_t *repeatCounts; // Count of repeat for each position in rleString
+	uint64_t length; // Length of the rleString
+	uint64_t nonRleLength; // Length of the expanded, non-rle string
 };
 
 RleString *rleString_construct(char *string);
+
+RleString *rleString_construct_no_rle(char *string);
 
 void rleString_destruct(RleString *rlString);
 
@@ -692,6 +685,13 @@ void rleString_destruct(RleString *rlString);
  * Generates the expanded non-rle string.
  */
 char *rleString_expand(RleString *rleString);
+
+/*
+ * Gets an array giving the position in the rleString of a corresponding position in the expanded string.
+ */
+uint64_t *rleString_getNonRleToRleCoordinateMap(RleString *rleString);
+
+uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities);
 
 // Data structure for storing log-probabilities of observing
 // one repeat count given another
@@ -724,26 +724,27 @@ double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base
  * Gets the log probability of observing a given set of repeat observations conditioned on an underlying repeat count and base.
  */
 double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base,
-        stList *observations, stList *rleReads, stList *bamChunkReads, int64_t underlyingRepeatCount);
+        stList *observations, stList *bamChunkReads, int64_t underlyingRepeatCount);
 
 /*
  * Gets the maximum likelihood underlying repeat count for a given set of observed read repeat counts.
  * Puts the ml log probility in *logProbabilty.
  */
 int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
-        stList *rleReads, stList *bamChunkReads, double *logProbability);
+        stList *bamChunkReads, double *logProbability);
 
 /*
  * Takes a POA done in run-length space and returns the expanded consensus string in
  * non-run-length space as an RleString.
  */
-RleString *expandRLEConsensus(Poa *poa, stList *rlReads, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
+RleString *expandRLEConsensus(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing
  * in both underlying sequences (seqX and seqY) into an equivalent run-length encoded space alignment.
  */
-stList *runLengthEncodeAlignment(stList *alignment, RleString *seqX, RleString *seqY);
+stList *runLengthEncodeAlignment(stList *alignment,
+		uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap);
 
 /*
  * Make edited string with given insert. Edit start is the index of the position to insert the string.
@@ -795,10 +796,8 @@ typedef struct _bamChunk {
 
 typedef struct _bamChunkRead {
 	char *readName;          	// read name
-	char *nucleotides;			// nucleotide string
-	uint16_t *repeatCounts; 	// Count of repeat for each position in nucleotides
-	int64_t readLength;
-	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length readLength
+	RleString *rleRead; 		// rle read
+	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length rleRead->length
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
 	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
@@ -815,8 +814,12 @@ void bamChunk_destruct(BamChunk *bamChunk);
 
 BamChunkRead *bamChunkRead_construct();
 BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, BamChunk *parent);
-BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
+
+/*
+ * Generates the expanded non-rle version of bam chunk read nucleotide sequence.
+ */
+char *bamChunkRead_rleExpand(BamChunkRead *read);
 
 typedef struct _bamChunkReadSubstring {
 	BamChunkRead *read; // The parent read from which the substring arises from
@@ -829,7 +832,7 @@ typedef struct _bamChunkReadSubstring {
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
  */
-uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *alignments);
+uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, stList *reads, stList *alignments);
 
 /*
  * Remove overlap between two overlapping strings. Returns max weight of split point.
@@ -986,5 +989,10 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg);
  * Phase bubble graph.
  */
 stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, Params *params);
+
+/*
+ * Get Poa from bubble graph.
+ */
+Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, stList *reads, Params *params);
 
 #endif /* ST_RP_HMM_H_ */

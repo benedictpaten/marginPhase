@@ -330,7 +330,7 @@ BamChunkReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t star
 	}
 
 	// Add read substring - TODO: fix not thread safe
-	char *read = &(bamChunkRead->nucleotides[start]);
+	char *read = &(bamChunkRead->rleRead->rleString[start]);
 	char c = read[length];
 	read[length] = '\0';
 	rs->readSubstring = stString_copy(read);
@@ -436,7 +436,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			// copy the complete reads
 			for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 			    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, i);
-				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->readLength, params));
+				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->rleRead->length, params));
 			}
 			return filterReadSubstrings(readSubstrings, params);
 		}
@@ -461,7 +461,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
 			// Trim the read substring, copy it and add to the substrings list
-            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->readLength-obs->offset, params));
+            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->rleRead->length-obs->offset, params));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
 		return filterReadSubstrings(readSubstrings, params);
@@ -922,4 +922,24 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, Params *params) 
 	stList_destruct(profileSeqs);
 
 	return gF;
+}
+
+Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, stList *reads, Params *params) {
+
+	// Get new consensus string
+	int64_t *poaToConsensusMap;
+	char *newConsensusString = bubbleGraph_getConsensusString(bg, consensusPath, &poaToConsensusMap, params->polishParams);
+
+	// Get anchor alignments
+	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), params->polishParams);
+
+	// Generated updated poa
+	Poa *poa2 = poa_realign(reads, anchorAlignments, newConsensusString, params->polishParams);
+
+	// Cleanup
+	free(poaToConsensusMap);
+	free(newConsensusString);
+	stList_destruct(anchorAlignments);
+
+	return poa2;
 }

@@ -42,6 +42,24 @@ void usage() {
     fprintf(stderr, "    -j --outputPoaTsv        : File to write out the poa as TSV file [default = NULL]\n");
 }
 
+
+RleString *getReferenceSubstring(BamChunk *bamChunk, stHash *referenceSequences, Params *params) {
+	// Get reference string for chunk of alignment
+	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+	if (fullReferenceString == NULL) {
+		st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
+		return NULL;
+	}
+	int64_t refLen = strlen(fullReferenceString);
+	char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
+		(refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
+
+	RleString *rleRef = params->polishParams->useRunLengthEncoding ? rleString_construct(referenceString) : rleString_construct_no_rle(referenceString);
+	free(referenceString);
+
+	return rleRef;
+}
+
 int main(int argc, char *argv[]) {
     // Parameters / arguments
     char *logLevelString = stString_copy("info");
@@ -94,7 +112,7 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage();
             return 0;
-        case 'h':
+        case 'd':
             diploid = 1;
             break;
         case 'o':
@@ -188,104 +206,59 @@ int main(int argc, char *argv[]) {
     // For each chunk of the BAM
     BamChunk *bamChunk = NULL;
     while((bamChunk = bamChunker_getNext(bamChunker)) != NULL) {
-    	// Get reference string for chunk of alignment
-    	char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
-        if (fullReferenceString == NULL) {
-            st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
-            continue;
-        }
-        int64_t refLen = strlen(fullReferenceString);
-        char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
-            (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
+    	RleString *reference = getReferenceSubstring(bamChunk, referenceSequences, params);
 
         st_logInfo("> Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
         		   bamChunk->refSeqName, (int)bamChunk->chunkBoundaryStart,
-				   (int)(refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd));
+				   (int)bamChunk->chunkBoundaryEnd);
 
 		// Convert bam lines into corresponding reads and alignments
 		st_logInfo("> Parsing input reads from file: %s\n", bamInFile);
 		stList *reads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
-        convertToReadsAndAlignments(bamChunk, reads, alignments);
-
-		Poa *poa = NULL; // The poa alignment
-		char *polishedReferenceString = NULL; // The polished reference string
+        convertToReadsAndAlignments(bamChunk, reference, reads, alignments);
 
 		// Now run the polishing method
 
-		if(params->polishParams->useRunLengthEncoding) {
-			st_logInfo("> Running polishing algorithm using run-length encoding\n");
-			// Do run length encoding (RLE)
+		// Generate the haploid partial order alignment (POA)
+		Poa *poa = poa_realignAll(reads, alignments, reference->rleString, params->polishParams);
 
-			// First RLE the reference
-			RleString *rleReference = rleString_construct(referenceString);
-
-			// Now RLE the reads
-			stList *rleNucleotides = stList_construct3(0, (void (*)(void *))rleString_destruct);
-			stList *rleReads = stList_construct3(0, (void (*)(void *))bamChunkRead_destruct);
-            stList *rleAlignments = stList_construct3(0, (void (*)(void*))stList_destruct);
-			for(int64_t j=0; j<stList_length(reads); j++) {
-				BamChunkRead *read = stList_get(reads, j);
-				RleString *rleNucleotideString = rleString_construct(read->nucleotides);
-				stList_append(rleNucleotides, rleNucleotideString);
-				stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
-				stList_append(rleAlignments, runLengthEncodeAlignment(stList_get(alignments, j), rleReference, rleNucleotideString));
-			}
-
-			// Generate partial order alignment (POA) (destroys rleAlignments in the process)
-			poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
-
-			// Now optionally do phasing and haplotype specific polishing
-
-			//stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
-			//stList *reads1, *reads2;
-			//phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
-
-			// Do run-length decoding
-			RleString *polishedRLEReference = expandRLEConsensus(poa, rleNucleotides, rleReads, params->polishParams->repeatSubMatrix);
-			polishedReferenceString = rleString_expand(polishedRLEReference);
-
-			// Log info about the POA
-			if (st_getLogLevel() >= info) {
-				st_logInfo("Summary stats for POA:\t");
-				poa_printSummaryStats(poa, stderr);
-			}
-			if (st_getLogLevel() >= debug) {
-				poa_print(poa, stderr, rleReads, 5, 5);
-			}
-
-			// Write any optional outputs about repeat count and POA, etc.
-			if(outputPoaTsvFileHandle != NULL) {
-				poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
-			}
-			if(outputRepeatCountFileHandle != NULL) {
-				poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
-			}
-
-			// Now cleanup run-length stuff
-			stList_destruct(rleNucleotides);
-			stList_destruct(rleReads);
-            stList_destruct(rleAlignments);
-			rleString_destruct(rleReference);
-			rleString_destruct(polishedRLEReference);
+		// If diploid
+		if(diploid) {
+			// Get the bubble graph representation
+			BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, reads, params->polishParams);
+			// Cleanup the old POA
+			poa_destruct(poa);
+			// Now make a POA for one of the haplotypes
+			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraph(bg, params);
+			Poa *poa_hap1 = bubbleGraph_getNewPoa(bg, gf->haplotypeString1, poa, reads, params);
+			// Cleanup
+			bubbleGraph_destruct(bg);
+			stGenomeFragment_destruct(gf);
+			poa_destruct(poa);
+			// Todo: make output for second haplotype
+			poa = poa_hap1;
 		}
-		else { // Non-run-length encoded polishing
-			st_logInfo("> Running polishing algorithm without using run-length encoding\n");
 
-			// Generate partial order alignment (POA)
-			poa = poa_realignAll(reads, alignments, referenceString, params->polishParams);
+		// Do run-length decoding, if needed
+		RleString *polishedRleReferenceString = expandRLEConsensus(poa, reads, params->polishParams->repeatSubMatrix);
+		char *polishedReferenceString = rleString_expand(polishedRleReferenceString);
 
-			// Polished string is the final backbone of the POA
-			polishedReferenceString = stString_copy(poa->refString);
+		// Log info about the POA
+		if (st_getLogLevel() >= info) {
+			st_logInfo("Summary stats for POA:\t");
+			poa_printSummaryStats(poa, stderr);
+		}
+		if (st_getLogLevel() >= debug) {
+			poa_print(poa, stderr, reads, 5, 5);
+		}
 		
-			// Log info about the POA
-			if (st_getLogLevel() >= info) {
-				st_logInfo("Summary stats for POA:\t");
-				poa_printSummaryStats(poa, stderr);
-			}
-			if (st_getLogLevel() >= debug) {
-				poa_print(poa, stderr, reads, 5, 5);
-			}
+		// Write any optional outputs about repeat count and POA, etc.
+		if(outputPoaTsvFileHandle != NULL) {
+			poa_printTSV(poa, outputPoaTsvFileHandle, reads, 5, 0);
+		}
+		if(outputRepeatCountFileHandle != NULL) {
+			poa_printRepeatCounts(poa, outputRepeatCountFileHandle, reads);
 		}
 
 		// If there is no prior chunk
@@ -341,7 +314,8 @@ int main(int argc, char *argv[]) {
 		poa_destruct(poa);
 		stList_destruct(reads);
         stList_destruct(alignments);
-		free(referenceString);
+        rleString_destruct(reference);
+        rleString_destruct(polishedRleReferenceString);
     }
 
     // Write out the last chunk
