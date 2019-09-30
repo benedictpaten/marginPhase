@@ -134,6 +134,11 @@ void test_viewExamples(CuTest *testCase) {
 
 		st_logInfo("Doing view test with %s read files and %s true ref file\n", readFile, trueRefFile);
 
+		// Polish params
+		FILE *fh = fopen(polishParamsFile, "r");
+		Params *params = params_readParams(fh);
+		fclose(fh);
+
         // Parse reads & reference
         struct List *r = readSequences((char *)readFile);
         assert(r->length > 1);
@@ -147,7 +152,7 @@ void test_viewExamples(CuTest *testCase) {
             bool forwardStrand = TRUE;
             char *nucl = getString(r->list[i], rle);
             BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(nucl),
-                    NULL, forwardStrand, NULL);
+                    NULL, forwardStrand, params->polishParams->useRunLengthEncoding);
             stList_append(nucleotides, nucl);
             stList_append(bamChunkReads, bcr);
             stList_append(rleReads, rleString_construct(r->list[i]));
@@ -160,11 +165,6 @@ void test_viewExamples(CuTest *testCase) {
 		char *trueReference = getString(trueReferenceList->list[0], rle);
 		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
 		destructList(trueReferenceList);
-
-		// Polish params
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
 
 		// Set parameters
 		params->polishParams->maxPoaConsensusIterations = 100;

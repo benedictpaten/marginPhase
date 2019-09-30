@@ -799,7 +799,6 @@ typedef struct _bamChunkRead {
 	RleString *rleRead; 		// rle read
 	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length rleRead->length
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
-	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
 
 BamChunker *bamChunker_construct(char *bamFile, PolishParams *params);
@@ -812,8 +811,7 @@ BamChunk *bamChunk_construct2(char *refSeqName, int64_t chunkBoundaryStart, int6
                               int64_t chunkBoundaryEnd, BamChunker *parent);
 void bamChunk_destruct(BamChunk *bamChunk);
 
-BamChunkRead *bamChunkRead_construct();
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, BamChunk *parent);
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, bool useRunLengthEncoding);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*

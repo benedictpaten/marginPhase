@@ -1357,13 +1357,14 @@ RleString *rleString_construct(char *str) {
 	for(uint64_t i=0; i<rleString->nonRleLength; i++) {
 		if(i+1 == rleString->nonRleLength || str[i] != str[i+1]) {
 			rleString->rleString[j] = str[i];
-			rleString->repeatCounts[j] = k;
+			rleString->repeatCounts[j++] = k;
 			k=1;
 		}
 		else {
 			k++;
 		}
 	}
+	rleString->rleString[j] = '\0';
 	assert(j == rleString->length);
 
 	return rleString;
@@ -1445,6 +1446,7 @@ uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities) {
 		//r->qualities[rlePos] = max;
 		rleQualities[rlePos] = (uint8_t) mean;
 	}
+	assert(rawPos == rleString->nonRleLength);
 	return rleQualities;
 }
 
@@ -1457,6 +1459,7 @@ uint64_t *rleString_getNonRleToRleCoordinateMap(RleString *rleString) {
 			nonRleToRleCoordinateMap[j++] = i;
 		}
 	}
+	assert(j == rleString->nonRleLength);
 
 	return nonRleToRleCoordinateMap;
 }
@@ -1470,6 +1473,10 @@ RleString *expandRLEConsensus(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *
 	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
 		uint64_t repeatCount = expandRLEConsensus2(stList_get(poa->nodes, i), bamChunkReads, repeatSubMatrix);
 		rleString->repeatCounts[i-1] = repeatCount;
+	}
+	// Calc non-rle length
+	for(uint64_t i=0; i<rleString->length; i++) {
+		rleString->nonRleLength += rleString->repeatCounts[i];
 	}
 
 	return rleString;

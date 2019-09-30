@@ -207,22 +207,15 @@ void bamChunk_destruct(BamChunk *bamChunk) {
     free(bamChunk);
 }
 
-BamChunkRead *bamChunkRead_construct() {
-    return bamChunkRead_construct2(NULL, NULL, NULL, TRUE, NULL);
-}
-
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand,
-        BamChunk *parent) {
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides,
+		uint8_t *qualities, bool forwardStrand, bool useRunLengthEncoding) {
     BamChunkRead *r = calloc(1, sizeof(BamChunkRead));
     r->readName = readName;
     r->forwardStrand = forwardStrand;
-    r->parent = parent;
-    if (nucleotides != NULL) {
-    	r->rleRead = parent != NULL && parent->parent->params->useRunLengthEncoding ? rleString_construct(nucleotides) : rleString_construct_no_rle(nucleotides);
-    	if(qualities != NULL) {
-    		r->qualities = rleString_rleQualities(r->rleRead, qualities);
-    	    free(qualities);
-    	}
+    assert(nucleotides != NULL);
+    r->rleRead = useRunLengthEncoding ? rleString_construct(nucleotides) : rleString_construct_no_rle(nucleotides);
+    if(qualities != NULL) {
+    	r->qualities = rleString_rleQualities(r->rleRead, qualities);
     }
 
     return r;
@@ -495,15 +488,16 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, s
 
         // save to read
         bool forwardStrand = !bam_is_rev(aln);
-        BamChunkRead *chunkRead = bamChunkRead_construct2(readName, seq, qual, forwardStrand, bamChunk);
+        BamChunkRead *chunkRead = bamChunkRead_construct2(readName, seq, qual, forwardStrand,
+        		bamChunk->parent->params->useRunLengthEncoding);
         stList_append(reads, chunkRead);
 
-        // rle the alignment and save it
-        if(reference != NULL) {
-        	uint64_t *read_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(chunkRead->rleRead);
-        	stList_append(alignments, runLengthEncodeAlignment(cigRepr, ref_nonRleToRleCoordinateMap, read_nonRleToRleCoordinateMap));
-        	stList_destruct(cigRepr);
-        	free(read_nonRleToRleCoordinateMap);
+        if(bamChunk->parent->params->useRunLengthEncoding) {
+			// rle the alignment and save it
+			uint64_t *read_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(chunkRead->rleRead);
+			stList_append(alignments, runLengthEncodeAlignment(cigRepr, ref_nonRleToRleCoordinateMap, read_nonRleToRleCoordinateMap));
+			stList_destruct(cigRepr);
+			free(read_nonRleToRleCoordinateMap);
         }
         else {
         	stList_append(alignments, cigRepr);
@@ -524,7 +518,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, s
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
-    free(ref_nonRleToRleCoordinateMap);
+    if(reference != NULL) {
+    	free(ref_nonRleToRleCoordinateMap);
+    }
 
     return savedAlignments;
 }

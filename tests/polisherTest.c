@@ -220,8 +220,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	 */
 
 	char *reference = "GATACAGCGGG";
-	BamChunkRead *read = bamChunkRead_construct();
-    read->rleRead = rleString_construct_no_rle("GATTACAGCG");
+	BamChunkRead *read = bamChunkRead_construct2(stString_print("read"), stString_print("GATTACAGCG"), NULL, 1, 0);
 
 	stList *reads = stList_construct3(0,(void (*)(void *))bamChunkRead_destruct);
 	stList_append(reads, read);
@@ -362,17 +361,18 @@ static void test_poa_realign(CuTest *testCase) {
 		// Make starting reference
 		char *reference = evolveSequence(trueReference);
 
-		// Reads
-		int64_t readNumber = st_randomInt(0, 20);
-		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
-		for(int64_t i=0; i<readNumber; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference),NULL,TRUE,NULL));
-		}
-
 		FILE *fh = fopen(polishParamsFile, "r");
 		Params *params = params_readParams(fh);
 		fclose(fh);
 		PolishParams *polishParams = params->polishParams;
+
+		// Reads
+		int64_t readNumber = st_randomInt(0, 20);
+		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
+		for(int64_t i=0; i<readNumber; i++) {
+			stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), evolveSequence(trueReference),NULL,TRUE,
+					params->polishParams->useRunLengthEncoding));
+		}
 
 		Poa *poa = poa_realign(reads, NULL, reference, polishParams);
 
@@ -429,6 +429,10 @@ static void test_poa_realignIterative(CuTest *testCase) {
 	 */
 
 	for (int64_t test = 0; test < 100; test++) {
+		FILE *fh = fopen(polishParamsFile, "r");
+		Params *params = params_readParams(fh);
+		fclose(fh);
+		PolishParams *polishParams = params->polishParams;
 
 		//Make true reference
 		char *trueReference = getRandomSequence(st_randomInt(1, 100));
@@ -440,13 +444,9 @@ static void test_poa_realignIterative(CuTest *testCase) {
 		int64_t readNumber = st_randomInt(0, 20);
 		stList *reads = stList_construct3(0, (void(*)(void*)) bamChunkRead_destruct);
 		for(int64_t i=0; i<readNumber; i++) {
-			stList_append(reads, bamChunkRead_construct2(NULL, evolveSequence(trueReference), NULL, st_random() > 0.5, NULL));
+			stList_append(reads, bamChunkRead_construct2(stString_print("Read_%d", i), evolveSequence(trueReference),
+					NULL, st_random() > 0.5, polishParams->useRunLengthEncoding));
 		}
-
-		FILE *fh = fopen(polishParamsFile, "r");
-		Params *params = params_readParams(fh);
-		fclose(fh);
-		PolishParams *polishParams = params->polishParams;
 
 		Poa *poa = poa_realignIterative(reads, NULL, reference, polishParams);
 
@@ -491,11 +491,8 @@ typedef struct _alignmentMetrics {
 	int64_t totalTrueReferenceLength;
 } AlignmentMetrics;
 
-static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, char *reference,
+static void test_poa_realign_example(CuTest *testCase, RleString *rleTrueReference, RleString *rleReference,
 		stList *reads, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics) {
-	RleString *rleReference = rleString_construct(reference);
-	RleString *rleTrueReference = rleString_construct(trueReference);
-
 	FILE *fh = fopen(polishParamsFile, "r");
 	Params *params = params_readParams(fh);
 	fclose(fh);
@@ -527,6 +524,8 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	// Calculate alignments between true reference and consensus and starting reference sequences
 	int64_t consensusMatches = calcSequenceMatches(rleTrueReference->rleString, poaRefined->refString);
 	int64_t referenceMatches = calcSequenceMatches(rleTrueReference->rleString, rleReference->rleString);
+	char *trueReference = rleString_expand(rleTrueReference);
+	char *reference = rleString_expand(rleReference);
 	int64_t nonRLEConsensusMatches = calcSequenceMatches(trueReference, nonRLEConsensusString);
 	int64_t nonRLEReferenceMatches = calcSequenceMatches(trueReference, reference);
 	//int64_t consensusMatchesReads1 = calcSequenceMatches(rleTrueReference->rleString, poaReads1->refString);
@@ -594,68 +593,16 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 	poa_destruct(poa);
 	poa_destruct(poaRefined);
 	poa_destruct(poaTrue);
-	rleString_destruct(rleTrueReference);
-	rleString_destruct(rleReference);
+	free(trueReference);
+	free(reference);
+	//rleString_destruct(rleTrueReference);
+	//rleString_destruct(rleReference);
 	free(nonRLEConsensusString);
 	//poa_destruct(poaReads1);
 	//poa_destruct(poaReads2);
 	//stList_destruct(anchorAlignments);
 	//stList_destruct(reads1);
 	//stList_destruct(reads2);
-}
-
-static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference, stList *bamChunkReads,
-		AlignmentMetrics *alignmentMetrics) {
-
-	FILE *fh = fopen(polishParamsFile, "r");
-	Params *params = params_readParams(fh);
-	fclose(fh);
-	PolishParams *polishParams = params->polishParams;
-	
-	// Set parameters
-	params->polishParams->maxPoaConsensusIterations = 100;
-	params->polishParams->minPoaConsensusIterations = 0;
-	params->polishParams->maxRealignmentPolishIterations = 3;
-	params->polishParams->minRealignmentPolishIterations = 3;
-
-	Poa *poa = poa_realign(bamChunkReads, NULL, reference, polishParams);
-	Poa *poaRefined = poa_realignIterative(bamChunkReads, NULL, reference, polishParams);
-
-	// Calculate alignments between true reference and consensus and starting reference sequences
-	int64_t consensusMatches = calcSequenceMatches(trueReference, poaRefined->refString);
-	int64_t referenceMatches = calcSequenceMatches(trueReference, reference);
-
-	// Update the running total alignment metrics
-	if(alignmentMetrics != NULL) {
-		alignmentMetrics->totalConsensusMatches += consensusMatches;
-		alignmentMetrics->totalReferenceMatches += referenceMatches;
-		alignmentMetrics->totalConsensusLength += strlen(poaRefined->refString);
-		alignmentMetrics->totalReferenceLength += strlen(reference);
-		alignmentMetrics->totalTrueReferenceLength += strlen(trueReference);
-	}
-
-	// Log some stuff
-	if (st_getLogLevel() >= info) {
-		st_logInfo("Reference:     \t\t%s\n", reference);
-		st_logInfo("True-reference:\t\t%s\n", trueReference);
-		st_logInfo("Consensus:     \t\t%s\n", poaRefined->refString);
-		st_logInfo("Reference stats\t");
-		poa_printSummaryStats(poa, stderr);
-		st_logInfo("Consensus stats\t");
-		poa_printSummaryStats(poaRefined, stderr);
-		st_logInfo("Consensus : true-ref identity: %f\n", 2.0*consensusMatches/(strlen(trueReference) + strlen(poaRefined->refString)));
-		st_logInfo("Start-ref : true-ref identity: %f\n\n", 2.0*referenceMatches/(strlen(trueReference) + strlen(reference)));
-	}
-
-	if (st_getLogLevel() >= debug && !stString_eq(trueReference, poaRefined->refString)) {
-		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, bamChunkReads, 2, 5);
-	}
-
-	// Cleanup
-	params_destruct(params);
-	poa_destruct(poa);
-	poa_destruct(poaRefined);
 }
 
 static struct List *readSequences(char *fastaFile, struct List **headers) {
@@ -696,7 +643,7 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 			char strand = header[strlen(header)-1];
 			CuAssertTrue(testCase, strand == 'F' || strand == 'R');
 			stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i),
-					stString_copy(nucleotides->list[i]), NULL, strand == 'F', NULL));
+					stString_copy(nucleotides->list[i]), NULL, strand == 'F', rle));
 		}
 
 		//if(strlen(reads->list[0]) > strlen(trueReferenceList->list[0]) * 0.8 || reads->length < 30) {
@@ -704,15 +651,12 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		//	continue;
 		//}
 
+		RleString *trueReference = rle ? rleString_construct(trueReferenceList->list[0]) : rleString_construct_no_rle(trueReferenceList->list[0]);
+		RleString *reference = rle ? rleString_construct(nucleotides->list[0]) : rleString_construct_no_rle(nucleotides->list[0]);
+
 		// Run poa iterative realign
-		if(rle) {
-			test_poa_realign_example_rle(testCase, trueReferenceList->list[0], nucleotides->list[0],
-							reads, rleAlignmentMetrics, alignmentMetrics);
-		}
-		else {
-			test_poa_realign_example(testCase, trueReferenceList->list[0], nucleotides->list[0],
-					reads, alignmentMetrics);
-		}
+		test_poa_realign_example(testCase, trueReference, reference,
+								reads, rleAlignmentMetrics, alignmentMetrics);
 
 		// Cleanup
 		destructList(nucleotides);
@@ -720,6 +664,8 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		destructList(trueReferenceList);
 		destructList(trueReferenceHeaders);
 		free(reads);
+		rleString_destruct(trueReference);
+		rleString_destruct(reference);
 	}
 
 	// Alignment metrics for set
