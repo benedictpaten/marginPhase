@@ -16,7 +16,7 @@ stProfileSeq *stProfileSeq_constructEmptyProfile(stReference *ref, char *readId,
      * Creates an empty profile sequence, with all the profile probabilities set to 0.
      */
 
-    stProfileSeq *seq = st_malloc(sizeof(stProfileSeq));
+    stProfileSeq *seq = st_calloc(1, sizeof(stProfileSeq));
     seq->ref = ref;
     seq->readId = stString_copy(readId);
     seq->refStart = referenceStart;

@@ -326,16 +326,16 @@ add_dependencies(cpecan lastz CPECANLASTZ)
 
 
 # Build MarginPhatever Library
-add_library(margin SHARED ${SOURCE_FILES})
-target_link_libraries(margin cpecan son hts)
+add_library(marginLib SHARED ${SOURCE_FILES})
+target_link_libraries(marginLib cpecan son hts)
 
 ###############################
 ######### EXECUTABLES #########
 ###############################
 
 
-add_executable(marginPolish marginPolish.c )
-target_link_libraries(marginPolish margin)
+add_executable(margin margin.c )
+target_link_libraries(margin marginLib)
 
 file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
@@ -351,7 +351,7 @@ add_executable(allTests
         tests/callConsensusTest.c
         )
 
-target_link_libraries(allTests margin)
+target_link_libraries(allTests marginLib)
 add_test(stRPHmm allTests)
 
 add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})

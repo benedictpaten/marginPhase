@@ -879,12 +879,13 @@ void test_removeOverlap_RandomExamples(CuTest *testCase) {
 	params_destruct(params);
 }
 
-int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose) {
+int64_t polishingTest(char *bamFile, char *referenceFile, char *paramsFile, char *region, bool verbose, bool diploid) {
 
     // Run margin phase
     char *logString = verbose ? "--logLevel DEBUG" : "--logLevel INFO";
     char *regionStr = region == NULL ? stString_print("") : stString_print("--region %s", region);
-    char *command = stString_print("./marginPolish %s %s %s %s %s", bamFile, referenceFile, paramsFile, regionStr, logString);
+    char *diploidString = diploid ? "--diploid" : "";
+    char *command = stString_print("./margin %s %s %s %s %s %s", bamFile, referenceFile, paramsFile, regionStr, logString, diploidString);
     st_logInfo("> Running command: %s\n", command);
 
     int64_t i = st_system(command);
@@ -900,7 +901,11 @@ void test_polish5kb_rle(CuTest *testCase) {
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose, 0);
+    CuAssertTrue(testCase, i == 0);
+
+    st_logInfo("\n\nTesting diploid polishing on %s\n", bamFile);
+    i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose, 1);
     CuAssertTrue(testCase, i == 0);
 }
 
@@ -911,7 +916,11 @@ void test_polish5kb_no_rle(CuTest *testCase) {
     char *region = "chr3:2150000-2155000";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose, 0);
+    CuAssertTrue(testCase, i == 0);
+
+    st_logInfo("\n\nTesting diploid polishing on %s\n", bamFile);
+    i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose, 1);
     CuAssertTrue(testCase, i == 0);
 }
 
@@ -921,7 +930,11 @@ void test_polish5kb_no_region(CuTest *testCase) {
     char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
 
     st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose);
+    int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose, 0);
+    CuAssertTrue(testCase, i == 0);
+
+    st_logInfo("\n\nTesting diploid polishing on %s\n", bamFile);
+    i = polishingTest(bamFile, referenceFile, polishParamsFile, NULL, verbose, 1);
     CuAssertTrue(testCase, i == 0);
 }
 
@@ -932,7 +945,11 @@ void test_polish100kb(CuTest *testCase) {
 	char *region = "chr3:8100000-8200000";
 
 	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose);
+	int64_t i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose, 0);
+	CuAssertTrue(testCase, i == 0);
+
+	st_logInfo("\n\nTesting polishing on %s\n", bamFile);
+	i = polishingTest(bamFile, referenceFile, polishParamsFile, region, verbose, 1);
 	CuAssertTrue(testCase, i == 0);
 }
 

@@ -981,12 +981,12 @@ stList *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
 /*
  * Gets an stReference that can be used for phasing.
  */
-stReference *bubbleGraph_getReference(BubbleGraph *bg);
+stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName);
 
 /*
  * Phase bubble graph.
  */
-stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, Params *params);
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
 
 /*
  * Get Poa from bubble graph.
