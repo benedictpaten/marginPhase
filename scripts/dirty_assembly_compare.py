@@ -1,15 +1,13 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 #from __future__ import print_function
 import argparse
 import subprocess
 import sys
 import os
-import numpy as np
-import pysam
 import math
 
 def main():
-    assembly = open(sys.argv[1], 'r').readlines()
+    assembly = open(sys.argv[1]).readlines()
     trueAssembly = sys.argv[2]
     
     read = []
@@ -19,13 +17,13 @@ def main():
         read.append(line[:-1])
     read = "".join(read)
     
-    print "Read len:", len(read)
+    print("Read len:", len(read))
     #read = read[:20000]
     fh = open("temp.fa", 'w')
     fh.write(">hello\n%s\n" % read)
     fh.close()
     
-    os.popen("cPecanLastz temp.fa %s --format=axt > temp.axt" % trueAssembly)
+    subprocess.call("cPecanLastz temp.fa %s --format=axt > temp.axt" % (trueAssembly,), shell=True)
     
     axt = open("temp.axt", "r").readlines()
     axt = [ i for i in axt if i[0] != '#']
@@ -37,7 +35,7 @@ def main():
     totalXGaps = 0
     totalYGaps = 0
     totalMismatches = 0
-    for j in xrange(len(axt)):
+    for j in range(len(axt)):
         if "hello" in axt[j]:
     
             x = axt[j+1]
@@ -49,8 +47,8 @@ def main():
             if xLen > 20000 and yLen > 20000:
                 xGaps = len(x) - xLen
                 yGaps = len(y) - yLen
-                mismatches = sum([ 1 if (x[i] != y[i] and x[i] != '-' and y[i] != '-') else 0 for i in xrange(len(x)) ])
-                matches = sum([ 1 if x[i] == y[i] else 0 for i in xrange(len(x)) ])
+                mismatches = sum([ 1 if (x[i] != y[i] and x[i] != '-' and y[i] != '-') else 0 for i in range(len(x)) ])
+                matches = sum([ 1 if x[i] == y[i] else 0 for i in range(len(x)) ])
         
                 identity = matches * 2 / float(xLen + yLen)
                 
@@ -66,9 +64,9 @@ def main():
     identities.sort()
     
     for xLen, yLen, matches, identity, mismatches, xGaps, yGaps in identities:
-        print "xLen: %s, yLen: %s, matches: %s, identity: %s, mismatches: %s, xGaps: %s, yGaps: %s" % (xLen, yLen, matches, identity, mismatches, xGaps, yGaps)
+        print("xLen: %s, yLen: %s, matches: %s, identity: %s, mismatches: %s, xGaps: %s, yGaps: %s" % (xLen, yLen, matches, identity, mismatches, xGaps, yGaps))
 
-    print "total-xLen: %s, total-yLen: %s, total-matches: %s, total-identity: %s, total-mismatches: %s, total-xGaps: %s, total-yGaps: %s" % (totalXLen, totalYLen, totalMatches, 2.0*totalMatches/float(totalXLen + totalYLen), totalMismatches, totalXGaps, totalYGaps)
+    print("total-xLen: %s, total-yLen: %s, total-matches: %s, total-identity: %s, total-mismatches: %s, total-xGaps: %s, total-yGaps: %s" % (totalXLen, totalYLen, totalMatches, 2.0*totalMatches/float(totalXLen + totalYLen + 0.0001), totalMismatches, totalXGaps, totalYGaps))
 
 if __name__ == '__main__':
     main()

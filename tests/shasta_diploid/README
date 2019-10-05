@@ -1,0 +1,23 @@
+Data here is divided into:
+  1)  a 1mb training region flanked on each end by a pair of ~100kb haplotype sequences
+  2)  a 100kb test region containing a pair of ~100kb haplotype sequences
+
+Data was generated from guppy 3.0.5 sequences from HG002.  Note that the truth sequences
+do not perfectly align to the same location.  The test region has alignments starting
+roughly 5kb apart, and the training region has truth sequences aligning roughly 2kb apart.
+This is due to the mechanism of creating the haplotypes and extracting the high confidence
+regions.
+
+The script to generate the data:
+
+ 1496  samtools view -hb ../../GM24385.shasta.g305.bam 92:22763500-22869500 >test_reads.bam
+ 1498  samtools fastq test_reads.bam >test_reads.fq
+ 1513  samtools faidx ../../GM24385.shasta.g305.fasta 92:22763500-22869500 >shasta_phasing_test.ref.fasta
+ 1514  minimap2 -ax map-ont -t 32 shasta_phasing_test.ref.fasta test_reads.fq | samtools view -hb -F 0x104 | samtools sort >shasta_phasing_test.align.bam
+ 1516  cat *fa >shasta_phasing_test.truth.fa
+
+ 1526  samtools view -hb ../../GM24385.shasta.g305.bam 32:47258000-48258000 >train_reads.bam
+ 1528  samtools fastq train_reads.bam >train_reads.fq
+ 1529  samtools faidx ../../GM24385.shasta.g305.fasta 32:47258000-48258000 >shasta_phasing_train.ref.fasta
+ 1530  minimap2 -ax map-ont -t 32 shasta_phasing_train.ref.fasta train_reads.fq | samtools view -hb -F 0x104 | samtools sort >shasta_phasing_train.align.bam
+ 1533  cat *fa >shasta_phasing_train.truth.fa

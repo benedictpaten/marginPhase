@@ -204,7 +204,8 @@ void polishedReferenceSequence_flush(PolishedReferenceSequence *rSeq) {
     if(rSeq->referenceSequenceName != NULL) {
     	// Write the previous polished reference string out
     	char *s = stString_join2("", rSeq->polishedReferenceStrings);
-    	fastaWrite(s, rSeq->referenceSequenceName, rSeq->polishedReferenceFileHandle);
+    	assert(rSeq->referenceSequenceNameForPrinting != NULL);
+    	fastaWrite(s, rSeq->referenceSequenceNameForPrinting, rSeq->polishedReferenceFileHandle);
 
     	// Clean up
     	free(s);
@@ -337,10 +338,10 @@ int main(int argc, char *argv[]) {
     FILE *outputPoaTsvFileHandle = outputPoaTsvFile != NULL ? fopen(outputPoaTsvFile, "w") : NULL;
     FILE *outputRepeatCountFileHandle = outputRepeatCountFile != NULL ? fopen(outputRepeatCountFile, "w") : NULL;
 
-    PolishedReferenceSequence *rSeq1 = polishedReferenceSequence_construct(params, diploid ? "hap_1" : "",
+    PolishedReferenceSequence *rSeq1 = polishedReferenceSequence_construct(params, diploid ? "_hap_1" : "",
     		polishedReferenceFileHandle, outputPoaTsvFileHandle, outputRepeatCountFileHandle), *rSeq2 = NULL;
     if(diploid) {
-    	rSeq2 = polishedReferenceSequence_construct(params, "hap2",
+    	rSeq2 = polishedReferenceSequence_construct(params, "_hap_2",
     			polishedReferenceFileHandle, outputPoaTsvFileHandle, outputRepeatCountFileHandle);
     }
 	free(polishedReferenceOutFile);

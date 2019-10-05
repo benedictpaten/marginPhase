@@ -349,6 +349,7 @@ add_executable(allTests
         tests/polisherTest.c
         tests/viewTest.c
         tests/callConsensusTest.c
+        tests/marginTest.c
         )
 
 target_link_libraries(allTests marginLib)
