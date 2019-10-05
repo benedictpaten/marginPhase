@@ -90,7 +90,7 @@ stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r) {
 }
 
 stRPHmmParameters *parseParameters(char *paramsFile) {
-	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	char buf[BUFSIZ * 3000]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
 	FILE *fh = fopen(paramsFile, "rb");
 	if (fh == NULL) {
 		st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
@@ -401,7 +401,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 }
 
 PolishParams *polishParams_readParams(FILE *fp) {
-	char buf[BUFSIZ * 200]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	char buf[BUFSIZ * 3000]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
 	return polishParams_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
 }
 
@@ -472,7 +472,7 @@ Params *params_jsonParse(char *buf, size_t r) {
 }
 
 Params *params_readParams(FILE *fp) {
-	char buf[BUFSIZ * 300]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+	char buf[BUFSIZ * 3000]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
 	return params_jsonParse(buf, fread(buf, sizeof(char), sizeof(buf), fp));
 }
 

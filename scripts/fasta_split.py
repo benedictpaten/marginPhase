@@ -5,8 +5,8 @@ import sys
 import os
 
 def main():
-    assembly = sys.argv[1]
-    
+    """Splits a fasta sequence into a file per sequence.
+    """
     with open(sys.argv[1]) as fh:
         seqIndex = -1
         header = None
