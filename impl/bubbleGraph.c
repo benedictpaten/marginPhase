@@ -826,17 +826,17 @@ stList *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref) {
 			// the read
 
 			// First calculate the most likely allele
-			float maxLogProb = b->alleleReadSupports[b->alleleNo * j];
+			float maxLogProb = b->alleleReadSupports[j];
 			for(uint64_t k=1; k<b->alleleNo; k++) {
-				if(b->alleleReadSupports[b->alleleNo * j + k] > maxLogProb) {
-					maxLogProb = b->alleleReadSupports[b->alleleNo * j + k];
+				if(b->alleleReadSupports[b->readNo * k + j] > maxLogProb) {
+					maxLogProb = b->alleleReadSupports[b->readNo * k + j];
 				}
 			}
 
 			// Set prob as diff to most probable allele
 			uint64_t alleleOffset = b->alleleOffset-pSeq->alleleOffset;
 			for(uint64_t k=0; k<b->alleleNo; k++) {
-				int64_t l = maxLogProb - b->alleleReadSupports[b->alleleNo * j + k];
+				int64_t l = maxLogProb - b->alleleReadSupports[b->readNo * k + j];
 				assert(l >= 0);
 				pSeq->profileProbs[alleleOffset+k] = l > 255 ? 255 : l;
 			}
@@ -875,6 +875,89 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName) {
 	return ref;
 }
 
+void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *path,
+		stList *profileSeqs, stGenomeFragment *gF) {
+	/*
+	 * Sanity checks / logging for phased bubble graph
+	 */
+
+	if(st_getLogLevel() == debug) {
+		// Hash profile seq names to sequences
+		stHash *namesToProfileSeqs = stHash_construct3(stHash_stringKey, stHash_stringEqualKey, NULL, NULL);
+		for(uint64_t i=0; i<stList_length(profileSeqs); i++) {
+			stProfileSeq *pSeq = stList_get(profileSeqs, i);
+			stHash_insert(namesToProfileSeqs, pSeq->readId, pSeq);
+		}
+
+		stRPColumn *column = hmm->firstColumn;
+		assert(column->length > 0);
+		uint64_t colIndex = 0, colCo = 0;
+
+		for(uint64_t i=0; i<gF->length; i++) {
+			assert(column != NULL);
+			Bubble *b = &bg->bubbles[gF->refStart+i];
+
+			assert(gF->haplotypeString1[i] < b->alleleNo);
+			assert(gF->haplotypeString2[i] < b->alleleNo);
+			//assert(column->depth >= b->readNo);
+
+			if(gF->haplotypeString1[i] != gF->haplotypeString2[i]) {
+				stRPCell *cell = stList_get(path, colIndex);
+
+				st_logDebug(">>Phasing Bubble Graph: At site: %i (of %i) with %i potential alleles got %s for hap1 with %i reads and %s for hap2 with %i reads (total depth %i)\n",
+						(int)i, (int)gF->length, (int)b->alleleNo, b->alleles[gF->haplotypeString1[i]], popcount64(cell->partition),
+						b->alleles[gF->haplotypeString2[i]], (int)(column->depth-popcount64(cell->partition)), (int)column->depth);
+
+				for(uint64_t j=0; j<b->alleleNo; j++) {
+					st_logDebug("\t>>Allele %i \t%s\n", (int)j, b->alleles[j]);
+				}
+
+				for(uint64_t k=0; k<2; k++) {
+					uint64_t l=0;
+					float supports[b->alleleNo];
+					for(uint64_t j=0; j<b->alleleNo; j++) {
+						supports[j] = 0.0;
+					}
+
+					for(uint64_t j=0; j<b->readNo; j++) {
+						BamChunkReadSubstring *s = b->reads[j];
+						stProfileSeq *pSeq = stHash_search(namesToProfileSeqs, s->read->readName);
+						assert(pSeq != NULL);
+						if(stSet_search(k == 0 ? gF->reads1 : gF->reads2, pSeq) != NULL) {
+							st_logDebug("\t\t>>Partition %i, read %i:\t", (int)k+1, (int)l++, s->readSubstring);
+
+							for(uint64_t m=0; m<b->alleleNo; m++) {
+								st_logDebug("%f\t", b->alleleReadSupports[m*b->readNo + j]);
+								supports[m] += b->alleleReadSupports[m*b->readNo + j];
+							}
+
+							st_logDebug("%s\n", s->readSubstring);
+						}
+					}
+
+					st_logDebug("\t\tCombined allele partition supports:\n");
+					st_logDebug("\t\t\t");
+					for(uint64_t j=0; j<b->alleleNo; j++) {
+						st_logDebug("%f\t", supports[j]);
+					}
+					st_logDebug("\n");
+
+				}
+			}
+
+			if(++colCo >= column->length) {
+				colCo = 0; colIndex++;
+				column = colIndex < stList_length(path) ? column->nColumn->nColumn : NULL;
+				assert(column == NULL || column->length > 0);
+			}
+		}
+		assert(colIndex == stList_length(path));
+
+		// Cleanup
+		stHash_destruct(namesToProfileSeqs);
+	}
+}
+
 stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params) {
 	/*
 	 * Runs phasing algorithm to split the reads embedded in the bubble graph into two partitions.
@@ -886,7 +969,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	stList *profileSeqs = bubbleGraph_getProfileSeqs(bg, ref);
 	assert(stList_length(reads) >= stList_length(profileSeqs));
 	if(stList_length(reads) != stList_length(profileSeqs)) {
-		st_logCritical("In converting from reads to profile sequences have %" PRIi64 " reads and %" PRIi64 " profile sequences\n",
+		st_logInfo("In converting from reads to profile sequences have %" PRIi64 " reads and %" PRIi64 " profile sequences\n",
 				stList_length(reads), stList_length(profileSeqs));
 	}
 
@@ -924,12 +1007,10 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	// Sanity checks
 	assert(gF->refStart >= 0);
 	assert(gF->refStart + gF->length <= bg->bubbleNo);
-	for(uint64_t i=0; i<gF->length; i++) {
-		Bubble *b = &bg->bubbles[gF->refStart+i];
+	assert(gF->length == hmm->refLength);
 
-		assert(gF->haplotypeString1[i] < b->alleleNo);
-		assert(gF->haplotypeString2[i] < b->alleleNo);
-	}
+	// Check / log the result
+	bubbleGraph_logPhasedBubbleGraph(bg, hmm, path, profileSeqs, gF);
 
 	// Refine the genome fragment by repartitoning the reads iteratively
 	if(params->phaseParams->roundsOfIterativeRefinement > 0) {

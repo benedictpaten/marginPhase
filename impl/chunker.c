@@ -480,7 +480,7 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, s
                 idxInOutputSeq++;
 
             }
-            assert(idxInBamRead == strlen(seq));
+            //assert(idxInBamRead == strlen(seq));
         };
 
         // sanity check

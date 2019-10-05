@@ -129,9 +129,6 @@ void polishedReferenceSequence_processChunkSequence(PolishedReferenceSequence *r
 		st_logInfo("Summary stats for POA:\t");
 		poa_printSummaryStats(poa, stderr);
 	}
-	if (st_getLogLevel() >= debug) {
-		poa_print(poa, stderr, reads, 5, 5);
-	}
 
 	// Write any optional outputs about repeat count and POA, etc.
 	if(rSeq->outputPoaTsvFileHandle != NULL) {

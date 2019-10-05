@@ -923,7 +923,8 @@ typedef struct _bubble {
 	uint64_t readNo; // Number of reads overlapping bubble
 	BamChunkReadSubstring **reads; // Array of read substrings aligned to the bubble
 	float *alleleReadSupports; // An array of log-likelihoods giving the support of
-	// each allele for each read
+	// each allele for each read, stored as [i * readNo + j], where i is the allele index
+	// and j is the index of the read
 	uint64_t alleleOffset; // The index of the first allele in this bubble
 	// in a sequence of all alleles in the bubble graph, ordered first by bubble then
 	// by order in the bubble.
