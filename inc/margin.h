@@ -414,11 +414,14 @@ struct _stGenomeFragment {
     // Strings representing the predicted haplotypes, where each element is a reference to an allele
     uint64_t *haplotypeString1;
     uint64_t *haplotypeString2;
+    uint64_t *ancestorString; // predicted ancestral alleles
 
     // An array of genotype posterior probabilities,
     // each between 0 and 1, for the corresponding genotypes
     // in the genotype string
     float *genotypeProbs;
+    float *haplotypeProbs1;
+    float *haplotypeProbs2;
 };
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
@@ -975,9 +978,9 @@ double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele);
 
 /*
  * Gets a set of profile sequences for the reads aligned to the bubble graph.
- * Allows them to then be phased.
+ * Allows them to then be phased. Returns as hash of bamChunkReads to profileSeqs.
  */
-stList *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
+stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
 
 /*
  * Gets an stReference that can be used for phasing.

@@ -20,14 +20,13 @@ int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-	CuSuiteAddSuite(suite, marginIntegrationTestSuite());
-
-	/*CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
 	CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
-	CuSuiteAddSuite(suite, callConsensusTestSuite());*/
+	CuSuiteAddSuite(suite, callConsensusTestSuite());
+	CuSuiteAddSuite(suite, marginIntegrationTestSuite());
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);

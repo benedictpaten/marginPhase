@@ -217,7 +217,7 @@ static uint64_t getMLAllele(stSite *site, uint64_t *alleleLogProbs, uint64_t max
     uint64_t maxAllele = 0;
     uint64_t maxProb = alleleLogProbs[0] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, 0);
     for(uint64_t i=1; i<site->alleleNumber; i++) {
-        double hapProb = alleleLogProbs[i] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, i);
+        uint64_t hapProb = alleleLogProbs[i] + *stSite_getSubstitutionProb(site, maxProbAncestorAllele, i);
         if(hapProb < maxProb) {
             maxProb = hapProb;
             maxAllele = i;
@@ -257,7 +257,7 @@ static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t siteInd
 	uint64_t ancestorAllele = 0;
 	for(uint64_t i=1; i<site->alleleNumber; i++) {
 		uint64_t j = ancestorAlleleProbsHap1[i] + ancestorAlleleProbsHap2[i] + site->allelePriorLogProbs[i];
-		if(maxLogColumnProb < j) {
+		if(j < maxLogColumnProb) {
 			maxLogColumnProb = j;
 			ancestorAllele = i;
 		}
@@ -269,12 +269,15 @@ static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t siteInd
 
 	uint64_t k = siteIndex-gF->refStart;
 	// Fill in the genome fragment
+	gF->ancestorString[k] = ancestorAllele;
 	gF->haplotypeString1[k] = hapAllele1;
 	gF->haplotypeString2[k] = hapAllele2;
 	// Get combined genotype
 	gF->genotypeString[k] = hapAllele1 < hapAllele2 ? hapAllele1 * site->alleleNumber + hapAllele2 :
 							hapAllele2 * site->alleleNumber + hapAllele1;
 	gF->genotypeProbs[k] = -((float)maxLogColumnProb);
+	gF->haplotypeProbs1[k] = -(float)alleleLogProbsHap1[hapAllele1];
+	gF->haplotypeProbs2[k] = -(float)alleleLogProbsHap2[hapAllele2];
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,

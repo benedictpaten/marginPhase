@@ -25,10 +25,13 @@ stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     // Allocate genotype arrays
     gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
     gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
+    gF->haplotypeProbs1 = st_calloc(gF->length, sizeof(float));
+    gF->haplotypeProbs2 = st_calloc(gF->length, sizeof(float));
 
     // Allocate haplotype arrays
     gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
     gF->haplotypeString2 = st_calloc(gF->length, sizeof(uint64_t));
+    gF->ancestorString = st_calloc(gF->length, sizeof(uint64_t));
 
     // For each cell in the hmm
     stRPColumn *column = hmm->firstColumn;
@@ -176,10 +179,13 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Genotypes
     free(genomeFragment->genotypeString);
     free(genomeFragment->genotypeProbs);
+    free(genomeFragment->haplotypeProbs1);
+    free(genomeFragment->haplotypeProbs2);
 
     // Haplotypes
     free(genomeFragment->haplotypeString1);
     free(genomeFragment->haplotypeString2);
+    free(genomeFragment->ancestorString);
 
     // Reads
     stSet_destruct(genomeFragment->reads1);
