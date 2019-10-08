@@ -476,6 +476,7 @@ struct _polishParams {
 	uint64_t filterReadsWhileHaveAtLeastThisCoverage; // Only filter read substrings if we have at least this coverage
 	// at a locus
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
+	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -985,7 +986,7 @@ stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
 /*
  * Gets an stReference that can be used for phasing.
  */
-stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName);
+stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *params);
 
 /*
  * Phase bubble graph.

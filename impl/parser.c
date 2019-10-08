@@ -378,6 +378,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 			}
 			params->minAvgBaseQuality = stJson_parseFloat(js, tokens, tokenIndex);
 		}
+		else if (strcmp(keyString, "hetScalingParameter") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: hetScalingParameter parameter must zero or greater\n");
+			}
+			params->hetScalingParameter = stJson_parseFloat(js, tokens, tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }

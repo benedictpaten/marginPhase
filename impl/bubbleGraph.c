@@ -842,7 +842,7 @@ stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref) {
 	return readsToPSeqs;
 }
 
-stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName) {
+stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *params) {
 	stReference *ref = st_calloc(1, sizeof(stReference));
 
 	ref->referenceName = stString_copy(refName);
@@ -850,6 +850,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName) {
 	ref->sites = st_calloc(bg->bubbleNo, sizeof(stSite));
 	ref->totalAlleles = 0;
 
+	stList *anchorPairs = stList_construct(); // Currently empty
 	for(uint64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &bg->bubbles[i];
 		stSite *s = &ref->sites[i];
@@ -859,9 +860,22 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName) {
 		//TODO: fix: make probs proper
 		s->allelePriorLogProbs = st_calloc(b->alleleNo, sizeof(uint16_t));
 		s->substitutionLogProbs = st_calloc(b->alleleNo*b->alleleNo, sizeof(uint16_t));
+
+		// We set the probability of a substitution between two different alleles to -evoScale multiplied by the forward probability of the
+		// alignment of the two alleles, rounded to the nearest integer
+
 		for(uint64_t j=0; j<b->alleleNo; j++) {
-			for(uint64_t k=0; k<b->alleleNo; k++) {
-				s->substitutionLogProbs[j * b->alleleNo + k] = k == j ? 0 : 20;
+			for(uint64_t k=j; k<b->alleleNo; k++) {
+
+				float f = -computeForwardProbability(b->alleles[j], b->alleles[k], anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
+
+				int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
+				l = l > 255 ? 255 : l;
+				assert(l >= 0);
+				assert(l <= 255);
+
+				s->substitutionLogProbs[j * b->alleleNo + k] = l;
+				s->substitutionLogProbs[k * b->alleleNo + j] = l;
 			}
 		}
 	}
@@ -890,6 +904,9 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			assert(column != NULL);
 			Bubble *b = &bg->bubbles[gF->refStart+i];
 
+			stSite *s = &(hmm->ref->sites[gF->refStart+i]);
+			assert(s->alleleNumber == b->alleleNo);
+
 			assert(gF->haplotypeString1[i] < b->alleleNo);
 			assert(gF->haplotypeString2[i] < b->alleleNo);
 			//assert(column->depth >= b->readNo);
@@ -904,7 +921,11 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 						b->alleles[gF->ancestorString[i]], (int)gF->ancestorString[i], gF->genotypeProbs[i]);
 
 				for(uint64_t j=0; j<b->alleleNo; j++) {
-					st_logDebug("\t>>Allele %i \t%s\n", (int)j, b->alleles[j]);
+					st_logDebug("\t>>Allele %i \t%s\t ", (int)j, b->alleles[j]);
+					for(uint64_t k=0; k<b->alleleNo; k++) {
+						st_logDebug("%i \t", (int)s->substitutionLogProbs[j * b->alleleNo + k]);
+					}
+					st_logDebug("\n");
 				}
 
 				for(uint64_t k=0; k<2; k++) {
@@ -956,7 +977,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	 */
 
 	// Generate profile sequences and reference
-	stReference *ref = bubbleGraph_getReference(bg, refSeqName);
+	stReference *ref = bubbleGraph_getReference(bg, refSeqName, params);
 	assert(ref->length == bg->bubbleNo);
 	stHash *readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
 	stList *profileSeqs = stHash_getValues(readsToPSeqs);

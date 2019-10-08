@@ -8,7 +8,6 @@
 #include "margin.h"
 
 static char *polishParamsFile = "../params/allParams.np.json";
-static char *polishParamsNoRleFile = "../params/allParams.np.no_rle.json";
 #define TEST_POLISH_FILES_DIR "../tests/polishTestExamples/"
 
 static void test_poa_getReferenceGraph(CuTest *testCase) {
@@ -909,21 +908,6 @@ void test_polish5kb_rle(CuTest *testCase) {
     CuAssertTrue(testCase, i == 0);
 }
 
-void test_polish5kb_no_rle(CuTest *testCase) {
-    char *referenceFile = "../tests/hg19.chr3.9mb.fa";
-    bool verbose = false;
-    char *bamFile = "../tests/NA12878.np.chr3.5kb.bam";
-    char *region = "chr3:2150000-2155000";
-
-    st_logInfo("\n\nTesting polishing on %s\n", bamFile);
-    int64_t i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose, 0);
-    CuAssertTrue(testCase, i == 0);
-
-    st_logInfo("\n\nTesting diploid polishing on %s\n", bamFile);
-    i = polishingTest(bamFile, referenceFile, polishParamsNoRleFile, region, verbose, 1);
-    CuAssertTrue(testCase, i == 0);
-}
-
 void test_polish5kb_no_region(CuTest *testCase) {
     char *referenceFile = "../tests/hg19.chr3.9mb.fa";
     bool verbose = false;
@@ -970,7 +954,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_removeOverlap_RandomExamples);
 
     SUITE_ADD_TEST(suite, test_polish5kb_rle);
-    SUITE_ADD_TEST(suite, test_polish5kb_no_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_region);
     SUITE_ADD_TEST(suite, test_polish100kb);
 
