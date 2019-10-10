@@ -373,6 +373,9 @@ int main(int argc, char *argv[]) {
 			// Get the bubble graph representation
 			BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, reads, params->polishParams);
 
+			// Filter bubbles by allele strand-skew
+			bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
+
 			// Now make a POA for each of the haplotypes
 			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraph(bg, bamChunk->refSeqName, reads, params);
 

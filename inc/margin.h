@@ -477,6 +477,7 @@ struct _polishParams {
 	// at a locus
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
 	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
+	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -939,6 +940,7 @@ typedef struct _bubbleGraph {
 	uint64_t refLength; // The length of the reference string
 	uint64_t bubbleNo; // The number of bubbles
 	Bubble *bubbles; // An array of bubbles
+	uint64_t totalAlleles; // Sum of alleles across bubbles
 } BubbleGraph;
 
 /*
@@ -997,5 +999,25 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
  * Get Poa from bubble graph.
  */
 Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, stList *reads, Params *params);
+
+/*
+ * Gets the strand support skew for each allele.
+ */
+void bubble_calculateStrandSkews(Bubble *b, double *skews);
+
+/*
+ * Gets the p-value for the bubble having a phased strand-skew
+ */
+double bubble_phasedStrandSkew(Bubble *b, stHash *readsToPSeqs, stGenomeFragment *gf);
+
+/*
+ * Returns fraction of bubbles with significant allele-strand phase skew.
+ */
+double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenomeFragment *gf);
+
+/*
+ * Filter bubbles to remove bubbles containing any alleles with a significant strand skew.
+ */
+void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p);
 
 #endif /* ST_RP_HMM_H_ */

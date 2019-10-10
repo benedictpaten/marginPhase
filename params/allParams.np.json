@@ -57,7 +57,9 @@
 		  
 		  "filterReadsWhileHaveAtLeastThisCoverage" : 15,
 		  
-		  "hetScalingParameter" : 3.0,
+		  "hetScalingParameter" : 4.0,
+		  
+		  "alleleStrandSkew" : 1.5,
 	
 		  "minAvgBaseQuality" : 10,
 		  

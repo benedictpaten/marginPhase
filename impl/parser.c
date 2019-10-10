@@ -384,6 +384,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 			}
 			params->hetScalingParameter = stJson_parseFloat(js, tokens, tokenIndex);
 		}
+		else if (strcmp(keyString, "alleleStrandSkew") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+						st_errAbort("ERROR: alleleStrandSkew parameter must zero or greater\n");
+			}
+			params->alleleStrandSkew = stJson_parseFloat(js, tokens, tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }

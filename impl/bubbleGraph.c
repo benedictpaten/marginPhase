@@ -725,6 +725,7 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 		bg->bubbles[i].alleleOffset = alleleOffset;
 		alleleOffset += bg->bubbles[i].alleleNo;
 	}
+	bg->totalAlleles = alleleOffset;
 
 	// Cleanup
 	free(anchors);
@@ -734,24 +735,27 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 	return bg;
 }
 
+void bubble_destruct(Bubble b) {
+	// Cleanup the reads
+	for(int64_t j=0; j<b.readNo; j++) {
+		free(b.reads[j]);
+	}
+	free(b.reads);
+	// Cleanup the alleles
+	for(int64_t j=0; j<b.alleleNo; j++) {
+		free(b.alleles[j]);
+	}
+	free(b.alleles);
+	// Cleanup the allele supports
+	free(b.alleleReadSupports);
+	// Cleanup the reference allele
+	free(b.refAllele);
+}
+
 void bubbleGraph_destruct(BubbleGraph *bg) {
 	// Clean up the memory for each bubble
 	for(int64_t i=0; i<bg->bubbleNo; i++) {
-		Bubble *b = &(bg->bubbles[i]);
-		// Cleanup the reads
-		for(int64_t j=0; j<b->readNo; j++) {
-			free(b->reads[j]);
-		}
-		free(b->reads);
-		// Cleanup the alleles
-		for(int64_t j=0; j<b->alleleNo; j++) {
-			free(b->alleles[j]);
-		}
-		free(b->alleles);
-		// Cleanup the allele supports
-		free(b->alleleReadSupports);
-		// Cleanup the reference allele
-		free(b->refAllele);
+		bubble_destruct(bg->bubbles[i]);
 	}
 	free(bg->bubbles);
 	free(bg);
@@ -883,6 +887,10 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 	return ref;
 }
 
+/*
+ * Phasing of bubble graphs
+ */
+
 void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *path,
 		stHash *readsToPSeqs, stList *profileSeqs, stGenomeFragment *gF) {
 	/*
@@ -914,19 +922,25 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			if(gF->haplotypeString1[i] != gF->haplotypeString2[i]) {
 				stRPCell *cell = stList_get(path, colIndex);
 
-				st_logDebug(">>Phasing Bubble Graph: At site: %i (of %i) with %i potential alleles got %s (%i) (log-prob: %f) for hap1 with %i reads and %s (%i) (log-prob: %f) for hap2 with %i reads (total depth %i), and ancestral allele %s (%i), genotype prob: %f\n",
+				double strandSkew = bubble_phasedStrandSkew(b, readsToPSeqs, gF);
+
+				st_logDebug(">>Phasing Bubble Graph: At site: %i (of %i) with %i potential alleles got %s (%i) (log-prob: %f) for hap1 with %i reads and %s (%i) (log-prob: %f) for hap2 with %i reads (total depth %i), and ancestral allele %s (%i), genotype prob: %f, strand-skew p-value: %f\n",
 						(int)i, (int)gF->length, (int)b->alleleNo,
 						b->alleles[gF->haplotypeString1[i]], (int)gF->haplotypeString1[i], gF->haplotypeProbs1[i], popcount64(cell->partition),
 						b->alleles[gF->haplotypeString2[i]], (int)gF->haplotypeString2[i], gF->haplotypeProbs2[i], (int)(column->depth-popcount64(cell->partition)), (int)column->depth,
-						b->alleles[gF->ancestorString[i]], (int)gF->ancestorString[i], gF->genotypeProbs[i]);
+						b->alleles[gF->ancestorString[i]], (int)gF->ancestorString[i], gF->genotypeProbs[i], (float)strandSkew);
+
+				double strandSkews[b->alleleNo];
+				bubble_calculateStrandSkews(b, strandSkews);
 
 				for(uint64_t j=0; j<b->alleleNo; j++) {
-					st_logDebug("\t>>Allele %i \t%s\t ", (int)j, b->alleles[j]);
+					st_logDebug("\t>>Allele %i\t strand-skew: %f \t%s\t ", (int)j, (float)strandSkews[j], b->alleles[j]);
 					for(uint64_t k=0; k<b->alleleNo; k++) {
 						st_logDebug("%i \t", (int)s->substitutionLogProbs[j * b->alleleNo + k]);
 					}
 					st_logDebug("\n");
 				}
+
 
 				for(uint64_t k=0; k<2; k++) {
 					uint64_t l=0;
@@ -968,6 +982,8 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			}
 		}
 		assert(colIndex == stList_length(path));
+
+		st_logDebug(">>Fraction of bubbles skewed %f (of %i total)\n", (float)bubbleGraph_skewedBubbles(bg, readsToPSeqs, gF), (int)bg->bubbleNo);
 	}
 }
 
@@ -1069,4 +1085,181 @@ Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, s
 	stList_destruct(anchorAlignments);
 
 	return poa2;
+}
+
+/*
+ * Stuff to manage allele-strand-skew
+ */
+
+void bubble_calculateStrandSkews(Bubble *b, double *skews) {
+	// Calculate the strand specific read supports
+	double forwardStrandSupports[b->alleleNo];
+	double reverseStrandSupports[b->alleleNo];
+	uint64_t totalForward = 0, totalBackward = 0;
+	for(int64_t j=0; j<b->alleleNo; j++) {
+		forwardStrandSupports[j] = 0.0;
+		reverseStrandSupports[j] = 0.0;
+	}
+	for(int64_t i=0; i<b->readNo; i++) {
+		BamChunkReadSubstring *r = b->reads[i];
+		double *d;
+		if(r->read->forwardStrand) {
+			totalForward++;
+			d = forwardStrandSupports;
+		}
+		else {
+			totalBackward++;
+			d = reverseStrandSupports;
+		}
+		for(int64_t j=0; j<b->alleleNo; j++) {
+			d[j] += b->alleleReadSupports[j*b->readNo + i];
+		}
+	}
+
+	// Calculate the average allele skew
+	for(int64_t j=0; j<b->alleleNo; j++) {
+		skews[j] = (forwardStrandSupports[j]/totalForward - reverseStrandSupports[j]/totalBackward) /
+				(fabs(forwardStrandSupports[j] + reverseStrandSupports[j])/(totalForward+totalBackward));
+	}
+}
+
+double *bubbleGraph_getAlleleStrandSkews(BubbleGraph *bg) {
+	double *skews = st_calloc(bg->totalAlleles, sizeof(double));
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		Bubble *b = &bg->bubbles[i];
+		bubble_calculateStrandSkews(b, &skews[b->alleleOffset]);
+	}
+
+	return skews;
+}
+
+double bubbleGraph_getAlleleStrandSkewCutoff(BubbleGraph *bg, Params *p) {
+	double *skews = bubbleGraph_getAlleleStrandSkews(bg);
+
+	// Calc average skew
+	double avgSkew = 0.0;
+	for(int64_t i=0; i<bg->totalAlleles; i++) {
+		avgSkew += fabs(skews[i]);
+	}
+	avgSkew /= bg->totalAlleles;
+
+	// Calc variance
+	double variance = 0.0;
+	for(int64_t i=0; i<bg->totalAlleles; i++) {
+		double d = skews[i] - avgSkew;
+		variance += d * d;
+	}
+	variance /= bg->totalAlleles;
+
+	double sd = sqrt(variance);
+	double cutoff = avgSkew + p->polishParams->alleleStrandSkew * sd;
+
+	st_logDebug("Got avg. allele skew: %f, variance: %f, standard-deviation: %f, cutoff: %f from %i alleles across %i bubbles (alleleStrandSkew parameter: %f)\n",
+			avgSkew, variance, sd, cutoff, (int)bg->totalAlleles, (int)bg->bubbleNo, (float)p->polishParams->alleleStrandSkew);
+
+	free(skews);
+
+	return cutoff;
+}
+
+int64_t bionomialCoefficient(int64_t n, int64_t k) {
+    int64_t ans=1;
+    k=k>n-k?n-k:k;
+    int64_t j=1;
+    for(;j<=k;j++,n--) {
+        if(n%j==0) {
+            ans*=n/j;
+        } else if(ans%j==0) {
+            ans=ans/j*n;
+        } else {
+            ans=(ans*n)/j;
+        }
+    }
+    return ans;
+}
+
+double binomialPValue(int64_t n, int64_t k) {
+	double j=0.0;
+	k = k < n/2 ? n-k : k;
+	double p = pow(2.0, n);
+	for(int64_t i=k; i<=n; i++) {
+		j += llabs(n-i) > 12 ? 0.0 : bionomialCoefficient(n, i) / p;
+	}
+	return j;
+}
+
+double bubble_phasedStrandSkew(Bubble *b, stHash *readsToPSeqs, stGenomeFragment *gf) {
+	int64_t readsPartition1 = 0, forwardReadsPartition1 = 0,
+			readsPartition2 = 0, forwardReadsPartition2 = 0;
+
+	for(int64_t i=0; i<b->readNo; i++) {
+		stProfileSeq *pSeq = stHash_search(readsToPSeqs, b->reads[i]->read);
+		assert(pSeq != NULL);
+		if(stSet_search(gf->reads1, pSeq) != NULL) {
+			readsPartition1++;
+			if(b->reads[i]->read->forwardStrand) {
+				forwardReadsPartition1++;
+			}
+		}
+		else if(stSet_search(gf->reads2, pSeq) != NULL) {
+			readsPartition2++;
+			if(b->reads[i]->read->forwardStrand) {
+				forwardReadsPartition2++;
+			}
+		}
+	}
+	double forwardStrandPValue = binomialPValue(readsPartition1, forwardReadsPartition1);
+	double negativeStrandPValue = binomialPValue(readsPartition2, forwardReadsPartition2);
+
+	return fmin(forwardStrandPValue, negativeStrandPValue);
+}
+
+double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenomeFragment *gf) {
+	int64_t skewedBubbles = 0;
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		skewedBubbles += bubble_phasedStrandSkew(&bg->bubbles[i], readsToPSeqs, gf) < 0.05 ? 1 : 0;
+	}
+	return ((float)skewedBubbles)/bg->bubbleNo;
+}
+
+bool filterByBubbleStrandSkew(Bubble *b, double *alleleSkewCutoff) {
+	double skews[b->alleleNo];
+	bubble_calculateStrandSkews(b, skews);
+	for(int64_t i=0; i<b->alleleNo; i++) {
+		if(fabs(skews[i]) > *alleleSkewCutoff) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+uint64_t bubbleGraph_filterBubbles(BubbleGraph *bg,
+		bool (*filterFn)(Bubble *, void *), void *extraArg) {
+	uint64_t j=0, alleleOffset = 0;
+	for(int64_t i=0; i<bg->bubbleNo; i++) {
+		if(!filterFn(&bg->bubbles[i], extraArg)) {
+			bg->bubbles[j] = bg->bubbles[i];
+			bg->bubbles[j].alleleOffset = alleleOffset;
+			alleleOffset += bg->bubbles[j++].alleleNo;
+		}
+		else {
+			bubble_destruct(bg->bubbles[i]);
+		}
+	}
+	uint64_t filteredBubbles = bg->bubbleNo - j;
+	bg->bubbleNo = j;
+	bg->totalAlleles = alleleOffset;
+	st_realloc(bg->bubbles, sizeof(Bubble)*bg->bubbleNo); // Resize bubbles array
+
+	return filteredBubbles;
+}
+
+void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p) {
+	double alleleStrandSkewCutoff = bubbleGraph_getAlleleStrandSkewCutoff(bg, p);
+
+	uint64_t bubblesFiltered = bubbleGraph_filterBubbles(bg, (bool (*)(Bubble *, void *))filterByBubbleStrandSkew,
+			&alleleStrandSkewCutoff);
+
+	st_logDebug(">Allele strand skew filtering: Filtered %i bubbles of %i total bubbles using allele skew cut off of: %f\n",
+			(int)bubblesFiltered, (int)(bg->bubbleNo+bubblesFiltered), alleleStrandSkewCutoff);
 }
