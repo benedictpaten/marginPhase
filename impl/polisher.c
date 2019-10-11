@@ -90,6 +90,11 @@ double poaDelete_getWeight(PoaDelete *delete) {
 PoaNode *poaNode_construct(char base) {
 	PoaNode *poaNode = st_calloc(1, sizeof(PoaNode));
 
+	// for when people put crazy characters in their reference
+	if (symbol_convertCharToSymbol(base) == n) {
+	    base = 'N';
+	}
+
 	poaNode->inserts = stList_construct3(0, (void(*)(void *)) poaInsert_destruct);
 	poaNode->deletes = stList_construct3(0, (void(*)(void *)) poaDelete_destruct);
 	poaNode->base = base;

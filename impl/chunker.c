@@ -140,7 +140,7 @@ char *mergeContigChunksThreaded(char **chunks, int64_t startIdx, int64_t endIdxE
     // divide into chunks
     int64_t totalChunks = endIdxExclusive - startIdx;
     int64_t chunksPerThread = (int64_t) ceil(1.0 * totalChunks / numThreads);
-    if (chunksPerThread * (numThreads - 1) >= endIdxExclusive) numThreads--;
+    while (chunksPerThread * (numThreads - 1) >= endIdxExclusive) {numThreads--;}
     char **outputChunks = st_calloc(numThreads, sizeof(char*));
 
     // multithread loop
