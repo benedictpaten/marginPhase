@@ -464,8 +464,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: maxConsensusStrings parameter must zero or greater\n");
 			}
 			params->maxConsensusStrings = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
-		}
-		else if (strcmp(keyString, "maxPoaConsensusIterations") == 0) {
+		} else if (strcmp(keyString, "maxPoaConsensusIterations") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: maxPoaConsensusIterations parameter must zero or greater\n");
 			}
@@ -506,8 +505,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         }
     }
 
-    if(!gotRepeatCountMatrix) {
-    	st_logCritical("ERROR: Did not find repeat counts specified in json polish params! Will default to MODE estimation\n");
+    if(!gotRepeatCountMatrix && params->useRunLengthEncoding) {
+    	st_logCritical("  ERROR: Did not find repeat counts specified in json polish params! Will default to MODE estimation\n");
     }
     if(!gotHmm) {
     	st_errAbort("ERROR: Did not find HMM specified in json polish params\n");
