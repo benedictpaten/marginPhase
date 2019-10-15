@@ -62,6 +62,7 @@ void usage() {
     fprintf(stderr, "\nMiscellaneous supplementary output options:\n");
     fprintf(stderr, "    -i --outputRepeatCounts  : Output base to write out the repeat counts [default = NULL]\n");
     fprintf(stderr, "    -j --outputPoaTsv        : Output base to write out the poa as TSV file [default = NULL]\n");
+    fprintf(stderr, "    -d --outputPoaDot        : Output base to write out the poa as DOT file [default = NULL]\n");
     fprintf(stderr, "\n");
 }
 
@@ -238,6 +239,11 @@ int main(int argc, char *argv[]) {
             st_errAbort("BAM does not appear to be indexed: %s\n", trueReferenceBam);
         }
         free(idx);
+    }
+
+    // sanitiy check for poa plotting
+    if ((outputPoaTsvBase != NULL || outputPoaDotBase != NULL) && regionStr == NULL) {
+        st_logCritical("--outputPoaTsv and --outputPoaDot options should only be used for a specific region!\n");
     }
 
     // Initialization from arguments
@@ -524,7 +530,7 @@ int main(int argc, char *argv[]) {
                                                         outputPoaDotBase, chunkIdx, bamChunk->refSeqName,
                                                         bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             FILE *outputPoaTsvFileHandle = fopen(outputPoaDotFilename, "w");
-            poa_printDOT(poa, outputPoaTsvFileHandle, reads, rleReads);
+            poa_printDOT(poa, outputPoaTsvFileHandle, rleReads, rleNucleotides);
             fclose(outputPoaTsvFileHandle);
             free(outputPoaDotFilename);
         }

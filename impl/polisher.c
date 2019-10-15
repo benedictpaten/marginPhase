@@ -7,6 +7,7 @@
 #include "margin.h"
 #include <omp.h>
 #include <htsIntegration.h>
+#include <sonLibListPrivate.h>
 
 char *getLogIdentifier() {
 	char *logIdentifier;
@@ -817,37 +818,78 @@ void poa_printRepeatCounts(Poa *poa, FILE *fH, stList *rleReads, stList *bamChun
 
 void poa_printDOT(Poa *poa, FILE *fH, stList *bamChunkReads, stList *rleStrings) {
 
-	fprintf(fH, "digraph poa {\n");
+	char* insertColor = "\"darkgreen\"";
+    char* backboneColor = "\"blue\"";
+    char* deleteColor = "\"purple\"";
+
+    fprintf(fH, "digraph poa {\nrankdir=\"LR\";\n");
 
     for (int64_t i = 0; i < stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
+		double runLengths[50] = {0};
+		double weight = 0.0;
+		for (int64_t o = 0; o < stList_length(node->observations); o++) {
+            PoaBaseObservation * obvs =  stList_get(node->observations, o);
+            // node weight
+            weight += obvs->weight;
+            // run length obvs
+            RleString* rleString = stList_get(rleStrings, obvs->readNo);
+            // skip non-match rates
+            if (rleString->rleString[obvs->offset] != node->base) continue;
+            // save run length
+            int64_t rl = ((RleString*) stList_get(rleStrings, obvs->readNo))->repeatCounts[obvs->offset];
+            if (rl > 50) rl = 50;
+            runLengths[rl-1] += obvs->weight;
+        }
+		weight /= PAIR_ALIGNMENT_PROB_1;
 
-		fprintf(fH, "B%"PRId64" [label=\"B%"PRId64" %c\"];\n", i, i, node->base);
+        // build run length label
+		stList *labelStrings = stList_construct3(0,free);
+		stList_append(labelStrings, stString_print("%"PRId64, i));
+		for (int64_t r = 0; r < 50; r++) {
+		    if (runLengths[r] != 0) {
+		        stList_append(labelStrings, stString_print("%2"PRId64"%c %2"PRId64,
+		                r+1, node->base, (int64_t) (runLengths[r]/PAIR_ALIGNMENT_PROB_1)));
+		    }
+		}
+		char* label = stString_join2("\\n", labelStrings);
+		fprintf(fH, "B%"PRId64" [label=\"%s\", fontcolor=%s, color=%s, penwidth=%f];\n", i, label,
+		        backboneColor, backboneColor, log(1+weight));
+		free(label);
+		stList_destruct(labelStrings);
+
 		if (i != 0) {
-			fprintf(fH, "B%"PRId64" -> B%"PRId64";\n", i-1, i);
+			fprintf(fH, "B%"PRId64" -> B%"PRId64" [label=\"%.2f\", fontcolor=%s, color=%s, weight=%d, penwidth=%f];\n",
+			        i-1, i, weight, backboneColor, backboneColor, (int) ceil(weight), log(1+weight));
 		}
 
 		// Inserts
 		for(int64_t j=0; j<stList_length(node->inserts); j++) {
 			PoaInsert *insert = stList_get(node->inserts, j);
+			double iWeight = (insert->weightReverseStrand + insert->weightForwardStrand) / PAIR_ALIGNMENT_PROB_1;
 
-            fprintf(fH, "I%"PRId64".%"PRId64" [label=\"%s\"];\n", i, j, insert->insert);
-            fprintf(fH, "B%"PRId64" -> I%"PRId64".%"PRId64";\n", i, i, j);
-            fprintf(fH, "I%"PRId64".%"PRId64" -> B%"PRId64";\n", i, j, i+1);
+            fprintf(fH, "I%"PRId64"_%"PRId64" [label=\"%s\", fontcolor=%s, color=%s, penwidth=%f];\n",
+                    i, j, insert->insert, insertColor, insertColor, log(1+iWeight));
+            fprintf(fH, "B%"PRId64" -> I%"PRId64"_%"PRId64" [label=\"%.2f\", fontcolor=%s, color=%s, weight=%d, penwidth=%f];\n",
+                    i, i, j, iWeight, insertColor, insertColor, (int)ceil(iWeight), log(1+iWeight));
+            fprintf(fH, "I%"PRId64"_%"PRId64" -> B%"PRId64" [color=%s, weight=%d, penwidth=%f];\n",
+                    i, j, i+1, insertColor, (int)ceil(iWeight), log(1+iWeight));
 
 		}
 
 		// Deletes
 		for(int64_t j=0; j<stList_length(node->deletes); j++) {
 			PoaDelete *delete = stList_get(node->deletes, j);
+            double dWeight = (delete->weightReverseStrand + delete->weightForwardStrand) / PAIR_ALIGNMENT_PROB_1;
 
-            fprintf(fH, "B%"PRId64" -> B%"PRId64";\n", i, i + 1 + delete->length);
+            fprintf(fH, "B%"PRId64" -> B%"PRId64" [label=\"%.2f\", fontcolor=%s, color=%s, weight=%d, penwidth=%f];\n",
+                    i, i + 1 + delete->length, dWeight, deleteColor, deleteColor, (int)ceil(dWeight), log(1+dWeight));
 		}
 
 
 	}
 
-    fprintf(fH, "}");
+    fprintf(fH, "}\n");
 
 }
 
