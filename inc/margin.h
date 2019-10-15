@@ -775,9 +775,14 @@ void poa_print(Poa *poa, FILE *fH,
 /*
  * Prints a tab separated version of the POA graph.
  */
+void poa_printDOT(Poa *poa, FILE *fH, stList *bamChunkReads, stList *rleStrings);
+
+/*
+ * Prints a tab separated version of the POA graph.
+ */
 void poa_printTSV(Poa *poa, FILE *fH,
-		stList *bamChunkReads,
-		float indelSignificanceThreshold, float strandBalanceRatio);
+                  stList *bamChunkReads,
+                  float indelSignificanceThreshold, float strandBalanceRatio);
 
 /*
  * Print repeat count observations.

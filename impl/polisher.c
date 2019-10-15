@@ -815,6 +815,42 @@ void poa_printRepeatCounts(Poa *poa, FILE *fH, stList *rleReads, stList *bamChun
     }
 }
 
+void poa_printDOT(Poa *poa, FILE *fH, stList *bamChunkReads, stList *rleStrings) {
+
+	fprintf(fH, "digraph poa {\n");
+
+    for (int64_t i = 0; i < stList_length(poa->nodes); i++) {
+		PoaNode *node = stList_get(poa->nodes, i);
+
+		fprintf(fH, "B%"PRId64" [label=\"B%"PRId64" %c\"];\n", i, i, node->base);
+		if (i != 0) {
+			fprintf(fH, "B%"PRId64" -> B%"PRId64";\n", i-1, i);
+		}
+
+		// Inserts
+		for(int64_t j=0; j<stList_length(node->inserts); j++) {
+			PoaInsert *insert = stList_get(node->inserts, j);
+
+            fprintf(fH, "I%"PRId64".%"PRId64" [label=\"%s\"];\n", i, j, insert->insert);
+            fprintf(fH, "B%"PRId64" -> I%"PRId64".%"PRId64";\n", i, i, j);
+            fprintf(fH, "I%"PRId64".%"PRId64" -> B%"PRId64";\n", i, j, i+1);
+
+		}
+
+		// Deletes
+		for(int64_t j=0; j<stList_length(node->deletes); j++) {
+			PoaDelete *delete = stList_get(node->deletes, j);
+
+            fprintf(fH, "B%"PRId64" -> B%"PRId64";\n", i, i + 1 + delete->length);
+		}
+
+
+	}
+
+    fprintf(fH, "}");
+
+}
+
 void poa_printTSV(Poa *poa, FILE *fH,
 		stList *bamChunkReads,
 		float indelSignificanceThreshold, float strandBalanceRatio) {

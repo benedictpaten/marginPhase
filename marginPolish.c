@@ -105,6 +105,7 @@ int main(int argc, char *argv[]) {
     int numThreads = 1;
     char *outputRepeatCountBase = NULL;
     char *outputPoaTsvBase = NULL;
+    char *outputPoaDotBase = NULL;
 
     // for feature generation
     HelenFeatureType helenFeatureType = HFEAT_NONE;
@@ -141,10 +142,11 @@ int main(int argc, char *argv[]) {
                 { "splitRleWeightMaxRL", required_argument, 0, 'L'},
 				{ "outputRepeatCounts", required_argument, 0, 'i'},
 				{ "outputPoaTsv", required_argument, 0, 'j'},
+				{ "outputPoaDot", required_argument, 0, 'd'},
                 { 0, 0, 0, 0 } };
 
         int option_index = 0;
-        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:fF:u:hL:i:j:t:", long_options, &option_index);
+        int key = getopt_long(argc-2, &argv[2], "a:o:v:r:fF:u:hL:i:j:d:t:", long_options, &option_index);
 
         if (key == -1) {
             break;
@@ -170,6 +172,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'j':
             outputPoaTsvBase = getFileBase(optarg, "poa");
+            break;
+        case 'd':
+            outputPoaDotBase = getFileBase(optarg, "poa");
             break;
         case 'F':
             if (stString_eq(optarg, "simpleWeight")) {
@@ -514,6 +519,15 @@ int main(int argc, char *argv[]) {
         }
 
         // Write any optional outputs about repeat count and POA, etc.
+        if(outputPoaDotBase != NULL) {
+            char *outputPoaDotFilename = stString_print("%s.poa.C%05"PRId64".%s-%"PRId64"-%"PRId64".dot",
+                                                        outputPoaDotBase, chunkIdx, bamChunk->refSeqName,
+                                                        bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
+            FILE *outputPoaTsvFileHandle = fopen(outputPoaDotFilename, "w");
+            poa_printDOT(poa, outputPoaTsvFileHandle, reads, rleReads);
+            fclose(outputPoaTsvFileHandle);
+            free(outputPoaDotFilename);
+        }
         if(outputPoaTsvBase != NULL) {
             char *outputPoaTsvFilename = stString_print("%s.poa.C%05"PRId64".%s-%"PRId64"-%"PRId64".tsv",
                                                         outputPoaTsvBase, chunkIdx, bamChunk->refSeqName,
