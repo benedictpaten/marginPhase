@@ -34,6 +34,8 @@
 		  "chunkSize" : 10000,
 
 		  "chunkBoundary" : 50,
+
+		  "maxDepth" : 50,
 		
 		  "referenceBasePenalty" : 0.5,
 		  
