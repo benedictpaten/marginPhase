@@ -937,6 +937,14 @@ void test_polish100kb(CuTest *testCase) {
 	CuAssertTrue(testCase, i == 0);
 }
 
+void test_binomialPValue(CuTest *testCase) {
+	CuAssertDblEquals(testCase, 252.0, bionomialCoefficient(10, 5), 0.001);
+	CuAssertDblEquals(testCase, 15504.0, bionomialCoefficient(20, 15), 0.001);
+	CuAssertDblEquals(testCase, 80347448443237920.0, bionomialCoefficient(64, 22), 0.001);
+	CuAssertDblEquals(testCase, 151473214816.0, bionomialCoefficient(64, 10), 0.001);
+	CuAssertDblEquals(testCase, 1832624140942590534.0, bionomialCoefficient(64, 32), 0.001);
+}
+
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
@@ -956,6 +964,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_polish5kb_rle);
     SUITE_ADD_TEST(suite, test_polish5kb_no_region);
     SUITE_ADD_TEST(suite, test_polish100kb);
+    SUITE_ADD_TEST(suite, test_binomialPValue);
 
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);

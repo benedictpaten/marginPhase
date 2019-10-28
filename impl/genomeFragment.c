@@ -6,32 +6,41 @@
 
 #include "margin.h"
 
+stGenomeFragment *stGenomeFragment_constructEmpty(stReference *ref, uint64_t refStart, uint64_t length, stSet *reads1, stSet *reads2) {
+	stGenomeFragment *gF = st_calloc(1, sizeof(stGenomeFragment));
+
+	// Set coordinates
+	gF->reference = ref;
+	gF->refStart = refStart;
+	gF->length = length;
+
+	// Get the reads which map to each path
+	gF->reads1 = reads1;
+	gF->reads2 = reads2;
+
+	// Allocate genotype arrays
+	gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
+	gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
+	gF->haplotypeProbs1 = st_calloc(gF->length, sizeof(float));
+	gF->haplotypeProbs2 = st_calloc(gF->length, sizeof(float));
+
+	// Allocate haplotype arrays
+	gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
+	gF->haplotypeString2 = st_calloc(gF->length, sizeof(uint64_t));
+	gF->ancestorString = st_calloc(gF->length, sizeof(uint64_t));
+
+	return gF;
+}
+
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path) {
     /*
      * Returns an genome fragment inferred from the hmm and given path through it.
      */
 
-    stGenomeFragment *gF = st_calloc(1, sizeof(stGenomeFragment));
-
-    // Set coordinates
-    gF->reference = hmm->ref;
-    gF->refStart = hmm->refStart;
-    gF->length = hmm->refLength;
-
-    // Get the reads which map to each path
-    gF->reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
-    gF->reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-
-    // Allocate genotype arrays
-    gF->genotypeString = st_calloc(gF->length, sizeof(uint64_t));
-    gF->genotypeProbs = st_calloc(gF->length, sizeof(float));
-    gF->haplotypeProbs1 = st_calloc(gF->length, sizeof(float));
-    gF->haplotypeProbs2 = st_calloc(gF->length, sizeof(float));
-
-    // Allocate haplotype arrays
-    gF->haplotypeString1 = st_calloc(gF->length, sizeof(uint64_t));
-    gF->haplotypeString2 = st_calloc(gF->length, sizeof(uint64_t));
-    gF->ancestorString = st_calloc(gF->length, sizeof(uint64_t));
+    stGenomeFragment *gF = stGenomeFragment_constructEmpty(hmm->ref,
+    		hmm->refStart, hmm->refLength,
+			stRPHmm_partitionSequencesByStatePath(hmm, path, 1),
+			stRPHmm_partitionSequencesByStatePath(hmm, path, 0));
 
     // For each cell in the hmm
     stRPColumn *column = hmm->firstColumn;
@@ -134,9 +143,9 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF,stRPHmm *hmm, st
                 gF->refStart, gF->length, gF->reads2, gF->reference);
 
         // If there are no reads wanting to switch then break
-        st_logDebug("\tAt iteration %" PRIi64 " of partition found %" PRIi64 " reads from partition 1 switching to 2 "
+        st_logDebug("\tAt iteration %" PRIi64 " of %" PRIi64 " reads, in partition found %" PRIi64 " reads from partition 1 switching to 2 "
                             "and %" PRIi64 " reads from partition 2 switching to 1\n",
-                    iteration, stSet_size(reads1To2), stSet_size(reads2To1));
+                    iteration, stSet_size(gF->reads1) + stSet_size(gF->reads2), stSet_size(reads1To2), stSet_size(reads2To1));
         if(stSet_size(reads1To2) + stSet_size(reads2To1) == 0) {
         	stSet_destruct(reads1To2);
         	stSet_destruct(reads2To1);

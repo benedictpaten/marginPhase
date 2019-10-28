@@ -31,7 +31,8 @@
 #include "hashTableC.h"
 #include "pairwiseAligner.h"
 #include "randomSequences.h"
-#include "multipleAligner.h"
+
+#define uint128_t __uint128_t
 
 /*
  * More function documentation is in the .c files
@@ -424,6 +425,8 @@ struct _stGenomeFragment {
     float *haplotypeProbs2;
 };
 
+stGenomeFragment *stGenomeFragment_constructEmpty(stReference *ref, uint64_t refStart, uint64_t length, stSet *reads1, stSet *reads2);
+
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
@@ -478,6 +481,7 @@ struct _polishParams {
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
 	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
 	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
+	bool useOnlySubstitutionsForPhasing; // In creating phasing use sites where alleles only differ by substitutions
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -1019,5 +1023,17 @@ double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenome
  * Filter bubbles to remove bubbles containing any alleles with a significant strand skew.
  */
 void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p);
+
+/*
+ * Filter bubbles to remove bubbles encoding indels
+ */
+void bubbleGraph_filterBubblesToRemoveIndels(BubbleGraph *bg, Params *p);
+
+/*
+ * Functions for scoring strand skews using binomial model
+ */
+double binomialPValue(int64_t n, int64_t k);
+
+uint128_t bionomialCoefficient(int64_t n, int64_t k);
 
 #endif /* ST_RP_HMM_H_ */

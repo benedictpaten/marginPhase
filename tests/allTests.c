@@ -14,12 +14,14 @@ CuSuite* viewTestSuite(void);
 CuSuite* chunkingTestSuite(void);
 CuSuite* callConsensusTestSuite(void);
 CuSuite* marginIntegrationTestSuite(void);
+CuSuite* pairwiseAlignmentTestSuite(void);
 
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
+	CuSuiteAddSuite(suite, pairwiseAlignmentTestSuite());
 	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());

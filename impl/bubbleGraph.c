@@ -998,6 +998,13 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	stHash *readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
 	stList *profileSeqs = stHash_getValues(readsToPSeqs);
 
+	if(stList_length(profileSeqs) == 0) {
+		stGenomeFragment *gf = stGenomeFragment_constructEmpty(ref, 0, 0, stSet_construct(), stSet_construct());
+		stList_destruct(profileSeqs);
+		stHash_destruct(readsToPSeqs);
+		return gf;
+	}
+
 	assert(stList_length(reads) >= stList_length(profileSeqs));
 	if(stList_length(reads) != stList_length(profileSeqs)) {
 		st_logInfo("In converting from reads to profile sequences have %" PRIi64 " reads and %" PRIi64 " profile sequences\n",
@@ -1035,6 +1042,11 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	// Compute the genome fragment
 	stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
+	// Refine the genome fragment by repartitoning the reads iteratively
+	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
+		stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
+	}
+
 	// Sanity checks
 	assert(gF->refStart >= 0);
 	assert(gF->refStart + gF->length <= bg->bubbleNo);
@@ -1042,11 +1054,6 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 
 	// Check / log the result
 	bubbleGraph_logPhasedBubbleGraph(bg, hmm, path, readsToPSeqs, profileSeqs, gF);
-
-	// Refine the genome fragment by repartitoning the reads iteratively
-	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
-		stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
-	}
 
 	// For reads that exceeded the coverage depth, add them back to the haplotype they fit best
 	while(stList_length(discardedProfileSeqs) > 0) {
@@ -1162,8 +1169,8 @@ double bubbleGraph_getAlleleStrandSkewCutoff(BubbleGraph *bg, Params *p) {
 	return cutoff;
 }
 
-int64_t bionomialCoefficient(int64_t n, int64_t k) {
-    int64_t ans=1;
+uint128_t bionomialCoefficient(int64_t n, int64_t k) {
+	uint128_t ans=1;
     k=k>n-k?n-k:k;
     int64_t j=1;
     for(;j<=k;j++,n--) {
@@ -1179,39 +1186,33 @@ int64_t bionomialCoefficient(int64_t n, int64_t k) {
 }
 
 double binomialPValue(int64_t n, int64_t k) {
-	double j=0.0;
+	uint128_t j=0.0;
 	k = k < n/2 ? n-k : k;
-	double p = pow(2.0, n);
 	for(int64_t i=k; i<=n; i++) {
-		j += llabs(n-i) > 12 ? 0.0 : bionomialCoefficient(n, i) / p;
+		j += bionomialCoefficient(n, i);
 	}
-	return j;
+	return j/pow(2.0, n);
 }
 
 double bubble_phasedStrandSkew(Bubble *b, stHash *readsToPSeqs, stGenomeFragment *gf) {
-	int64_t readsPartition1 = 0, forwardReadsPartition1 = 0,
-			readsPartition2 = 0, forwardReadsPartition2 = 0;
-
+	int64_t reads = 0, positives = 0;
 	for(int64_t i=0; i<b->readNo; i++) {
 		stProfileSeq *pSeq = stHash_search(readsToPSeqs, b->reads[i]->read);
 		assert(pSeq != NULL);
 		if(stSet_search(gf->reads1, pSeq) != NULL) {
-			readsPartition1++;
+			reads++;
 			if(b->reads[i]->read->forwardStrand) {
-				forwardReadsPartition1++;
+				positives++;
 			}
 		}
 		else if(stSet_search(gf->reads2, pSeq) != NULL) {
-			readsPartition2++;
-			if(b->reads[i]->read->forwardStrand) {
-				forwardReadsPartition2++;
+			reads++;
+			if(!b->reads[i]->read->forwardStrand) {
+				positives++;
 			}
 		}
 	}
-	double forwardStrandPValue = binomialPValue(readsPartition1, forwardReadsPartition1);
-	double negativeStrandPValue = binomialPValue(readsPartition2, forwardReadsPartition2);
-
-	return fmin(forwardStrandPValue, negativeStrandPValue);
+	return binomialPValue(reads, positives);
 }
 
 double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenomeFragment *gf) {
@@ -1249,7 +1250,7 @@ uint64_t bubbleGraph_filterBubbles(BubbleGraph *bg,
 	uint64_t filteredBubbles = bg->bubbleNo - j;
 	bg->bubbleNo = j;
 	bg->totalAlleles = alleleOffset;
-	st_realloc(bg->bubbles, sizeof(Bubble)*bg->bubbleNo); // Resize bubbles array
+	bg->bubbles = st_realloc(bg->bubbles, sizeof(Bubble)*bg->bubbleNo); // Resize bubbles array
 
 	return filteredBubbles;
 }
@@ -1263,3 +1264,25 @@ void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p) {
 	st_logDebug(">Allele strand skew filtering: Filtered %i bubbles of %i total bubbles using allele skew cut off of: %f\n",
 			(int)bubblesFiltered, (int)(bg->bubbleNo+bubblesFiltered), alleleStrandSkewCutoff);
 }
+
+bool filterByBubbleIndel(Bubble *b, void *extraArg) {
+	if(b->alleleNo != 2) {
+		return 1;
+	}
+	return 0;
+	for(int64_t i=1; i<b->alleleNo; i++) {
+		if(strlen(b->alleles[i]) != strlen(b->alleles[i-1])) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void bubbleGraph_filterBubblesToRemoveIndels(BubbleGraph *bg, Params *p) {
+	uint64_t bubblesFiltered = bubbleGraph_filterBubbles(bg, (bool (*)(Bubble *, void *))filterByBubbleIndel,
+				NULL);
+
+	st_logDebug("> Indel filtering: Filtered %i bubbles of %i total bubbles using indel filter\n",
+				(int)bubblesFiltered, (int)(bg->bubbleNo+bubblesFiltered));
+}
+

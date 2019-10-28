@@ -9,6 +9,7 @@ import math
 def main():
     assembly = open(sys.argv[1]).readlines()
     trueAssembly = sys.argv[2]
+    verbose = True if len(sys.argv) == 4 and sys.argv[-1] == "verbose" else False
     
     read = []
     for line in assembly[1:]:
@@ -48,11 +49,12 @@ def main():
                 xGaps = len(x) - xLen
                 yGaps = len(y) - yLen
                 mismatches = sum([ 1 if (x[i] != y[i] and x[i] != '-' and y[i] != '-') else 0 for i in range(len(x)) ])
+                mismatchLocations = [ (i, x[i-10:i+10], y[i-10:i+10]) for i in range(len(x)) if (x[i] != y[i] and x[i] != '-' and y[i] != '-')]
                 matches = sum([ 1 if x[i] == y[i] else 0 for i in range(len(x)) ])
         
                 identity = matches * 2 / float(xLen + yLen)
                 
-                identities.append((xLen, yLen, matches, identity, mismatches, xGaps, yGaps))
+                identities.append((xLen, yLen, matches, identity, mismatches, xGaps, yGaps, mismatchLocations))
                 
                 totalMatches += matches
                 totalXLen += xLen
@@ -63,8 +65,11 @@ def main():
     
     identities.sort()
     
-    for xLen, yLen, matches, identity, mismatches, xGaps, yGaps in identities:
+    for xLen, yLen, matches, identity, mismatches, xGaps, yGaps, mismatchLocations in identities:
         print("xLen: %s, yLen: %s, matches: %s, identity: %s, mismatches: %s, xGaps: %s, yGaps: %s" % (xLen, yLen, matches, identity, mismatches, xGaps, yGaps))
+        if verbose:
+            for location, xString, yString in mismatchLocations:
+                print(" Mismatch", location, xString, yString)
 
     print("total-xLen: %s, total-yLen: %s, total-matches: %s, total-identity: %s, total-mismatches: %s, total-xGaps: %s, total-yGaps: %s" % (totalXLen, totalYLen, totalMatches, 2.0*totalMatches/float(totalXLen + totalYLen + 0.0001), totalMismatches, totalXGaps, totalYGaps))
 

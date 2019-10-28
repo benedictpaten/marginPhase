@@ -370,10 +370,21 @@ int main(int argc, char *argv[]) {
 
 		// If diploid
 		if(diploid) {
+			//params->polishParams->candidateVariantWeight = 0.1;
+			params->polishParams->columnAnchorTrim = 3;
+			params->polishParams->alleleStrandSkew = 5.0;
+			params->polishParams->hetScalingParameter = 1.0;
+			//params->phaseParams->roundsOfIterativeRefinement = 0;
+
 			// Get the bubble graph representation
 			BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, reads, params->polishParams);
 
-			// Filter bubbles by allele strand-skew
+			// Filter bubbles to remove indels
+			if(params->polishParams->useOnlySubstitutionsForPhasing) {
+				bubbleGraph_filterBubblesToRemoveIndels(bg, params);
+			}
+
+			// Filter bubbles to remove bubbles with alleles with strand-skew
 			bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
 
 			// Now make a POA for each of the haplotypes

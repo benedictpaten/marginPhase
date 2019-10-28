@@ -390,6 +390,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 			}
 			params->alleleStrandSkew = stJson_parseFloat(js, tokens, tokenIndex);
 		}
+		else if (strcmp(keyString, "useOnlySubstitutionsForPhasing") == 0) {
+		            params->useOnlySubstitutionsForPhasing = stJson_parseBool(js, tokens, ++tokenIndex);
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
