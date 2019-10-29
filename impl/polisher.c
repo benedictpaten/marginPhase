@@ -1233,63 +1233,6 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart) {
 	return editedString;
 }
 
-Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishParams *polishParams) {
-	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
-
-	while(1) {
-		int64_t insertStart = 0;
-		PoaInsert *maxInsert = NULL;
-		int64_t deleteStart = 0;
-		PoaDelete *maxDelete = NULL;
-
-		// Get highest value indel
-		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-			PoaNode *node = stList_get(poa->nodes, i);
-
-			// Get max insert
-			for(int64_t j=0; j<stList_length(node->inserts); j++) {
-				PoaInsert *insert = stList_get(node->inserts, j);
-				if(maxInsert == NULL || poaInsert_getWeight(insert) > poaInsert_getWeight(maxInsert)) {
-					maxInsert = insert;
-					insertStart = i;
-				}
-			}
-
-			// Get max delete
-			for(int64_t j=0; j<stList_length(node->deletes); j++) {
-				PoaDelete *delete = stList_get(node->deletes, j);
-				if(maxDelete == NULL || poaDelete_getWeight(delete) > poaDelete_getWeight(maxDelete)) {
-					maxDelete = delete;
-					deleteStart = i;
-				}
-			}
-		}
-
-		if(maxInsert == NULL || maxDelete == NULL) {
-			return poa;
-		}
-
-		// Create new graph with edit
-		char *editRef = poaInsert_getWeight(maxInsert) >= poaDelete_getWeight(maxDelete) ? addInsert(poa->refString, maxInsert->insert, insertStart) :
-				removeDelete(poa->refString, maxDelete->length, deleteStart);
-		// TODO: Add anchor constraints
-		Poa *poa2 = poa_realign(bamChunkReads, NULL, editRef, polishParams);
-		free(editRef);
-		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
-
-		// If new graph has better score, keep it, otherwise return old graph
-		if(score2 <= score) {
-			poa_destruct(poa2);
-			return poa;
-		}
-
-		// We got a better graph, so keep it
-		poa_destruct(poa);
-		poa = poa2;
-		score = score2;
-	}
-}
-
 stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, PolishParams *polishParams) {
 	// Generate anchor alignments
 	stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(bamChunkReads), polishParams);

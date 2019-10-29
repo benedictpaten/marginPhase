@@ -471,13 +471,13 @@ int64_t calcSequenceMatches(char *seq1, char *seq2) {
 
 	//Get identity
 	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
-	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, 0.0);
+	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, params->polishParams->p);
 
 	int64_t matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
 
 	// Cleanup
 	params_destruct(params);
-	stList_destruct(alignedPairs);
+	//stList_destruct(alignedPairs);
 
 	return matches;
 }
@@ -799,8 +799,6 @@ void test_polishParams(CuTest *testCase) {
 	CuAssertDblEquals(testCase, polishParams->p->traceBackDiagonals, 40, 0);
 	CuAssertDblEquals(testCase, polishParams->p->diagonalExpansion, 10, 0);
 	CuAssertDblEquals(testCase, polishParams->p->constraintDiagonalTrim, 0, 0);
-	CuAssertDblEquals(testCase, polishParams->p->anchorMatrixBiggerThanThis, 250000, 0);
-	CuAssertDblEquals(testCase, polishParams->p->repeatMaskMatrixBiggerThanThis, 250000000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->splitMatrixBiggerThanThis, 250000000, 0);
 	CuAssertDblEquals(testCase, polishParams->p->gapGamma, 0.5, 0);
 	CuAssertTrue(testCase, !polishParams->p->alignAmbiguityCharacters);

@@ -31,8 +31,6 @@ typedef struct _pairwiseAlignmentBandingParameters {
     int64_t traceBackDiagonals; //Number of diagonals to leave between trace back diagonal
     int64_t diagonalExpansion; //The number of x-y diagonals to expand around an anchor point
     int64_t constraintDiagonalTrim; //Amount to remove from a diagonal to be considered for a banding constraint
-    int64_t anchorMatrixBiggerThanThis; //Search for anchors on any matrix bigger than this
-    int64_t repeatMaskMatrixBiggerThanThis; //Any matrix in the anchors bigger than this is searched for anchors using non-repeat masked sequences.
     int64_t splitMatrixBiggerThanThis; //Any matrix in the anchors bigger than this is split into two.
     bool alignAmbiguityCharacters;
     float gapGamma; //The AMAP gap-gamma parameter which controls the degree to which indel probabilities are factored into the alignment.
@@ -247,15 +245,6 @@ void getPosteriorProbsWithBanding(StateMachine *sM, stList *anchorPairs, const S
         void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, const SymbolString, const SymbolString,
               double, PairwiseAlignmentParameters *, void *), void *extraArgs);
 
-//Blast pairs
-
-stList *getBlastPairs(const char *sX, const char *sY, int64_t lX, int64_t lY, int64_t trim, int64_t diagonalExpansion, bool repeatMask);
-
-stList *getBlastPairsForPairwiseAlignmentParameters(const char *sX, const char *sY, const int64_t lX, const int64_t lY,
-        PairwiseAlignmentParameters *p);
-
-stList *filterToRemoveOverlap(stList *overlappingPairs);
-
 //Split over large gaps
 
 stList *getSplitPoints(stList *anchorPairs, int64_t lX, int64_t lY,
@@ -309,7 +298,7 @@ double scoreByPosteriorProbabilityIgnoringGaps(stList *alignedPairs);
 /*
  * Filter to give co-linear alignment.
  */
-stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY, float matchGamma);
+stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY, PairwiseAlignmentParameters *p);
 
 
 #endif /* PAIRWISEALIGNER_H_ */

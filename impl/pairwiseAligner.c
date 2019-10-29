@@ -950,253 +950,6 @@ double computeForwardProbability(char *seqX, char *seqY, stList *anchorPairs, Pa
 
 ///////////////////////////////////
 ///////////////////////////////////
-//Blast anchoring functions
-//
-//Use lastz to get sets of anchors
-///////////////////////////////////
-///////////////////////////////////
-
-static int sortByXPlusYCoordinate(const void *i, const void *j) {
-    int64_t k = stIntTuple_get((stIntTuple *) i, 0) + stIntTuple_get((stIntTuple *) i, 1);
-    int64_t l = stIntTuple_get((stIntTuple *) j, 0) + stIntTuple_get((stIntTuple *) j, 1);
-    return k > l ? 1 : (k < l ? -1 : 0);
-}
-
-static char *makeUpperCase(const char *s, int64_t l) {
-    char *s2 = stString_copy(s);
-    for (int64_t i = 0; i < l; i++) {
-        s2[i] = toupper(s[i]);
-    }
-    return s2;
-}
-
-static void writeSequenceToFile(char *file, const char *name, const char *sequence) {
-    FILE *fileHandle = fopen(file, "w");
-    fastaWrite((char *) sequence, (char *) name, fileHandle);
-    fclose(fileHandle);
-}
-
-stList *convertPairwiseForwardStrandAlignmentToAnchorPairs(struct PairwiseAlignment *pA, int64_t trim, int64_t expansion) {
-    stList *alignedPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct); //the list to put the output in
-    int64_t j = pA->start1;
-    int64_t k = pA->start2;
-    assert(pA->strand1);
-    assert(pA->strand2);
-    for (int64_t i = 0; i < pA->operationList->length; i++) {
-        struct AlignmentOperation *op = pA->operationList->list[i];
-        if (op->opType == PAIRWISE_MATCH) {
-            for (int64_t l = trim; l < op->length - trim; l++) {
-                stList_append(alignedPairs, stIntTuple_construct3(j + l, k + l, expansion));
-            }
-        }
-        if (op->opType != PAIRWISE_INDEL_Y) {
-            j += op->length;
-        }
-        if (op->opType != PAIRWISE_INDEL_X) {
-            k += op->length;
-        }
-    }
-
-    assert(j == pA->end1);
-    assert(k == pA->end2);
-    return alignedPairs;
-}
-
-stList *getBlastPairs(const char *sX, const char *sY, int64_t lX, int64_t lY, int64_t trim, int64_t diagonalExpansion, bool repeatMask) {
-    /*
-     * Uses lastz to compute a bunch of monotonically increasing pairs such that for any pair of consecutive pairs in the list
-     * (x1, y1) (x2, y2) in the set of aligned pairs x1 appears before x2 in X and y1 appears before y2 in Y.
-     */
-    stList *alignedPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct); //the list to put the output in
-
-    if (lX == 0 || lY == 0) {
-        return alignedPairs;
-    }
-
-    if (!repeatMask) {
-        sX = makeUpperCase(sX, lX);
-        sY = makeUpperCase(sY, lY);
-    }
-
-    //Write one sequence to file..
-    char *tempFile1 = getTempFile();
-    char *tempFile2 = NULL;
-
-    writeSequenceToFile(tempFile1, "a", sX);
-
-    char *command;
-
-    if (lY > 1000) {
-        tempFile2 = getTempFile();
-        writeSequenceToFile(tempFile2, "b", sY);
-        command =
-                stString_print(
-                        "cPecanLastz --hspthresh=800 --chain --strand=plus --gapped --format=cigar --ambiguous=iupac,100,100 %s %s",
-                        tempFile1, tempFile2);
-    } else {
-        command =
-                stString_print(
-                        "echo '>b\n%s\n' | cPecanLastz --hspthresh=800 --chain --strand=plus --gapped --format=cigar --ambiguous=iupac,100,100 %s",
-                        sY, tempFile1);
-    }
-    FILE *fileHandle = popen(command, "r");
-    if (fileHandle == NULL) {
-        st_errnoAbort("Problems with lastz pipe");
-    }
-    //Read from stream
-    struct PairwiseAlignment *pA;
-    while ((pA = cigarRead(fileHandle)) != NULL) {
-        assert(strcmp(pA->contig1, "a") == 0);
-        assert(strcmp(pA->contig2, "b") == 0);
-        stList *alignedPairsForCigar = convertPairwiseForwardStrandAlignmentToAnchorPairs(pA, trim, diagonalExpansion);
-        stList_appendAll(alignedPairs, alignedPairsForCigar);
-        stList_setDestructor(alignedPairsForCigar, NULL);
-        stList_destruct(alignedPairsForCigar);
-        destructPairwiseAlignment(pA);
-    }
-    int64_t status = pclose(fileHandle);
-    if (status != 0) {
-        st_errnoAbort("pclose failed when getting rid of lastz pipe with value %" PRIi64 " and command %s", status,
-                      command);
-    }
-    free(command);
-
-    stList_sort(alignedPairs, sortByXPlusYCoordinate); //Ensure the coordinates are increasing
-
-    //Remove old files
-    st_system("rm %s", tempFile1);
-    free(tempFile1);
-    if (tempFile2 != NULL) {
-        st_system("rm %s", tempFile2);
-        free(tempFile2);
-    }
-
-    if (!repeatMask) {
-        free((char *) sX);
-        free((char *) sY);
-    }
-
-    return alignedPairs;
-}
-
-static void convertBlastPairs(stList *alignedPairs2, int64_t offsetX, int64_t offsetY) {
-    /*
-     * Convert the coordinates of the computed pairs.
-     */
-    for (int64_t k = 0; k < stList_length(alignedPairs2); k++) {
-        stIntTuple *i = stList_get(alignedPairs2, k);
-        assert(stIntTuple_length(i) == 3);
-        stList_set(alignedPairs2, k,
-                stIntTuple_construct3(stIntTuple_get(i, 0) + offsetX, stIntTuple_get(i, 1) + offsetY, stIntTuple_get(i, 2)));
-        stIntTuple_destruct(i);
-    }
-}
-
-stList *filterToRemoveOverlap(stList *sortedOverlappingPairs) {
-    stList *nonOverlappingPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
-
-    //Traverse backwards
-    stSortedSet *set = stSortedSet_construct3((int (*)(const void *, const void *)) stIntTuple_cmpFn, NULL);
-    int64_t pX = INT64_MAX, pY = INT64_MAX;
-    for (int64_t i = stList_length(sortedOverlappingPairs) - 1; i >= 0; i--) {
-        stIntTuple *pair = stList_get(sortedOverlappingPairs, i);
-        int64_t x = stIntTuple_get(pair, 0);
-        int64_t y = stIntTuple_get(pair, 1);
-        if (x < pX && y < pY) {
-            stSortedSet_insert(set, pair);
-        }
-        pX = x < pX ? x : pX;
-        pY = y < pY ? y : pY;
-    }
-
-    //Traverse forwards to final set of pairs
-    pX = INT64_MIN;
-    pY = INT64_MIN;
-    int64_t pY2 = INT64_MIN;
-    for (int64_t i = 0; i < stList_length(sortedOverlappingPairs); i++) {
-        stIntTuple *pair = stList_get(sortedOverlappingPairs, i);
-        int64_t x = stIntTuple_get(pair, 0);
-        int64_t y = stIntTuple_get(pair, 1);
-        if (x > pX && y > pY && stSortedSet_search(set, pair) != NULL) {
-            stList_append(nonOverlappingPairs, stIntTuple_construct3(x, y, stIntTuple_get(pair, 2)));
-        }
-        //Check things are sorted in the input
-        assert(x >= pX);
-        if (x == pX) {
-            assert(y >= pY2);
-        }
-        pY2 = y;
-        pX = x > pX ? x : pX;
-        pY = y > pY ? y : pY;
-    }
-    stSortedSet_destruct(set);
-
-    return nonOverlappingPairs;
-}
-
-static void getBlastPairsForPairwiseAlignmentParametersP(const char *sX, const char *sY, int64_t pX, int64_t pY,
-        int64_t x, int64_t y, PairwiseAlignmentParameters *p, stList *combinedAnchorPairs) {
-    int64_t lX2 = x - pX;
-    assert(lX2 >= 0);
-    int64_t lY2 = y - pY;
-    assert(lY2 >= 0);
-    int64_t matrixSize = (int64_t) lX2 * lY2;
-    if (matrixSize > p->anchorMatrixBiggerThanThis) {
-        char *sX2 = stString_getSubString(sX, pX, lX2);
-        char *sY2 = stString_getSubString(sY, pY, lY2);
-        stList *unfilteredBottomLevelAnchorPairs = getBlastPairs(sX2, sY2, lX2, lY2, p->constraintDiagonalTrim, p->diagonalExpansion, matrixSize > p->repeatMaskMatrixBiggerThanThis);
-        stList_sort(unfilteredBottomLevelAnchorPairs, (int (*)(const void *, const void *)) stIntTuple_cmpFn);
-        stList *bottomLevelAnchorPairs = filterToRemoveOverlap(unfilteredBottomLevelAnchorPairs);
-        st_logDebug("Got %" PRIi64 " bottom level anchor pairs, which reduced to %" PRIi64 " after filtering \n",
-                stList_length(unfilteredBottomLevelAnchorPairs), stList_length(bottomLevelAnchorPairs));
-        stList_destruct(unfilteredBottomLevelAnchorPairs);
-        convertBlastPairs(bottomLevelAnchorPairs, pX, pY);
-        free(sX2);
-        free(sY2);
-        stList_appendAll(combinedAnchorPairs, bottomLevelAnchorPairs);
-        stList_setDestructor(bottomLevelAnchorPairs, NULL);
-        stList_destruct(bottomLevelAnchorPairs);
-    }
-}
-
-stList *getBlastPairsForPairwiseAlignmentParameters(const char *sX, const char *sY, const int64_t lX, const int64_t lY,
-        PairwiseAlignmentParameters *p) {
-    if ((int64_t) lX * lY <= p->anchorMatrixBiggerThanThis) {
-        return stList_construct();
-    }
-    //Anchor pairs
-    stList *unfilteredTopLevelAnchorPairs = getBlastPairs(sX, sY, lX, lY, p->constraintDiagonalTrim, p->diagonalExpansion, 1);
-    stList_sort(unfilteredTopLevelAnchorPairs, (int (*)(const void *, const void *)) stIntTuple_cmpFn);
-    stList *topLevelAnchorPairs = filterToRemoveOverlap(unfilteredTopLevelAnchorPairs);
-    st_logDebug("Got %" PRIi64 " top level anchor pairs, which reduced to %" PRIi64 " after filtering \n",
-            stList_length(unfilteredTopLevelAnchorPairs), stList_length(topLevelAnchorPairs));
-    stList_destruct(unfilteredTopLevelAnchorPairs);
-
-    int64_t pX = 0;
-    int64_t pY = 0;
-    stList *combinedAnchorPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
-    for (int64_t i = 0; i < stList_length(topLevelAnchorPairs); i++) {
-        stIntTuple *anchorPair = stList_get(topLevelAnchorPairs, i);
-        int64_t x = stIntTuple_get(anchorPair, 0);
-        int64_t y = stIntTuple_get(anchorPair, 1);
-        assert(x >= 0 && x < lX);
-        assert(y >= 0 && y < lY);
-        assert(x >= pX);
-        assert(y >= pY);
-        getBlastPairsForPairwiseAlignmentParametersP(sX, sY, pX, pY, x, y, p, combinedAnchorPairs);
-        stList_append(combinedAnchorPairs, anchorPair);
-        pX = x + 1;
-        pY = y + 1;
-    }
-    getBlastPairsForPairwiseAlignmentParametersP(sX, sY, pX, pY, lX, lY, p, combinedAnchorPairs);
-    stList_setDestructor(topLevelAnchorPairs, NULL);
-    stList_destruct(topLevelAnchorPairs);
-    st_logDebug("Got %" PRIi64 " combined anchor pairs\n", stList_length(combinedAnchorPairs));
-    return combinedAnchorPairs;
-}
-
-///////////////////////////////////
-///////////////////////////////////
 //Split large gap functions
 //
 //Functions to split up alignment around gaps in the anchors that are too large.
@@ -1338,8 +1091,6 @@ PairwiseAlignmentParameters *pairwiseAlignmentBandingParameters_construct() {
     p->traceBackDiagonals = 40;
     p->diagonalExpansion = 20;
     p->constraintDiagonalTrim = 14;
-    p->anchorMatrixBiggerThanThis = 500 * 500;
-    p->repeatMaskMatrixBiggerThanThis = 500 * 500;
     p->splitMatrixBiggerThanThis = (int64_t) 3000 * 3000;
     p->alignAmbiguityCharacters = 0;
     p->gapGamma = 0.5;
@@ -1377,12 +1128,6 @@ PairwiseAlignmentParameters *pairwiseAlignmentParameters_jsonParse(char *buf, si
 		}
 		else if (strcmp(keyString, "constraintDiagonalTrim") == 0) {
 			params->constraintDiagonalTrim = stJson_parseInt(js, tokens, ++tokenIndex);
-		}
-		else if (strcmp(keyString, "anchorMatrixBiggerThanThis") == 0) {
-			params->anchorMatrixBiggerThanThis = stJson_parseInt(js, tokens, ++tokenIndex);
-		}
-		else if (strcmp(keyString, "repeatMaskMatrixBiggerThanThis") == 0) {
-			params->repeatMaskMatrixBiggerThanThis = stJson_parseInt(js, tokens, ++tokenIndex);
 		}
 		else if (strcmp(keyString, "splitMatrixBiggerThanThis") == 0) {
 			params->splitMatrixBiggerThanThis = stJson_parseInt(js, tokens, ++tokenIndex);
@@ -1480,7 +1225,7 @@ void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, const char *sX, con
 
 stList *getAlignedPairs(StateMachine *sM, const char *sX, const char *sY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd,
         bool alignmentHasRaggedRightEnd) {
-    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(sX, sY, strlen(sX), strlen(sY), p);
+    stList *anchorPairs = stList_construct();
     stList *alignedPairs = getAlignedPairsUsingAnchors(sM, sX, sY, anchorPairs, p, alignmentHasRaggedLeftEnd,
             alignmentHasRaggedRightEnd);
     stList_destruct(anchorPairs);
@@ -1490,7 +1235,7 @@ stList *getAlignedPairs(StateMachine *sM, const char *sX, const char *sY, Pairwi
 void getAlignedPairsWithIndels(StateMachine *sM, const char *sX, const char *sY, PairwiseAlignmentParameters *p,
 							   stList **alignedPairs, stList **gapXPairs, stList **gapYPairs,
 							   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-	stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(sX, sY, strlen(sX), strlen(sY), p);
+	stList *anchorPairs = stList_construct();
 	getAlignedPairsWithIndelsUsingAnchors(sM, sX, sY, anchorPairs, p,
 			alignedPairs, gapXPairs, gapYPairs,
 			alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd);
@@ -1506,7 +1251,7 @@ void getExpectationsUsingAnchors(StateMachine *sM, Hmm *hmmExpectations, const c
 
 void getExpectations(StateMachine *sM, Hmm *hmmExpectations, const char *sX, const char *sY, PairwiseAlignmentParameters *p,
         bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-    stList *anchorPairs = getBlastPairsForPairwiseAlignmentParameters(sX, sY, strlen(sX), strlen(sY), p);
+    stList *anchorPairs = stList_construct();
     getExpectationsUsingAnchors(sM, hmmExpectations, sX, sY, anchorPairs, p, alignmentHasRaggedLeftEnd,
             alignmentHasRaggedRightEnd);
     stList_destruct(anchorPairs);
@@ -1792,7 +1537,13 @@ stList *getShiftedMEAAlignment(char *seqX, char *seqY, stList *anchorAlignment, 
 /*
  * This is a pairwise expected accuracy alignment function that uses the multiple alignment code, kind of odd.
  */
-stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY, float matchGamma) {
-	return stList_construct();
+stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY,
+		PairwiseAlignmentParameters *p) {
+	stList *phonyGapPairs = stList_construct();
+	double alignmentScore;
+	stList *filteredAlignedPairs = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, phonyGapPairs, phonyGapPairs,
+																				strlen(seqX), strlen(seqY), &alignmentScore, p);
+	stList_destruct(phonyGapPairs);
+	return filteredAlignedPairs;
 }
 
