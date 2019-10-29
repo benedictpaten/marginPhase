@@ -48,8 +48,8 @@ void usage() {
     fprintf(stderr, "\nHELEN feature generation options:\n");
     fprintf(stderr, "    -f --produceFeatures     : output features for HELEN.\n");
     fprintf(stderr, "    -F --featureType         : output features of chunks for HELEN.  Valid types:\n");
-    fprintf(stderr, "                                 channelRleWeight: [default] run lengths split into per-nucleotide channels\n");
-    fprintf(stderr, "                                 splitRleWeight:   run lengths split into chunks\n");
+    fprintf(stderr, "                                 splitRleWeight:   [default] run lengths split into chunks\n");
+    fprintf(stderr, "                                 channelRleWeight: run lengths split into per-nucleotide channels\n");
     fprintf(stderr, "                                 simpleWeight:     weighted likelihood from POA nodes (non-RLE)\n");
     fprintf(stderr, "    -L --splitRleWeightMaxRL : max run length (for 'splitRleWeight' and 'channelRleWeight' types) \n");
     fprintf(stderr, "                                 [splitRleWeight default = %d, channelRleWeight default = %d]\n",
@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
             trueReferenceBam = stString_copy(optarg);
             break;
         case 'f':
-            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_CHANNEL_RLE_WEIGHT;
+            if (helenFeatureType == HFEAT_NONE) helenFeatureType = HFEAT_SPLIT_RLE_WEIGHT;
             break;
         case 'L':
             splitWeightMaxRunLength = atoi(optarg);

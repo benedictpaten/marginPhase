@@ -31,7 +31,7 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 10000,
+		  "chunkSize" : 1000,
 
 		  "chunkBoundary" : 50,
 
