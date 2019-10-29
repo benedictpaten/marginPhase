@@ -10,7 +10,7 @@ project(marginPhase LANGUAGES C)
 
 # configure a header file to pass some of the CMake settings
 set (POLISH_VERSION_MAJOR 1)
-set (POLISH_VERSION_MINOR 1)
+set (POLISH_VERSION_MINOR 2)
 execute_process(
         COMMAND git log -1 --format=%h
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
