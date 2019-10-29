@@ -153,7 +153,7 @@ void test_symbol(CuTest *testCase) {
 }
 
 void test_cell(CuTest *testCase) {
-    StateMachine *sM = stateMachine5_construct(fiveState);
+    StateMachine *sM = stateMachine3_construct(threeState);
     double lowerF[sM->stateNumber], middleF[sM->stateNumber], upperF[sM->stateNumber], currentF[sM->stateNumber];
     double lowerB[sM->stateNumber], middleB[sM->stateNumber], upperB[sM->stateNumber], currentB[sM->stateNumber];
     for (int64_t i = 0; i < sM->stateNumber; i++) {
@@ -182,7 +182,7 @@ void test_cell(CuTest *testCase) {
 }
 
 void test_dpDiagonal(CuTest *testCase) {
-    StateMachine *sM = stateMachine5_construct(fiveState);
+    StateMachine *sM = stateMachine3_construct(threeState);
     Diagonal diagonal = diagonal_construct(3, -1, 1);
     DpDiagonal *dpDiagonal = dpDiagonal_construct(diagonal, sM->stateNumber);
 
@@ -249,7 +249,7 @@ void test_diagonalDPCalculations(CuTest *testCase) {
     int64_t lY = strlen(sY);
     SymbolString sX2 = symbolString_construct(sX, lX);
     SymbolString sY2 = symbolString_construct(sY, lY);
-    StateMachine *sM = stateMachine5_construct(fiveState);
+    StateMachine *sM = stateMachine3_construct(threeState);
     DpMatrix *dpMatrixForward = dpMatrix_construct(lX + lY, sM->stateNumber);
     DpMatrix *dpMatrixBackward = dpMatrix_construct(lX + lY, sM->stateNumber);
     stList *anchorPairs = stList_construct();
@@ -417,7 +417,7 @@ void test_getAlignedPairsWithBanding(CuTest *testCase) {
         p->minDiagsBetweenTraceBack = p->traceBackDiagonals + st_randomInt(2, 10);
         p->diagonalExpansion = st_randomInt(0, 10) * 2;
         p->dynamicAnchorExpansion = st_random() > 0.5;
-        StateMachine *sM = stateMachine5_construct(fiveState);
+        StateMachine *sM = stateMachine3_construct(threeState);
         stList *anchorPairs = getRandomAnchorPairs(lX, lY);
 
         stList *alignedPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
@@ -550,7 +550,7 @@ void test_getAlignedPairs(CuTest *testCase) {
 
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
-        StateMachine *sM = stateMachine5_construct(fiveState);
+        StateMachine *sM = stateMachine3_construct(threeState);
 
         stList *alignedPairs = getAlignedPairs(sM, sX, sY, p, 0, 0);
 
@@ -579,7 +579,7 @@ void test_getAlignedPairsWithRaggedEnds(CuTest *testCase) {
 
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
-        StateMachine *sM = stateMachine5_construct(fiveState);
+        StateMachine *sM = stateMachine3_construct(threeState);
         stList *alignedPairs = getAlignedPairs(sM, sX, sY, p, 1, 1);
         alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(alignedPairs, sX, sY, p);
 
@@ -964,14 +964,6 @@ void test_hmm(CuTest *testCase, StateMachineType stateMachineType) {
     hmm_destruct(hmm);
 }
 
-void test_hmm_5State(CuTest *testCase) {
-    test_hmm(testCase, fiveState);
-}
-
-void test_hmm_5StateAsymmetric(CuTest *testCase) {
-    test_hmm(testCase, fiveStateAsymmetric);
-}
-
 void test_hmm_3State(CuTest *testCase) {
     test_hmm(testCase, threeState);
 }
@@ -1034,10 +1026,6 @@ void test_em(CuTest *testCase, StateMachineType stateMachineType) {
     }
 }
 
-void test_em_5State(CuTest *testCase) {
-    test_em(testCase, fiveState);
-}
-
 void test_em_3StateAsymmetric(CuTest *testCase) {
     test_em(testCase, threeStateAsymmetric);
 }
@@ -1095,13 +1083,10 @@ CuSuite* pairwiseAlignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_getAlignedPairs);
     SUITE_ADD_TEST(suite, test_getAlignedPairsWithRaggedEnds);
     SUITE_ADD_TEST(suite, test_getAlignedPairsWithIndels);
-    SUITE_ADD_TEST(suite, test_hmm_5State);
-    SUITE_ADD_TEST(suite, test_hmm_5StateAsymmetric);
     SUITE_ADD_TEST(suite, test_hmm_3State);
     SUITE_ADD_TEST(suite, test_hmm_3StateAsymmetric);
     SUITE_ADD_TEST(suite, test_em_3State);
     SUITE_ADD_TEST(suite, test_em_3StateAsymmetric);
-    SUITE_ADD_TEST(suite, test_em_5State);
     SUITE_ADD_TEST(suite, test_leftShiftAlignment);
     SUITE_ADD_TEST(suite, test_computeForwardProbability);
 

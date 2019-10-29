@@ -26,8 +26,6 @@ typedef enum {
  */
 
 typedef enum {
-    fiveState=0,
-    fiveStateAsymmetric=1,
     threeState=2,
     threeStateAsymmetric=3
 } StateMachineType;
@@ -93,8 +91,6 @@ Hmm *hmm_jsonParse(char *buf, size_t r);
 void hmm_normalise(Hmm *hmm);
 
 StateMachine *hmm_getStateMachine(Hmm *hmm);
-
-StateMachine *stateMachine5_construct(StateMachineType type);
 
 StateMachine *stateMachine3_construct(StateMachineType type); //the type is to specify symmetric/asymmetric
 
