@@ -200,7 +200,7 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 	char *js;
 	int64_t tokenNumber = stJson_setupParser(buf, r, &tokens, &js);
 
-	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty();
+	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty(alphabet_constructNucleotide());
 
 	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
 		jsmntok_t key = tokens[tokenIndex];
@@ -216,7 +216,8 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 			st_errAbort("ERROR: Unrecognised strand in repeat sub matrix json: %s, strand:%c\n", keyString, keyString[30]);
 		}
 		bool strand = keyString[30] == 'F';
-		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, symbol_convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
+		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix,
+				repeatSubMatrix->alphabet->convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
 	}
 
 	// Cleanup

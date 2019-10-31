@@ -71,13 +71,13 @@ double poaDelete_getWeight(PoaDelete *delete) {
 	//return isBalanced(delete->weightForwardStrand, delete->weightReverseStrand, 100) ? delete->weightForwardStrand + delete->weightReverseStrand : 0.0;
 }
 
-PoaNode *poaNode_construct(char base) {
+PoaNode *poaNode_construct(Poa *poa, char base) {
 	PoaNode *poaNode = st_calloc(1, sizeof(PoaNode));
 
 	poaNode->inserts = stList_construct3(0, (void(*)(void *)) poaInsert_destruct);
 	poaNode->deletes = stList_construct3(0, (void(*)(void *)) poaDelete_destruct);
 	poaNode->base = base;
-	poaNode->baseWeights = st_calloc(SYMBOL_NUMBER, sizeof(double)); // Encoded using Symbol enum
+	poaNode->baseWeights = st_calloc(poa->alphabet->alphabetSize, sizeof(double)); // Encoded using Symbol enum
 	poaNode->observations = stList_construct3(0, (void (*)(void *))poaBaseObservation_destruct);
 
 	return poaNode;
@@ -98,9 +98,9 @@ Poa *poa_getReferenceGraph(char *reference) {
 	poa->refString = stString_copy(reference);
 
 	int64_t refLength = strlen(reference);
-	stList_append(poa->nodes, poaNode_construct('N')); // Add empty prefix node
+	stList_append(poa->nodes, poaNode_construct(poa, 'N')); // Add empty prefix node
 	for(int64_t i=0; i<refLength; i++) {
-		stList_append(poa->nodes, poaNode_construct(toupper(reference[i])));
+		stList_append(poa->nodes, poaNode_construct(poa, toupper(reference[i])));
 	}
 
 	return poa;
@@ -306,7 +306,7 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
 		PoaNode *node = stList_get(poa->nodes, stIntTuple_get(match, 1)+1); // Get corresponding POA node
 
 		// Add base weight to POA node
-		node->baseWeights[symbol_convertCharToSymbol(read[stIntTuple_get(match, 2)])] += stIntTuple_get(match, 0);
+		node->baseWeights[poa->alphabet->convertCharToSymbol(read[stIntTuple_get(match, 2)])] += stIntTuple_get(match, 0);
 
 		// PoaObservation
 		stList_append(node->observations, poaBaseObservation_construct(readNo, stIntTuple_get(match, 2), stIntTuple_get(match, 0)));
@@ -682,7 +682,7 @@ double poa_getReferenceNodeTotalMatchWeight(Poa *poa) {
 	double weight = 0.0;
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
-		weight += node->baseWeights[symbol_convertCharToSymbol(node->base)];
+		weight += node->baseWeights[poa->alphabet->convertCharToSymbol(node->base)];
 	}
 	return weight;
 }
@@ -691,8 +691,8 @@ double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa) {
 	double weight = 0.0;
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
-		int64_t refSymbol = symbol_convertCharToSymbol(node->base);
-		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+		int64_t refSymbol = poa->alphabet->convertCharToSymbol(node->base);
+		for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
 			if(j != refSymbol) {
 				weight += node->baseWeights[j];
 			}
@@ -729,7 +729,7 @@ double poa_getTotalErrorWeight(Poa *poa)  {
 	return poa_getDeleteTotalWeight(poa) + poa_getInsertTotalWeight(poa) + poa_getReferenceNodeTotalDisagreementWeight(poa);
 }
 
-double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
+double *poaNode_getStrandSpecificBaseWeights(Poa *poa, PoaNode *node, stList *bamChunkReads,
 		double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight) {
 	/*
 	 * Calculate strand specific base weights.
@@ -737,13 +737,13 @@ double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkRead
 	*totalWeight = 0.0;
 	*totalPositiveWeight = 0.0;
 	*totalNegativeWeight = 0.0;
-	double *baseWeights = st_calloc(SYMBOL_NUMBER*2, sizeof(double));
+	double *baseWeights = st_calloc(poa->alphabet->alphabetSize*2, sizeof(double));
 	for(int64_t i=0; i<stList_length(node->observations); i++) {
 		PoaBaseObservation *baseObs = stList_get(node->observations, i);
 		*totalWeight += baseObs->weight;
 		BamChunkRead *read = stList_get(bamChunkReads, baseObs->readNo);
 		char base = read->rleRead->rleString[baseObs->offset];
-		baseWeights[symbol_convertCharToSymbol(base) * 2 + (read->forwardStrand ? 1 : 0)] += baseObs->weight;
+		baseWeights[poa->alphabet->convertCharToSymbol(base) * 2 + (read->forwardStrand ? 1 : 0)] += baseObs->weight;
 		if(read->forwardStrand) {
 			*totalPositiveWeight += baseObs->weight;
 		}
@@ -783,8 +783,8 @@ void poa_printTSV(Poa *poa, FILE *fH,
 		float indelSignificanceThreshold, float strandBalanceRatio) {
 
 	fprintf(fH, "REF_INDEX\tREF_BASE\tTOTAL_WEIGHT\tPOS_STRAND_WEIGHT\tNEG_STRAND_WEIGHT");
-	for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-		char c = symbol_convertSymbolToChar(j);
+	for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
+		char c = poa->alphabet->convertSymbolToChar(j);
 		fprintf(fH, "\tNORM_BASE_%c_WEIGHT\tNORM_POS_STRAND_BASE_%c_WEIGHT\tNORM_NEG_BASE_%c_WEIGHT", c, c, c);
 	}
 
@@ -798,14 +798,14 @@ void poa_printTSV(Poa *poa, FILE *fH,
 
 		// Calculate strand specific base weights
 		double totalWeight, totalPositiveWeight, totalNegativeWeight;
-		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+		double *baseWeights = poaNode_getStrandSpecificBaseWeights(poa, node, bamChunkReads,
 				&totalWeight, &totalPositiveWeight, &totalNegativeWeight);
 		
 		fprintf(fH, "%" PRIi64 "\t%c\t%f\t%f\t%f", i, node->base,
 				totalWeight/PAIR_ALIGNMENT_PROB_1, totalPositiveWeight/PAIR_ALIGNMENT_PROB_1,
 				totalNegativeWeight/PAIR_ALIGNMENT_PROB_1);
 
-		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+		for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
 			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
 			double negativeStrandBaseWeight = baseWeights[j*2 + 0];
 			double totalBaseWeight = positiveStrandBaseWeight + negativeStrandBaseWeight;
@@ -855,19 +855,19 @@ void poa_print(Poa *poa, FILE *fH,
 
 		// Calculate strand specific base weights
 		double totalWeight, totalPositiveWeight, totalNegativeWeight;
-		double *baseWeights = poaNode_getStrandSpecificBaseWeights(node, bamChunkReads,
+		double *baseWeights = poaNode_getStrandSpecificBaseWeights(poa, node, bamChunkReads,
 											&totalWeight, &totalPositiveWeight, &totalNegativeWeight);
 
 		fprintf(fH, "%" PRIi64 "\t%c total-weight:%f\ttotal-pos-weight:%f\ttotal-neg-weight:%f", i, node->base,
 				totalWeight/PAIR_ALIGNMENT_PROB_1, totalPositiveWeight/PAIR_ALIGNMENT_PROB_1, totalNegativeWeight/PAIR_ALIGNMENT_PROB_1);
 
-		for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+		for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
 			double positiveStrandBaseWeight = baseWeights[j*2 + 1];
 			double negativeStrandBaseWeight = baseWeights[j*2 + 0];
 			double totalBaseWeight = positiveStrandBaseWeight + negativeStrandBaseWeight;
 
 			if(totalBaseWeight/totalWeight > 0.25) {
-				fprintf(fH, "\t%c:%f (%f) +str:%f, -str:%f,", symbol_convertSymbolToChar(j),
+				fprintf(fH, "\t%c:%f (%f) +str:%f, -str:%f,", poa->alphabet->convertSymbolToChar(j),
 						(float)node->baseWeights[j]/PAIR_ALIGNMENT_PROB_1, node->baseWeights[j]/totalWeight,
 						positiveStrandBaseWeight/totalPositiveWeight, negativeStrandBaseWeight/totalNegativeWeight);
 			}
@@ -981,7 +981,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 				// Set the initiation probability according to the average base weight
 				for(int64_t j=1; j<stList_length(poa->nodes); j++) {
 					PoaNode *nNode = stList_get(poa->nodes, j);
-					for(int64_t k=0; k<SYMBOL_NUMBER_NO_N; k++) {
+					for(int64_t k=0; k<poa->alphabet->alphabetSize; k++) {
 						matchTransitionWeight += nNode->baseWeights[k];
 					}
 				}
@@ -990,7 +990,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 			}
 		}
 		else {
-			for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+			for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
 				matchTransitionWeight += node->baseWeights[j];
 			}
 			matchTransitionWeight -= totalIndelWeight;
@@ -1044,11 +1044,11 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 			// Picks a base, giving a discount to the reference base,
 			// because the alignment is biased towards it
 
-			int64_t refBaseIndex = symbol_convertCharToSymbol(node->base);
+			int64_t refBaseIndex = poa->alphabet->convertCharToSymbol(node->base);
 
 			double maxBaseWeight = 0;
 			int64_t maxBaseIndex = -1;
-			for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
+			for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
 				if(j != refBaseIndex && node->baseWeights[j] > maxBaseWeight) {
 					maxBaseWeight = node->baseWeights[j];
 					maxBaseIndex = j;
@@ -1061,7 +1061,7 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 				maxBaseIndex = refBaseIndex;
 			}
 
-			stList_append(consensusStrings, stString_print("%c", symbol_convertSymbolToChar(maxBaseIndex)));
+			stList_append(consensusStrings, stString_print("%c", poa->alphabet->convertSymbolToChar(maxBaseIndex)));
 
 			// Update poa to consensus map
 			(*poaToConsensusMap)[i-1] = runningConsensusLength++;
@@ -1349,17 +1349,17 @@ char *rleString_expand(RleString *rleString) {
 	return s;
 }
 
-static int64_t expandRLEConsensus2(PoaNode *node, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
+static int64_t expandRLEConsensus2(Poa *poa, PoaNode *node, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
 	// Pick the base
 	double maxBaseWeight = node->baseWeights[0];
 	int64_t maxBaseIndex = 0;
-	for(int64_t j=1; j<SYMBOL_NUMBER; j++) {
+	for(int64_t j=1; j<poa->alphabet->alphabetSize; j++) {
 		if(node->baseWeights[j] > maxBaseWeight) {
 			maxBaseWeight = node->baseWeights[j];
 			maxBaseIndex = j;
 		}
 	}
-	char base = symbol_convertSymbolToChar(maxBaseIndex);
+	char base = poa->alphabet->convertSymbolToChar(maxBaseIndex);
 
 	// Repeat count
 	double logProbability;
@@ -1414,7 +1414,7 @@ RleString *expandRLEConsensus(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *
 	rleString->rleString = stString_copy(poa->refString);
 	rleString->repeatCounts = st_calloc(rleString->length, sizeof(uint64_t));
 	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
-		uint64_t repeatCount = expandRLEConsensus2(stList_get(poa->nodes, i), bamChunkReads, repeatSubMatrix);
+		uint64_t repeatCount = expandRLEConsensus2(poa, stList_get(poa->nodes, i), bamChunkReads, repeatSubMatrix);
 		rleString->repeatCounts[i-1] = repeatCount;
 	}
 	// Calc non-rle length
@@ -1450,7 +1450,7 @@ stList *runLengthEncodeAlignment(stList *alignment,
  */
 
 double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
-    if (base == SYMBOL_NUMBER_NO_N) {
+    if (base >= repeatSubMatrix->alphabet->alphabetSize) {
         st_errAbort("[repeatSubMatrix_setLogProb] base 'Nn' not supported for repeat estimation\n");
     }
     int64_t idx = (2 * base + (strand ? 1 : 0)) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
@@ -1467,14 +1467,16 @@ double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base,
 }
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix) {
+	alphabet_destruct(repeatSubMatrix->alphabet);
 	free(repeatSubMatrix->logProbabilities);
 	free(repeatSubMatrix);
 }
 
-RepeatSubMatrix *repeatSubMatrix_constructEmpty() {
+RepeatSubMatrix *repeatSubMatrix_constructEmpty(Alphabet *alphabet) {
 	RepeatSubMatrix *repeatSubMatrix = st_calloc(1, sizeof(RepeatSubMatrix));
+	repeatSubMatrix->alphabet = alphabet;
 	repeatSubMatrix->maximumRepeatLength = 51;
-	repeatSubMatrix->maxEntry = 2 * SYMBOL_NUMBER_NO_N * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
+	repeatSubMatrix->maxEntry = 2 * repeatSubMatrix->alphabet->alphabetSize * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
 	repeatSubMatrix->logProbabilities = st_calloc(repeatSubMatrix->maxEntry, sizeof(double));
 	return repeatSubMatrix;
 }

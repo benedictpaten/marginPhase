@@ -10,16 +10,56 @@
 
 #include "sonLib.h"
 
-#define SYMBOL_NUMBER 5
-#define SYMBOL_NUMBER_NO_N 4
+typedef struct _alphabet Alphabet;
+typedef struct _emissions Emissions;
+typedef uint16_t Symbol;
+typedef struct _hmm Hmm;
+
+typedef struct _symbolString {
+	Alphabet *alphabet;
+	Symbol *sequence;
+	int64_t length;
+} SymbolString;
+
+SymbolString symbolString_construct(const char *sequence, int64_t length, Alphabet *a);
+
+void symbolString_destruct(SymbolString s);
+
+/*
+ * Alphabet object
+ */
+
+struct _alphabet {
+	uint64_t alphabetSize;
+
+	Symbol (*convertCharToSymbol)(char i);
+
+	char (*convertSymbolToChar)(Symbol i);
+};
+
+Alphabet *alphabet_constructNucleotide();
+
+void alphabet_destruct(Alphabet *alphabet);
+
+/*
+ * Emissions object
+ */
 
 typedef enum {
-    a=0,
-    c=1,
-    g=2,
-    t=3,
-    n=4
-} Symbol;
+    nucleotideEmissions=0,
+	nucleotideEmissionsSymmetric=1,
+	runlengthNucleotideEmissions=2
+} EmissionType;
+
+struct _emissions {
+	Alphabet *alphabet;
+
+    double (*emission)(Emissions *e, Symbol *cX, Symbol *cY);
+
+    double (*gapEmissionX)(Emissions *e, Symbol *cX);
+
+    double (*gapEmissionY)(Emissions *e, Symbol *cY);
+};
 
 /*
  * The statemachine object for computing pairwise alignments with.
@@ -38,6 +78,7 @@ struct _stateMachine {
     int64_t matchState;
     int64_t gapXState; // This is the "primary" gap x state (e.g. short)
     int64_t gapYState;  // This is the "primary" gap y state (e.g. short)
+    Emissions *emissions; // Used to calculate emissions probabilities
 
     double (*startStateProb)(StateMachine *sM, int64_t state);
 
@@ -52,25 +93,37 @@ struct _stateMachine {
             void(*doTransition)(double *, double *, int64_t, int64_t, double, double, void *), void *extraArgs);
 };
 
+StateMachine *hmm_getStateMachine(Hmm *hmm);
+
+StateMachine *stateMachine3_construct(StateMachineType type, Emissions *e); //the type is to specify symmetric/asymmetric
+
+void stateMachine_destruct(StateMachine *stateMachine);
+
 /*
  * Hmm for loading/unloading HMMs and storing expectations.
  */
 
-typedef struct _hmm {
+struct _hmm {
     StateMachineType type;
+    EmissionType emissionsType;
+    int64_t emissionNoPerState;
     double *transitions;
     double *emissions;
     double likelihood;
     int64_t stateNumber;
-} Hmm;
+};
 
-Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type);
+void hmm_destruct(Hmm *hmm);
+
+Hmm *hmm_jsonParse(char *buf, size_t r);
+
+Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, EmissionType emissionType);
+
+// Stuff related to EM - legacy right now
+
+void hmm_normalise(Hmm *hmm);
 
 void hmm_randomise(Hmm *hmm); //Creates normalised HMM with parameters set to small random values.
-
-void hmm_destruct(Hmm *hmmExpectations);
-
-void hmm_write(Hmm *hmmExpectations, FILE *fileHandle);
 
 void hmm_addToTransitionExpectation(Hmm *hmmExpectations, int64_t from, int64_t to, double p);
 
@@ -78,22 +131,10 @@ double hmm_getTransition(Hmm *hmmExpectations, int64_t from, int64_t to);
 
 void hmm_setTransition(Hmm *hmm, int64_t from, int64_t to, double p);
 
-void hmm_addToEmissionsExpectation(Hmm *hmmExpectations, int64_t state, Symbol x, Symbol y, double p);
+void hmm_addToEmissionsExpectation(Hmm *hmmExpectations, int64_t state, int64_t emissionNo, double p);
 
-double hmm_getEmissionsExpectation(Hmm *hmm, int64_t state, Symbol x, Symbol y);
+double hmm_getEmissionsExpectation(Hmm *hmm, int64_t state, int64_t emissionNo);
 
-void hmm_setEmissionsExpectation(Hmm *hmm, int64_t state, Symbol x, Symbol y, double p);
-
-Hmm *hmm_loadFromFile(const char *fileName);
-
-Hmm *hmm_jsonParse(char *buf, size_t r);
-
-void hmm_normalise(Hmm *hmm);
-
-StateMachine *hmm_getStateMachine(Hmm *hmm);
-
-StateMachine *stateMachine3_construct(StateMachineType type); //the type is to specify symmetric/asymmetric
-
-void stateMachine_destruct(StateMachine *stateMachine);
+void hmm_setEmissionsExpectation(Hmm *hmm, int64_t state, int64_t emissionNo, double p);
 
 #endif /* STATEMACHINE_H_ */

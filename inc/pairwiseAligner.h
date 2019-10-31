@@ -164,21 +164,6 @@ Diagonal bandIterator_getPrevious(BandIterator *bandIterator);
 
 double logAdd(double x, double y);
 
-//Symbols
-
-Symbol symbol_convertCharToSymbol(char i);
-
-char symbol_convertSymbolToChar(Symbol i);
-
-Symbol *symbol_convertStringToSymbols(const char *s, int64_t sL);
-
-typedef struct _symbolString {
-        Symbol *sequence;
-                int64_t length;
-} SymbolString;
-
-SymbolString symbolString_construct(const char *sequence, int64_t length);
-
 //Cell calculations
 
 void cell_calculateForward(StateMachine *sM, double *current, double *lower, double *middle, double *upper, Symbol cX, Symbol cY, void *extraArgs);

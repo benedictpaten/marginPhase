@@ -134,12 +134,12 @@ char *getExistingSubstring(Poa *poa, int64_t from, int64_t to) {
 	return s;
 }
 
-double getTotalWeight(PoaNode *node) {
+double getTotalWeight(Poa *poa, PoaNode *node) {
 	/*
 	 * Returns the total base weight of reads aligned to the given node.
 	 */
 	double totalWeight = 0.0;
-	for(int64_t i=0; i<SYMBOL_NUMBER; i++) {
+	for(int64_t i=0; i<poa->alphabet->alphabetSize; i++) {
 		totalWeight += node->baseWeights[i];
 	}
 	return totalWeight;
@@ -149,19 +149,19 @@ double getAvgCoverage(Poa *poa, int64_t from, int64_t to) {
 	// Calculate average coverage, which is used to determine candidate variants
 	double avgCoverage = 0.0;
 	for(int64_t j=from; j<to; j++) {
-		avgCoverage += getTotalWeight(stList_get(poa->nodes, j));
+		avgCoverage += getTotalWeight(poa, stList_get(poa->nodes, j));
 	}
 	return avgCoverage / (to-from);
 }
 
-char getNextCandidateBase(PoaNode *node, int64_t *i, double candidateWeight) {
+char getNextCandidateBase(Poa *poa, PoaNode *node, int64_t *i, double candidateWeight) {
 	/*
 	 * Iterates through candidate bases for a reference position returning those with sufficient weight.
 	 * Always returns the reference base
 	 */
-	double totalWeight = getTotalWeight(node);
-	while(*i<SYMBOL_NUMBER) {
-		char base = symbol_convertSymbolToChar(*i);
+	double totalWeight = getTotalWeight(poa, node);
+	while(*i<poa->alphabet->alphabetSize) {
+		char base = poa->alphabet->convertSymbolToChar(*i);
 		if(node->baseWeights[(*i)++] > candidateWeight || toupper(node->base) == base) {
 			return base;
 		}
@@ -169,14 +169,14 @@ char getNextCandidateBase(PoaNode *node, int64_t *i, double candidateWeight) {
 	return '-';
 }
 
-bool hasCandidateSubstitution(PoaNode *node, double candidateWeight) {
+bool hasCandidateSubstitution(Poa *poa, PoaNode *node, double candidateWeight) {
 	/*
 	 * Returns non-zero if the node has a candidate base that is different to the
 	 * current base.
 	 */
 	int64_t i=0;
 	char base;
-	while((base = getNextCandidateBase(node, &i, candidateWeight)) != '-') {
+	while((base = getNextCandidateBase(poa, node, &i, candidateWeight)) != '-') {
 		if(base != node->base) {
 			return 1;
 		}
@@ -267,7 +267,7 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 
 	int64_t i=0;
 	char base;
-	while((base = getNextCandidateBase(node, &i, candidateWeight)) != '-') { // Enumerate the possible bases at the reference node.
+	while((base = getNextCandidateBase(poa, node, &i, candidateWeight)) != '-') { // Enumerate the possible bases at the reference node.
 
 		// Create the consensus substrings with no inserts or deletes starting at this node
 		for(int64_t j=0; j<stList_length(suffixes); j++) {
@@ -512,9 +512,9 @@ double *getCandidateWeights(Poa *poa, PolishParams *params) {
 
 	double totalWeight = 0;
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-		totalWeight += getTotalWeight(stList_get(poa->nodes, i));
+		totalWeight += getTotalWeight(poa, stList_get(poa->nodes, i));
 		if(i >= window) {
-			totalWeight -= getTotalWeight(stList_get(poa->nodes, i-window));
+			totalWeight -= getTotalWeight(poa, stList_get(poa->nodes, i-window));
 			candidateWeights[i-window/2] = totalWeight/window * params->candidateVariantWeight;
 		}
 	}
@@ -541,7 +541,7 @@ bool *getCandidateVariantOverlapPositions(Poa *poa, double *candidateWeights) {
 		PoaNode *node = stList_get(poa->nodes, i);
 
 		// Mark as variant if has a candidate substitution or an insert starts at this position
-		if(hasCandidateSubstitution(node, candidateWeights[i]) || hasCandidateInsert(node, candidateWeights[i])) {
+		if(hasCandidateSubstitution(poa, node, candidateWeights[i]) || hasCandidateInsert(node, candidateWeights[i])) {
 			candidateVariantPositions[i] = 1;
 		}
 

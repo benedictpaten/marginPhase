@@ -77,6 +77,7 @@ typedef struct _params Params;
  */
 
 struct _params {
+	Alphabet *alphabet;
 	PolishParams *polishParams;
 	stRPHmmParameters *phaseParams;
 };
@@ -495,6 +496,7 @@ void polishParams_destruct(PolishParams *polishParams);
  */
 
 struct _Poa {
+	Alphabet *alphabet;
 	char *refString; // The reference string
 	stList *nodes;
 };
@@ -643,7 +645,7 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishPar
 
 void poa_destruct(Poa *poa);
 
-double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
+double *poaNode_getStrandSpecificBaseWeights(Poa *poa, PoaNode *node, stList *bamChunkReads,
 											 double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight);
 
 /*
@@ -705,6 +707,7 @@ uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities);
 // Data structure for storing log-probabilities of observing
 // one repeat count given another
 struct _repeatSubMatrix {
+	Alphabet *alphabet;
 	double *logProbabilities;
 	int64_t maximumRepeatLength;
 	int64_t maxEntry;
@@ -714,7 +717,7 @@ struct _repeatSubMatrix {
  * Reads the repeat count matrix from a given input file.
  */
 
-RepeatSubMatrix *repeatSubMatrix_constructEmpty();
+RepeatSubMatrix *repeatSubMatrix_constructEmpty(Alphabet *alphabet);
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix);
 

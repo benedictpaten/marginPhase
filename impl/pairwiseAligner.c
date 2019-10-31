@@ -308,69 +308,6 @@ double logAdd(double x, double y) {
 
 ///////////////////////////////////
 ///////////////////////////////////
-//Symbols
-//
-//Emissions probs/functions to convert to symbol sequence
-///////////////////////////////////
-///////////////////////////////////
-
-Symbol symbol_convertCharToSymbol(char i) {
-    switch (i) {
-    case 'A':
-    case 'a':
-        return a;
-    case 'C':
-    case 'c':
-        return c;
-    case 'G':
-    case 'g':
-        return g;
-    case 'T':
-    case 't':
-        return t;
-    default:
-        return n;
-    }
-}
-
-char symbol_convertSymbolToChar(Symbol i) {
-    switch (i) {
-		case a:
-			return 'A';
-		case c:
-			return 'C';
-		case g:
-			return 'G';
-		case t:
-			return 'T';
-		default:
-			return 'N';
-    }
-}
-
-Symbol *symbol_convertStringToSymbols(const char *s, int64_t sL) {
-    assert(sL >= 0);
-    assert(strlen(s) == sL);
-    Symbol *cS = st_malloc(sL * sizeof(Symbol));
-    for (int64_t i = 0; i < sL; i++) {
-        cS[i] = symbol_convertCharToSymbol(s[i]);
-    }
-    return cS;
-}
-
-SymbolString symbolString_construct(const char *sequence, int64_t length) {
-    SymbolString symbolString;
-    symbolString.sequence = symbol_convertStringToSymbols(sequence, length);
-    symbolString.length = length;
-    return symbolString;
-}
-
-void symbolString_destruct(SymbolString s) {
-    free(s.sequence);
-}
-
-///////////////////////////////////
-///////////////////////////////////
 //Cell calculations
 //
 //A cell is a set of states associated with an x, y coordinate.
@@ -426,9 +363,11 @@ static inline void updateExpectations(double *fromCells, double *toCells, int64_
     double p = exp(fromCells[from] + toCells[to] + (eP + tP) - totalProbability);
     //Add in the expectation of the transition
     hmm_addToTransitionExpectation(hmmExpectations, from, to, p);
-    if(x < SYMBOL_NUMBER_NO_N && y < SYMBOL_NUMBER_NO_N) { //Ignore gaps involving Ns.
-        hmm_addToEmissionsExpectation(hmmExpectations, to, x, y, p);
-    }
+
+    // Training of emissions has been temporarily removed
+    //if(x < SYMBOL_NUMBER_NO_N && y < SYMBOL_NUMBER_NO_N) { //Ignore gaps involving Ns.
+    //    hmm_addToEmissionsExpectation(hmmExpectations, to, x, y, p);
+    //}
 }
 
 static void cell_calculateExpectation(StateMachine *sM, double *current, double *lower, double *middle, double *upper, Symbol cX, Symbol cY,
@@ -597,13 +536,13 @@ void dpMatrix_deleteDiagonal(DpMatrix *dpMatrix, int64_t xay) {
 static Symbol getXCharacter(const SymbolString sX, int64_t xay, int64_t xmy) {
     int64_t x = diagonal_getXCoordinate(xay, xmy);
     assert(x >= 0 && x <= sX.length);
-    return x > 0 ? sX.sequence[x - 1] : n;
+    return x > 0 ? sX.sequence[x - 1] : 4; //n; TODO: this is a hack, must fix
 }
 
 static Symbol getYCharacter(const SymbolString sY, int64_t xay, int64_t xmy) {
     int64_t y = diagonal_getYCoordinate(xay, xmy);
     assert(y >= 0 && y <= sY.length);
-    return y > 0 ? sY.sequence[y - 1] : n;
+    return y > 0 ? sY.sequence[y - 1] : 4; //n; TODO: this is a hack, must fix
 }
 
 static void diagonalCalculation(StateMachine *sM, DpDiagonal *dpDiagonal, DpDiagonal *dpDiagonalM1, DpDiagonal *dpDiagonalM2,
@@ -936,8 +875,8 @@ double getForwardProbWithBanding(StateMachine *sM, stList *anchorPairs, const Sy
 double computeForwardProbability(char *seqX, char *seqY, stList *anchorPairs, PairwiseAlignmentParameters *p, StateMachine *sM,
 								 bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
 
-	SymbolString sX = symbolString_construct(seqX, strlen(seqX));
-	SymbolString sY = symbolString_construct(seqY, strlen(seqY));
+	SymbolString sX = symbolString_construct(seqX, strlen(seqX), sM->emissions->alphabet);
+	SymbolString sY = symbolString_construct(seqY, strlen(seqY), sM->emissions->alphabet);
 
 	double totalLogProb = getForwardProbWithBanding(sM, anchorPairs, sX, sY,
 							  	  	  	  	  	  	p, alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd);
@@ -1041,8 +980,8 @@ void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM
         //Sub sequences
         char *sX2 = stString_getSubString(sX, x1, x2 - x1);
         char *sY2 = stString_getSubString(sY, y1, y2 - y1);
-        SymbolString sX3 = symbolString_construct(sX2, x2 - x1);
-        SymbolString sY3 = symbolString_construct(sY2, y2 - y1);
+        SymbolString sX3 = symbolString_construct(sX2, x2 - x1, sM->emissions->alphabet);
+        SymbolString sY3 = symbolString_construct(sY2, y2 - y1, sM->emissions->alphabet);
 
         //List of anchor pairs
         stList *subListOfAnchorPoints = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
