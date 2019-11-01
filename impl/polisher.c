@@ -91,9 +91,10 @@ void poaNode_destruct(PoaNode *poaNode) {
 	free(poaNode);
 }
 
-Poa *poa_getReferenceGraph(char *reference) {
+Poa *poa_getReferenceGraph(char *reference, Alphabet *alphabet) {
 	Poa *poa = st_calloc(1, sizeof(Poa));
 
+	poa->alphabet = alphabet;
 	poa->nodes = stList_construct3(0, (void (*)(void *))poaNode_destruct);
 	poa->refString = stString_copy(reference);
 
@@ -623,7 +624,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 
 Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, char *reference, PolishParams *polishParams) {
 	// Build a reference graph with zero weights
-	Poa *poa = poa_getReferenceGraph(reference);
+	Poa *poa = poa_getReferenceGraph(reference, polishParams->alphabet);
 	int64_t refLength = stList_length(poa->nodes)-1;
 
 	// For each read
@@ -1137,70 +1138,6 @@ char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *pp) 
 
 	return consensusString;
 }
-
-/*
-Poa *poa_realignIterative(stList *reads, stList *alignments, char *reference, PolishParams *polishParams) {
-	Poa *poa = poa_realign(reads, alignments, reference, polishParams);
-
-	time_t startTime = time(NULL);
-
-	double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
-
-	st_logInfo("Starting realignment with score: %f\n", score/PAIR_ALIGNMENT_PROB_1);
-
-	int64_t i=0;
-	while(1) {
-		int64_t *poaToConsensusMap;
-		reference = poa_getConsensus(poa, &poaToConsensusMap, polishParams);
-
-		// Stop in case consensus string is same as old reference (i.e. greedy convergence)
-		if(stString_eq(reference, poa->refString)) {
-			free(reference);
-			free(poaToConsensusMap);
-			break;
-		}
-
-
-		// Get anchor alignments
-		stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), polishParams);
-
-		time_t realignStartTime = time(NULL);
-
-		// Generated updated poa
-		Poa *poa2 = poa_realign(reads, anchorAlignments, reference, polishParams);
-
-		// Cleanup
-		free(reference);
-		free(poaToConsensusMap);
-		stList_destruct(anchorAlignments);
-
-		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
-
-		st_logInfo("Took %f seconds to do round %" PRIi64 " of realignment, Have score: %f (%f score diff)\n",
-					(float)(time(NULL) - realignStartTime), i+1, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
-
-		// Stop if score decreases (greedy stopping)
-		if(score2 <= score) {
-			poa_destruct(poa2);
-			break;
-		}
-
-		poa_destruct(poa);
-		poa = poa2;
-		score = score2;
-
-		//if(++i >= 2) {
-		//	break;
-		//}
-		i++;
-	}
-
-	st_logInfo("Took %f seconds to realign iterative through %" PRIi64 " iterations, got final score : %f\n",
-			(float)(time(NULL) - startTime), i+1, score/PAIR_ALIGNMENT_PROB_1);
-
-	return poa;
-}
-*/
 
 char *addInsert(char *string, char *insertString, int64_t editStart) {
 	int64_t insertLength = strlen(insertString);

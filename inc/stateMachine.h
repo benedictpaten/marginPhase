@@ -54,12 +54,18 @@ typedef enum {
 struct _emissions {
 	Alphabet *alphabet;
 
-    double (*emission)(Emissions *e, Symbol *cX, Symbol *cY);
+    double (*emission)(Emissions *e, Symbol cX, Symbol cY);
 
-    double (*gapEmissionX)(Emissions *e, Symbol *cX);
+    double (*gapEmissionX)(Emissions *e, Symbol cX);
 
-    double (*gapEmissionY)(Emissions *e, Symbol *cY);
+    double (*gapEmissionY)(Emissions *e, Symbol cY);
 };
+
+Emissions *nucleotideEmissions_construct();
+
+Emissions *emissions_construct(Hmm *hmm);
+
+void emissions_destruct(Emissions *e);
 
 /*
  * The statemachine object for computing pairwise alignments with.
@@ -96,6 +102,8 @@ struct _stateMachine {
 StateMachine *hmm_getStateMachine(Hmm *hmm);
 
 StateMachine *stateMachine3_construct(StateMachineType type, Emissions *e); //the type is to specify symmetric/asymmetric
+
+StateMachine *stateMachine3_constructNucleotide(StateMachineType type); // Construct with default nucleotide emission model
 
 void stateMachine_destruct(StateMachine *stateMachine);
 

@@ -77,7 +77,6 @@ typedef struct _params Params;
  */
 
 struct _params {
-	Alphabet *alphabet;
 	PolishParams *polishParams;
 	stRPHmmParameters *phaseParams;
 };
@@ -483,6 +482,7 @@ struct _polishParams {
 	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
 	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
 	bool useOnlySubstitutionsForPhasing; // In creating phasing use sites where alleles only differ by substitutions
+	Alphabet *alphabet; // The alphabet object
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -539,7 +539,7 @@ double poaDelete_getWeight(PoaDelete *delete);
  * Creates a POA representing the given reference sequence, with one node for each reference base and a
  * prefix 'N' base to represent place to add inserts/deletes that precede the first position of the reference.
  */
-Poa *poa_getReferenceGraph(char *reference);
+Poa *poa_getReferenceGraph(char *reference, Alphabet *alphabet);
 
 /*
  * Adds to given POA the matches, inserts and deletes from the alignment of the given read to the reference.

@@ -57,7 +57,7 @@ static char convertNucleotideSymbolToChar(Symbol i) {
 
 Alphabet *alphabet_constructNucleotide() {
 	Alphabet *a = st_calloc(1, sizeof(Alphabet));
-	a->alphabetSize = 4;
+	a->alphabetSize = 5; // Fifth character represents "N"
 	a->convertCharToSymbol = convertNucleotideCharToSymbol;
 	a->convertSymbolToChar = convertNucleotideSymbolToChar;
 
@@ -344,7 +344,7 @@ static void setNucleotideEmissionGapProbsToDefaults(double *emissionGapProbs) {
     memcpy(emissionGapProbs, i, sizeof(double)*4);
 }
 
-NucleotideEmissions *nucleotideEmissions_construct() {
+Emissions *nucleotideEmissions_construct() {
 	NucleotideEmissions *ne = st_calloc(1, sizeof(NucleotideEmissions));
 
 	ne->e.alphabet = alphabet_constructNucleotide();
@@ -356,19 +356,24 @@ NucleotideEmissions *nucleotideEmissions_construct() {
 	setNucleotideEmissionGapProbsToDefaults(ne->EMISSION_GAP_X_PROBS);
 	setNucleotideEmissionGapProbsToDefaults(ne->EMISSION_GAP_Y_PROBS);
 
-	return ne;
+	return (Emissions *)ne;
 }
 
 Emissions *emissions_construct(Hmm *hmm) {
 	if (hmm->emissionsType == nucleotideEmissions) {
-		NucleotideEmissions *ne = nucleotideEmissions_construct();
+		NucleotideEmissions *ne = (NucleotideEmissions *)nucleotideEmissions_construct();
 		hmm_emissions_loadProbs(hmm, ne->EMISSION_MATCH_PROBS, 0, 16);
 		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_X_PROBS, 1, 4);
 		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_Y_PROBS, 2, 4);
-		return ne;
+		return (Emissions *)ne;
 	}
 	st_errAbort("Load from hmm: unrecognized emission type");
 	return NULL;
+}
+
+void emissions_destruct(Emissions *e) {
+	alphabet_destruct(e->alphabet);
+	free(e);
 }
 
 ///////////////////////////////////
@@ -446,8 +451,6 @@ static double stateMachine3_raggedEndStateProb(StateMachine *sM, int64_t state) 
 static void stateMachine3_cellCalculate(StateMachine *sM, double *current, double *lower, double *middle, double *upper,
         Symbol cX, Symbol cY, void (*doTransition)(double *, double *, int64_t, int64_t, double, double, void *),
         void *extraArgs) {
-    symbol_check(cX);
-    symbol_check(cY);
     StateMachine3 *sM3 = (StateMachine3 *) sM;
     if (lower != NULL) {
         double eP = sM->emissions->gapEmissionX(sM->emissions, cX);
@@ -496,6 +499,10 @@ StateMachine *stateMachine3_construct(StateMachineType type, Emissions *e) {
     sM3->model.emissions = e;
 
     return (StateMachine *) sM3;
+}
+
+StateMachine *stateMachine3_constructNucleotide(StateMachineType type) {
+	return stateMachine3_construct(type, nucleotideEmissions_construct());
 }
 
 static void stateMachine3_loadAsymmetric(StateMachine3 *sM3, Hmm *hmm) {
@@ -558,5 +565,6 @@ StateMachine *hmm_getStateMachine(Hmm *hmm) {
 }
 
 void stateMachine_destruct(StateMachine *stateMachine) {
+	emissions_destruct(stateMachine->emissions);
     free(stateMachine);
 }

@@ -200,8 +200,9 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 	char *js;
 	int64_t tokenNumber = stJson_setupParser(buf, r, &tokens, &js);
 
+	// TODO: Generalize to not be nucleotide only
 	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty(alphabet_constructNucleotide());
-
+	// TODO: ADD support for Ns
 	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
 		jsmntok_t key = tokens[tokenIndex];
 		char *keyString = stJson_token_tostr(js, &key);
@@ -394,6 +395,16 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 		else if (strcmp(keyString, "useOnlySubstitutionsForPhasing") == 0) {
 		            params->useOnlySubstitutionsForPhasing = stJson_parseBool(js, tokens, ++tokenIndex);
 		}
+		else if (strcmp(keyString, "alphabet") == 0) {
+			jsmntok_t tok = tokens[++tokenIndex];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			if(stString_eq(tokStr, "nucleotide")) {
+				params->alphabet = alphabet_constructNucleotide();
+			}
+			else {
+				st_errAbort("ERROR: Unrecognised alphabet type json: %s\n", tokStr);
+			}
+		}
         else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
@@ -431,6 +442,7 @@ void polishParams_destruct(PolishParams *params) {
 	stateMachine_destruct(params->sM);
 	hmm_destruct(params->hmm);
 	pairwiseAlignmentBandingParameters_destruct(params->p);
+	alphabet_destruct(params->alphabet);
 	free(params);
 }
 

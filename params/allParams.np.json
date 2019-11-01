@@ -1,5 +1,8 @@
 {
 	"polish": {
+	
+		  "alphabet" : "nucleotide",
+	
 		  "hmm" : {
 		  		"type" : 2, 
 		  		

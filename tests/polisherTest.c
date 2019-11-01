@@ -17,7 +17,8 @@ static void test_poa_getReferenceGraph(CuTest *testCase) {
 
 	char *reference = "GATTACA";
 
-	Poa *poa = poa_getReferenceGraph(reference);
+	Alphabet *alphabet = alphabet_constructNucleotide();
+	Poa *poa = poa_getReferenceGraph(reference, alphabet);
 
 	CuAssertTrue(testCase, stList_length(poa->nodes) == strlen(reference) + 1);
 	for(int64_t i=0; i<strlen(reference); i++) {
@@ -124,7 +125,7 @@ static void checkNode(CuTest *testCase, Poa *poa, int64_t nodeIndex, char base, 
 	CuAssertTrue(testCase, node->base == base);
 
 	// Matches
-	for(int64_t i=0; i<SYMBOL_NUMBER; i++) {
+	for(int64_t i=0; i<poa->alphabet->alphabetSize; i++) {
 		CuAssertDblEquals(testCase, node->baseWeights[i], baseWeights[i], 0.0);
 	}
 
@@ -142,7 +143,8 @@ static void test_poa_augment_example(CuTest *testCase) {
 
 	char *reference = "GATTACA";
 
-	Poa *poa = poa_getReferenceGraph(reference);
+	Alphabet *alphabet = alphabet_constructNucleotide();
+	Poa *poa = poa_getReferenceGraph(reference, alphabet);
 
 	char *read = "GATACGGT";
 
@@ -232,7 +234,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	
 	// This test used the default state machine in cPecan
 	stateMachine_destruct(polishParams->sM);
-	polishParams->sM = stateMachine3_construct(threeState);
+	polishParams->sM = stateMachine3_constructNucleotide(threeState);
 
 	/*
 	// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
@@ -378,7 +380,7 @@ static void test_poa_realign(CuTest *testCase) {
 		// Generate the read alignments and check the matches
 		// Currently don't check the insert and deletes
 
-		double *baseWeights = st_calloc(SYMBOL_NUMBER*strlen(reference), sizeof(double));
+		double *baseWeights = st_calloc(poa->alphabet->alphabetSize*strlen(reference), sizeof(double));
 
 		for(int64_t i=0; i<readNumber; i++) {
 			char *read = ((BamChunkRead*)stList_get(reads, i))->rleRead->rleString;
@@ -390,7 +392,7 @@ static void test_poa_realign(CuTest *testCase) {
 			// Collate matches
 			for(int64_t j=0; j<stList_length(matches); j++) {
 				stIntTuple *match = stList_get(matches, j);
-				baseWeights[stIntTuple_get(match, 1) * SYMBOL_NUMBER + symbol_convertCharToSymbol(read[stIntTuple_get(match, 2)])] += stIntTuple_get(match, 0);
+				baseWeights[stIntTuple_get(match, 1) * poa->alphabet->alphabetSize + poa->alphabet->convertCharToSymbol(read[stIntTuple_get(match, 2)])] += stIntTuple_get(match, 0);
 			}
 
 			// Cleanup
@@ -402,8 +404,8 @@ static void test_poa_realign(CuTest *testCase) {
 		// Check match weights tally
 		for(int64_t i=0; i<strlen(reference); i++) {
 			PoaNode *poaNode = stList_get(poa->nodes, i+1);
-			for(int64_t j=0; j<SYMBOL_NUMBER; j++) {
-				CuAssertDblEquals(testCase, poaNode->baseWeights[j], baseWeights[i*SYMBOL_NUMBER + j], 0.0001);
+			for(int64_t j=0; j<poa->alphabet->alphabetSize; j++) {
+				CuAssertDblEquals(testCase, poaNode->baseWeights[j], baseWeights[i*poa->alphabet->alphabetSize + j], 0.0001);
 			}
 		}
 
