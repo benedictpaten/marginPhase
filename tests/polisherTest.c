@@ -294,7 +294,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	// A after ref 0
 	checkInserts(testCase, poa, 1, 1, (const char *[]){ "A" }, (const double[]){ 0.038656 }, 1);
 	// T after ref 1
-	checkInserts(testCase, poa, 2, 1, (const char *[]){ "T" }, (const double[]){ 0.874535 }, 1);
+	checkInserts(testCase, poa, 2, 1, (const char *[]){ "T" }, (const double[]){ 0.91074 }, 1);
 	// T after ref 2
 	checkInserts(testCase, poa, 3, 1, (const char *[]){ "A" }, (const double[]){ 0.038831 }, 1);
 	// A after ref 3
@@ -336,13 +336,13 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	checkDeletes(testCase, poa, 10, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
 
 	// L1 after ref 2
-	checkDeletes(testCase, poa, 3, 1, (const int64_t[]){ 1 }, (const double[]){ 0.021429 }, 1);
+	checkDeletes(testCase, poa, 3, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
 	// L1 after ref 3
-	checkDeletes(testCase, poa, 4, 1, (const int64_t[]){ 1 }, (const double[]){ 0.011958 }, 1);
+	checkDeletes(testCase, poa, 4, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
 	// L2 after ref 5
-	checkDeletes(testCase, poa, 6, 1, (const int64_t[]){ 2 }, (const double[]){ 0.078383 }, 1);
+	checkDeletes(testCase, poa, 6, 1, (const int64_t[]){ 2 }, (const double[]){ 0.077178 }, 1);
 	// L2 after ref 7
-	checkDeletes(testCase, poa, 8, 1, (const int64_t[]){ 2 }, (const double[]){ 0.87598 }, 1);
+	checkDeletes(testCase, poa, 8, 2, (const int64_t[]){ 1, 2 }, (const double[]){ 0.935157, 0.885846 }, 1);
 
 	params_destruct(params);
 	poa_destruct(poa);
@@ -387,7 +387,7 @@ static void test_poa_realign(CuTest *testCase) {
 
 			// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 			stList *matches = NULL, *inserts = NULL, *deletes = NULL;
-			getAlignedPairsWithIndels(polishParams->sM, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
+			getAlignedPairsWithIndels(polishParams->sMConditional, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 
 			// Collate matches
 			for(int64_t j=0; j<stList_length(matches); j++) {
@@ -502,6 +502,7 @@ static void test_poa_realign_example(CuTest *testCase, RleString *rleTrueReferen
 	// Set parameters
 	params->polishParams->maxPoaConsensusIterations = 100;
 	params->polishParams->minPoaConsensusIterations = 0;
+	params->polishParams->referenceBasePenalty = 0.6;
 	params->polishParams->maxRealignmentPolishIterations = 3;
 	params->polishParams->minRealignmentPolishIterations = 3;
 
@@ -582,11 +583,11 @@ static void test_poa_realign_example(CuTest *testCase, RleString *rleTrueReferen
 
 	if (st_getLogLevel() >= debug && !stString_eq(rleTrueReference->rleString, poaRefined->refString)) {
 		//poa_print(poa, stderr, 5);
-		poa_print(poaRefined, stderr, reads, 2, 0);
+		//poa_print(poaRefined, stderr, reads, 2, 0);
 
-		poa_printTSV(poa, stderr, reads, 2, 0);
+		//poa_printTSV(poa, stderr, reads, 2, 0);
 
-		poa_printRepeatCounts(poa, stderr, reads);
+		///poa_printRepeatCounts(poa, stderr, reads);
 	}
 
 	// Cleanup

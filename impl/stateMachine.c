@@ -119,6 +119,7 @@ Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, Emissio
         hmm->transitions[i] = pseudoExpectation;
     }
 
+    hmm->emissionsType = emissionType;
     switch (emissionType) {
     case nucleotideEmissions:
     	hmm->emissionNoPerState = 16;
@@ -299,7 +300,7 @@ typedef struct _nucleotideEmissions {
 
 static inline double getNucleotideGapProb(const double *emissionGapProbs, Symbol i) {
     if(i >= 4) {
-        return -1.386294361; // ambiguous character
+        return -1.386294361; // log(0.25) ambiguous character
     }
     return emissionGapProbs[i];
 }
@@ -323,9 +324,9 @@ static void setNucleotideEmissionMatchProbsToDefaults(double *emissionMatchProbs
     /*
      * This is used to set the emissions to reasonable values.
      */
-    const double EMISSION_MATCH=-2.1149196655034745; //log(0.12064298095701059);
-    const double EMISSION_TRANSVERSION=-4.5691014376830479; //log(0.010367271172731285);
-    const double EMISSION_TRANSITION=-3.9833860032220842; //log(0.01862247669752685);
+    const double EMISSION_MATCH=-1.8917761142; //ln(0.1508037262);
+    const double EMISSION_TRANSVERSION=-4.3459578861; //ln(0.01295908897);
+    const double EMISSION_TRANSITION=-3.760242452; //ln(0.02327809587);
     //Symmetric matrix of transition probabilities.
     const double i[16] = {
             EMISSION_MATCH, EMISSION_TRANSVERSION, EMISSION_TRANSITION, EMISSION_TRANSVERSION,
@@ -339,7 +340,7 @@ static void setNucleotideEmissionGapProbsToDefaults(double *emissionGapProbs) {
     /*
      * This is used to set the emissions to reasonable values.
      */
-    const double EMISSION_GAP = -1.6094379124341003; //log(0.2)
+    const double EMISSION_GAP = -1.3862943611; //log(0.25)
     const double i[4] = { EMISSION_GAP, EMISSION_GAP, EMISSION_GAP, EMISSION_GAP };
     memcpy(emissionGapProbs, i, sizeof(double)*4);
 }
@@ -396,15 +397,15 @@ typedef struct _StateMachine3 StateMachine3;
 struct _StateMachine3 {
     //3 state state machine, allowing for symmetry in x and y.
     StateMachine model;
-    double TRANSITION_MATCH_CONTINUE; //0.9703833696510062f
-    double TRANSITION_MATCH_FROM_GAP_X; //1.0 - gapExtend - gapSwitch = 0.280026392297485
-    double TRANSITION_MATCH_FROM_GAP_Y; //1.0 - gapExtend - gapSwitch = 0.280026392297485
-    double TRANSITION_GAP_OPEN_X; //0.0129868352330243
-    double TRANSITION_GAP_OPEN_Y; //0.0129868352330243
-    double TRANSITION_GAP_EXTEND_X; //0.7126062401851738f;
-    double TRANSITION_GAP_EXTEND_Y; //0.7126062401851738f;
-    double TRANSITION_GAP_SWITCH_TO_X; //0.0073673675173412815f;
-    double TRANSITION_GAP_SWITCH_TO_Y; //0.0073673675173412815f;
+    double TRANSITION_MATCH_CONTINUE;
+    double TRANSITION_MATCH_FROM_GAP_X;
+    double TRANSITION_MATCH_FROM_GAP_Y;
+    double TRANSITION_GAP_OPEN_X;
+    double TRANSITION_GAP_OPEN_Y;
+    double TRANSITION_GAP_EXTEND_X;
+    double TRANSITION_GAP_EXTEND_Y;
+    double TRANSITION_GAP_SWITCH_TO_X;
+    double TRANSITION_GAP_SWITCH_TO_Y;
 };
 
 static double stateMachine3_startStateProb(StateMachine *sM, int64_t state) {
@@ -434,7 +435,7 @@ static double stateMachine3_endStateProb(StateMachine *sM, int64_t state) {
 }
 
 static double stateMachine3_raggedEndStateProb(StateMachine *sM, int64_t state) {
-    //End state is like to going to a match
+    //End state is like to going to a gap
     StateMachine3 *sM3 = (StateMachine3 *) sM;
     state_check(sM, state);
     switch (state) {

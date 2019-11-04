@@ -606,7 +606,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	reference[endRefPosition] = '\0';
 
 	// Get alignment
-	getAlignedPairsWithIndelsUsingAnchors(polishParams->sM, &(reference[firstRefPosition]), read,
+	getAlignedPairsWithIndelsUsingAnchors(polishParams->sMConditional, &(reference[firstRefPosition]), read,
 										  anchorPairs, polishParams->p, matches, deletes, inserts, 0, 0);
 	//TODO are the delete and insert lists inverted here?
 
@@ -635,7 +635,7 @@ Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, char *referenc
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
 		if(anchorAlignments == NULL) {
-			getAlignedPairsWithIndels(polishParams->sM, reference, chunkRead->rleRead->rleString, polishParams->p,
+			getAlignedPairsWithIndels(polishParams->sMConditional, reference, chunkRead->rleRead->rleString, polishParams->p,
                                       &matches, &deletes, &inserts, 0, 0);
 		}
 		else {
@@ -1495,6 +1495,12 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 
 	// Run the alignment
 	stList *alignedPairs = getAlignedPairs(polishParams->sM, &(prefixString[i]), suffixString, polishParams->p, 1, 1);
+
+	/*for(uint64_t i=0; i<stList_length(alignedPairs); i++) {
+		stIntTuple *aPair = stList_get(alignedPairs, i);
+		st_uglyf("Boo %i %i %i\n", (int)stIntTuple_get(aPair, 0), (int)stIntTuple_get(aPair, 1),
+				(int)stIntTuple_get(aPair, 2));
+	}*/
 
 	if(stList_length(alignedPairs) == 0 && st_getLogLevel() >= info) {
 		st_logInfo("Failed to find good overlap. Suffix-string: %s\n", &(prefixString[i]));

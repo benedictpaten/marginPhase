@@ -459,8 +459,10 @@ struct _polishParams {
 	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
 	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
 	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
-	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
+	Hmm *hmm; // Pair hmm used for aligning sequences symmetrically.
 	StateMachine *sM; // Statemachine derived from the hmm
+	Hmm *hmmConditional; // Non-symmetrical HMM for calculating prob of one sequence given the other, used for aligning reads to the reference.
+	StateMachine *sMConditional; // Statemachine derived from the conditional hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
 	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
 	// chunking configuration
@@ -474,7 +476,6 @@ struct _polishParams {
 	uint64_t minPoaConsensusIterations; // Minimum number of poa_consensus / realignment iterations
 	uint64_t maxRealignmentPolishIterations; // Maximum number of poa_polish iterations
 	uint64_t minRealignmentPolishIterations; // Minimum number of poa_polish iterations
-
 	uint64_t minReadsToCallConsensus; // Min reads to choose between consensus sequences for a region
 	uint64_t filterReadsWhileHaveAtLeastThisCoverage; // Only filter read substrings if we have at least this coverage
 	// at a locus

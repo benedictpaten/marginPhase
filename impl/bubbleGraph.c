@@ -69,7 +69,7 @@ char *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, i
 		char *consensusSubstring = stString_copy(b->alleles[consensusPath[i]]);
 		stList_append(consensusSubstrings, consensusSubstring);
 
-		if(st_getLogLevel() >= debug && 0) {
+		if(st_getLogLevel() >= debug) {
 			if(strcmp(consensusSubstring, b->refAllele) != 0) {
 				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64
 							", \nexisting string:\t%s\nnew string:\t\t%s\n", k, k+b->length,
@@ -342,23 +342,6 @@ BamChunkReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t star
 void readSubstring_destruct(BamChunkReadSubstring *rs) {
 	free(rs->readSubstring);
 	free(rs);
-}
-
-double computeLogLikelihoodOfConsensusString(char *reference, stList *nucleotides, PolishParams *params) {
-	/*
-	 * Computes the log probability of the reference given the reads.
-	 */
-	double logProb = LOG_ONE;
-	stList *anchorPairs = stList_construct(); // Currently empty
-	for(int64_t i=0; i<stList_length(nucleotides); i++) {
-		BamChunkReadSubstring *rs = stList_get(nucleotides, i);
-		logProb += computeForwardProbability(reference, rs->readSubstring, anchorPairs, params->p, params->sM, 0, 0);
-	}
-
-	// Cleanup
-	stList_destruct(anchorPairs);
-
-	return logProb;
 }
 
 int poaBaseObservation_cmp(const void *a, const void *b) {
@@ -690,7 +673,7 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 					for(int64_t j=0; j<b->alleleNo; j++) {
 						for(int64_t k=0; k<b->readNo; k++) {
 							b->alleleReadSupports[j*b->readNo + k] =
-					computeForwardProbability(b->alleles[j], b->reads[k]->readSubstring, anchorPairs, params->p, params->sM, 0, 0);
+					computeForwardProbability(b->alleles[j], b->reads[k]->readSubstring, anchorPairs, params->p, params->sMConditional, 0, 0);
 						}
 					}
 					stList_destruct(anchorPairs);

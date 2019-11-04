@@ -253,7 +253,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
-	bool gotHmm = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0;
+	bool gotHmm = 0, gotHmmConditional = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0;
     for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
         jsmntok_t key = tokens[tokenIndex];
         char *keyString = stJson_token_tostr(js, &key);
@@ -300,6 +300,14 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotHmm = 1;
         }
+        else if (strcmp(keyString, "hmmConditional") == 0) {
+			jsmntok_t tok = tokens[tokenIndex + 1];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			params->hmmConditional = hmm_jsonParse(tokStr, strlen(tokStr));
+			params->sMConditional = hmm_getStateMachine(params->hmmConditional);
+			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex + 1);
+			gotHmmConditional = 1;
+		}
         else if (strcmp(keyString, "pairwiseAlignmentParameters") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
         	char *tokStr = stJson_token_tostr(js, &tok);
@@ -415,6 +423,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     }
     if(!gotHmm) {
     	st_errAbort("ERROR: Did not find HMM specified in json polish params\n");
+    }
+    if(!gotHmmConditional) {
+    	st_errAbort("ERROR: Did not find HMM conditional specified in json polish params\n");
     }
     if(!gotPairwiseAlignmentParameters) {
     	st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
