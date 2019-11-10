@@ -235,6 +235,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	// This test used the default state machine in cPecan
 	stateMachine_destruct(polishParams->sM);
 	polishParams->sM = stateMachine3_constructNucleotide(threeState);
+	polishParams->sMConditional = stateMachine3_constructNucleotide(threeState);
 
 	/*
 	// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
@@ -294,7 +295,7 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	// A after ref 0
 	checkInserts(testCase, poa, 1, 1, (const char *[]){ "A" }, (const double[]){ 0.038656 }, 1);
 	// T after ref 1
-	checkInserts(testCase, poa, 2, 1, (const char *[]){ "T" }, (const double[]){ 0.91074 }, 1);
+	checkInserts(testCase, poa, 2, 1, (const char *[]){ "T" }, (const double[]){ 0.877394 }, 1);
 	// T after ref 2
 	checkInserts(testCase, poa, 3, 1, (const char *[]){ "A" }, (const double[]){ 0.038831 }, 1);
 	// A after ref 3
@@ -336,13 +337,13 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	checkDeletes(testCase, poa, 10, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
 
 	// L1 after ref 2
-	checkDeletes(testCase, poa, 3, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
+	checkDeletes(testCase, poa, 3, 1, (const int64_t[]){ 1 }, (const double[]){ 0.018628 }, 1);
 	// L1 after ref 3
-	checkDeletes(testCase, poa, 4, 0, (const int64_t[]){ 1 }, (const double[]){ 1 }, 1);
+	checkDeletes(testCase, poa, 4, 1, (const int64_t[]){ 1 }, (const double[]){ 0.010122 }, 1);
 	// L2 after ref 5
-	checkDeletes(testCase, poa, 6, 1, (const int64_t[]){ 2 }, (const double[]){ 0.077178 }, 1);
+	checkDeletes(testCase, poa, 6, 1, (const int64_t[]){ 2 }, (const double[]){ 0.080018 }, 1);
 	// L2 after ref 7
-	checkDeletes(testCase, poa, 8, 2, (const int64_t[]){ 1, 2 }, (const double[]){ 0.935157, 0.885846 }, 1);
+	checkDeletes(testCase, poa, 8, 1, (const int64_t[]){ 2 }, (const double[]){ 0.879907 }, 1);
 
 	params_destruct(params);
 	poa_destruct(poa);

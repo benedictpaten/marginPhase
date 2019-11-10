@@ -606,7 +606,7 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	reference[endRefPosition] = '\0';
 
 	// Get symbol strings
-	SymbolString sX = symbolString_construct(&(reference[firstRefPosition]), refLength, polishParams->alphabet);
+	SymbolString sX = symbolString_construct(&(reference[firstRefPosition]), strlen(&(reference[firstRefPosition])), polishParams->alphabet);
 	SymbolString sY = symbolString_construct(read, strlen(read), polishParams->alphabet);
 
 	// Get alignment
