@@ -671,10 +671,18 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 					b->alleleReadSupports = st_calloc(b->readNo*b->alleleNo, sizeof(float));
 					stList *anchorPairs = stList_construct(); // Currently empty
 					for(int64_t j=0; j<b->alleleNo; j++) {
+						SymbolString aS = symbolString_construct(b->alleles[j], strlen(b->alleles[j]),
+								params->sMConditional->emissions->alphabet);
 						for(int64_t k=0; k<b->readNo; k++) {
+							SymbolString rS = symbolString_construct(b->reads[k]->readSubstring, strlen(b->reads[k]->readSubstring),
+									params->sMConditional->emissions->alphabet);
+
 							b->alleleReadSupports[j*b->readNo + k] =
-					computeForwardProbability(b->alleles[j], b->reads[k]->readSubstring, anchorPairs, params->p, params->sMConditional, 0, 0);
+					computeForwardProbability(aS, rS, anchorPairs, params->p, params->sMConditional, 0, 0);
+
+							symbolString_destruct(rS);
 						}
+						symbolString_destruct(aS);
 					}
 					stList_destruct(anchorPairs);
 				}
@@ -852,9 +860,15 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 		// alignment of the two alleles, rounded to the nearest integer
 
 		for(uint64_t j=0; j<b->alleleNo; j++) {
-			for(uint64_t k=j; k<b->alleleNo; k++) {
 
-				float f = -computeForwardProbability(b->alleles[j], b->alleles[k], anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
+			SymbolString aS = symbolString_construct(b->alleles[j], strlen(b->alleles[j]),
+					params->polishParams->sM->emissions->alphabet);
+
+			for(uint64_t k=j; k<b->alleleNo; k++) {
+				SymbolString aS2 = symbolString_construct(b->alleles[k], strlen(b->alleles[k]),
+									params->polishParams->sM->emissions->alphabet);
+
+				float f = -computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
 
 				int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
 				l = l > 255 ? 255 : l;
@@ -863,7 +877,10 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 
 				s->substitutionLogProbs[j * b->alleleNo + k] = l;
 				s->substitutionLogProbs[k * b->alleleNo + j] = l;
+
+				symbolString_destruct(aS2);
 			}
+			symbolString_destruct(aS);
 		}
 	}
 

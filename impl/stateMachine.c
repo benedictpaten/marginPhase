@@ -55,11 +55,16 @@ static char convertNucleotideSymbolToChar(Symbol i) {
     }
 }
 
+bool nucleotidesEqual(Symbol x, Symbol y) {
+	return x == y;
+}
+
 Alphabet *alphabet_constructNucleotide() {
 	Alphabet *a = st_calloc(1, sizeof(Alphabet));
 	a->alphabetSize = 5; // Fifth character represents "N"
 	a->convertCharToSymbol = convertNucleotideCharToSymbol;
 	a->convertSymbolToChar = convertNucleotideSymbolToChar;
+	a->symbolsEqual = nucleotidesEqual;
 
 	return a;
 }
@@ -91,6 +96,16 @@ SymbolString symbolString_construct(const char *sequence, int64_t length, Alphab
     symbolString.sequence = symbol_convertStringToSymbols(sequence, length, a);
     symbolString.length = length;
     return symbolString;
+}
+
+SymbolString symbolString_getSubString(SymbolString s, uint64_t start, uint64_t length) {
+	SymbolString s2 = s;
+	s2.sequence = st_calloc(length, sizeof(Symbol));
+	assert(start+length <= s.length); // Check bounds
+	for(int64_t i=0; i<length; i++) {
+		s2.sequence[i] = s.sequence[start+i];
+	}
+	return s2;
 }
 
 void symbolString_destruct(SymbolString s) {
@@ -238,9 +253,9 @@ void hmm_setEmissionsExpectation(Hmm *hmm, int64_t state, int64_t emissionNo, do
     *hmm_getEmissionsExpectation2(hmm, state, emissionNo) = p;
 }
 
-static void hmm_emissions_loadProbs(Hmm *hmm, double *emissionProbs, int64_t state, int64_t emissionNumber) {
+static void hmm_emissions_loadProbs(Hmm *hmm, double *emissionProbs, int64_t state, int64_t start, int64_t emissionNumber) {
     for(int64_t x=0; x<emissionNumber; x++) {
-    	emissionProbs[x] = log(hmm_getEmissionsExpectation(hmm, state, x));
+    	emissionProbs[x] = log(hmm_getEmissionsExpectation(hmm, state, start+x));
     }
 }
 
@@ -360,13 +375,103 @@ Emissions *nucleotideEmissions_construct() {
 	return (Emissions *)ne;
 }
 
+///////////////////////////////////
+///////////////////////////////////
+//RLE Emissions
+///////////////////////////////////
+///////////////////////////////////
+
+static int const RLENE_MAX_REPEAT_LENGTH=50;
+
+typedef struct _rleNucleotideEmissions {
+	NucleotideEmissions ne;
+	double repeatLengthSubstitutionProbs[RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH];
+	double repeatLengthGapXProbs[RLENE_MAX_REPEAT_LENGTH];
+	double repeatLengthGapYProbs[RLENE_MAX_REPEAT_LENGTH];
+} RleNucleotideEmissions;
+
+static Symbol getRepeatLength(Symbol s) {
+	return s >> 3;  // Last 13 bits are length
+}
+
+static Symbol getNucleotide(Symbol s) {
+	return s & 7; // First three bits get nucleotide
+}
+
+static Symbol encodeRleNucleotide(Symbol nucleotide, uint64_t runLength) {
+	assert(nucleotide <= 4);
+	return (runLength << 3) | nucleotide;
+}
+
+static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
+		const double *repeatLengthGapProbs, Symbol i) {
+    return getNucleotideGapProb(nucleotideGapProbs, getNucleotide(i)) + repeatLengthGapProbs[getRepeatLength(i)];
+}
+
+static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
+    return getRLENucleotideGapProb(rlene->repeatLengthGapXProbs, rlene->ne.EMISSION_GAP_X_PROBS, x);
+}
+
+static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
+    return getRLENucleotideGapProb(rlene->repeatLengthGapYProbs, rlene->ne.EMISSION_GAP_Y_PROBS, y);
+}
+
+static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
+    return getNucleotideMatchProb(&(rlene->ne), x, y) +
+    		rlene->repeatLengthSubstitutionProbs[getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + getRepeatLength(y)];
+}
+
+Emissions *rleNucleotideEmissions_construct() {
+	RleNucleotideEmissions *rlene = st_calloc(1, sizeof(RleNucleotideEmissions));
+	NucleotideEmissions *ne = (NucleotideEmissions *)nucleotideEmissions_construct();
+	rlene->ne = *ne;
+	free(ne);
+	rlene->ne.e.emission = (double (*)(Emissions *, Symbol, Symbol)) getRleNucleotideMatchProb;
+	rlene->ne.e.gapEmissionX = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbX;
+	rlene->ne.e.gapEmissionY = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbY;
+
+	// Default to making all probs 1.
+	for(int64_t i=0; i<RLENE_MAX_REPEAT_LENGTH; i++) {
+		rlene->repeatLengthGapXProbs[i] = LOG_ONE;
+		rlene->repeatLengthGapYProbs[i] = LOG_ONE;
+		for(int64_t j=0; j<RLENE_MAX_REPEAT_LENGTH; j++) {
+			rlene->repeatLengthGapXProbs[i*RLENE_MAX_REPEAT_LENGTH+j] = LOG_ONE;
+		}
+	}
+
+	return (Emissions *)rlene;
+}
+
+///////////////////////////////////
+///////////////////////////////////
+//Emissions constructor
+///////////////////////////////////
+///////////////////////////////////
+
 Emissions *emissions_construct(Hmm *hmm) {
 	if (hmm->emissionsType == nucleotideEmissions) {
 		NucleotideEmissions *ne = (NucleotideEmissions *)nucleotideEmissions_construct();
-		hmm_emissions_loadProbs(hmm, ne->EMISSION_MATCH_PROBS, 0, 16);
-		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_X_PROBS, 1, 4);
-		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_Y_PROBS, 2, 4);
+		hmm_emissions_loadProbs(hmm, ne->EMISSION_MATCH_PROBS, 0, 0, 16);
+		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_X_PROBS, 1, 0, 4);
+		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_Y_PROBS, 2, 0, 4);
 		return (Emissions *)ne;
+	}
+	else if(hmm->emissionsType == runlengthNucleotideEmissions) {
+		RleNucleotideEmissions *rlene = (RleNucleotideEmissions *)rleNucleotideEmissions_construct();
+
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_MATCH_PROBS, 0, 0, 16);
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_MATCH_PROBS, 0, 16,
+				RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH);
+
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_X_PROBS, 1, 0, 4);
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_X_PROBS, 1, 4,
+				RLENE_MAX_REPEAT_LENGTH);
+
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_Y_PROBS, 2, 0, 4);
+		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_Y_PROBS, 2, 4,
+				RLENE_MAX_REPEAT_LENGTH);
+
+		return (Emissions *)rlene;
 	}
 	st_errAbort("Load from hmm: unrecognized emission type");
 	return NULL;

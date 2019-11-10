@@ -815,8 +815,11 @@ void getPosteriorProbsWithBanding(StateMachine *sM, stList *anchorPairs, const S
     band_destruct(band);
 }
 
-double getForwardProbWithBanding(StateMachine *sM, stList *anchorPairs, const SymbolString sX, const SymbolString sY,
-        PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
+/*
+ * Computes for the forward log probability of aligning the two sequences
+ */
+double computeForwardProbability(SymbolString sX, SymbolString sY, stList *anchorPairs, PairwiseAlignmentParameters *p, StateMachine *sM,
+								 bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
     //Prerequisites
     assert(p->traceBackDiagonals >= 1);
     assert(p->diagonalExpansion >= 0);
@@ -867,24 +870,6 @@ double getForwardProbWithBanding(StateMachine *sM, stList *anchorPairs, const Sy
     band_destruct(band);
 
     return totalLogProbability;
-}
-
-/*
- * Computes for the forward log probability of aligning the two sequences
- */
-double computeForwardProbability(char *seqX, char *seqY, stList *anchorPairs, PairwiseAlignmentParameters *p, StateMachine *sM,
-								 bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-
-	SymbolString sX = symbolString_construct(seqX, strlen(seqX), sM->emissions->alphabet);
-	SymbolString sY = symbolString_construct(seqY, strlen(seqY), sM->emissions->alphabet);
-
-	double totalLogProb = getForwardProbWithBanding(sM, anchorPairs, sX, sY,
-							  	  	  	  	  	  	p, alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd);
-
-	symbolString_destruct(sX);
-	symbolString_destruct(sY);
-
-	return totalLogProb;
 }
 
 ///////////////////////////////////
@@ -962,12 +947,12 @@ static void convertAlignedPairs(stList *alignedPairs2, int64_t offsetX, int64_t 
     }
 }
 
-void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM, stList *anchorPairs, const char *sX, const char *sY,
-        int64_t lX, int64_t lY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd,
+void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM, stList *anchorPairs, SymbolString sX, SymbolString sY,
+        PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd,
         bool alignmentHasRaggedRightEnd,
         void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, const SymbolString, const SymbolString, double,
                 PairwiseAlignmentParameters *, void *), void (*coordinateCorrectionFn)(), void *extraArgs) {
-    stList *splitPoints = getSplitPoints(anchorPairs, lX, lY, p->splitMatrixBiggerThanThis, alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd);
+    stList *splitPoints = getSplitPoints(anchorPairs, sX.length, sY.length, p->splitMatrixBiggerThanThis, alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd);
     int64_t j = 0;
     //Now to the actual alignments
     for (int64_t i = 0; i < stList_length(splitPoints); i++) {
@@ -978,10 +963,8 @@ void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM
         int64_t y2 = stIntTuple_get(subRegion, 3);
 
         //Sub sequences
-        char *sX2 = stString_getSubString(sX, x1, x2 - x1);
-        char *sY2 = stString_getSubString(sY, y1, y2 - y1);
-        SymbolString sX3 = symbolString_construct(sX2, x2 - x1, sM->emissions->alphabet);
-        SymbolString sY3 = symbolString_construct(sY2, y2 - y1, sM->emissions->alphabet);
+        SymbolString sX3 = symbolString_getSubString(sX, x1, x2 - x1);
+        SymbolString sY3 = symbolString_getSubString(sY, y1, y2 - y1);
 
         //List of anchor pairs
         stList *subListOfAnchorPoints = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
@@ -1008,8 +991,6 @@ void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM
 
         //Clean up
         stList_destruct(subListOfAnchorPoints);
-        free(sX2);
-        free(sY2);
         symbolString_destruct(sX3);
         symbolString_destruct(sY3);
     }
@@ -1112,17 +1093,14 @@ static void pairCoordinateCorrectionFn(int64_t offsetX, int64_t offsetY, void *e
     }
 }
 
-stList *getAlignedPairsUsingAnchors(StateMachine *sM, const char *sX, const char *sY, stList *anchorPairs, PairwiseAlignmentParameters *p,
+stList *getAlignedPairsUsingAnchors(StateMachine *sM, SymbolString sX, SymbolString sY, stList *anchorPairs, PairwiseAlignmentParameters *p,
         bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-    const int64_t lX = strlen(sX);
-    const int64_t lY = strlen(sY);
-
     //This list of pairs to be returned. Not in any order, but points must be unique
     stList *subListOfAlignedPairs = stList_construct();
     stList *alignedPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
     void *extraArgs[2] = { subListOfAlignedPairs, alignedPairs };
 
-    getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, lX, lY, p,
+    getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, p,
             alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd, diagonalCalculationPosteriorMatchProbs,
             alignedPairCoordinateCorrectionFn, extraArgs);
 
@@ -1132,12 +1110,9 @@ stList *getAlignedPairsUsingAnchors(StateMachine *sM, const char *sX, const char
     return alignedPairs;
 }
 
-void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, const char *sX, const char *sY, stList *anchorPairs,
+void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, SymbolString sX, SymbolString sY, stList *anchorPairs,
 										   PairwiseAlignmentParameters *p, stList **alignedPairs, stList **gapXPairs, stList **gapYPairs,
 										   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-	const int64_t lX = strlen(sX);
-	const int64_t lY = strlen(sY);
-
 	stList *subListOfAlignedPairs = stList_construct();
 	*alignedPairs = stList_construct3(0, (void (*)(void *)) stIntTuple_destruct);
 
@@ -1150,7 +1125,7 @@ void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, const char *sX, con
 	void *extraArgs[6] = { subListOfAlignedPairs, *alignedPairs,
 			subListOfGapXPairs, *gapXPairs, subListOfGapYPairs, *gapYPairs };
 
-	getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, lX, lY, p,
+	getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, p,
 			alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd, diagonalCalculationPosteriorProbs,
 			pairCoordinateCorrectionFn, extraArgs);
 
@@ -1162,7 +1137,7 @@ void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, const char *sX, con
 	stList_destruct(subListOfGapYPairs);
 }
 
-stList *getAlignedPairs(StateMachine *sM, const char *sX, const char *sY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd,
+stList *getAlignedPairs(StateMachine *sM, SymbolString sX, SymbolString sY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd,
         bool alignmentHasRaggedRightEnd) {
     stList *anchorPairs = stList_construct();
     stList *alignedPairs = getAlignedPairsUsingAnchors(sM, sX, sY, anchorPairs, p, alignmentHasRaggedLeftEnd,
@@ -1171,7 +1146,7 @@ stList *getAlignedPairs(StateMachine *sM, const char *sX, const char *sY, Pairwi
     return alignedPairs;
 }
 
-void getAlignedPairsWithIndels(StateMachine *sM, const char *sX, const char *sY, PairwiseAlignmentParameters *p,
+void getAlignedPairsWithIndels(StateMachine *sM, SymbolString sX, SymbolString sY, PairwiseAlignmentParameters *p,
 							   stList **alignedPairs, stList **gapXPairs, stList **gapYPairs,
 							   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
 	stList *anchorPairs = stList_construct();
@@ -1181,14 +1156,14 @@ void getAlignedPairsWithIndels(StateMachine *sM, const char *sX, const char *sY,
 	stList_destruct(anchorPairs);
 }
 
-void getExpectationsUsingAnchors(StateMachine *sM, Hmm *hmmExpectations, const char *sX, const char *sY, stList *anchorPairs,
+void getExpectationsUsingAnchors(StateMachine *sM, Hmm *hmmExpectations, SymbolString sX, SymbolString sY, stList *anchorPairs,
         PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
-    getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, strlen(sX), strlen(sY), p,
+    getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(sM, anchorPairs, sX, sY, p,
             alignmentHasRaggedLeftEnd, alignmentHasRaggedRightEnd, diagonalCalculationExpectations, NULL,
             hmmExpectations);
 }
 
-void getExpectations(StateMachine *sM, Hmm *hmmExpectations, const char *sX, const char *sY, PairwiseAlignmentParameters *p,
+void getExpectations(StateMachine *sM, Hmm *hmmExpectations, SymbolString sX, SymbolString sY, PairwiseAlignmentParameters *p,
         bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd) {
     stList *anchorPairs = stList_construct();
     getExpectationsUsingAnchors(sM, hmmExpectations, sX, sY, anchorPairs, p, alignmentHasRaggedLeftEnd,
@@ -1243,22 +1218,22 @@ stList *reweightAlignedPairs2(stList *alignedPairs, int64_t seqLengthX, int64_t 
     return alignedPairs;
 }
 
-int64_t getNumberOfMatchingAlignedPairs(char *subSeqX, char *subSeqY, stList *alignedPairs) {
+int64_t getNumberOfMatchingAlignedPairs(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs) {
     int64_t matches = 0;
     for (int64_t i = 0; i < stList_length(alignedPairs); i++) {
         stIntTuple *aPair = stList_get(alignedPairs, i);
         int64_t x = stIntTuple_get(aPair, 1), y = stIntTuple_get(aPair, 2);
-        matches += toupper(subSeqX[x]) == toupper(subSeqY[y]) && toupper(subSeqX[x]) != 'N';
+        matches += subSeqX.alphabet->symbolsEqual(subSeqX.sequence[x], subSeqY.sequence[y]) ? 1 : 0;
     }
     return matches;
 }
 
-double scoreByIdentity(char *subSeqX, char *subSeqY, int64_t lX, int64_t lY, stList *alignedPairs) {
+double scoreByIdentity(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs) {
     int64_t matches = getNumberOfMatchingAlignedPairs(subSeqX, subSeqY, alignedPairs);
-    return 100.0 * ((lX + lY) == 0 ? 0 : (2.0 * matches) / (lX + lY));
+    return 100.0 * ((subSeqX.length + subSeqY.length) == 0 ? 0 : (2.0 * matches) / (subSeqX.length + subSeqY.length));
 }
 
-double scoreByIdentityIgnoringGaps(char *subSeqX, char *subSeqY, stList *alignedPairs) {
+double scoreByIdentityIgnoringGaps(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs) {
     int64_t matches = getNumberOfMatchingAlignedPairs(subSeqX, subSeqY, alignedPairs);
     return 100.0 * matches / (double) stList_length(alignedPairs);
 }
@@ -1407,17 +1382,16 @@ stList *getMaximalExpectedAccuracyPairwiseAlignment(stList *alignedPairs,
 	return filteredAlignment;
 }
 
-stList *leftShiftAlignment(stList *alignedPairs, char *seqX, char *seqY) {
-	int64_t seqXLength = strlen(seqX), seqYLength = strlen(seqY);
+stList *leftShiftAlignment(stList *alignedPairs, SymbolString seqX, SymbolString seqY) {
 
 	stList *leftShiftedAlignedPairs = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
 
-	int64_t x = seqXLength, y = seqYLength;
+	int64_t x = seqX.length, y = seqY.length;
 	for(int64_t i=stList_length(alignedPairs)-1; i>=0; i--) {
 		stIntTuple *alignedPair = stList_get(alignedPairs, i);
 		int64_t x2 = stIntTuple_get(alignedPair, 1), y2 = stIntTuple_get(alignedPair, 2);
 
-		while((x - x2 > 1 || y - y2 > 1) && toupper(seqX[x-1]) == toupper(seqY[y-1])) { // Insert in seqX or seqY and shift possible
+		while((x - x2 > 1 || y - y2 > 1) && seqX.alphabet->symbolsEqual(seqX.sequence[x-1], seqY.sequence[y-1])) { // Insert in seqX or seqY and shift possible
 			stList_append(leftShiftedAlignedPairs, stIntTuple_construct3(stIntTuple_get(alignedPair, 0), x-1, y-1)); // Hacks the score by borrowing from the current aligned pair being considered
 			x--; y--;
 
@@ -1433,7 +1407,7 @@ stList *leftShiftAlignment(stList *alignedPairs, char *seqX, char *seqY) {
 	}
 
 	// Deal with boundary at beginning of alignment
-	while((x > 0 & y > 0) && toupper(seqX[x-1]) == toupper(seqY[y-1])) {
+	while((x > 0 & y > 0) && seqX.alphabet->symbolsEqual(seqX.sequence[x-1], seqY.sequence[y-1])) {
 		int64_t score = stList_length(alignedPairs) > 0 ? stIntTuple_get(stList_get(alignedPairs, 0), 0) : 1;
 		stList_append(leftShiftedAlignedPairs, stIntTuple_construct3(score, x-1, y-1));
 		x--; y--;
@@ -1448,7 +1422,7 @@ stList *leftShiftAlignment(stList *alignedPairs, char *seqX, char *seqY) {
 /*
  * Convenience function that aligns two sequences return a left-shift MEA alignment
  */
-stList *getShiftedMEAAlignment(char *seqX, char *seqY, stList *anchorAlignment, PairwiseAlignmentParameters *p, StateMachine *sM,
+stList *getShiftedMEAAlignment(SymbolString seqX, SymbolString seqY, stList *anchorAlignment, PairwiseAlignmentParameters *p, StateMachine *sM,
 							   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd, double *alignmentScore) {
 	// Generate the posterior alignment probabilities
 	stList *alignedPairs, *gapXPairs, *gapYPairs;
@@ -1458,7 +1432,7 @@ stList *getShiftedMEAAlignment(char *seqX, char *seqY, stList *anchorAlignment, 
 
 	// Get the MEA alignment
 	stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, gapXPairs, gapYPairs,
-			strlen(seqX), strlen(seqY),
+			seqX.length, seqY.length,
 			alignmentScore, p);
 
 	// Left shift the alignment
@@ -1476,12 +1450,12 @@ stList *getShiftedMEAAlignment(char *seqX, char *seqY, stList *anchorAlignment, 
 /*
  * This is a pairwise expected accuracy alignment function that uses the multiple alignment code, kind of odd.
  */
-stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY,
+stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, SymbolString seqX, SymbolString seqY,
 		PairwiseAlignmentParameters *p) {
 	stList *phonyGapPairs = stList_construct();
 	double alignmentScore;
 	stList *filteredAlignedPairs = getMaximalExpectedAccuracyPairwiseAlignment(alignedPairs, phonyGapPairs, phonyGapPairs,
-																				strlen(seqX), strlen(seqY), &alignmentScore, p);
+																				seqX.length, seqY.length, &alignmentScore, p);
 	stList_destruct(phonyGapPairs);
 	return filteredAlignedPairs;
 }

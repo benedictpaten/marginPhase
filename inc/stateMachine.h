@@ -23,6 +23,8 @@ typedef struct _symbolString {
 
 SymbolString symbolString_construct(const char *sequence, int64_t length, Alphabet *a);
 
+SymbolString symbolString_getSubString(SymbolString s, uint64_t start, uint64_t length);
+
 void symbolString_destruct(SymbolString s);
 
 /*
@@ -35,11 +37,15 @@ struct _alphabet {
 	Symbol (*convertCharToSymbol)(char i);
 
 	char (*convertSymbolToChar)(Symbol i);
+
+	bool (*symbolsEqual)(Symbol, Symbol);
 };
 
 Alphabet *alphabet_constructNucleotide();
 
 void alphabet_destruct(Alphabet *alphabet);
+
+Alphabet *alphabet_constructRLENucleotide();
 
 /*
  * Emissions object

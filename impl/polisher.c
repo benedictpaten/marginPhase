@@ -605,10 +605,18 @@ void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLeng
 	char c = reference[endRefPosition];
 	reference[endRefPosition] = '\0';
 
+	// Get symbol strings
+	SymbolString sX = symbolString_construct(&(reference[firstRefPosition]), refLength, polishParams->alphabet);
+	SymbolString sY = symbolString_construct(read, strlen(read), polishParams->alphabet);
+
 	// Get alignment
-	getAlignedPairsWithIndelsUsingAnchors(polishParams->sMConditional, &(reference[firstRefPosition]), read,
+	getAlignedPairsWithIndelsUsingAnchors(polishParams->sMConditional, sX, sY,
 										  anchorPairs, polishParams->p, matches, deletes, inserts, 0, 0);
 	//TODO are the delete and insert lists inverted here?
+
+	// Cleanup symbol strings
+	symbolString_destruct(sX);
+	symbolString_destruct(sY);
 
 	// De-crop reference
 	reference[endRefPosition] = c;
@@ -635,8 +643,14 @@ Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, char *referenc
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
 		if(anchorAlignments == NULL) {
-			getAlignedPairsWithIndels(polishParams->sMConditional, reference, chunkRead->rleRead->rleString, polishParams->p,
+			SymbolString sX = symbolString_construct(reference, refLength, polishParams->alphabet);
+			SymbolString sY = symbolString_construct(chunkRead->rleRead->rleString, chunkRead->rleRead->length, polishParams->alphabet);
+
+			getAlignedPairsWithIndels(polishParams->sMConditional, sX, sY, polishParams->p,
                                       &matches, &deletes, &inserts, 0, 0);
+
+			symbolString_destruct(sX);
+			symbolString_destruct(sY);
 		}
 		else {
 			getAlignedPairsWithIndelsCroppingReference(reference, refLength, chunkRead->rleRead->rleString, stList_get(anchorAlignments, i),
@@ -1179,6 +1193,7 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, Polish
 
 	// Make the MEA alignments
 	int64_t refLength = stList_length(poa->nodes)-1;
+	SymbolString refSymbolString = symbolString_construct(poa->refString, refLength, polishParams->alphabet);
 	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 		BamChunkRead* read = stList_get(bamChunkReads, i);
 		char *nucleotides  = read->rleRead->rleString;
@@ -1194,20 +1209,25 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, Polish
 		stList *alignment = getMaximalExpectedAccuracyPairwiseAlignment(matches, deletes, inserts,
 				refLength, strlen(nucleotides), &alignmentScore, polishParams->p);
 
+		// Symbol strings
+		SymbolString readSymbolString = symbolString_construct(nucleotides, read->rleRead->length, polishParams->alphabet);
+
 		// Left shift the alignment
-		stList *leftShiftedAlignment = leftShiftAlignment(alignment, poa->refString, nucleotides);
+		stList *leftShiftedAlignment = leftShiftAlignment(alignment, refSymbolString, readSymbolString);
 
 		// Cleanup
 		stList_destruct(inserts);
 		stList_destruct(deletes);
 		stList_destruct(matches);
 		stList_destruct(alignment);
+		symbolString_destruct(readSymbolString);
 
 		stList_append(alignments, leftShiftedAlignment);
 	}
 
 	// Cleanup
 	stList_destruct(anchorAlignments);
+	symbolString_destruct(refSymbolString);
 
 	return alignments;
 }
@@ -1493,8 +1513,16 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 	char c = suffixString[j];
 	suffixString[j] = '\0';
 
+	// Symbol strings
+	SymbolString sX = symbolString_construct(&(prefixString[i]), strlen(&(prefixString[i])), polishParams->alphabet);
+	SymbolString sY = symbolString_construct(suffixString, strlen(suffixString), polishParams->alphabet);
+
 	// Run the alignment
-	stList *alignedPairs = getAlignedPairs(polishParams->sM, &(prefixString[i]), suffixString, polishParams->p, 1, 1);
+	stList *alignedPairs = getAlignedPairs(polishParams->sM, sX, sY, polishParams->p, 1, 1);
+
+	//
+	symbolString_destruct(sX);
+	symbolString_destruct(sY);
 
 	/*for(uint64_t i=0; i<stList_length(alignedPairs); i++) {
 		stIntTuple *aPair = stList_get(alignedPairs, i);

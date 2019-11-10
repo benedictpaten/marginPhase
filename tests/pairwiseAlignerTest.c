@@ -557,8 +557,11 @@ void test_getAlignedPairs(CuTest *testCase) {
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
         StateMachine *sM = stateMachine3_constructNucleotide(threeState);
+        Alphabet *a = alphabet_constructNucleotide();
+        SymbolString sX2 = symbolString_construct(sX, lX, a);
+        SymbolString sY2 = symbolString_construct(sY, lY, a);
 
-        stList *alignedPairs = getAlignedPairs(sM, sX, sY, p, 0, 0);
+        stList *alignedPairs = getAlignedPairs(sM, sX2, sY2, p, 0, 0);
 
         //Check the aligned pairs.
         checkAlignedPairs(testCase, alignedPairs, lX, lY, 0, 0);
@@ -568,6 +571,9 @@ void test_getAlignedPairs(CuTest *testCase) {
         free(sX);
         free(sY);
         stList_destruct(alignedPairs);
+        symbolString_destruct(sX2);
+        symbolString_destruct(sY2);
+        alphabet_destruct(a);
     }
 }
 
@@ -583,11 +589,15 @@ void test_getAlignedPairsWithRaggedEnds(CuTest *testCase) {
         st_logInfo("Sequence X to align: %s END\n", sX);
         st_logInfo("Sequence Y to align: %s END\n", sY);
 
+        Alphabet *a = alphabet_constructNucleotide();
+        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
         StateMachine *sM = stateMachine3_constructNucleotide(threeState);
-        stList *alignedPairs = getAlignedPairs(sM, sX, sY, p, 1, 1);
-        alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(alignedPairs, sX, sY, p);
+        stList *alignedPairs = getAlignedPairs(sM, sX2, sY2, p, 1, 1);
+        alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(alignedPairs, sX2, sY2, p);
 
         //Check the aligned pairs.
         checkAlignedPairs(testCase, alignedPairs, strlen(sX), strlen(sY), 0, 0);
@@ -609,6 +619,9 @@ void test_getAlignedPairsWithRaggedEnds(CuTest *testCase) {
         free(randomSuffix);
         stList_destruct(alignedPairs);
         pairwiseAlignmentBandingParameters_destruct(p);
+        symbolString_destruct(sX2);
+        symbolString_destruct(sY2);
+        alphabet_destruct(a);
     }
 }
 
@@ -779,7 +792,11 @@ void test_getAlignedPairsWithIndels(CuTest *testCase) {
 
         stList *alignedPairs = NULL, *gapXPairs = NULL, *gapYPairs = NULL;
 
-        getAlignedPairsWithIndels(sM, sX, sY, p, &alignedPairs, &gapXPairs, &gapYPairs, st_random() > 0.5, st_random() > 0.5);
+        Alphabet *a = alphabet_constructNucleotide();
+        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+
+        getAlignedPairsWithIndels(sM, sX2, sY2, p, &alignedPairs, &gapXPairs, &gapYPairs, st_random() > 0.5, st_random() > 0.5);
 
         //Check the aligned pairs.
         checkAlignedPairs(testCase, alignedPairs, lX, lY, 0, 0);
@@ -814,7 +831,7 @@ void test_getAlignedPairsWithIndels(CuTest *testCase) {
         CuAssertIntEquals(testCase, stList_length(filteredAlignment2), stList_length(filteredAlignment));
 
         // Now do left shift alignment
-        stList *shiftedAlignedPairs = leftShiftAlignment(filteredAlignment, sX, sY);
+        stList *shiftedAlignedPairs = leftShiftAlignment(filteredAlignment, sX2, sY2);
 
         //printAlignment(filteredAlignment, sX, sY);
         //fprintf(stderr, "After shift\n");
@@ -836,6 +853,9 @@ void test_getAlignedPairsWithIndels(CuTest *testCase) {
         stList_destruct(filteredAlignment2);
         stList_destruct(shiftedAlignedPairs);
         pairwiseAlignmentBandingParameters_destruct(p);
+        symbolString_destruct(sX2);
+        symbolString_destruct(sY2);
+        alphabet_destruct(a);
     }
 }
 
@@ -863,8 +883,12 @@ void test_leftShiftAlignment(CuTest *testCase) {
 		stList_append(alignedPairs, stIntTuple_construct3(1, alignedPairsX[i], alignedPairsY[i]));
 	}
 
+	Alphabet *a = alphabet_constructNucleotide();
+	SymbolString seqX2 = symbolString_construct(seqX, strlen(seqX), a);
+	SymbolString seqY2 = symbolString_construct(seqY, strlen(seqY), a);
+
 	// Run left shift
-	stList *leftShiftedAlignment = leftShiftAlignment(alignedPairs, seqX, seqY);
+	stList *leftShiftedAlignment = leftShiftAlignment(alignedPairs, seqX2, seqY2);
 
 	//for(int64_t i=0; i<stList_length(leftShiftedAlignment); i++) {
 	//	stIntTuple *aPair = stList_get(leftShiftedAlignment, i);
@@ -886,6 +910,9 @@ void test_leftShiftAlignment(CuTest *testCase) {
 	// Cleanup
 	stList_destruct(alignedPairs);
 	stList_destruct(leftShiftedAlignment);
+	symbolString_destruct(seqX2);
+	symbolString_destruct(seqY2);
+	alphabet_destruct(a);
 }
 
 /*
@@ -990,9 +1017,13 @@ void test_em(CuTest *testCase, StateMachineType stateMachineType, EmissionType e
         StateMachine *sM = hmm_getStateMachine(hmm);
         hmm_destruct(hmm);
 
+        Alphabet *a = alphabet_constructNucleotide();
+        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+
         for (int64_t iteration = 0; iteration < 10; iteration++) {
             hmm = hmm_constructEmpty(0.000000000001, stateMachineType, emissionType); //The tiny pseudo count prevents overflow
-            getExpectations(sM, hmm, sX, sY, p, 0, 0);
+            getExpectations(sM, hmm, sX2, sY2, p, 0, 0);
             hmm_normalise(hmm);
             //Log stuff
             for (int64_t from = 0; from < sM->stateNumber; from++) {
@@ -1021,6 +1052,9 @@ void test_em(CuTest *testCase, StateMachineType stateMachineType, EmissionType e
         free(sX);
         free(sY);
         stateMachine_destruct(sM);
+        symbolString_destruct(sX2);
+        symbolString_destruct(sY2);
+        alphabet_destruct(a);
     }
 }
 
@@ -1048,14 +1082,19 @@ void test_computeForwardProbability(CuTest *testCase) {
 		stList *anchorPairs = stList_construct();
 		bool raggedLeftEnd = st_random() > 0.5;
 		bool raggedRightEnd = st_random() > 0.5;
-		double logForwardProb = computeForwardProbability(sX, sY, anchorPairs, p, sM, raggedLeftEnd, raggedRightEnd);
-		double logForwardProbIdentity = computeForwardProbability(sX, sX, anchorPairs, p, sM, raggedLeftEnd, raggedRightEnd);
+
+		SymbolString ssX = symbolString_construct(sX, strlen(sX), sM->emissions->alphabet);
+		SymbolString ssY = symbolString_construct(sY, strlen(sY), sM->emissions->alphabet);
+
+		double logForwardProb = computeForwardProbability(ssX, ssY, anchorPairs, p, sM, raggedLeftEnd, raggedRightEnd);
+
+		symbolString_destruct(ssX);
+		symbolString_destruct(ssY);
 
 		//st_uglyf("Boo:\n\t%s\n\t%s\t%f\t%f\n\n", sX, sY, logForwardProb, logForwardProbIdentity);
 
 		CuAssertTrue(testCase, logForwardProb <= LOG_ONE);
 		CuAssertTrue(testCase, logForwardProb > LOG_ZERO);
-		CuAssertTrue(testCase, logForwardProb <= logForwardProbIdentity);
 
 		// Cleanup
 		stateMachine_destruct(sM);

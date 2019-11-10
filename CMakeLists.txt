@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
 #include(FindOpenMP)
 #if(OPENMP_FOUND)
@@ -195,6 +195,8 @@ set(SONLIB_SOURCES
         )
 
 set(SOURCE_FILES
+		impl/pairwiseAligner.c
+        impl/stateMachine.c
         impl/callConsensus.c
         impl/chunker.c
         impl/column.c
@@ -205,13 +207,11 @@ set(SOURCE_FILES
         impl/mergeColumn.c
         impl/parser.c
         impl/partitions.c
-        impl/polisher.c
         impl/view.c
         impl/profileSeq.c
         impl/bubbleGraph.c
-        impl/pairwiseAligner.c
-        impl/stateMachine.c
         impl/randomSequences.c
+        impl/polisher.c
         externalTools/samtools/bedidx.c
         )
 

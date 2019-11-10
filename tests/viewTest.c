@@ -187,9 +187,17 @@ void test_viewExamples(CuTest *testCase) {
 
 		// Get an alignment between the inferred reference and the true reference and add it
 
+		// Make symbol strings
+		SymbolString sX = symbolString_construct(poa->refString, strlen(poa->refString), params->polishParams->alphabet);
+		SymbolString sY = symbolString_construct(trueReference, strlen(trueReference), params->polishParams->alphabet);
+
+
 		double alignmentScore;
-		stList *refToTrueRefAlignment = getShiftedMEAAlignment(poa->refString, trueReference, NULL,
+		stList *refToTrueRefAlignment = getShiftedMEAAlignment(sX, sY, stList_construct(),
 															   params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
+
+		symbolString_destruct(sX);
+		symbolString_destruct(sY);
 
 		stList_append(alignments, refToTrueRefAlignment);
 		stList_append(nucleotides, trueReference);

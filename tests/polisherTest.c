@@ -385,9 +385,13 @@ static void test_poa_realign(CuTest *testCase) {
 		for(int64_t i=0; i<readNumber; i++) {
 			char *read = ((BamChunkRead*)stList_get(reads, i))->rleRead->rleString;
 
+			// Make symbol strings
+			SymbolString sX = symbolString_construct(reference, strlen(reference), poa->alphabet);
+			SymbolString sY = symbolString_construct(read, strlen(read), poa->alphabet);
+
 			// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 			stList *matches = NULL, *inserts = NULL, *deletes = NULL;
-			getAlignedPairsWithIndels(polishParams->sMConditional, reference, read, polishParams->p, &matches, &deletes, &inserts, 0, 0);
+			getAlignedPairsWithIndels(polishParams->sMConditional, sX, sY, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 
 			// Collate matches
 			for(int64_t j=0; j<stList_length(matches); j++) {
@@ -399,6 +403,8 @@ static void test_poa_realign(CuTest *testCase) {
 			stList_destruct(matches);
 			stList_destruct(inserts);
 			stList_destruct(deletes);
+			symbolString_destruct(sX);
+			symbolString_destruct(sY);
 		}
 
 		// Check match weights tally
@@ -471,14 +477,20 @@ int64_t calcSequenceMatches(char *seq1, char *seq2) {
 	fclose(fh);
 	PolishParams *polishParams = params->polishParams;
 
-	//Get identity
-	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, seq1, seq2, polishParams->p, 0, 0);
-	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, seq1, seq2, params->polishParams->p);
+	// Make symbol strings
+	SymbolString sX = symbolString_construct(seq1, strlen(seq1), params->polishParams->alphabet);
+	SymbolString sY = symbolString_construct(seq2, strlen(seq2), params->polishParams->alphabet);
 
-	int64_t matches = getNumberOfMatchingAlignedPairs(seq1, seq2, alignedPairs);
+	//Get identity
+	stList *allAlignedPairs = getAlignedPairs(polishParams->sM, sX, sY, polishParams->p, 0, 0);
+	stList *alignedPairs = filterPairwiseAlignmentToMakePairsOrdered(allAlignedPairs, sX, sY, params->polishParams->p);
+
+	int64_t matches = getNumberOfMatchingAlignedPairs(sX, sY, alignedPairs);
 
 	// Cleanup
 	params_destruct(params);
+	symbolString_destruct(sX);
+	symbolString_destruct(sY);
 	//stList_destruct(alignedPairs);
 
 	return matches;

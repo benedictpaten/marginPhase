@@ -51,28 +51,28 @@ PairwiseAlignmentParameters *pairwiseAlignmentParameters_jsonParse(char *buf, si
 /*
  * Computes for the forward log probability of aligning the two sequences
  */
-double computeForwardProbability(char *seqX, char *seqY, stList *anchorPairs, PairwiseAlignmentParameters *p, StateMachine *sM,
+double computeForwardProbability(SymbolString seqX, SymbolString seqY, stList *anchorPairs, PairwiseAlignmentParameters *p, StateMachine *sM,
 								 bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
 /*
  * Gets the set of posterior match probabilities under a simple HMM model of alignment for two DNA sequences.
  */
-stList *getAlignedPairs(StateMachine *sM, const char *string1, const char *string2, PairwiseAlignmentParameters *p,
+stList *getAlignedPairs(StateMachine *sM, SymbolString string1, SymbolString string2, PairwiseAlignmentParameters *p,
 						bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
 /*
  * As getAlignedPairs, but also gives insert and delete probabilities.
  * Return value is by initializing the matches, inserts and deletes lists with values.
  */
-void getAlignedPairsWithIndels(StateMachine *sM, const char *string1, const char *string2, PairwiseAlignmentParameters *p,
+void getAlignedPairsWithIndels(StateMachine *sM, SymbolString string1, SymbolString string2, PairwiseAlignmentParameters *p,
 							   stList **alignedPairs, stList **gapXPairs, stList **gapYPairs,
 							   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
 stList *convertPairwiseForwardStrandAlignmentToAnchorPairs(struct PairwiseAlignment *pA, int64_t trim, int64_t diagonalExpansion);
 
-stList *getAlignedPairsUsingAnchors(StateMachine *sM, const char *sX, const char *sY, stList *anchorPairs, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
+stList *getAlignedPairsUsingAnchors(StateMachine *sM, SymbolString sX, SymbolString sY, stList *anchorPairs, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
-void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, const char *sX, const char *sY, stList *anchorPairs,
+void getAlignedPairsWithIndelsUsingAnchors(StateMachine *sM, SymbolString sX, SymbolString sY, stList *anchorPairs,
 										   PairwiseAlignmentParameters *p, stList **alignedPairs, stList **gapXPairs, stList **gapYPairs,
 										   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
@@ -88,22 +88,22 @@ stList *getMaximalExpectedAccuracyPairwiseAlignment(stList *alignedPairs, stList
 /*
  * Shifts pairs in an alignment so that inserts are maximally left shifted.
  */
-stList *leftShiftAlignment(stList *alignedPairs, char *seqX, char *seqY);
+stList *leftShiftAlignment(stList *alignedPairs, SymbolString seqX, SymbolString seqY);
 
 /*
  * Convenience function that aligns two sequences return a left-shift MEA alignment
  */
-stList *getShiftedMEAAlignment(char *seqX, char *seqY, stList *anchorAlignment, PairwiseAlignmentParameters *p, StateMachine *sM,
+stList *getShiftedMEAAlignment(SymbolString seqX, SymbolString seqY, stList *anchorAlignment, PairwiseAlignmentParameters *p, StateMachine *sM,
 							   bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd, double *alignmentScore);
 
 /*
  * Expectation calculation functions for EM algorithms.
  */
 
-void getExpectationsUsingAnchors(StateMachine *sM, Hmm *hmmExpectations, const char *sX, const char *sY, stList *anchorPairs,
+void getExpectationsUsingAnchors(StateMachine *sM, Hmm *hmmExpectations, SymbolString sX, SymbolString sY, stList *anchorPairs,
         PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
-void getExpectations(StateMachine *sM, Hmm *hmmExpectations, const char *sX, const char *sY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
+void getExpectations(StateMachine *sM, Hmm *hmmExpectations, SymbolString sX, SymbolString sY, PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
 /*
  * Methods tested and possibly useful elsewhere
@@ -212,22 +212,22 @@ void dpMatrix_deleteDiagonal(DpMatrix *dpMatrix, int64_t xay);
 
 //Diagonal calculations
 
-void diagonalCalculationForward(StateMachine *sM, int64_t xay, DpMatrix *dpMatrix, const SymbolString sX, const SymbolString sY);
+void diagonalCalculationForward(StateMachine *sM, int64_t xay, DpMatrix *dpMatrix, SymbolString sX, SymbolString sY);
 
-void diagonalCalculationBackward(StateMachine *sM, int64_t xay, DpMatrix *dpMatrix, const SymbolString sX, const SymbolString sY);
+void diagonalCalculationBackward(StateMachine *sM, int64_t xay, DpMatrix *dpMatrix, SymbolString sX, SymbolString sY);
 
 double diagonalCalculationTotalProbability(StateMachine *sM, int64_t xay, DpMatrix *forwardDpMatrix, DpMatrix *backwardDpMatrix,
-        const SymbolString sX, const SymbolString sY);
+        SymbolString sX, SymbolString sY);
 
 void diagonalCalculationPosteriorMatchProbs(StateMachine *sM, int64_t xay, DpMatrix *forwardDpMatrix, DpMatrix *backwardDpMatrix,
-        const SymbolString sX, const SymbolString sY,
+        SymbolString sX, SymbolString sY,
         double totalProbability, PairwiseAlignmentParameters *p, void *extraArgs);
 
 //Banded matrix calculation of posterior probs
 
-void getPosteriorProbsWithBanding(StateMachine *sM, stList *anchorPairs, const SymbolString sX, const SymbolString sY,
+void getPosteriorProbsWithBanding(StateMachine *sM, stList *anchorPairs, SymbolString sX, SymbolString sY,
         PairwiseAlignmentParameters *p, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd,
-        void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, const SymbolString, const SymbolString,
+        void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, SymbolString, SymbolString,
               double, PairwiseAlignmentParameters *, void *), void *extraArgs);
 
 //Split over large gaps
@@ -235,9 +235,9 @@ void getPosteriorProbsWithBanding(StateMachine *sM, stList *anchorPairs, const S
 stList *getSplitPoints(stList *anchorPairs, int64_t lX, int64_t lY,
         int64_t maxMatrixSize, bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd);
 
-void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM, stList *anchorPairs, const char *sX, const char *sY, int64_t lX, int64_t lY,
+void getPosteriorProbsWithBandingSplittingAlignmentsByLargeGaps(StateMachine *sM, stList *anchorPairs, SymbolString sX, SymbolString sY,
         PairwiseAlignmentParameters *p,  bool alignmentHasRaggedLeftEnd, bool alignmentHasRaggedRightEnd,
-        void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, const SymbolString, const SymbolString,
+        void (*diagonalPosteriorProbFn)(StateMachine *, int64_t, DpMatrix *, DpMatrix *, SymbolString, SymbolString,
                 double, PairwiseAlignmentParameters *, void *),
         void (*coordinateCorrectionFn)(), void *extraArgs);
 
@@ -258,17 +258,17 @@ stList *reweightAlignedPairs2(stList *alignedPairs, int64_t seqLengthX, int64_t 
 /*
  * Gives the average identity of matches in the alignment, treating indels as mismatches.
  */
-int64_t getNumberOfMatchingAlignedPairs(char *subSeqX, char *subSeqY, stList *alignedPairs);
+int64_t getNumberOfMatchingAlignedPairs(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs);
 
 /*
  * Gives the average identity of matches in the alignment, treating indels as mismatches.
  */
-double scoreByIdentity(char *subSeqX, char *subSeqY, int64_t lX, int64_t lY, stList *alignedPairs);
+double scoreByIdentity(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs);
 
 /*
  * Gives the average identity of matches in the alignment, ignoring indels.
  */
-double scoreByIdentityIgnoringGaps(char *subSeqX, char *subSeqY, stList *alignedPairs);
+double scoreByIdentityIgnoringGaps(SymbolString subSeqX, SymbolString subSeqY, stList *alignedPairs);
 
 /*
  * Gives the average posterior match probability per base of the two sequences, treating bases in indels as having 0 match probability.
@@ -283,7 +283,7 @@ double scoreByPosteriorProbabilityIgnoringGaps(stList *alignedPairs);
 /*
  * Filter to give co-linear alignment.
  */
-stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, const char *seqX, const char *seqY, PairwiseAlignmentParameters *p);
+stList *filterPairwiseAlignmentToMakePairsOrdered(stList *alignedPairs, SymbolString seqX, SymbolString seqY, PairwiseAlignmentParameters *p);
 
 
 #endif /* PAIRWISEALIGNER_H_ */
