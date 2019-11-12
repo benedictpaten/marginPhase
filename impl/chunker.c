@@ -92,8 +92,9 @@ char *mergeContigChunks(char **chunks, int64_t startIdx, int64_t endIdxExclusive
             // we have an overlap
             if (overlapMatchWeight > 0) {
                 st_logInfo(
-                        "  Removed overlap between neighbouring chunks. Approx overlap size: %i, overlap-match weight: %f, "
-                        "left-trim: %i, right-trim: %i:\n", overlap,
+                        "    Removed overlap between neighbouring chunks at %"PRId64". "
+                        "Approx overlap size: %i, overlap-match weight: %f, "
+                        "left-trim: %i, right-trim: %i:\n", chunkIdx, overlap,
                         (float) overlapMatchWeight / PAIR_ALIGNMENT_PROB_1,
                         strlen(previousChunk) - prefixStringCropEnd, suffixStringCropStart);
 
@@ -107,14 +108,16 @@ char *mergeContigChunks(char **chunks, int64_t startIdx, int64_t endIdxExclusive
             } else {
                 if (strlen(currentChunk) == 0) {
                     // missing chunk
-                    st_logInfo("  No overlap found. Filling empty chunk with Ns.\n");
+                    st_logInfo("    No overlap found for empty chunk at %"PRId64". Filling empty chunk with Ns.\n", chunkIdx);
                     currentChunk = stString_copy(missingChunkSpacer);
                 } else if (overlap == 0) {
                     // poorly configured but could be done (freaky)
+                    st_logInfo("    No overlap configured with non-empty (len %"PRId64") chunk at %"PRId64". \n",
+                            strlen(currentChunk), chunkIdx);
                     currentChunk = stString_copy(currentChunk);
                 } else {
                     // couldn't find an overlap (freaky)
-                    st_logInfo("  No overlap found. Filling Ns in stitch position.\n");
+                    st_logInfo("    No overlap found at %"PRId64". Filling Ns in stitch position.\n", chunkIdx);
                     stList_append(polishedReferenceStrings, stString_copy("NNNNNNNNNN"));
                     currentChunk = stString_copy(currentChunk);
                 }
@@ -132,7 +135,7 @@ char *mergeContigChunks(char **chunks, int64_t startIdx, int64_t endIdxExclusive
 }
 
 char *mergeContigChunksThreaded(char **chunks, int64_t startIdx, int64_t endIdxExclusive, int64_t numThreads,
-        int64_t overlap, Params *params, char *missingChunkSpacer) {
+        int64_t overlap, Params *params, char *missingChunkSpacer, char *referenceSequenceName) {
 
     // special unthreaded case
     if (numThreads == 1) return mergeContigChunks(chunks, startIdx, endIdxExclusive, overlap, params, missingChunkSpacer);
@@ -144,6 +147,8 @@ char *mergeContigChunksThreaded(char **chunks, int64_t startIdx, int64_t endIdxE
     char **outputChunks = st_calloc(numThreads, sizeof(char*));
 
     // multithread loop
+    st_logInfo("  Merging chunks for %s from (%"PRId64", %"PRId64"] with %"PRId64" chunks per thread on %"PRId64" threads \n",
+            referenceSequenceName, startIdx, endIdxExclusive, chunksPerThread, numThreads);
     #pragma omp parallel for schedule(static,1)
     for (int64_t thread = 0; thread < numThreads; thread++) {
         int64_t threadedStartIdx = startIdx + chunksPerThread * thread;

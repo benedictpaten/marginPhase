@@ -613,7 +613,7 @@ int main(int argc, char *argv[]) {
 
             // generate and save sequence
             char *contigSequence = mergeContigChunksThreaded(chunkResults, contigStartIdx, chunkIdx, numThreads, 
-                    bamChunker->chunkBoundary * 2, params, missingChunkSpacer);
+                    bamChunker->chunkBoundary * 2, params, missingChunkSpacer, referenceSequenceName);
             fastaWrite(contigSequence, referenceSequenceName, polishedReferenceOutFh);
 
             // log progress
