@@ -14,6 +14,16 @@
 #include "sonLib.h"
 #include "pairwiseAligner.h"
 
+static int const RLENE_MAX_REPEAT_LENGTH=50;
+
+typedef enum {
+    match = 0, shortGapX = 1, shortGapY = 2, longGapX = 3, longGapY = 4
+} State;
+
+static void state_check(StateMachine *sM, State s) {
+    assert(s >= 0 && s < sM->stateNumber);
+}
+
 ///////////////////////////////////
 ///////////////////////////////////
 //Alphabet
@@ -119,7 +129,7 @@ void symbolString_destruct(SymbolString s) {
 ///////////////////////////////////
 
 Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, EmissionType emissionType) {
-    Hmm *hmm = st_malloc(sizeof(Hmm));
+    Hmm *hmm = st_calloc(1, sizeof(Hmm));
     hmm->type = type;
     switch (type) {
     case threeState:
@@ -135,15 +145,32 @@ Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, Emissio
     }
 
     hmm->emissionsType = emissionType;
+    hmm->emissionNoPerState = st_calloc(hmm->stateNumber, sizeof(int64_t));
+    hmm->emissionOffsetPerState = st_calloc(hmm->stateNumber, sizeof(int64_t));
+
     switch (emissionType) {
     case nucleotideEmissions:
-    	hmm->emissionNoPerState = 16;
+    	for(int64_t i=0; i<hmm->stateNumber; i++) {
+    		hmm->emissionNoPerState[i] = 16;
+    	}
     	break;
+    case runlengthNucleotideEmissions:
+    	for(int64_t i=0; i<hmm->stateNumber; i++) {
+    		hmm->emissionNoPerState[i] = 4 + RLENE_MAX_REPEAT_LENGTH;
+    	}
+    	hmm->emissionNoPerState[match] = 16 + RLENE_MAX_REPEAT_LENGTH * RLENE_MAX_REPEAT_LENGTH;
+		break;
     default:
          st_errAbort("Unrecognised emission type: %i\n", type);
     }
-    hmm->emissions = st_malloc(hmm->stateNumber * hmm->emissionNoPerState * sizeof(double));
-    for (int64_t i = 0; i < hmm->stateNumber * hmm->emissionNoPerState; i++) {
+    int64_t j=0;
+    for(int64_t i=0; i<hmm->stateNumber; i++) {
+    	hmm->emissionOffsetPerState[i] = j;
+        j += hmm->emissionNoPerState[i];
+    }
+    hmm->totalEmissions = j;
+    hmm->emissions = st_malloc(hmm->totalEmissions * sizeof(double));
+    for (int64_t i = 0; i < hmm->totalEmissions; i++) {
         hmm->emissions[i] = pseudoExpectation;
     }
     hmm->likelihood = 0.0;
@@ -153,6 +180,8 @@ Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, Emissio
 void hmm_destruct(Hmm *hmm) {
     free(hmm->transitions);
     free(hmm->emissions);
+    free(hmm->emissionNoPerState);
+    free(hmm->emissionOffsetPerState);
     free(hmm);
 }
 
@@ -192,7 +221,8 @@ Hmm *hmm_jsonParse(char *buf, size_t r) {
         	gotTransitions = 1;
         }
         else if(strcmp(keyString, "emissions") == 0) {
-        	tokenIndex = stJson_parseFloatArray(hmm->emissions, hmm->stateNumber * hmm->emissionNoPerState, js, tokens, ++tokenIndex);
+        	tokenIndex = stJson_parseFloatArray(hmm->emissions, hmm->totalEmissions,
+        			js, tokens, ++tokenIndex);
         	gotEmissions = 1;
         }
         else if(strcmp(keyString, "likelihood") == 0) {
@@ -238,7 +268,10 @@ void hmm_setTransition(Hmm *hmm, int64_t from, int64_t to, double p) {
 // Emissions
 
 static inline double *hmm_getEmissionsExpectation2(Hmm *hmm, int64_t state, int64_t emissionNo) {
-    return &(hmm->emissions[state * hmm->emissionNoPerState + emissionNo]);
+    assert(state >= 0 && state < hmm->stateNumber);
+    assert(emissionNo >= 0 && emissionNo < hmm->emissionNoPerState[state]);
+    assert(hmm->emissionOffsetPerState[state] + emissionNo < hmm->totalEmissions);
+	return &(hmm->emissions[hmm->emissionOffsetPerState[state] + emissionNo]);
 }
 
 double hmm_getEmissionsExpectation(Hmm *hmm, int64_t state, int64_t emissionNo) {
@@ -274,10 +307,10 @@ void hmm_normalise(Hmm *hmm) {
     //Normalise the emissions
     for (int64_t state = 0; state < hmm->stateNumber; state++) {
         double total = 0.0;
-        for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
+        for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
         	total += hmm_getEmissionsExpectation(hmm, state, x);
         }
-        for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
+        for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
         	hmm_setEmissionsExpectation(hmm, state, x, hmm_getEmissionsExpectation(hmm, state, x) / total);
         }
     }
@@ -292,7 +325,7 @@ void hmm_randomise(Hmm *hmm) {
     }
     //Emissions
     for (int64_t state = 0; state < hmm->stateNumber; state++) {
-        for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
+        for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
         	hmm_setEmissionsExpectation(hmm, state, x, st_random());
         }
     }
@@ -381,8 +414,6 @@ Emissions *nucleotideEmissions_construct() {
 ///////////////////////////////////
 ///////////////////////////////////
 
-static int const RLENE_MAX_REPEAT_LENGTH=50;
-
 typedef struct _rleNucleotideEmissions {
 	NucleotideEmissions ne;
 	double repeatLengthSubstitutionProbs[RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH];
@@ -395,7 +426,7 @@ static Symbol getRepeatLength(Symbol s) {
 }
 
 static Symbol getNucleotide(Symbol s) {
-	return s & 7; // First three bits get nucleotide
+	return s & 7; // First three bits encode nucleotide
 }
 
 static Symbol encodeRleNucleotide(Symbol nucleotide, uint64_t runLength) {
@@ -409,16 +440,15 @@ static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
 }
 
 static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
-    return getRLENucleotideGapProb(rlene->repeatLengthGapXProbs, rlene->ne.EMISSION_GAP_X_PROBS, x);
+    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_X_PROBS, rlene->repeatLengthGapXProbs, x);
 }
 
 static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
-    return getRLENucleotideGapProb(rlene->repeatLengthGapYProbs, rlene->ne.EMISSION_GAP_Y_PROBS, y);
+    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, rlene->repeatLengthGapYProbs, y);
 }
 
 static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
-    return getNucleotideMatchProb(&(rlene->ne), x, y) +
-    		rlene->repeatLengthSubstitutionProbs[getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + getRepeatLength(y)];
+    return getNucleotideMatchProb(&(rlene->ne), x, y) + rlene->repeatLengthSubstitutionProbs[getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + getRepeatLength(y)];
 }
 
 Emissions *rleNucleotideEmissions_construct() {
@@ -435,7 +465,7 @@ Emissions *rleNucleotideEmissions_construct() {
 		rlene->repeatLengthGapXProbs[i] = LOG_ONE;
 		rlene->repeatLengthGapYProbs[i] = LOG_ONE;
 		for(int64_t j=0; j<RLENE_MAX_REPEAT_LENGTH; j++) {
-			rlene->repeatLengthGapXProbs[i*RLENE_MAX_REPEAT_LENGTH+j] = LOG_ONE;
+			rlene->repeatLengthSubstitutionProbs[i*RLENE_MAX_REPEAT_LENGTH+j] = LOG_ONE;
 		}
 	}
 
@@ -460,15 +490,15 @@ Emissions *emissions_construct(Hmm *hmm) {
 		RleNucleotideEmissions *rlene = (RleNucleotideEmissions *)rleNucleotideEmissions_construct();
 
 		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_MATCH_PROBS, 0, 0, 16);
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_MATCH_PROBS, 0, 16,
+		hmm_emissions_loadProbs(hmm, rlene->repeatLengthSubstitutionProbs, 0, 16,
 				RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH);
 
 		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_X_PROBS, 1, 0, 4);
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_X_PROBS, 1, 4,
+		hmm_emissions_loadProbs(hmm, rlene->repeatLengthGapXProbs, 1, 4,
 				RLENE_MAX_REPEAT_LENGTH);
 
 		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_Y_PROBS, 2, 0, 4);
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_Y_PROBS, 2, 4,
+		hmm_emissions_loadProbs(hmm, rlene->repeatLengthGapYProbs, 2, 4,
 				RLENE_MAX_REPEAT_LENGTH);
 
 		return (Emissions *)rlene;
@@ -487,14 +517,6 @@ void emissions_destruct(Emissions *e) {
 //Three state state-machine
 ///////////////////////////////////
 ///////////////////////////////////
-
-typedef enum {
-    match = 0, shortGapX = 1, shortGapY = 2, longGapX = 3, longGapY = 4
-} State;
-
-static void state_check(StateMachine *sM, State s) {
-    assert(s >= 0 && s < sM->stateNumber);
-}
 
 //Transitions
 typedef struct _StateMachine3 StateMachine3;

@@ -930,11 +930,10 @@ void test_hmm(CuTest *testCase, StateMachineType stateMachineType, EmissionType 
         }
     }
 
-
     //Add some emission expectations
     for (int64_t state = 0; state < hmm->stateNumber; state++) {
-        for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
-        	hmm_addToEmissionsExpectation(hmm, state, x, state * hmm->emissionNoPerState + x);
+        for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
+        	hmm_addToEmissionsExpectation(hmm, state, x, hmm->emissionOffsetPerState[state] + x);
         }
     }
 
@@ -960,8 +959,8 @@ void test_hmm(CuTest *testCase, StateMachineType stateMachineType, EmissionType 
 
     //Check the emission expectations
     for (int64_t state = 0; state < hmm->stateNumber; state++) {
-    	for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
-    		CuAssertTrue(testCase, hmm_getEmissionsExpectation(hmm, state, x) == state * hmm->emissionNoPerState + x);
+    	for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
+    		CuAssertTrue(testCase, hmm_getEmissionsExpectation(hmm, state, x) == hmm->emissionOffsetPerState[state] + x);
         }
     }
 
@@ -978,12 +977,14 @@ void test_hmm(CuTest *testCase, StateMachineType stateMachineType, EmissionType 
 
     //Recheck the emissions
     for (int64_t state = 0; state < hmm->stateNumber; state++) {
-        for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
-			double z = hmm->emissionNoPerState * hmm->emissionNoPerState * state
-					+ (hmm->emissionNoPerState * (hmm->emissionNoPerState - 1))
-							/ 2;
+        for (int64_t x = 0; x < hmm->emissionNoPerState[state]; x++) {
+			double z = (hmm->emissionOffsetPerState[state] + hmm->emissionOffsetPerState[state] +
+					hmm->emissionNoPerState[state]-1) * hmm->emissionNoPerState[state]/2.0;
+					//hmm->emissionNoPerState * hmm->emissionNoPerState * state
+					//+ (hmm->emissionNoPerState * (hmm->emissionNoPerState - 1))
+					/// 2;
 			CuAssertTrue(testCase,
-					hmm_getEmissionsExpectation(hmm, state, x) == (state * hmm->emissionNoPerState + x)/z);
+					hmm_getEmissionsExpectation(hmm, state, x) == (hmm->emissionOffsetPerState[state] + x)/z);
         }
     }
 
@@ -1032,7 +1033,7 @@ void test_em(CuTest *testCase, StateMachineType stateMachineType, EmissionType e
                             hmm_getTransition(hmm, from, to));
                 }
             }
-            for (int64_t x = 0; x < hmm->emissionNoPerState; x++) {
+            for (int64_t x = 0; x < hmm->emissionNoPerState[sM->matchState]; x++) {
             	st_logInfo("Emission x %" PRIi64 " has expectation %f\n", x,
                             hmm_getEmissionsExpectation(hmm, sM->matchState, x));
             }

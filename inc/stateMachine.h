@@ -120,7 +120,9 @@ void stateMachine_destruct(StateMachine *stateMachine);
 struct _hmm {
     StateMachineType type;
     EmissionType emissionsType;
-    int64_t emissionNoPerState;
+    int64_t *emissionNoPerState;
+    int64_t *emissionOffsetPerState;
+    int64_t totalEmissions;
     double *transitions;
     double *emissions;
     double likelihood;
