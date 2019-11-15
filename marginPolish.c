@@ -344,17 +344,25 @@ int main(int argc, char *argv[]) {
     }
     #endif
 
-
     // Polish chunks
     // Each chunk produces a char* as output which is saved here
     char **chunkResults = st_calloc(bamChunker->chunkCount, sizeof(char*));
 
+    // (may) need to shuffle chunks
+    stList *chunkOrder = stList_construct3(0, stIntTuple_destruct);
+    for (int64_t i = 0; i < bamChunker->chunkCount; i++) {
+        stList_append(chunkOrder, stIntTuple_construct1(i));
+    }
+    if (params->polishParams->shuffleChunks) {
+        stList_shuffle(chunkOrder);
+    }
+
     // multiproccess the chunks, save to results
-    int64_t chunkIdx;
     int64_t lastReportedPercentage = 0;
     time_t polishStartTime = time(NULL);
     #pragma omp parallel for schedule(dynamic,1)
-    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+    for (int64_t i = 0; i < bamChunker->chunkCount; i++) {
+        int64_t chunkIdx = stIntTuple_get(stList_get(chunkOrder, i), 0);
         // Time all chunks
         time_t chunkStartTime = time(NULL);
 
@@ -364,7 +372,7 @@ int main(int argc, char *argv[]) {
         // logging
         char *logIdentifier;
         bool logProgress = FALSE;
-        int64_t currentPercentage = (int64_t) (100 * chunkIdx / bamChunker->chunkCount);
+        int64_t currentPercentage = (int64_t) (100 * i / bamChunker->chunkCount);
         # ifdef _OPENMP
         logIdentifier = stString_print(" T%02d_C%05"PRId64, omp_get_thread_num(), chunkIdx);
         if (omp_get_thread_num() == 0) {
@@ -388,7 +396,7 @@ int main(int argc, char *argv[]) {
             char *timeDescriptor = (secondsRemaining == 0 && currentPercentage <= 50 ?
                     stString_print("unknown") : getTimeDescriptorFromSeconds(secondsRemaining));
             st_logCritical("> Polishing %2"PRId64"%% complete (%"PRId64"/%"PRId64").  Estimated time remaining: %s\n",
-                    currentPercentage, chunkIdx, bamChunker->chunkCount, timeDescriptor);
+                    currentPercentage, i, bamChunker->chunkCount, timeDescriptor);
             free(timeDescriptor);
         }
 
@@ -608,7 +616,7 @@ int main(int argc, char *argv[]) {
     st_logCritical("> Merging polished reference strings from %"PRIu64" chunks.\n", bamChunker->chunkCount);
 
     // find which chunks belong to each contig, merge each contig threaded, write out
-    for (chunkIdx = 1; chunkIdx <= bamChunker->chunkCount; chunkIdx++) {
+    for (int64_t chunkIdx = 1; chunkIdx <= bamChunker->chunkCount; chunkIdx++) {
         
         // we encountered the last chunk in the contig (end of list or new refSeqName)
         if (chunkIdx == bamChunker->chunkCount || !stString_eq(referenceSequenceName,
@@ -648,7 +656,7 @@ int main(int argc, char *argv[]) {
     // everything has been written, cleanup merging infrastructure
     fclose(polishedReferenceOutFh);
     free(missingChunkSpacer);
-    for (chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
+    for (int64_t chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
         free(chunkResults[chunkIdx]);
     }
 

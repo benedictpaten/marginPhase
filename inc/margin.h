@@ -660,6 +660,7 @@ struct _polishParams {
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
 	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
 	// chunking configuration
+	bool shuffleChunks;
 	bool includeSoftClipping;
 	uint64_t chunkSize;
 	uint64_t chunkBoundary;

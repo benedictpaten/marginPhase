@@ -360,7 +360,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	params->minPosteriorProbForAlignmentAnchors[0] = 0.9;
 	params->minPosteriorProbForAlignmentAnchors[0] = 10;
 	params->minPosteriorProbForAlignmentAnchorsLength = 2;
-    params->includeSoftClipping = FALSE; //todo add this in
+    params->includeSoftClipping = FALSE;
+    params->shuffleChunks = TRUE;
     params->chunkSize = 0;
     params->chunkBoundary = 0;
     params->maxDepth = 0;
@@ -429,6 +430,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
             }
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
+        }
+        else if (strcmp(keyString, "shuffleChunks") == 0) {
+            params->shuffleChunks = stJson_parseBool(js, tokens, ++tokenIndex);
         }
         else if (strcmp(keyString, "includeSoftClipping") == 0) {
             params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
