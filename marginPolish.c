@@ -320,6 +320,9 @@ int main(int argc, char *argv[]) {
     char *polishedReferenceOutFile = stString_print("%s.fa", outputBase);
     st_logCritical("> Going to write polished reference in : %s\n", polishedReferenceOutFile);
     FILE *polishedReferenceOutFh = fopen(polishedReferenceOutFile, "w");
+    if (polishedReferenceOutFh == NULL) {
+        st_errAbort("Could not open %s for writing!\n", polishedReferenceOutFile);
+    }
     free(polishedReferenceOutFile);
 
     // get chunker for bam.  if regionStr is NULL, it will be ignored

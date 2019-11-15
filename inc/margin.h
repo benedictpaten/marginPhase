@@ -663,7 +663,11 @@ struct _polishParams {
 	bool includeSoftClipping;
 	uint64_t chunkSize;
 	uint64_t chunkBoundary;
+	// input reads configuration
 	uint64_t maxDepth;
+	bool includeSecondaryAlignments;
+	bool includeSupplementaryAlignments;
+	// other configuration
 	double candidateVariantWeight; // The fraction (from 0 to 1) of the average position coverage needed to define a candidate variant
 	uint64_t columnAnchorTrim; // The min distance between a column anchor and a candidate variant
 	uint64_t maxConsensusStrings; // The maximum number of different consensus strings to consider for a substring.

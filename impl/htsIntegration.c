@@ -201,7 +201,12 @@ BamChunker *bamChunker_construct2(char *bamFile, char *region, PolishParams *par
         // basic filtering (no read length, no cigar)
         if (aln->core.l_qseq <= 0) continue;
         if (aln->core.n_cigar == 0) continue;
-        if ((aln->core.flag & (uint16_t) 0x4) != 0) continue; //unaligned
+        if ((aln->core.flag & (uint16_t) 0x4) != 0)
+            continue; //unaligned
+        if (!params->includeSecondaryAlignments && (aln->core.flag & (uint16_t) 0x100) != 0)
+            continue; //secondary
+        if (!params->includeSupplementaryAlignments && (aln->core.flag & (uint16_t) 0x800) != 0)
+            continue; //supplementary
 
         //data
         char *chr = bamHdr->target_name[aln->core.tid];
@@ -392,7 +397,12 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, stList *reads, stList *
         // basic filtering (no read length, no cigar)
         if (aln->core.l_qseq <= 0) continue;
         if (aln->core.n_cigar == 0) continue;
-        if ((aln->core.flag & (uint16_t) 0x4) != 0) continue; //unaligned
+        if ((aln->core.flag & (uint16_t) 0x4) != 0)
+            continue; //unaligned
+        if (!bamChunk->parent->params->includeSecondaryAlignments && (aln->core.flag & (uint16_t) 0x100) != 0)
+            continue; //secondary
+        if (!bamChunk->parent->params->includeSupplementaryAlignments && (aln->core.flag & (uint16_t) 0x800) != 0)
+            continue; //supplementary
 
         //data
         char *chr = bamHdr->target_name[aln->core.tid];
