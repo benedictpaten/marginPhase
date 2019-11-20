@@ -21,7 +21,15 @@ typedef struct _symbolString {
 	int64_t length;
 } SymbolString;
 
+Symbol symbol_getRepeatLength(Symbol s);
+
+Symbol symbol_stripRepeatCount(Symbol s);
+
+Symbol symbol_addRepeatCount(Symbol character, uint64_t runLength);
+
 SymbolString symbolString_construct(const char *sequence, int64_t length, Alphabet *a);
+
+SymbolString symbolString_constructRLE(const char *sequence, uint64_t *repeatCounts, int64_t length, Alphabet *a);
 
 SymbolString symbolString_getSubString(SymbolString s, uint64_t start, uint64_t length);
 

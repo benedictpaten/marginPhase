@@ -5,14 +5,9 @@
  */
 
 #include "CuTest.h"
-#include "sonLib.h"
-#include "pairwiseAligner.h"
-//#include "multipleAligner.h"
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <ctype.h>
-#include "randomSequences.h"
+#include "margin.h"
+
+static char *polishParamsFile = "../params/allParams.np.json";
 
 void test_diagonal(CuTest *testCase) {
     //Construct an example diagonal.
@@ -152,6 +147,22 @@ void test_symbol(CuTest *testCase) {
     }
     symbolString_destruct(cA2);
     alphabet_destruct(a);
+}
+
+void test_symbolRLE(CuTest *testCase) {
+	Alphabet *a = alphabet_constructNucleotide();
+	char *s = "ACGTacgtnN";
+	for(int64_t i=0; i<strlen(s); i++) {
+		Symbol i = a->convertCharToSymbol(s[i]);
+		CuAssertTrue(testCase, a->convertSymbolToChar(i) == toupper(s[i]));
+
+		for(int64_t repeatCount=0; repeatCount<255; repeatCount++) {
+			Symbol j = symbol_addRepeatCount(i, repeatCount);
+
+			CuAssertTrue(testCase, symbol_stripRepeatCount(j) == i);
+			CuAssertTrue(testCase, symbol_getRepeatLength(j) == repeatCount);
+		}
+	}
 }
 
 void test_cell(CuTest *testCase) {
@@ -542,6 +553,65 @@ void test_getSplitPoints(CuTest *testCase) {
 
     stList_destruct(splitPoints);
     stList_destruct(anchorPairs);
+}
+
+void test_alignedPairs(CuTest *testCase, char *sX, char *sY) {
+	RleString *rleX = rleString_construct(sX);
+	RleString *rleY = rleString_construct(sY);
+
+	st_logInfo("Sequence X to align: %s END\n", sX);
+	st_logInfo("Sequence Y to align: %s END\n", sY);
+
+	FILE *fh = fopen(polishParamsFile, "r");
+	Params *params = params_readParams(fh);
+	fclose(fh);
+
+	//Now do alignment
+
+	SymbolString sX2 = symbolString_constructRLE(rleX->rleString, rleX->repeatCounts, rleX->length, params->polishParams->alphabet);
+	SymbolString sY2 = symbolString_constructRLE(rleY->rleString, rleY->repeatCounts, rleY->length, params->polishParams->alphabet);
+
+	stList *alignedPairs = getAlignedPairs(params->polishParams->sMConditional, sX2, sY2, params->polishParams->p, 0, 0);
+
+	//Check the aligned pairs.
+	checkAlignedPairs(testCase, alignedPairs, rleX->length, rleY->length, 0, 0);
+
+	for(int64_t i=0; i<stList_length(alignedPairs); i++) {
+		stIntTuple *aPair = stList_get(alignedPairs, i);
+		int x = (int)stIntTuple_get(aPair, 1), y = (int)stIntTuple_get(aPair, 2);
+		float p = (float)stIntTuple_get(aPair, 0)/PAIR_ALIGNMENT_PROB_1;
+		st_logInfo("Got a pair: %i %c %i %c %f\n", p, x, rleX->rleString[x], y, rleY->rleString[y]);
+	}
+
+	//Cleanup
+	params_destruct(params);
+	stList_destruct(alignedPairs);
+	rleString_destruct(rleX);
+	rleString_destruct(rleY);
+	symbolString_destruct(sX2);
+	symbolString_destruct(sY2);
+}
+
+void test_small_example_getAlignedPairsWithRLEModel(CuTest *testCase) {
+	//Make a pair of sequences
+	char *sX = "CAGGGGGGGGGGCT";
+	char *sY = "CATGGGGGGGGGGT";
+
+	test_alignedPairs(testCase, sX, sY);
+}
+
+
+void test_getAlignedPairsWithRLEModel(CuTest *testCase) {
+	for (int64_t test = 0; test < 100; test++) {
+		//Make a pair of sequences
+		char *sX = getRandomSequence(st_randomInt(0, 100));
+		char *sY = evolveSequence(sX); //stString_copy(seqX);
+
+		test_alignedPairs(testCase, sX, sY);
+
+		free(sX);
+		free(sY);
+	}
 }
 
 void test_getAlignedPairs(CuTest *testCase) {
@@ -1119,6 +1189,8 @@ CuSuite* pairwiseAlignmentTestSuite(void) {
     SUITE_ADD_TEST(suite, test_getAlignedPairsWithBanding);
     SUITE_ADD_TEST(suite, test_getSplitPoints);
     SUITE_ADD_TEST(suite, test_getAlignedPairs);
+    SUITE_ADD_TEST(suite, test_getAlignedPairsWithRLEModel);
+    SUITE_ADD_TEST(suite, test_small_example_getAlignedPairsWithRLEModel);
     SUITE_ADD_TEST(suite, test_getAlignedPairsWithRaggedEnds);
     SUITE_ADD_TEST(suite, test_getAlignedPairsWithIndels);
     SUITE_ADD_TEST(suite, test_hmm_3State);

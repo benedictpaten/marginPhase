@@ -206,9 +206,24 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
 		jsmntok_t key = tokens[tokenIndex];
 		char *keyString = stJson_token_tostr(js, &key);
+
+
+		if(stString_eq("baseLogRepeatCounts_AT", keyString)) {
+			tokenIndex = stJson_parseFloatArray(repeatSubMatrix->baseLogProbs_AT,
+					repeatSubMatrix->maximumRepeatLength, js, tokens, tokenIndex+1);
+			continue;
+		}
+
+		if(stString_eq("baseLogRepeatCounts_GC", keyString)) {
+			tokenIndex = stJson_parseFloatArray(repeatSubMatrix->baseLogProbs_GC,
+					repeatSubMatrix->maximumRepeatLength, js, tokens, tokenIndex+1);
+			continue;
+		}
+
 		if(strlen(keyString) != 31) {
 			st_errAbort("ERROR: Unrecognised key in repeat sub matrix json: %s\n", keyString);
 		}
+
 		char base = keyString[28];
 		if(base != 'A' && base != 'C' && base != 'G' && base != 'T') {
 			st_errAbort("ERROR: Unrecognised base in repeat sub matrix json: %s, base=%c\n", keyString, base);

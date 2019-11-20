@@ -14,7 +14,7 @@
 #include "sonLib.h"
 #include "pairwiseAligner.h"
 
-static int const RLENE_MAX_REPEAT_LENGTH=50;
+static int const RLENE_MAX_REPEAT_LENGTH=51;
 
 typedef enum {
     match = 0, shortGapX = 1, shortGapY = 2, longGapX = 3, longGapY = 4
@@ -90,11 +90,11 @@ void alphabet_destruct(Alphabet *a) {
 ///////////////////////////////////
 ///////////////////////////////////
 
-Symbol *symbol_convertStringToSymbols(const char *s, int64_t sL, Alphabet *a) {
-    assert(sL >= 0);
-    assert(strlen(s) == sL);
-    Symbol *cS = st_malloc(sL * sizeof(Symbol));
-    for (int64_t i = 0; i < sL; i++) {
+Symbol *symbol_convertStringToSymbols(const char *s, int64_t length, Alphabet *a) {
+    assert(length >= 0);
+    assert(strlen(s) == length);
+    Symbol *cS = st_malloc(length * sizeof(Symbol));
+    for (int64_t i = 0; i < length; i++) {
         cS[i] = a->convertCharToSymbol(s[i]);
     }
     return cS;
@@ -120,6 +120,36 @@ SymbolString symbolString_getSubString(SymbolString s, uint64_t start, uint64_t 
 
 void symbolString_destruct(SymbolString s) {
     free(s.sequence);
+}
+
+Symbol symbol_getRepeatLength(Symbol s) {
+	return s >> 8;  // Last 13 bits are length
+}
+
+Symbol symbol_stripRepeatCount(Symbol s) {
+	return s & 255; // First eight bits encode symbol
+}
+
+Symbol symbol_addRepeatCount(Symbol character, uint64_t runLength) {
+	assert(character <= 255);
+	assert(runLength <= 255);
+	return (runLength << 8) | character;
+}
+
+Symbol *symbol_convertRunLengthStringToSymbols(const char *s, uint64_t *repeatCounts, int64_t length, Alphabet *a) {
+	Symbol *cS = symbol_convertStringToSymbols(s, length, a);
+	for (int64_t i = 0; i < length; i++) {
+		cS[i] = symbol_addRepeatCount(cS[i], repeatCounts[i]);
+	}
+    return cS;
+}
+
+SymbolString symbolString_constructRLE(const char *sequence, uint64_t *repeatCounts, int64_t length, Alphabet *a) {
+	SymbolString symbolString;
+	symbolString.alphabet = a;
+	symbolString.sequence = symbol_convertRunLengthStringToSymbols(sequence, repeatCounts, length, a);
+	symbolString.length = length;
+	return symbolString;
 }
 
 ///////////////////////////////////
@@ -421,22 +451,9 @@ typedef struct _rleNucleotideEmissions {
 	double repeatLengthGapYProbs[RLENE_MAX_REPEAT_LENGTH];
 } RleNucleotideEmissions;
 
-static Symbol getRepeatLength(Symbol s) {
-	return s >> 3;  // Last 13 bits are length
-}
-
-static Symbol getNucleotide(Symbol s) {
-	return s & 7; // First three bits encode nucleotide
-}
-
-static Symbol encodeRleNucleotide(Symbol nucleotide, uint64_t runLength) {
-	assert(nucleotide <= 4);
-	return (runLength << 3) | nucleotide;
-}
-
 static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
 		const double *repeatLengthGapProbs, Symbol i) {
-    return getNucleotideGapProb(nucleotideGapProbs, getNucleotide(i)) + repeatLengthGapProbs[getRepeatLength(i)];
+    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)) + repeatLengthGapProbs[symbol_getRepeatLength(i)];
 }
 
 static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
@@ -448,7 +465,7 @@ static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Sym
 }
 
 static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
-    return getNucleotideMatchProb(&(rlene->ne), x, y) + rlene->repeatLengthSubstitutionProbs[getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + getRepeatLength(y)];
+    return getNucleotideMatchProb(&(rlene->ne), symbol_stripRepeatCount(x), symbol_stripRepeatCount(y)) + rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
 }
 
 Emissions *rleNucleotideEmissions_construct() {

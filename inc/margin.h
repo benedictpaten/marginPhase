@@ -31,6 +31,7 @@
 #include "hashTableC.h"
 #include "pairwiseAligner.h"
 #include "randomSequences.h"
+#include "stateMachine.h"
 
 #define uint128_t __uint128_t
 
@@ -709,6 +710,8 @@ uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities);
 // one repeat count given another
 struct _repeatSubMatrix {
 	Alphabet *alphabet;
+	double *baseLogProbs_AT;
+	double *baseLogProbs_GC;
 	double *logProbabilities;
 	int64_t maximumRepeatLength;
 	int64_t maxEntry;

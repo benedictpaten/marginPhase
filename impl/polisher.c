@@ -1433,6 +1433,8 @@ RepeatSubMatrix *repeatSubMatrix_constructEmpty(Alphabet *alphabet) {
 	RepeatSubMatrix *repeatSubMatrix = st_calloc(1, sizeof(RepeatSubMatrix));
 	repeatSubMatrix->alphabet = alphabet;
 	repeatSubMatrix->maximumRepeatLength = 51;
+	repeatSubMatrix->baseLogProbs_AT = st_calloc(repeatSubMatrix->maximumRepeatLength, sizeof(double));
+	repeatSubMatrix->baseLogProbs_GC = st_calloc(repeatSubMatrix->maximumRepeatLength, sizeof(double));
 	repeatSubMatrix->maxEntry = 2 * repeatSubMatrix->alphabet->alphabetSize * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
 	repeatSubMatrix->logProbabilities = st_calloc(repeatSubMatrix->maxEntry, sizeof(double));
 	return repeatSubMatrix;
