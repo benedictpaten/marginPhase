@@ -141,7 +141,7 @@ void test_logAdd(CuTest *testCase) {
 void test_symbol(CuTest *testCase) {
 	Alphabet *a = alphabet_constructNucleotide();
     Symbol cA[9] = { 0, 1, 2, 3, 4, 3, 4, 1, 2 };
-    SymbolString cA2 = symbolString_construct("AcGTntNCG", 9, a);
+    SymbolString cA2 = symbolString_construct("AcGTntNCG", 0, 9, a);
     for (int64_t i = 0; i < 9; i++) {
         CuAssertTrue(testCase, cA[i] == cA2.sequence[i]);
     }
@@ -262,8 +262,8 @@ void test_diagonalDPCalculations(CuTest *testCase) {
     const char *sY = "AGTTCG";
     int64_t lX = strlen(sX);
     int64_t lY = strlen(sY);
-    SymbolString sX2 = symbolString_construct(sX, lX, a);
-    SymbolString sY2 = symbolString_construct(sY, lY, a);
+    SymbolString sX2 = symbolString_construct(sX, 0, lX, a);
+    SymbolString sY2 = symbolString_construct(sY, 0, lY, a);
     StateMachine *sM = stateMachine3_constructNucleotide(threeState);
     DpMatrix *dpMatrixForward = dpMatrix_construct(lX + lY, sM->stateNumber);
     DpMatrix *dpMatrixBackward = dpMatrix_construct(lX + lY, sM->stateNumber);
@@ -425,8 +425,8 @@ void test_getAlignedPairsWithBanding(CuTest *testCase) {
         int64_t lY = strlen(sY);
         st_logInfo("Sequence X to align: %s END\n", sX);
         st_logInfo("Sequence Y to align: %s END\n", sY);
-        SymbolString sX2 = symbolString_construct(sX, lX, a);
-        SymbolString sY2 = symbolString_construct(sY, lY, a);
+        SymbolString sX2 = symbolString_construct(sX, 0, lX, a);
+        SymbolString sY2 = symbolString_construct(sY, 0, lY, a);
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
         p->traceBackDiagonals = st_randomInt(1, 10);
@@ -568,8 +568,8 @@ void test_alignedPairs(CuTest *testCase, char *sX, char *sY) {
 
 	//Now do alignment
 
-	SymbolString sX2 = symbolString_constructRLE(rleX->rleString, rleX->repeatCounts, rleX->length, params->polishParams->alphabet);
-	SymbolString sY2 = symbolString_constructRLE(rleY->rleString, rleY->repeatCounts, rleY->length, params->polishParams->alphabet);
+	SymbolString sX2 = rleString_constructSymbolString(rleX, 0, rleX->length, params->polishParams->alphabet);
+	SymbolString sY2 = rleString_constructSymbolString(rleY, 0, rleY->length, params->polishParams->alphabet);
 
 	stList *alignedPairs = getAlignedPairs(params->polishParams->sMConditional, sX2, sY2, params->polishParams->p, 0, 0);
 
@@ -628,8 +628,8 @@ void test_getAlignedPairs(CuTest *testCase) {
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
         StateMachine *sM = stateMachine3_constructNucleotide(threeState);
         Alphabet *a = alphabet_constructNucleotide();
-        SymbolString sX2 = symbolString_construct(sX, lX, a);
-        SymbolString sY2 = symbolString_construct(sY, lY, a);
+        SymbolString sX2 = symbolString_construct(sX, 0, lX, a);
+        SymbolString sY2 = symbolString_construct(sY, 0, lY, a);
 
         stList *alignedPairs = getAlignedPairs(sM, sX2, sY2, p, 0, 0);
 
@@ -660,8 +660,8 @@ void test_getAlignedPairsWithRaggedEnds(CuTest *testCase) {
         st_logInfo("Sequence Y to align: %s END\n", sY);
 
         Alphabet *a = alphabet_constructNucleotide();
-        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
-        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+        SymbolString sX2 = symbolString_construct(sX, 0, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, 0, strlen(sY), a);
 
         //Now do alignment
         PairwiseAlignmentParameters *p = pairwiseAlignmentBandingParameters_construct();
@@ -863,8 +863,8 @@ void test_getAlignedPairsWithIndels(CuTest *testCase) {
         stList *alignedPairs = NULL, *gapXPairs = NULL, *gapYPairs = NULL;
 
         Alphabet *a = alphabet_constructNucleotide();
-        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
-        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+        SymbolString sX2 = symbolString_construct(sX, 0, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, 0, strlen(sY), a);
 
         getAlignedPairsWithIndels(sM, sX2, sY2, p, &alignedPairs, &gapXPairs, &gapYPairs, st_random() > 0.5, st_random() > 0.5);
 
@@ -954,8 +954,8 @@ void test_leftShiftAlignment(CuTest *testCase) {
 	}
 
 	Alphabet *a = alphabet_constructNucleotide();
-	SymbolString seqX2 = symbolString_construct(seqX, strlen(seqX), a);
-	SymbolString seqY2 = symbolString_construct(seqY, strlen(seqY), a);
+	SymbolString seqX2 = symbolString_construct(seqX, 0, strlen(seqX), a);
+	SymbolString seqY2 = symbolString_construct(seqY, 0, strlen(seqY), a);
 
 	// Run left shift
 	stList *leftShiftedAlignment = leftShiftAlignment(alignedPairs, seqX2, seqY2);
@@ -1089,8 +1089,8 @@ void test_em(CuTest *testCase, StateMachineType stateMachineType, EmissionType e
         hmm_destruct(hmm);
 
         Alphabet *a = alphabet_constructNucleotide();
-        SymbolString sX2 = symbolString_construct(sX, strlen(sX), a);
-        SymbolString sY2 = symbolString_construct(sY, strlen(sY), a);
+        SymbolString sX2 = symbolString_construct(sX, 0, strlen(sX), a);
+        SymbolString sY2 = symbolString_construct(sY, 0, strlen(sY), a);
 
         for (int64_t iteration = 0; iteration < 10; iteration++) {
             hmm = hmm_constructEmpty(0.000000000001, stateMachineType, emissionType); //The tiny pseudo count prevents overflow
@@ -1154,8 +1154,8 @@ void test_computeForwardProbability(CuTest *testCase) {
 		bool raggedLeftEnd = st_random() > 0.5;
 		bool raggedRightEnd = st_random() > 0.5;
 
-		SymbolString ssX = symbolString_construct(sX, strlen(sX), sM->emissions->alphabet);
-		SymbolString ssY = symbolString_construct(sY, strlen(sY), sM->emissions->alphabet);
+		SymbolString ssX = symbolString_construct(sX, 0, strlen(sX), sM->emissions->alphabet);
+		SymbolString ssY = symbolString_construct(sY, 0, strlen(sY), sM->emissions->alphabet);
 
 		double logForwardProb = computeForwardProbability(ssX, ssY, anchorPairs, p, sM, raggedLeftEnd, raggedRightEnd);
 

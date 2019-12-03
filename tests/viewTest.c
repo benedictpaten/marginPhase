@@ -111,18 +111,6 @@ static struct List *readSequences(char *fastaFile) {
     return seqs;
 }
 
-char *getString(char *string, bool rle) {
-    if(rle) {
-        RleString *r = rleString_construct(string);
-        string = stString_copy(r->rleString);
-        rleString_destruct(r);
-    }
-    else {
-        string = stString_copy(string);
-    }
-    return string;
-}
-
 void test_viewExamples(CuTest *testCase) {
 	char *path=TEST_POLISH_FILES_DIR"largeExamples";
 	int64_t exampleNo = 1;
@@ -143,26 +131,24 @@ void test_viewExamples(CuTest *testCase) {
         struct List *r = readSequences((char *)readFile);
         assert(r->length > 1);
         RleString *rleReference = rleString_construct(r->list[0]);
-        char *reference = getString(r->list[0], rle);
-        stList *nucleotides = stList_construct3(0, free);
         stList *bamChunkReads = stList_construct3(0, (void (*)(void*))bamChunkRead_destruct);
         stList *rleReads = stList_construct3(0, (void (*)(void *))rleString_destruct);
+        stList *rleReadStrings = stList_construct();
         // TODO: Get examples with strands specified
         for(int64_t i=1; i<r->length; i++) {
             bool forwardStrand = TRUE;
-            char *nucl = getString(r->list[i], rle);
-            BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(nucl),
+            BamChunkRead *bcr = bamChunkRead_construct2(stString_print("read_%d", i), r->list[i],
                     NULL, forwardStrand, params->polishParams->useRunLengthEncoding);
-            stList_append(nucleotides, nucl);
             stList_append(bamChunkReads, bcr);
-            stList_append(rleReads, rleString_construct(r->list[i]));
+            RleString *rleRead = rleString_construct(r->list[i]);
+            stList_append(rleReadStrings, rleRead->rleString);
+            stList_append(rleReads, rleRead);
         }
         destructList(r);
 
 		// Parse reference
 		struct List *trueReferenceList = readSequences((char *)trueRefFile);
 		assert(trueReferenceList->length == 1);
-		char *trueReference = getString(trueReferenceList->list[0], rle);
 		RleString *rleTrueReference = rleString_construct(trueReferenceList->list[0]);
 		destructList(trueReferenceList);
 
@@ -173,7 +159,7 @@ void test_viewExamples(CuTest *testCase) {
 		params->polishParams->minRealignmentPolishIterations = 3;
 
 		// Generate alignment
-		Poa *poa = poa_realignAll(bamChunkReads, NULL, reference, params->polishParams);
+		Poa *poa = poa_realignAll(bamChunkReads, NULL, rleReference, params->polishParams);
 
 		// Generate final MEA read alignments to POA
 		stList *alignments = poa_getReadAlignmentsToConsensus(poa, bamChunkReads, params->polishParams);
@@ -188,9 +174,8 @@ void test_viewExamples(CuTest *testCase) {
 		// Get an alignment between the inferred reference and the true reference and add it
 
 		// Make symbol strings
-		SymbolString sX = symbolString_construct(poa->refString, strlen(poa->refString), params->polishParams->alphabet);
-		SymbolString sY = symbolString_construct(trueReference, strlen(trueReference), params->polishParams->alphabet);
-
+		SymbolString sX = rleString_constructSymbolString(poa->refString, 0, poa->refString->length, params->polishParams->alphabet);
+		SymbolString sY = rleString_constructSymbolString(rleTrueReference, 0, rleTrueReference->length, params->polishParams->alphabet);
 
 		double alignmentScore;
 		stList *refToTrueRefAlignment = getShiftedMEAAlignment(sX, sY, stList_construct(),
@@ -200,26 +185,25 @@ void test_viewExamples(CuTest *testCase) {
 		symbolString_destruct(sY);
 
 		stList_append(alignments, refToTrueRefAlignment);
-		stList_append(nucleotides, trueReference);
+		stList_append(rleReadStrings, rleTrueReference->rleString);
 		stList_append(rleReads, rleTrueReference);
 
 		// Print alignment
 		//TODO msaView_construct takes in nucleotides, not BCRs
-		MsaView *view = msaView_construct(poa->refString, NULL,
-								   	      alignments, nucleotides, seqNames);
+		MsaView *view = msaView_construct(poa->refString->rleString, NULL,
+								   	      alignments, rleReadStrings, seqNames);
 
 		if (st_getLogLevel() >= debug) {
 			msaView_print(view, 2, stderr);
 
 			if(rle) {
 				// Expand the RLE string
-				RleString *rleConsensusString = expandRLEConsensus(poa, bamChunkReads, params->polishParams->repeatSubMatrix);
-				CuAssertIntEquals(testCase, rleConsensusString->length, stList_length(poa->nodes)-1);
+				poa_estimateRepeatCountsUsingBayesianModel(poa, bamChunkReads, params->polishParams->repeatSubMatrix);
 
 				//msaView_printRepeatCounts(view, 1,
-				//		rleConsensusString, rleReads, stderr);
+				//		poa->refString->rleString, rleReads, stderr);
 
-				rleString_destruct(rleConsensusString);
+
 			}
 		}
 
@@ -231,17 +215,18 @@ void test_viewExamples(CuTest *testCase) {
 		st_logInfo("Got %i indels\n", (int)indelLength);
 
 		// Simple stats
-        int64_t totalMatches = calcSequenceMatches(poa->refString, trueReference);
-		st_logInfo("Got %f sequence identity between predicted and true reference.\n", 2.0*totalMatches/(strlen(poa->refString)+strlen(trueReference)));
+        int64_t totalMatches = calcSequenceMatches(poa->refString->rleString, rleTrueReference->rleString);
+		st_logInfo("Got %f sequence identity between predicted and true reference in RLE space.\n", 2.0*totalMatches/(poa->refString->length + rleTrueReference->length));
 
 		// Cleanup
 		rleString_destruct(rleReference);
+		//rleString_destruct(rleTrueReference);
 		stList_destruct(rleReads);
 		free(readFile);
 		free(trueRefFile);
 		stList_destruct(bamChunkReads);
-		free(reference);
 		stList_destruct(alignments);
+		stList_destruct(rleReadStrings);
 		poa_destruct(poa);
 		stList_destruct(seqNames);
 		msaView_destruct(view);

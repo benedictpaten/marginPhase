@@ -121,8 +121,8 @@ PolishedReferenceSequence *polishedReferenceSequence_construct(Params *params, c
 void polishedReferenceSequence_processChunkSequence(PolishedReferenceSequence *rSeq,
 		BamChunk *bamChunk, Poa *poa, stList *reads, Params *params) {
 	// Do run-length decoding
-	RleString *polishedRleReferenceString = expandRLEConsensus(poa, reads, params->polishParams->repeatSubMatrix);
-	char *polishedReferenceString = rleString_expand(polishedRleReferenceString);
+	poa_estimateRepeatCountsUsingBayesianModel(poa, reads, params->polishParams->repeatSubMatrix);
+	char *polishedReferenceString = rleString_expand(poa->refString);
 
 	// Log info about the POA
 	if (st_getLogLevel() >= info) {
@@ -191,9 +191,6 @@ void polishedReferenceSequence_processChunkSequence(PolishedReferenceSequence *r
 
 	// Add the polished sequence to the list of polished reference sequence chunks
 	stList_append(rSeq->polishedReferenceStrings, polishedReferenceString);
-
-	// Cleanup
-	rleString_destruct(polishedRleReferenceString);
 }
 
 void polishedReferenceSequence_flush(PolishedReferenceSequence *rSeq) {
@@ -366,7 +363,7 @@ int main(int argc, char *argv[]) {
 		// Now run the polishing method
 
 		// Generate the haploid partial order alignment (POA)
-		Poa *poa = poa_realignAll(reads, alignments, reference->rleString, params->polishParams);
+		Poa *poa = poa_realignAll(reads, alignments, reference, params->polishParams);
 
 		// If diploid
 		if(diploid) {
@@ -394,13 +391,13 @@ int main(int argc, char *argv[]) {
 			uint64_t totalHets = 0;
 			for(uint64_t i=0; i<gf->length; i++) {
 				if(gf->haplotypeString1[i] != gf->haplotypeString2[i]) {
-					char *allele_hap1 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString1[i]];
-					char *allele_hap2 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString2[i]];
-					st_logDebug("Got predicted het at bubble %i %s %s\n", (int)i+gf->refStart, allele_hap1, allele_hap2);
+					RleString *allele_hap1 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString1[i]];
+					RleString *allele_hap2 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString2[i]];
+					st_logDebug("Got predicted het at bubble %i %s %s\n", (int)i+gf->refStart, allele_hap1->rleString, allele_hap2->rleString);
 					totalHets++;
 				}
 			}
-			st_logInfo("In phasing chunk, got #hets: from %i total sites: %i fraction: %f\n", (int)totalHets, (int)gf->length, (float)totalHets/gf->length);
+			st_logInfo("In phasing chunk, got: %i hets from: %i total sites (fraction: %f)\n", (int)totalHets, (int)gf->length, (float)totalHets/gf->length);
 
 			uint64_t *hap1 = getPaddedHaplotypeString(gf->haplotypeString1, gf, bg, params);
 			uint64_t *hap2 = getPaddedHaplotypeString(gf->haplotypeString2, gf, bg, params);

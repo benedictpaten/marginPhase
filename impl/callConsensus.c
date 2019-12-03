@@ -25,17 +25,18 @@ char* callConsensus(int readNo, char *readArray[], char *reference, char *params
     // RLE reference (reference could be randomly chosen read)
     RleString *rleReference = rleString_construct(reference);
 
+	// Build the POA
+    Poa *poaRefined = poa_realignAll(reads, NULL, rleReference, p->polishParams);
 
-    Poa *poaRefined = poa_realignIterative(reads, NULL, rleReference->rleString, p->polishParams);
+    // Restimate the repeat counts of the backbone bases in the POA
+    poa_estimateRepeatCountsUsingBayesianModel(poaRefined, reads, p->polishParams->repeatSubMatrix);
 
-    // Now get a non-RLE (expanded) string
-    RleString* rleConsensus = expandRLEConsensus(poaRefined, reads, p->polishParams->repeatSubMatrix);
-
-    char* nonRleString = rleString_expand(rleConsensus);
+    char* nonRleString = rleString_expand(poaRefined->refString);
 
     //cleanup
     stList_destruct(reads);
     rleString_destruct(rleReference);
+    poa_destruct(poaRefined);
     // TODO: Cleanup memory!
 
     return nonRleString;

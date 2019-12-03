@@ -41,15 +41,17 @@ uint64_t *bubbleGraph_getConsensusPath(BubbleGraph *bg, PolishParams *polishPara
 	return consensusPath;
 }
 
-char *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, int64_t **poaToConsensusMap, PolishParams *polishParams) {
+RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath,
+		int64_t **poaToConsensusMap, PolishParams *polishParams) {
 	// Map to track alignment between the new consensus sequence and the current reference sequence
-	*poaToConsensusMap = st_malloc(bg->refLength * sizeof(int64_t));
-	for(int64_t i=0; i<bg->refLength; i++) {
+	*poaToConsensusMap = st_malloc(bg->refString->length * sizeof(int64_t));
+	for(int64_t i=0; i<bg->refString->length; i++) {
 		(*poaToConsensusMap)[i] = -1;
 	}
 
 	// Substrings of the consensus string that when concatenated form the overall consensus string
 	stList *consensusSubstrings = stList_construct3(0, free);
+	char previousBase = '-';
 	int64_t j=0; // Index in the consensus substring
 	int64_t k=0; // Index in the reference string
 	for(int64_t i=0; i<bg->bubbleNo; i++) {
@@ -57,82 +59,106 @@ char *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, i
 
 		// Add prefix after the last bubble (or start) but before the new bubble start
 		if(k < b->refStart) {
-			stList_append(consensusSubstrings, stString_getSubString(bg->refString, k, b->refStart-k));
+			// Get substring
+			RleString *refSubString = rleString_copySubstring(bg->refString, k, b->refStart-k);
+			stList_append(consensusSubstrings, rleString_expand(refSubString));
+
+			// Update coordinate map between old and new reference
+
+			// Skip an element in the consensus string if the same as the previous base
+			// as will get squashed when run length encoded
+			if(polishParams->useRunLengthEncoding && refSubString->rleString[0] == previousBase) {
+				k++;
+			}
+
 			do {
 				(*poaToConsensusMap)[k++] = j++;
 			} while(k < b->refStart);
+			previousBase = refSubString->rleString[refSubString->length-1];
+
+			// Cleanup
+			rleString_destruct(refSubString);
 		}
 
 		// Add the bubble string itself
 		// Noting, if there are not sufficient numbers of sequences to call the consensus
 		// use the current reference sequence
-		char *consensusSubstring = stString_copy(b->alleles[consensusPath[i]]);
-		stList_append(consensusSubstrings, consensusSubstring);
+		RleString *consensusSubstring = b->alleles[consensusPath[i]];
+		stList_append(consensusSubstrings, rleString_expand(consensusSubstring));
 
 		if(st_getLogLevel() >= debug) {
-			if(strcmp(consensusSubstring, b->refAllele) != 0) {
-				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64
-							", \nexisting string:\t%s\nnew string:\t\t%s\n", k, k+b->length,
-							b->refAllele, consensusSubstring);
+			if(!rleString_eq(consensusSubstring, b->refAllele)) {
+				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64 ", \nexisting string:\t", k, k+b->refAllele->length);
+				rleString_print(b->refAllele, stderr);
+				st_logDebug("\nnew string:\t\t");
+				rleString_print(consensusSubstring, stderr);
+				st_logDebug("\n");
 
-				for(int64_t j=0; j<b->alleleNo; j++) {
-					st_logDebug("\tGot allele: \t%s with log-likelihood: %f\n",
-							b->alleles[j], bubble_getLogLikelihoodOfAllele(b, j));
+				for(int64_t l=0; l<b->alleleNo; l++) {
+					st_logDebug("\tGot allele: \t");
+					rleString_print(b->alleles[l], stderr);
+					st_logDebug(" with log-likelihood: %f\n", bubble_getLogLikelihoodOfAllele(b, l));
 				}
 
-				for(int64_t j=0; j<b->readNo; j++) {
-					st_logDebug("\tGot read: \t%s, q-value: %f\n", b->reads[j]->readSubstring, b->reads[j]->qualValue);
+				for(int64_t l=0; l<b->readNo; l++) {
+					RleString *readSubstring = bamChunkReadSubstring_getRleString(b->reads[l]);
+					st_logDebug("\tGot read: \t");
+					rleString_print(readSubstring, stderr);
+					st_logDebug(", q-value: %f\n", b->reads[l]->qualValue);
+					rleString_destruct(readSubstring);
 				}
 			}
 		}
 
 		// Check if the same as the existing reference
 		// in which case we can maintain the alignment
-		if(strcmp(b->refAllele, consensusSubstring) == 0) {
+		if(rleString_eq(consensusSubstring, b->refAllele)) {
+			if(polishParams->useRunLengthEncoding && consensusSubstring->rleString[0] == previousBase) {
+				k++;
+			}
 			do {
 				(*poaToConsensusMap)[k++] = j++;
-			} while(k < b->refStart + b->length);
+			} while(k < b->refStart + b->refAllele->length);
 		}
 		else {
 			// Otherwise just update coordinates
-			k += b->length;
-			j += strlen(consensusSubstring);
+			k += b->refAllele->length;
+			j += consensusSubstring->length + // Latter expression establishes if the first position will be compressed into the earlier one
+					(polishParams->useRunLengthEncoding && consensusSubstring->rleString[0] == previousBase ? -1 : 0);
 		}
+		previousBase = consensusSubstring->rleString[consensusSubstring->length-1];
 	}
 
 	// Add the suffix of the reference after the last bubble
-	if(k < bg->refLength) {
-		stList_append(consensusSubstrings, stString_getSubString(bg->refString, k, bg->refLength-k));
+	if(k < bg->refString->length) {
+		RleString *refSubString = rleString_copySubstring(bg->refString, k, bg->refString->length-k);
+		stList_append(consensusSubstrings, rleString_expand(refSubString));
+
+		if(polishParams->useRunLengthEncoding && refSubString->rleString[0] == previousBase) {
+			k++;
+		}
 		do {
 			(*poaToConsensusMap)[k++] = j++;
-		} while(k < bg->refLength);
+		} while(k < bg->refString->length);
+
+		rleString_destruct(refSubString);
 	}
 
 	// Build the new consensus string by concatenating the constituent pieces
-	char *newConsensusString = stString_join2("", consensusSubstrings);
-	assert(strlen(newConsensusString) == j);
+	char *newExpandedConsensusString = stString_join2("", consensusSubstrings);
+	RleString *newConsensusString = polishParams->useRunLengthEncoding ? rleString_construct(newExpandedConsensusString) : rleString_construct_no_rle(newExpandedConsensusString);
+
+	//st_uglyf("Got %i %i %i %i\n", newConsensusString->length, j, (int)strlen(newExpandedConsensusString), (int)polishParams->useRunLengthEncoding);
+	assert(newConsensusString->length == j);
 
 	// Cleanup
 	stList_destruct(consensusSubstrings);
+	free(newExpandedConsensusString);
 
 	return newConsensusString;
 }
 
 // New polish algorithm
-
-char *getExistingSubstring(Poa *poa, int64_t from, int64_t to) {
-	/*
-	 * Gets substring of the poa reference string from "from" (inclusive)
-	 * to "to" (exclusive).
-	 */
-	char *s = st_malloc(sizeof(char) * (to-from+1));
-	s[to-from] = '\0';
-	for(int64_t i=from; i<to; i++) {
-		PoaNode *node = stList_get(poa->nodes, i);
-		s[i-from] = node->base;
-	}
-	return s;
-}
 
 double getTotalWeight(Poa *poa, PoaNode *node) {
 	/*
@@ -159,7 +185,6 @@ char getNextCandidateBase(Poa *poa, PoaNode *node, int64_t *i, double candidateW
 	 * Iterates through candidate bases for a reference position returning those with sufficient weight.
 	 * Always returns the reference base
 	 */
-	double totalWeight = getTotalWeight(poa, node);
 	while(*i<poa->alphabet->alphabetSize) {
 		char base = poa->alphabet->convertSymbolToChar(*i);
 		if(node->baseWeights[(*i)++] > candidateWeight || toupper(node->base) == base) {
@@ -167,6 +192,21 @@ char getNextCandidateBase(Poa *poa, PoaNode *node, int64_t *i, double candidateW
 		}
 	}
 	return '-';
+}
+
+int64_t getNextCandidateRepeatCount(Poa *poa, PoaNode *node, int64_t *i, double candidateWeight) {
+	/*
+	 * Iterates through candidate repeat counts for a reference position returning those with sufficient weight.
+	 * Always returns the reference repeat count.
+	 */
+	candidateWeight *= 2.0; // This is a hack to reduce the number of repeat counts investigated by making a repeat count need a larger change
+	while(*i<poa->maxRepeatCount) {
+		int64_t repeatCount = (*i)++;
+		if(node->repeatCountWeights[repeatCount] > candidateWeight || node->repeatCount == repeatCount) {
+			return repeatCount;
+		}
+	}
+	return -1;
 }
 
 bool hasCandidateSubstitution(Poa *poa, PoaNode *node, double candidateWeight) {
@@ -184,7 +224,22 @@ bool hasCandidateSubstitution(Poa *poa, PoaNode *node, double candidateWeight) {
 	return 0;
 }
 
-char *getNextCandidateInsert(PoaNode *node, int64_t *i, double candidateWeight) {
+bool hasCandidateRepeatCountChange(Poa *poa, PoaNode *node, double candidateWeight) {
+	/*
+	 * Returns non-zero if the node has a candidate base repeat count that is different to the
+	 * current base's repeat count.
+	 */
+	int64_t i=0;
+	int64_t repeatCount;
+	while((repeatCount = getNextCandidateRepeatCount(poa, node, &i, candidateWeight)) != -1) {
+		if(repeatCount != node->repeatCount) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+RleString *getNextCandidateInsert(PoaNode *node, int64_t *i, double candidateWeight) {
 	/*
 	 * Iterates through candidate insertions for a reference position returning those with sufficient weight.
 	 */
@@ -232,6 +287,15 @@ bool maxCandidateDeleteLength(PoaNode *node, double candidateWeight) {
 	return maxDeleteLength;
 }
 
+static bool containsString(stList *strings, char *s) {
+	for(int64_t i=0; i<stList_length(strings); i++) {
+		if(stString_eq(stList_get(strings, i), s)) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 										double *candidateWeights, double weightAdjustment, int64_t maximumStringNumber) {
 	/*
@@ -269,29 +333,51 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 	char base;
 	while((base = getNextCandidateBase(poa, node, &i, candidateWeight)) != '-') { // Enumerate the possible bases at the reference node.
 
-		// Create the consensus substrings with no inserts or deletes starting at this node
-		for(int64_t j=0; j<stList_length(suffixes); j++) {
-			stList_append(consensusSubstrings, stString_print("%c%s", base, stList_get(suffixes, j)));
-		}
+		int64_t repeatCount, l=1;
+		while((repeatCount = getNextCandidateRepeatCount(poa, node, &l, candidateWeight)) != -1) { // Enumerate the possible repeat counts at the reference node.
+			assert(repeatCount != 0);
+			char *bases = expandChar(base, repeatCount);
 
-		// Now add insert cases
-		int64_t k=0;
-		char *insert;
-		while((insert = getNextCandidateInsert(node, &k, candidateWeight)) != NULL) {
+			// Create the consensus substrings with no inserts or deletes starting at this node
 			for(int64_t j=0; j<stList_length(suffixes); j++) {
-				stList_append(consensusSubstrings, stString_print("%c%s%s", base, insert, stList_get(suffixes, j)));
+				stList_append(consensusSubstrings, stString_print("%s%s", bases, stList_get(suffixes, j)));
 			}
-		}
 
-		// Add then deletes
-		k = 0;
-		int64_t deleteLength;
-		while((deleteLength = getNextCandidateDelete(node, &k, candidateWeight)) > 0) {
-			for(int64_t j=0; j<stList_length(suffixes); j++) {
-				char *suffixHaplotype = stList_get(suffixes, j);
-				stList_append(consensusSubstrings, stString_print("%c%s", base,
-							((int64_t)strlen(suffixHaplotype) - deleteLength >= 0) ? &(suffixHaplotype[deleteLength]) : ""));
+			// Now add insert cases
+			int64_t k=0;
+			RleString *insert;
+			while((insert = getNextCandidateInsert(node, &k, candidateWeight)) != NULL) {
+				char *expandedInsert = rleString_expand(insert);
+				assert(strlen(expandedInsert) > 0);
+				for(int64_t j=0; j<stList_length(suffixes); j++) {
+					stList_append(consensusSubstrings, stString_print("%s%s%s", bases, expandedInsert, stList_get(suffixes, j)));
+				}
+				free(expandedInsert);
 			}
+
+			// Add then deletes
+			k = 0;
+			int64_t deleteLength;
+			while((deleteLength = getNextCandidateDelete(node, &k, candidateWeight)) > 0) {
+				for(int64_t j=0; j<stList_length(suffixes); j++) {
+					char *suffixHaplotype = stList_get(suffixes, j);
+
+					// Build new deletion
+					char *s = stString_print("%s%s", bases,
+							((int64_t)strlen(suffixHaplotype) - deleteLength >= 0) ? &(suffixHaplotype[deleteLength]) : "");
+
+					// Add deletion if not already in the set of consensus strings
+					if(!containsString(consensusSubstrings, s)) {
+						stList_append(consensusSubstrings, s);
+					}
+					else {
+						free(s);
+					}
+				}
+			}
+
+			// Cleanup bases
+			free(bases);
 		}
 	}
 
@@ -307,7 +393,7 @@ stList *getCandidateConsensusSubstrings(Poa *poa, int64_t from, int64_t to,
 	return consensusSubstrings;
 }
 
-BamChunkReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, PolishParams *params) {
+BamChunkReadSubstring *bamChunkRead_getSubstring(BamChunkRead *bamChunkRead, int64_t start, int64_t length, PolishParams *params) {
 	assert(length >= 0);
 
 	BamChunkReadSubstring *rs = st_calloc(1, sizeof(BamChunkReadSubstring));
@@ -329,18 +415,14 @@ BamChunkReadSubstring *getReadSubstring(BamChunkRead *bamChunkRead, int64_t star
 		rs->qualValue = -1.0;
 	}
 
-	// Add read substring - TODO: fix not thread safe
-	char *read = &(bamChunkRead->rleRead->rleString[start]);
-	char c = read[length];
-	read[length] = '\0';
-	rs->readSubstring = stString_copy(read);
-	read[length] = c;
-
 	return rs;
 }
 
-void readSubstring_destruct(BamChunkReadSubstring *rs) {
-	free(rs->readSubstring);
+RleString *bamChunkReadSubstring_getRleString(BamChunkReadSubstring *readSubstring) {
+	return rleString_copySubstring(readSubstring->read->rleRead, readSubstring->start, readSubstring->length);
+}
+
+void bamChunkReadSubstring_destruct(BamChunkReadSubstring *rs) {
 	free(rs);
 }
 
@@ -397,7 +479,7 @@ stList *filterReadSubstrings(stList *readSubstrings, PolishParams *params) {
 			// don't have q-values
 			break;
 		}
-		readSubstring_destruct(rs);
+		bamChunkReadSubstring_destruct(rs);
 		stList_pop(readSubstrings);
 	}
 
@@ -408,9 +490,8 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 	/*
 	 * Get the substrings of reads aligned to the interval from (inclusive) to to
 	 * (exclusive) and their qual values. Adds them to readSubstrings and qualValues, respectively.
-	 *
 	 */
-	stList *readSubstrings = stList_construct3(0, (void (*)(void *))readSubstring_destruct);
+	stList *readSubstrings = stList_construct3(0, (void (*)(void *))bamChunkReadSubstring_destruct);
 
 	// Deal with boundary cases
 	if(from == 0) {
@@ -419,7 +500,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			// copy the complete reads
 			for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 			    BamChunkRead *bamChunkRead = stList_get(bamChunkReads, i);
-				stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, bamChunkRead->rleRead->length, params));
+				stList_append(readSubstrings, bamChunkRead_getSubstring(bamChunkRead, 0, bamChunkRead->rleRead->length, params));
 			}
 			return filterReadSubstrings(readSubstrings, params);
 		}
@@ -431,7 +512,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
             // Trim the read substring, copy it and add to the substrings list
-            stList_append(readSubstrings, getReadSubstring(bamChunkRead, 0, obs->offset, params));
+            stList_append(readSubstrings, bamChunkRead_getSubstring(bamChunkRead, 0, obs->offset, params));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
 		return filterReadSubstrings(readSubstrings, params);
@@ -444,7 +525,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 			PoaBaseObservation *obs = stList_get(node->observations, i);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obs->readNo);
 			// Trim the read substring, copy it and add to the substrings list
-            stList_append(readSubstrings, getReadSubstring(bamChunkRead, obs->offset, bamChunkRead->rleRead->length-obs->offset, params));
+            stList_append(readSubstrings, bamChunkRead_getSubstring(bamChunkRead, obs->offset, bamChunkRead->rleRead->length-obs->offset, params));
 			i = skipDupes(node, ++i, obs->readNo);
 		}
 		return filterReadSubstrings(readSubstrings, params);
@@ -461,7 +542,7 @@ stList *getReadSubstrings(stList *bamChunkReads, Poa *poa, int64_t from, int64_t
 		if(obsFrom->readNo == obsTo->readNo) {
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, obsFrom->readNo);
             if(obsTo->offset-obsFrom->offset > 0) { // If a non zero run of bases
-            	stList_append(readSubstrings, getReadSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset, params));
+            	stList_append(readSubstrings, bamChunkRead_getSubstring(bamChunkRead, obsFrom->offset, obsTo->offset-obsFrom->offset, params));
             }
 			i = skipDupes(fromNode, ++i, obsFrom->readNo);
 			j = skipDupes(toNode, ++j, obsTo->readNo);
@@ -523,8 +604,10 @@ bool *getCandidateVariantOverlapPositions(Poa *poa, double *candidateWeights) {
 	for(int64_t i=0; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
 
-		// Mark as variant if has a candidate substitution or an insert starts at this position
-		if(hasCandidateSubstitution(poa, node, candidateWeights[i]) || hasCandidateInsert(node, candidateWeights[i])) {
+		// Mark as variant if has a candidate substitution, repeat count change or an insert starts at this position
+		if(hasCandidateSubstitution(poa, node, candidateWeights[i])
+				|| hasCandidateRepeatCountChange(poa, node, candidateWeights[i])
+				|| hasCandidateInsert(node, candidateWeights[i])) {
 			candidateVariantPositions[i] = 1;
 		}
 
@@ -633,29 +716,29 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 				} while(alleles == NULL);
 
 				// Get existing reference string
-				char *existingRefSubstring = getExistingSubstring(poa, pAnchor+1, i);
-				assert(strlen(existingRefSubstring) == i-pAnchor-1);
+				assert(i-1-pAnchor > 0);
+				RleString *existingRefSubstring = rleString_copySubstring(poa->refString, pAnchor, i-1-pAnchor);
+				assert(existingRefSubstring->length == i-pAnchor-1);
+				char *expandedExistingRefSubstring = rleString_expand(existingRefSubstring);
 
 				// If it is not trivial because it contains more than one allele, or an allele different
 				// to the reference
-				if(stList_length(alleles) > 1 || strcmp(stList_peek(alleles), existingRefSubstring) != 0) {
+				if(stList_length(alleles) > 1 || !stString_eq(stList_peek(alleles), expandedExistingRefSubstring)) {
 
 					Bubble *b = st_malloc(sizeof(Bubble)); // Make a bubble and add to list of bubbles
 					stList_append(bubbles, b);
 
 					// Set the coordinates
 					b->refStart = pAnchor;
-					b->length = i-pAnchor-1;
-					assert(b->length > 0);
 
 					// The reference allele
 					b->refAllele = existingRefSubstring;
 
 					// Now copy the alleles list to the bubble's array of alleles
 					b->alleleNo = stList_length(alleles);
-					b->alleles = st_malloc(sizeof(char *) * b->alleleNo);
+					b->alleles = st_malloc(sizeof(RleString *) * b->alleleNo);
 					for(int64_t j=0; j<b->alleleNo; j++) {
-						b->alleles[j] = stList_pop(alleles);
+						b->alleles[j] = params->useRunLengthEncoding ? rleString_construct(stList_get(alleles, j)) : rleString_construct_no_rle(stList_get(alleles, j));
 					}
 
 					// Get read substrings
@@ -671,16 +754,18 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 					b->alleleReadSupports = st_calloc(b->readNo*b->alleleNo, sizeof(float));
 					stList *anchorPairs = stList_construct(); // Currently empty
 					for(int64_t j=0; j<b->alleleNo; j++) {
-						SymbolString aS = symbolString_construct(b->alleles[j], strlen(b->alleles[j]),
-								params->sMConditional->emissions->alphabet);
+						SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length, params->alphabet);
 						for(int64_t k=0; k<b->readNo; k++) {
-							SymbolString rS = symbolString_construct(b->reads[k]->readSubstring, strlen(b->reads[k]->readSubstring),
-									params->sMConditional->emissions->alphabet);
+							RleString *readSubstring = bamChunkReadSubstring_getRleString(b->reads[k]);
+
+							SymbolString rS = rleString_constructSymbolString(readSubstring, 0, readSubstring->length, params->alphabet);
 
 							b->alleleReadSupports[j*b->readNo + k] =
 					computeForwardProbability(aS, rS, anchorPairs, params->p, params->sMConditional, 0, 0);
 
+							// TODO : Make this all more efficient with less copying
 							symbolString_destruct(rS);
+							rleString_destruct(readSubstring);
 						}
 						symbolString_destruct(aS);
 					}
@@ -688,8 +773,9 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 				}
 				// Cleanup
 				else {
-					free(existingRefSubstring);
+					rleString_destruct(existingRefSubstring);
 				}
+				free(expandedExistingRefSubstring);
 				stList_destruct(alleles);
 			}
 			// Update previous anchor
@@ -701,7 +787,6 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 
 	BubbleGraph *bg = st_malloc(sizeof(BubbleGraph));
 	bg->refString = poa->refString;
-	bg->refLength = stList_length(poa->nodes)-1;
 
 	// Copy the bubbles
 	bg->bubbleNo = stList_length(bubbles);
@@ -734,13 +819,13 @@ void bubble_destruct(Bubble b) {
 	free(b.reads);
 	// Cleanup the alleles
 	for(int64_t j=0; j<b.alleleNo; j++) {
-		free(b.alleles[j]);
+		rleString_destruct(b.alleles[j]);
 	}
 	free(b.alleles);
 	// Cleanup the allele supports
 	free(b.alleleReadSupports);
 	// Cleanup the reference allele
-	free(b.refAllele);
+	rleString_destruct(b.refAllele);
 }
 
 void bubbleGraph_destruct(BubbleGraph *bg) {
@@ -861,14 +946,16 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 
 		for(uint64_t j=0; j<b->alleleNo; j++) {
 
-			SymbolString aS = symbolString_construct(b->alleles[j], strlen(b->alleles[j]),
+			SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
 					params->polishParams->sM->emissions->alphabet);
 
 			for(uint64_t k=j; k<b->alleleNo; k++) {
-				SymbolString aS2 = symbolString_construct(b->alleles[k], strlen(b->alleles[k]),
+				SymbolString aS2 = rleString_constructSymbolString(b->alleles[k], 0, b->alleles[k]->length,
 									params->polishParams->sM->emissions->alphabet);
 
 				float f = -computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
+
+				//st_uglyf("For %s %s got %f prob\n", b->alleles[j]->rleString, b->alleles[k]->rleString, f);
 
 				int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
 				l = l > 255 ? 255 : l;
@@ -926,15 +1013,15 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 
 				st_logDebug(">>Phasing Bubble Graph: At site: %i (of %i) with %i potential alleles got %s (%i) (log-prob: %f) for hap1 with %i reads and %s (%i) (log-prob: %f) for hap2 with %i reads (total depth %i), and ancestral allele %s (%i), genotype prob: %f, strand-skew p-value: %f\n",
 						(int)i, (int)gF->length, (int)b->alleleNo,
-						b->alleles[gF->haplotypeString1[i]], (int)gF->haplotypeString1[i], gF->haplotypeProbs1[i], popcount64(cell->partition),
-						b->alleles[gF->haplotypeString2[i]], (int)gF->haplotypeString2[i], gF->haplotypeProbs2[i], (int)(column->depth-popcount64(cell->partition)), (int)column->depth,
-						b->alleles[gF->ancestorString[i]], (int)gF->ancestorString[i], gF->genotypeProbs[i], (float)strandSkew);
+						b->alleles[gF->haplotypeString1[i]]->rleString, (int)gF->haplotypeString1[i], gF->haplotypeProbs1[i], popcount64(cell->partition),
+						b->alleles[gF->haplotypeString2[i]]->rleString, (int)gF->haplotypeString2[i], gF->haplotypeProbs2[i], (int)(column->depth-popcount64(cell->partition)), (int)column->depth,
+						b->alleles[gF->ancestorString[i]]->rleString, (int)gF->ancestorString[i], gF->genotypeProbs[i], (float)strandSkew);
 
 				double strandSkews[b->alleleNo];
 				bubble_calculateStrandSkews(b, strandSkews);
 
 				for(uint64_t j=0; j<b->alleleNo; j++) {
-					st_logDebug("\t>>Allele %i\t strand-skew: %f \t%s\t ", (int)j, (float)strandSkews[j], b->alleles[j]);
+					st_logDebug("\t>>Allele %i\t strand-skew: %f \t%s\t ", (int)j, (float)strandSkews[j], b->alleles[j]->rleString);
 					for(uint64_t k=0; k<b->alleleNo; k++) {
 						st_logDebug("%i \t", (int)s->substitutionLogProbs[j * b->alleleNo + k]);
 					}
@@ -961,7 +1048,9 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 								supports[m] += roundf(b->alleleReadSupports[m*b->readNo + j]);
 							}
 
-							st_logDebug("%s\n", s->readSubstring);
+							RleString *readSubstring = bamChunkReadSubstring_getRleString(s);
+							st_logDebug("%s\n", readSubstring->rleString);
+							rleString_destruct(readSubstring);
 						}
 					}
 
@@ -1078,7 +1167,7 @@ Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, s
 
 	// Get new consensus string
 	int64_t *poaToConsensusMap;
-	char *newConsensusString = bubbleGraph_getConsensusString(bg, consensusPath, &poaToConsensusMap, params->polishParams);
+	RleString *newConsensusString = bubbleGraph_getConsensusString(bg, consensusPath, &poaToConsensusMap, params->polishParams);
 
 	// Get anchor alignments
 	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(reads), params->polishParams);
@@ -1088,7 +1177,7 @@ Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, s
 
 	// Cleanup
 	free(poaToConsensusMap);
-	free(newConsensusString);
+	rleString_destruct(newConsensusString);
 	stList_destruct(anchorAlignments);
 
 	return poa2;
@@ -1269,9 +1358,8 @@ bool filterByBubbleIndel(Bubble *b, void *extraArg) {
 	if(b->alleleNo != 2) {
 		return 1;
 	}
-	return 0;
 	for(int64_t i=1; i<b->alleleNo; i++) {
-		if(strlen(b->alleles[i]) != strlen(b->alleles[i-1])) {
+		if(b->alleles[i]->nonRleLength != b->alleles[i-1]->nonRleLength) {
 			return 1;
 		}
 	}

@@ -307,6 +307,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotRepeatCountMatrix = 1;
         }
+        else if (strcmp(keyString, "poaConstructCompareRepeatCounts") == 0) {
+        	params->poaConstructCompareRepeatCounts = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
         else if (strcmp(keyString, "hmm") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
         	char *tokStr = stJson_token_tostr(js, &tok);
@@ -353,7 +356,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: candidateVariantWeight parameter must zero or greater\n");
 			}
 			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
+		}
+        else if (strcmp(keyString, "columnAnchorTrim") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: columnAnchorTrim parameter must zero or greater\n");
 			}

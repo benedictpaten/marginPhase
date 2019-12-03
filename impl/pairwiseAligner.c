@@ -7,15 +7,7 @@
 //This is being included to make popen work!
 #define _XOPEN_SOURCE 500
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include <ctype.h>
-
-#include "bioioC.h"
-#include "sonLib.h"
-#include "pairwiseAligner.h"
-#include "pairwiseAlignment.h"
+#include "margin.h"
 
 ///////////////////////////////////
 ///////////////////////////////////

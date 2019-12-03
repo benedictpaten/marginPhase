@@ -1,7 +1,7 @@
 
 
 import sys
-
+ 
 if len(sys.argv) != 3:
 	print("compareHets.py trueHetsFile predictedHetsFile")
 	sys.exit(0)

@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.7)
 project(marginPhase)
 
 set(CMAKE_CXX_STANDARD 11)
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
 #include(FindOpenMP)
 #if(OPENMP_FOUND)
@@ -283,9 +283,9 @@ add_executable(allTests
         tests/parserTest.c
         tests/chunkingTest.c
         tests/polisherTest.c
-        tests/viewTest.c
         tests/callConsensusTest.c
         tests/marginTest.c
+        tests/viewTest.c
         )
 
 target_link_libraries(allTests marginLib)

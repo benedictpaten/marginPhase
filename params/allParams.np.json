@@ -65,6 +65,8 @@
 		
 		  "referenceBasePenalty" : 0.5,
 		  
+		  "poaConstructCompareRepeatCounts" : true,
+		  
 		  "minPosteriorProbForAlignmentAnchors" : [ 0.9, 10, 0.95, 4, 0.99, 0 ],
 		  
 		  "candidateVariantWeight" : 0.18,

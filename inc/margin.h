@@ -455,6 +455,7 @@ stRPHmmParameters *parseParameters(char *paramsFile);
 
 struct _polishParams {
 	bool useRunLengthEncoding;
+	bool poaConstructCompareRepeatCounts; // use the repeat counts in deciding if an indel can be shifted
 	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
 	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
 	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
@@ -465,7 +466,7 @@ struct _polishParams {
 	Hmm *hmmConditional; // Non-symmetrical HMM for calculating prob of one sequence given the other, used for aligning reads to the reference.
 	StateMachine *sMConditional; // Statemachine derived from the conditional hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
-	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
+	RepeatSubMatrix *repeatSubMatrix; // Repeat counts submatrix
 	// chunking configuration
 	bool includeSoftClipping;
 	uint64_t chunkSize;
@@ -498,8 +499,9 @@ void polishParams_destruct(PolishParams *polishParams);
  */
 
 struct _Poa {
-	Alphabet *alphabet;
-	char *refString; // The reference string
+	Alphabet *alphabet; // The alphabet of bases
+	uint64_t maxRepeatCount; // The maximum repeat count, exclusive
+	RleString *refString; // The reference string, encoded using RLE
 	stList *nodes;
 };
 
@@ -507,12 +509,14 @@ struct _poaNode {
 	stList *inserts; // Inserts that happen immediately after this position
 	stList *deletes; // Deletes that happen immediately after this position
 	char base; // Char representing base, e.g. 'A', 'C', etc.
-	double *baseWeights; // Array of length SYMBOL_NUMBER, encoding the weight given go each base, using the Symbol enum
+	uint64_t repeatCount; // Repeat count of base
+	double *baseWeights; // Weight given to each possible base
+	double *repeatCountWeights; // Weight given to each possible repeat count
 	stList *observations; // Individual events representing event, a list of PoaObservations
 };
 
 struct _poaInsert {
-	char *insert; // String representing characters of insert e.g. "GAT", etc.
+	RleString *insert; // RLE string representing characters of insert e.g. "GAT" with repeat counts "121", etc.
 	double weightForwardStrand;
 	double weightReverseStrand;
 };
@@ -538,16 +542,17 @@ double poaInsert_getWeight(PoaInsert *insert);
 double poaDelete_getWeight(PoaDelete *delete);
 
 /*
- * Creates a POA representing the given reference sequence, with one node for each reference base and a
- * prefix 'N' base to represent place to add inserts/deletes that precede the first position of the reference.
+ * Creates a POA representing the given RLE reference sequence, with one node for each reference base and a
+ * prefix 'N'/1 base to represent place to add inserts/deletes that precede the first position of the reference.
  */
-Poa *poa_getReferenceGraph(char *reference, Alphabet *alphabet);
+Poa *poa_getReferenceGraph(RleString *reference, Alphabet *alphabet, uint64_t maxRepeatCount);
 
 /*
  * Adds to given POA the matches, inserts and deletes from the alignment of the given read to the reference.
  * Adds the inserts and deletes so that they are left aligned.
  */
-void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *matches, stList *inserts, stList *deletes);
+void poa_augment(Poa *poa, RleString *read, bool readStrand, int64_t readNo, stList *matches, stList *inserts, stList *deletes,
+		PolishParams *polishParams);
 
 /*
  * Creates a POA representing the reference and the expected inserts / deletes and substitutions from the
@@ -555,7 +560,7 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
+Poa *poa_realign(stList *bamChunkReads, stList *alignments, RleString *reference, PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -599,45 +604,31 @@ void poa_printSummaryStats(Poa *poa, FILE *fH);
 
 /*
  * Creates a consensus reference sequence from the POA. poaToConsensusMap is a pointer to an
- * array of integers of length str(poa->refString), giving the index of the reference positions
+ * array of integers of length poa->refString->length, giving the index of the reference positions
  * alignment to the consensus sequence, or -1 if not aligned. It is initialised as a
  * return value of the function.
  */
-char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
+RleString *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
-Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params);
-
-char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
+RleString *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params,
 				  int64_t **poaToConsensusMap);
 
+
 /*
- * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
+ * Iteratively uses poa_getConsensus and poa_polish to refine the median reference sequence
  * for the given reads and the starting reference.
+ *
+ * Allows the specification of the min and max number of realignment cycles.
  */
-Poa *poa_realignIterative(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
-
-/*
- * Ad poa_realignIterative, but allows the specification of the min and max number of realignment cycles,
- * also, can switch between the "poa_polish" and the "poa_consensus" algorithm using hmmNotRealign (poa_consensus
- * if non-zero).
- */
-Poa *poa_realignIterative2(stList *bamChunkReads,
-						   stList *anchorAlignments, char *reference,
-						   PolishParams *polishParams, bool hmmNotRealign,
-						   int64_t minIterations, int64_t maxIterations);
-
-/*
- * As poa_realignIterative, but takes a starting poa. Input poa is destroyed by function.
- */
-Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
+Poa *poa_realignIterative(Poa *poa, stList *bamChunkReads,
 						   PolishParams *polishParams, bool hmmMNotRealign,
 						   int64_t minIterations, int64_t maxIterations);
 
 /*
- * Convenience function that iteratively polishes sequence using poa_consensus and then poa_polish for
+ * Convenience function that iteratively polishes sequence using poa_getConsensus and then poa_polish for
  * a specified number of iterations.
  */
-Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *reference,
+Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, RleString *reference,
 						  PolishParams *polishParams);
 
 /*
@@ -647,14 +638,16 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishPar
 
 void poa_destruct(Poa *poa);
 
-double *poaNode_getStrandSpecificBaseWeights(Poa *poa, PoaNode *node, stList *bamChunkReads,
-											 double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight);
+double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
+		double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight, Alphabet *a);
 
 /*
  * Finds shift, expressed as a reference coordinate, that the given substring str can
  * be shifted left in the refString, starting from a match at refStart.
+ *
+ * If compareRepeatCounts is non-zero then comparison includes exact comparison of repeat counts.
  */
-int64_t getShift(char *refString, int64_t refStart, char *str, int64_t length);
+int64_t getShift(RleString *refString, int64_t refStart, RleString *str, bool compareRepeatCounts);
 
 /*
  * Get sum of weights for reference bases in poa - proxy to agreement of reads
@@ -680,6 +673,13 @@ double poa_getInsertTotalWeight(Poa *poa);
  */
 double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa);
 
+/*
+ * Reestimates the repeat counts of the poa backbone using the Bayesian model, repeatSubMatrix.
+ * Changes the repeat counts of the backbone bases in place
+ */
+void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
+
+
 // Data structure for representing RLE strings
 struct _rleString {
 	char *rleString; //Run-length-encoded (RLE) string
@@ -688,16 +688,44 @@ struct _rleString {
 	uint64_t nonRleLength; // Length of the expanded, non-rle string
 };
 
+/*
+ * Returns a string "cXrepeatCount", e.g. c='a', repeatCount=4 returns "aaaa".
+ */
+char *expandChar(char c, uint64_t repeatCount);
+
 RleString *rleString_construct(char *string);
 
 RleString *rleString_construct_no_rle(char *string);
 
 void rleString_destruct(RleString *rlString);
 
+RleString *rleString_copy(RleString *rleString);
+
+RleString *rleString_copySubstring(RleString *rleString, uint64_t start, uint64_t length);
+
+bool rleString_eq(RleString *r1, RleString *r2);
+
+/*
+ * Debug output friendly version of rleString on one line.
+ * Does not print any new lines.
+ */
+void rleString_print(RleString *rleString, FILE *f);
+
+/*
+ * Cyclic rotatation of the rle string so that the suffix of str of rotationLength is removed and made the prefix
+ * of the string.
+ */
+void rleString_rotateString(RleString *str, int64_t rotationLength);
+
 /*
  * Generates the expanded non-rle string.
  */
 char *rleString_expand(RleString *rleString);
+
+/*
+ * Gets a symbol sub-string from a given RLE string.
+ */
+SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a);
 
 /*
  * Gets an array giving the position in the rleString of a corresponding position in the expanded string.
@@ -713,7 +741,7 @@ struct _repeatSubMatrix {
 	double *baseLogProbs_AT;
 	double *baseLogProbs_GC;
 	double *logProbabilities;
-	int64_t maximumRepeatLength;
+	int64_t maximumRepeatLength; // The maximum repeat count length, exclusive
 	int64_t maxEntry;
 };
 
@@ -750,12 +778,6 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
         stList *bamChunkReads, double *logProbability);
 
 /*
- * Takes a POA done in run-length space and returns the expanded consensus string in
- * non-run-length space as an RleString.
- */
-RleString *expandRLEConsensus(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
-
-/*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing
  * in both underlying sequences (seqX and seqY) into an equivalent run-length encoded space alignment.
  */
@@ -776,8 +798,8 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
  * Generates aligned pairs and indel probs, but first crops reference to only include sequence from first
  * to last anchor position.
  */
-void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLength,
-		char *read, stList *anchorPairs,
+void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
+		RleString *read, stList *anchorPairs,
 		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams);
 
 /*
@@ -839,9 +861,13 @@ typedef struct _bamChunkReadSubstring {
 	BamChunkRead *read; // The parent read from which the substring arises from
 	uint64_t start; // The 0 based offset of the start position in the parent read (inclusive)
 	uint64_t length; // The length of the substring
-	char *readSubstring; // TODO: Test not generating this but getting via method
 	double qualValue;
 } BamChunkReadSubstring;
+
+/*
+ * Gets the RLE substring for the bam chunk read substring.
+ */
+RleString *bamChunkReadSubstring_getRleString(BamChunkReadSubstring *readSubstring);
 
 /*
  * Converts chunk of aligned reads into list of reads and alignments.
@@ -932,10 +958,9 @@ void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
 
 typedef struct _bubble {
 	uint64_t refStart; //First inclusive position
-	uint64_t length; // Length of the reference sub-sequence covered by the bubble
-	char *refAllele; // The current reference allele
+	RleString *refAllele; // The current reference allele
 	uint64_t alleleNo; // Number of alleles
-	char **alleles; // Array of allele strings
+	RleString **alleles; // Array of allele strings, each an RLE string
 	uint64_t readNo; // Number of reads overlapping bubble
 	BamChunkReadSubstring **reads; // Array of read substrings aligned to the bubble
 	float *alleleReadSupports; // An array of log-likelihoods giving the support of
@@ -947,8 +972,7 @@ typedef struct _bubble {
 } Bubble;
 
 typedef struct _bubbleGraph {
-	char *refString; // The reference string
-	uint64_t refLength; // The length of the reference string
+	RleString *refString; // The reference string
 	uint64_t bubbleNo; // The number of bubbles
 	Bubble *bubbles; // An array of bubbles
 	uint64_t totalAlleles; // Sum of alleles across bubbles
@@ -965,7 +989,7 @@ uint64_t *bubbleGraph_getConsensusPath(BubbleGraph *bg, PolishParams *polishPara
  * Get a consensus sequences from the bubble graph by picking the highest
  * likelihood allele at each bubble.
  */
-char *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, int64_t **poaToConsensusMap, PolishParams *polishParams);
+RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
 /*
  * Create a bubble graph from a POA.

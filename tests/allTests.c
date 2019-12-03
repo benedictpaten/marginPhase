@@ -22,13 +22,13 @@ int marginPhaseTests(void) {
 	CuSuite* suite = CuSuiteNew();
 
 	CuSuiteAddSuite(suite, pairwiseAlignmentTestSuite());
-	/*CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, marginPhaseParserTestSuite());
-	CuSuiteAddSuite(suite, viewTestSuite());
-	CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
+	CuSuiteAddSuite(suite, polisherTestSuite());
 	CuSuiteAddSuite(suite, callConsensusTestSuite());
-	CuSuiteAddSuite(suite, marginIntegrationTestSuite());*/
+	CuSuiteAddSuite(suite, viewTestSuite());
+	CuSuiteAddSuite(suite, marginIntegrationTestSuite());
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);

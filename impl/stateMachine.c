@@ -5,14 +5,7 @@
  *      Author: benedictpaten
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include <ctype.h>
-
-#include "bioioC.h"
-#include "sonLib.h"
-#include "pairwiseAligner.h"
+#include "margin.h"
 
 static int const RLENE_MAX_REPEAT_LENGTH=51;
 
@@ -90,20 +83,20 @@ void alphabet_destruct(Alphabet *a) {
 ///////////////////////////////////
 ///////////////////////////////////
 
-Symbol *symbol_convertStringToSymbols(const char *s, int64_t length, Alphabet *a) {
-    assert(length >= 0);
-    assert(strlen(s) == length);
+Symbol *symbol_convertStringToSymbols(const char *s, int64_t start, int64_t length, Alphabet *a) {
+    assert(length >= 0 && start >= 0);
+    assert(strlen(s) >= start+length);
     Symbol *cS = st_malloc(length * sizeof(Symbol));
     for (int64_t i = 0; i < length; i++) {
-        cS[i] = a->convertCharToSymbol(s[i]);
+        cS[i] = a->convertCharToSymbol(s[i+start]);
     }
     return cS;
 }
 
-SymbolString symbolString_construct(const char *sequence, int64_t length, Alphabet *a) {
+SymbolString symbolString_construct(const char *sequence, int64_t start, int64_t length, Alphabet *a) {
     SymbolString symbolString;
     symbolString.alphabet = a;
-    symbolString.sequence = symbol_convertStringToSymbols(sequence, length, a);
+    symbolString.sequence = symbol_convertStringToSymbols(sequence, start, length, a);
     symbolString.length = length;
     return symbolString;
 }
@@ -136,18 +129,14 @@ Symbol symbol_addRepeatCount(Symbol character, uint64_t runLength) {
 	return (runLength << 8) | character;
 }
 
-Symbol *symbol_convertRunLengthStringToSymbols(const char *s, uint64_t *repeatCounts, int64_t length, Alphabet *a) {
-	Symbol *cS = symbol_convertStringToSymbols(s, length, a);
-	for (int64_t i = 0; i < length; i++) {
-		cS[i] = symbol_addRepeatCount(cS[i], repeatCounts[i]);
-	}
-    return cS;
-}
-
-SymbolString symbolString_constructRLE(const char *sequence, uint64_t *repeatCounts, int64_t length, Alphabet *a) {
+SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a) {
+	assert(start+length <= s->length);
 	SymbolString symbolString;
 	symbolString.alphabet = a;
-	symbolString.sequence = symbol_convertRunLengthStringToSymbols(sequence, repeatCounts, length, a);
+	symbolString.sequence = symbol_convertStringToSymbols(s->rleString, start, length, a);
+	for (int64_t i = 0; i < length; i++) {
+		symbolString.sequence[i] = symbol_addRepeatCount(symbolString.sequence[i], s->repeatCounts[i+start]);
+	}
 	symbolString.length = length;
 	return symbolString;
 }

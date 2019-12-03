@@ -11,7 +11,7 @@ import datetime
 percent = lambda small, big: int(100.0 * small / big) if big != 0 else 0.0
 
 
-def parse_args(args = None):
+def parse_args(args = None): 
     parser = argparse.ArgumentParser("Runs marginPolish on assembly, compares polished assembly to true reference")
     parser.add_argument('--true_reference', '-t', dest='true_reference', default=None, required=True, type=str,
                         help='True reference, polished assembly will be compared to')
