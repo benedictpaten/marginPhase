@@ -1,4 +1,4 @@
-#include <multipleAligner.h>
+//#include <multipleAligner.h>
 #include "margin.h"
 
 
@@ -19,31 +19,32 @@ void destroyConsensusParameters(PolishParams *params) {
 }
 
 RleString* callConsensus(int64_t readCount, char *nucleotides[], uint8_t *runLengths[], uint8_t strands[], PolishParams *params) {
-    stList *rleReads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
-    stList *rleStrings = stList_construct3(0, (void (*)(void *)) rleString_destruct);
+    stList *reads = stList_construct3(0, (void (*)(void*)) bamChunkRead_destruct);
 
     for (int64_t i = 0; i < readCount; i++) {
         RleString *rleString = rleString_constructPreComputed(stString_copy(nucleotides[i]), runLengths[i]);
-        stList_append(rleStrings, rleString);
-        stList_append(rleReads, bamChunkRead_construct2(stString_print("read_%d", i), stString_copy(rleString->rleString),
+        char *rawString = rleString_expand(rleString);
+        stList_append(reads, bamChunkRead_construct2(stString_print("read_%d", i), rawString,
                 NULL, (strands[i] == 0 ? TRUE : FALSE), NULL)); // strands defined as 0 -> forward, 1 -> backward
+        free(rawString);
+        rleString_destruct(rleString);
     }
 
     // RLE reference starts as one of the input string
-    RleString *rleReference = stList_get(rleStrings, 0);
+    RleString *rleReference = ((BamChunkRead*)stList_get(reads, 0))->rleRead;
 
     // run poa
-    Poa *poa = poa_realignAll(rleReads, NULL, rleReference->rleString, params);
+    Poa *poa = poa_realignAll(reads, NULL, rleReference, params);
 
     // get consensus
-    RleString *consensusRleString = expandRLEConsensus(poa, rleStrings, rleReads, params->repeatSubMatrix);
+    poa_estimateRepeatCountsUsingBayesianModel(poa, reads, params->repeatSubMatrix);
+    RleString *polishedRleConsensus = poa->refString;
 
     //cleanup
-    stList_destruct(rleStrings);
-    stList_destruct(rleReads);
+    stList_destruct(reads);
     poa_destruct(poa);
 
-    return consensusRleString;
+    return polishedRleConsensus;
 }
 
 void destroyRleString(RleString *r) {

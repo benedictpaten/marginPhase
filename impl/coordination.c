@@ -37,7 +37,7 @@ stRPHmm *getNextClosestNonoverlappingHmm(stRPHmm *hmm1, stSortedSet *readHmms) {
 
         // If hmm1 and hmm2 are on different references, then hmm2 is the closest non-overlapping
         // hmm to hmm1 in reference space
-        i = strcmp(hmm1->referenceName, hmm2->referenceName);
+        i = strcmp(hmm1->ref->referenceName, hmm2->ref->referenceName);
         if(i != 0) {
             break;
         }
@@ -221,7 +221,7 @@ stList *getTilingPaths(stSortedSet *hmms) {
     return tilingPaths;
 }
 
-stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+stList *getTilingPaths2(stList *profileSeqs, stRPHmmParameters *params) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns
      * a list of tiling paths. Each tiling path consisting of maximal sequences of hmms
@@ -232,7 +232,7 @@ stList *getTilingPaths2(stList *profileSeqs, stHash *referenceNamesToReferencePr
     stSortedSet *readHmms = stSortedSet_construct3(stRPHmm_cmpFn, (void (*)(void *))stRPHmm_destruct2);
     for(int64_t i=0; i<stList_length(profileSeqs); i++) {
         stProfileSeq *pSeq = stList_get(profileSeqs, i);
-        stRPHmm *hmm = stRPHmm_construct(pSeq, stHash_search(referenceNamesToReferencePriors, pSeq->referenceName), params);
+        stRPHmm *hmm = stRPHmm_construct(pSeq, params);
         stSortedSet_insert(readHmms, hmm);
     }
     assert(stSortedSet_size(readHmms) == stList_length(profileSeqs));
@@ -422,7 +422,7 @@ static void getProfileSeqs(stList *tilingPath, stList *pSeqs) {
 }
 
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params,
-        stList *filteredProfileSeqs, stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors) {
+        stList *filteredProfileSeqs, stList *discardedProfileSeqs) {
     /*
      * Takes a set of profile sequences and returns a subset such that maximum coverage depth of the subset is
      * less than or equal to params->maxCoverageDepth. The discarded sequences are placed in the list
@@ -430,7 +430,7 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
      */
 
     // Create a set of tiling paths
-    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
+    stList *tilingPaths = getTilingPaths2(profileSeqs, params);
 
     // Eliminate reads until the maximum coverage depth to less than the give threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
@@ -447,7 +447,7 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
     return filteredProfileSeqs;
 }
 
-stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params) {
+stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
     /*
      * Takes a set of profile sequences (stProfileSeq) and returns a list of read partitioning
      * hmms (stRPHmm) ordered and non-overlapping in reference coordinates.
@@ -455,7 +455,7 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
      * stReferencePriorProbs objects.
      */
     // Create a read partitioning HMM for every sequence and put in ordered set, ordered by reference coordinate
-    stList *tilingPaths = getTilingPaths2(profileSeqs, referenceNamesToReferencePriors, params);
+    stList *tilingPaths = getTilingPaths2(profileSeqs, params);
 
     if(stList_length(tilingPaths) > MAX_READ_PARTITIONING_DEPTH
        || stList_length(tilingPaths) > params->maxCoverageDepth) {
@@ -472,116 +472,3 @@ stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, 
     return finalTilingPath;
 }
 
-void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
-				stList **readsPartition1, stList **readsPartition2, Params *params) {
-	/*
-	 * Runs phasing algorithm to split the reads (as char strings) into two partitions: readsPartition1 and readsPartition2.
-	 */
-
-	// Generate profile sequences
-	stList *profileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-	stHash *readToProfileSeq = stHash_construct();
-	for(int64_t i=0; i<stList_length(reads); i++) {
-		BamChunkRead *read = stList_get(reads, i);
-        char *nucleotides = read->nucleotides;
-		char *readName = (read->readName == NULL ? stString_print("%i", i) : stString_copy(read->readName));
-		stList_append(profileSeqs, stProfileSeq_constructFromPosteriorProbs("ref", reference, referenceLength,
-				readName, nucleotides, stList_get(anchorAlignments, i), params));
-		free(readName);
-		stHash_insert(readToProfileSeq, nucleotides, stList_peek(profileSeqs));
-	}
-
-	// Get flat reference priors
-	//TODO: consider using more informative priors
-	stHash *referenceNamesToReferencePriors = createEmptyReferencePriorProbabilities(profileSeqs);
-
-	// Setup a filter to ignore likely homozygous reference positions
-	if(params->phaseParams->filterLikelyHomozygousSites) {
-		int64_t totalPositions;
-		st_logInfo("> Filtering likely homozygous positions\n");
-		int64_t filteredPositions =
-				filterHomozygousReferencePositions(referenceNamesToReferencePriors, params->phaseParams, &totalPositions);
-		st_logInfo("\tFiltered %" PRIi64 " (%f) likely homozygous positions, \n\teach with fewer than %" PRIi64
-				" aligned occurrences of any second most frequent base, \n\tleaving only %" PRIi64
-				" (%f) positions of %" PRIi64
-				" total positions\n", filteredPositions, (double)filteredPositions/totalPositions,
-				(int64_t)params->phaseParams->minSecondMostFrequentBaseFilter, totalPositions - filteredPositions,
-				(double)(totalPositions - filteredPositions)/totalPositions, totalPositions);
-	}
-
-	// Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
-	st_logInfo("> Filtering reads by coverage depth\n");
-	stList *filteredProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-	stList *discardedProfileSeqs = stList_construct3(0, (void (*)(void *))stProfileSeq_destruct);
-	filterReadsByCoverageDepth(profileSeqs, params->phaseParams, filteredProfileSeqs, discardedProfileSeqs,
-			referenceNamesToReferencePriors);
-	st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
-			" to achieve maximum coverage depth of %" PRIi64 "\n",
-			stList_length(discardedProfileSeqs), stList_length(profileSeqs),
-			params->phaseParams->maxCoverageDepth);
-	stList_setDestructor(profileSeqs, NULL);
-	stList_destruct(profileSeqs);
-	profileSeqs = filteredProfileSeqs;
-
-	// Run phasing
-	stList *hmms = getRPHmms(profileSeqs, referenceNamesToReferencePriors, params->phaseParams);
-	stRPHmm *hmm = stList_pop(hmms);
-	assert(stList_length(hmms) == 0);
-	stList_destruct(hmms);
-
-	// Run the forward-backward algorithm
-	stRPHmm_forwardBackward(hmm);
-
-	// Now compute a high probability path through the hmm
-	stList *path = stRPHmm_forwardTraceBack(hmm);
-
-	// Compute the genome fragment
-	stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-
-	// Get the reads which mapped to each path
-	stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
-	stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-
-	// Refine the genome fragment by repartitoning the reads iteratively
-	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
-		stGenomeFragment_refineGenomeFragment(gF, reads1, reads2, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
-	}
-
-	// For reads that exceeded the coverage depth, add them back to the haplotype they fit best
-	while(stList_length(discardedProfileSeqs) > 0) {
-		stProfileSeq *pSeq = stList_pop(discardedProfileSeqs);
-		double i = getLogProbOfReadGivenHaplotype(gF->haplotypeString1, gF->refStart, gF->length, pSeq, params->phaseParams);
-		double j = getLogProbOfReadGivenHaplotype(gF->haplotypeString2, gF->refStart, gF->length, pSeq, params->phaseParams);
-        //TODO is this right?  tpesout changed from (i < j ? reads2 : reads2)
-		stSet_insert(i < j ? reads2 : reads1, pSeq);
-	}
-	stList_destruct(discardedProfileSeqs);
-
-	// Log information about the hmm
-	logHmm(hmm, reads1, reads2, gF);
-
-	// Now create the two read partitions of the orignal strings
-	*readsPartition1 = stList_construct();
-	*readsPartition2 = stList_construct();
-	for(int64_t i=0; i<stList_length(reads); i++) {
-
-        BamChunkRead *read = stList_get(reads, i);
-        char *nucleotides = read->nucleotides;
-		stProfileSeq *pSeq = stHash_search(readToProfileSeq, nucleotides);
-		stList_append(stSet_search(reads1, pSeq) ? *readsPartition1 : *readsPartition2, read);
-	}
-
-	// Cleanup
-	stRPHmm_destruct(hmm, 1);
-	stGenomeFragment_destruct(gF);
-	stSet_destruct(reads1);
-	stSet_destruct(reads2);
-	stList_destruct(path);
-	stHash_destruct(referenceNamesToReferencePriors);
-	stList_destruct(profileSeqs);
-	stHash_destruct(readToProfileSeq);
-
-	st_logInfo("> Phased reads. Of  %" PRIi64 " reads allocated %" PRIi64
-				" to haplotype 1 and % " PRIi64 " to haplotype 2\n",
-				stList_length(reads), stList_length(*readsPartition1), stList_length(*readsPartition2));
-}

@@ -20,6 +20,62 @@
 #include "helenFeatures.h"
 
 
+
+
+
+//TODO move these to a better spot
+stHash *parseReferenceSequences(char *referenceFastaFile) {
+    /*
+     * Get hash of reference sequence names in fasta to their sequences, doing some munging on the sequence names.
+     */
+    st_logInfo("> Parsing reference sequences from file: %s\n", referenceFastaFile);
+    FILE *fh = fopen(referenceFastaFile, "r");
+    stHash *referenceSequences = fastaReadToMap(fh);  //valgrind says blocks from this allocation are "still reachable"
+    fclose(fh);
+    // log names and transform (if necessary)
+    stList *refSeqNames = stHash_getKeys(referenceSequences);
+    int64_t origRefSeqLen = stList_length(refSeqNames);
+    st_logDebug("\tReference contigs: \n");
+    for (int64_t i = 0; i < origRefSeqLen; ++i) {
+        char *fullRefSeqName = (char *) stList_get(refSeqNames, i);
+        st_logDebug("\t\t%s\n", fullRefSeqName);
+        char refSeqName[128] = "";
+        if (sscanf(fullRefSeqName, "%s", refSeqName) == 1 && !stString_eq(fullRefSeqName, refSeqName)) {
+            // this transformation is necessary for cases where the reference has metadata after the contig name:
+            // >contig001 length=1000 date=1999-12-31
+            char *newKey = stString_copy(refSeqName);
+            char *refSeq = stHash_search(referenceSequences, fullRefSeqName);
+            stHash_insert(referenceSequences, newKey, refSeq);
+            stHash_removeAndFreeKey(referenceSequences, fullRefSeqName);
+            st_logDebug("\t\t\t-> %s\n", newKey);
+        }
+    }
+    stList_destruct(refSeqNames);
+
+    return referenceSequences;
+}
+
+RleString *bamChunk_getReferenceSubstring(BamChunk *bamChunk, stHash *referenceSequences, Params *params) {
+    /*
+     * Get corresponding substring of the reference for a given bamChunk.
+     */
+    char *fullReferenceString = stHash_search(referenceSequences, bamChunk->refSeqName);
+    if (fullReferenceString == NULL) {
+        st_logCritical("> ERROR: Reference sequence missing from reference map: %s \n", bamChunk->refSeqName);
+        return NULL;
+    }
+    int64_t refLen = strlen(fullReferenceString);
+    char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
+                                                  (refLen < bamChunk->chunkBoundaryEnd ? refLen : bamChunk->chunkBoundaryEnd) - bamChunk->chunkBoundaryStart);
+
+    RleString *rleRef = params->polishParams->useRunLengthEncoding ?
+            rleString_construct(referenceString) : rleString_construct_no_rle(referenceString);
+    free(referenceString);
+
+    return rleRef;
+}
+
+
 /*
  * Main functions
  */
@@ -401,11 +457,8 @@ int main(int argc, char *argv[]) {
             PRId64". Perhaps the BAM and REF are mismatched?",
                     bamChunk->refSeqName, fullRefLen, chunkIdx, bamChunk->chunkBoundaryStart);
         }
-        char *referenceString = stString_getSubString(fullReferenceString, bamChunk->chunkBoundaryStart,
-                                                      (fullRefLen < bamChunk->chunkBoundaryEnd ? fullRefLen
-                                                                                           : bamChunk->chunkBoundaryEnd) -
-                                                      bamChunk->chunkBoundaryStart);
 
+        RleString *rleReference = bamChunk_getReferenceSubstring(bamChunk, referenceSequences, params);
 
         st_logInfo(">%s Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
                    logIdentifier, bamChunk->refSeqName, (int) bamChunk->chunkBoundaryStart,
@@ -415,7 +468,7 @@ int main(int argc, char *argv[]) {
         st_logInfo(">%s Parsing input reads from file: %s\n", logIdentifier, bamInFile);
         stList *reads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
         stList *alignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
-        convertToReadsAndAlignments(bamChunk, reads, alignments);
+        convertToReadsAndAlignments(bamChunk, rleReference, reads, alignments);
 
         // do downsampling if appropriate
         if (params->polishParams->maxDepth > 0) {
@@ -457,63 +510,53 @@ int main(int argc, char *argv[]) {
         Poa *poa = NULL; // The poa alignment
         char *polishedConsensusString = NULL; // The polished reference string
 
-
+        //todo rle-ing moved to convertToReadsAndAlignmentsOrWhatever
         // prep for RLE work
-        RleString *rleReference = NULL;
-        stList *rleNucleotides = stList_construct3(0, (void (*)(void *)) rleString_destruct);
-        stList *rleReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
-        stList *rleAlignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
-        uint64_t totalNucleotides = 0;
-
-        // Note RLE status (and handle reference)
-        if (params->polishParams->useRunLengthEncoding) {
-            st_logInfo(">%s Applying RLE\n", logIdentifier);
-            rleReference = rleString_construct(referenceString);
-        } else {
-            st_logInfo(">%s Skipping RLE\n", logIdentifier);
-            rleReference = rleString_constructNoRLE(referenceString);
-        }
-
-        // RLE the reads
-        for (int64_t j = 0; j < stList_length(reads); j++) {
-            BamChunkRead *read = stList_get(reads, j);
-            stList *alignment = stList_get(alignments, j);
-            RleString *rleNucleotideString = NULL;
-
-            // Perform or skip RLE
-            if (params->polishParams->useRunLengthEncoding) {
-                rleNucleotideString = rleString_construct(read->nucleotides);
-            } else {
-                rleNucleotideString = rleString_constructNoRLE(read->nucleotides);
-            }
-            totalNucleotides += rleNucleotideString->length;
-
-            // Do RLE follow up regardless of whether RLE is applied
-            stList_append(rleNucleotides, rleNucleotideString);
-            stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
-            stList_append(rleAlignments, runLengthEncodeAlignment(alignment, rleReference, rleNucleotideString));
-        }
+//        stList *rleNucleotides = stList_construct3(0, (void (*)(void *)) rleString_destruct);
+//        stList *rleReads = stList_construct3(0, (void (*)(void *)) bamChunkRead_destruct);
+//        stList *rleAlignments = stList_construct3(0, (void (*)(void *)) stList_destruct);
+//        uint64_t totalNucleotides = 0;
+//
+//        // RLE the reads
+//        for (int64_t j = 0; j < stList_length(reads); j++) {
+//            BamChunkRead *read = stList_get(reads, j);
+//            stList *alignment = stList_get(alignments, j);
+//            RleString *rleNucleotideString = NULL;
+//
+//            // Perform or skip RLE
+//            if (params->polishParams->useRunLengthEncoding) {
+//                rleNucleotideString = rleString_construct(read->nucleotides);
+//            } else {
+//                rleNucleotideString = rleString_constructNoRLE(read->nucleotides);
+//            }
+//            totalNucleotides += rleNucleotideString->length;
+//
+//            // Do RLE follow up regardless of whether RLE is applied
+//            stList_append(rleNucleotides, rleNucleotideString);
+//            stList_append(rleReads, bamChunkRead_constructRLECopy(read, rleNucleotideString));
+//            stList_append(rleAlignments, runLengthEncodeAlignment(alignment, rleReference, rleNucleotideString));
+//        }
 
 
         // Run the polishing method
-        st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"K nucleotides\n",
-                logIdentifier, stList_length(reads), totalNucleotides >> 10);
+        int64_t totalNucleotides = 0;
+        if (st_getLogLevel() >= info) {
+            for (int64_t i = 0 ; i < stList_length(reads); i++) {
+                totalNucleotides += strlen(((BamChunkRead*)stList_get(reads, i))->rleRead->rleString);
+            }
+            st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"K nucleotides\n",
+                       logIdentifier, stList_length(reads), totalNucleotides >> 10);
+        }
 
         // Generate partial order alignment (POA) (destroys rleAlignments in the process)
-        poa = poa_realignAll(rleReads, rleAlignments, rleReference->rleString, params->polishParams);
+        poa = poa_realignAll(reads, alignments, rleReference, params->polishParams);
 
-        // Now optionally do phasing and haplotype specific polishing
-
-        /*TODO needs to be implemented
-        stList *anchorAlignments = poa_getAnchorAlignments(poa, NULL, stList_length(reads), params->polishParams);
-        stList *reads1, *reads2;
-        phaseReads(poa->refString, stList_length(poa->nodes)-1, l, anchorAlignments, &reads1, &reads2, params);
-        */
 
         // get polished reference string and expand RLE (regardless of whether RLE was applied)
-        RleString *polishedRleConsensus = expandRLEConsensus(poa, rleNucleotides, rleReads,
-                                                             params->polishParams->repeatSubMatrix);
+        poa_estimateRepeatCountsUsingBayesianModel(poa, reads, params->polishParams->repeatSubMatrix);
+        RleString *polishedRleConsensus = poa->refString;
         polishedConsensusString = rleString_expand(polishedRleConsensus);
+
 
         // Log info about the POA
         if (st_getLogLevel() >= info) {
@@ -521,7 +564,7 @@ int main(int argc, char *argv[]) {
             poa_printSummaryStats(poa, stderr);
         }
         if (st_getLogLevel() >= debug) {
-            poa_print(poa, stderr, rleReads, 5, 5);
+            poa_print(poa, stderr, reads, 5, 5);
         }
 
         // Write any optional outputs about repeat count and POA, etc.
@@ -530,7 +573,7 @@ int main(int argc, char *argv[]) {
                                                         outputPoaDotBase, chunkIdx, bamChunk->refSeqName,
                                                         bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             FILE *outputPoaTsvFileHandle = fopen(outputPoaDotFilename, "w");
-            poa_printDOT(poa, outputPoaTsvFileHandle, rleReads, rleNucleotides);
+            poa_printDOT(poa, outputPoaTsvFileHandle, reads);
             fclose(outputPoaTsvFileHandle);
             free(outputPoaDotFilename);
         }
@@ -539,7 +582,7 @@ int main(int argc, char *argv[]) {
                                                         outputPoaTsvBase, chunkIdx, bamChunk->refSeqName,
                                                         bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             FILE *outputPoaTsvFileHandle = fopen(outputPoaTsvFilename, "w");
-            poa_printTSV(poa, outputPoaTsvFileHandle, rleReads, 5, 0);
+            poa_printTSV(poa, outputPoaTsvFileHandle, reads, 5, 0);
             fclose(outputPoaTsvFileHandle);
             free(outputPoaTsvFilename);
         }
@@ -548,7 +591,7 @@ int main(int argc, char *argv[]) {
                                                              outputRepeatCountBase, chunkIdx, bamChunk->refSeqName,
                                                              bamChunk->chunkBoundaryStart, bamChunk->chunkBoundaryEnd);
             FILE *outputRepeatCountFileHandle = fopen(outputRepeatCountFilename, "w");
-            poa_printRepeatCounts(poa, outputRepeatCountFileHandle, rleNucleotides, rleReads);
+            poa_printRepeatCounts(poa, outputRepeatCountFileHandle, reads);
             fclose(outputRepeatCountFileHandle);
             free(outputRepeatCountFilename);
         }
@@ -563,25 +606,24 @@ int main(int argc, char *argv[]) {
         if (helenFeatureType != HFEAT_NONE) {
             handleHelenFeatures(helenFeatureType, trueReferenceBamChunker, splitWeightMaxRunLength,
                     helenHDF5Files, fullFeatureOutput, trueReferenceBam, params, logIdentifier, chunkIdx,
-                    bamChunk, poa, rleReads, rleNucleotides, polishedConsensusString, polishedRleConsensus);
+                    bamChunk, poa, reads, polishedConsensusString, polishedRleConsensus);
 
         }
         #endif
 
         // report timing
-        st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",
-                   logIdentifier, stList_length(reads), totalNucleotides >> 10, (int) (time(NULL) - chunkStartTime));
+        if (st_getLogLevel() >= info) {
+            st_logInfo(">%s Chunk with %"PRId64" reads and %"PRIu64"K nucleotides processed in %d sec\n",
+                       logIdentifier, stList_length(reads), totalNucleotides >> 10,
+                       (int) (time(NULL) - chunkStartTime));
+        }
 
         // Cleanup
-        stList_destruct(rleNucleotides);
-        stList_destruct(rleReads);
-        stList_destruct(rleAlignments);
         rleString_destruct(rleReference);
         rleString_destruct(polishedRleConsensus);
         poa_destruct(poa);
         stList_destruct(reads);
         stList_destruct(alignments);
-        free(referenceString);
         free(logIdentifier);
     }
 

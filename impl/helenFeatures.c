@@ -123,7 +123,7 @@ void handleHelenFeatures(
         char *trueReferenceBam, Params *params,
 
         // chunk params
-        char *logIdentifier, int64_t chunkIdx, BamChunk *bamChunk, Poa *poa, stList *rleReads, stList *rleNucleotides,
+        char *logIdentifier, int64_t chunkIdx, BamChunk *bamChunk, Poa *poa, stList *bamChunkReads,
         char *polishedConsensusString, RleString *polishedRleConsensus) {
 
     st_logInfo(">%s Performing feature generation for chunk.\n", logIdentifier);
@@ -166,25 +166,31 @@ void handleHelenFeatures(
         BamChunk *trueRefBamChunk = bamChunk_copyConstruct(bamChunk);
         trueRefBamChunk->parent = trueReferenceBamChunker;
         // get true ref as "read"
-        uint32_t trueAlignmentCount = convertToReadsAndAlignments(trueRefBamChunk, trueRefReads, unused);
+        uint32_t trueAlignmentCount = convertToReadsAndAlignments(trueRefBamChunk, NULL, trueRefReads, unused);
 
         // poor man's "do we have a unique alignment"
         if (trueAlignmentCount == 1) {
             BamChunkRead *trueRefRead = stList_get(trueRefReads, 0);
 
-            stList *trueRefAlignmentRawSpace = alignConsensusAndTruth(polishedConsensusString, trueRefRead->nucleotides);
+            stList *trueRefAlignmentRawSpace = alignConsensusAndTruth(polishedConsensusString, trueRefRead->rleRead->rleString);
             if (st_getLogLevel() == debug) {
-                printMEAAlignment(polishedConsensusString, trueRefRead->nucleotides,
-                                  strlen(polishedConsensusString), strlen(trueRefRead->nucleotides),
+                printMEAAlignment(polishedConsensusString, trueRefRead->rleRead->rleString,
+                                  strlen(polishedConsensusString), strlen(trueRefRead->rleRead->rleString),
                                   trueRefAlignmentRawSpace, NULL, NULL);
             }
 
 
             // convert to rleSpace if appropriate
             if (params->polishParams->useRunLengthEncoding) {
-                trueRefRleString = rleString_construct(trueRefRead->nucleotides);
-                trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus,
-                                                             trueRefRleString, 1, 2, 0);
+                trueRefRleString = rleString_construct(trueRefRead->rleRead->rleString);
+
+                uint64_t *polishedRleConsensus_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(polishedRleConsensus);
+                uint64_t *trueRefRleString_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(trueRefRleString);
+                trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus_nonRleToRleCoordinateMap,
+                                                             trueRefRleString_nonRleToRleCoordinateMap, 1, 2, 0);
+                free(polishedRleConsensus_nonRleToRleCoordinateMap);
+                free(trueRefRleString_nonRleToRleCoordinateMap);
+
                 if (st_getLogLevel() == debug) {
                     printMEAAlignment(polishedRleConsensus->rleString, trueRefRleString->rleString,
                                       strlen(polishedRleConsensus->rleString),
@@ -194,7 +200,7 @@ void handleHelenFeatures(
                 }
                 stList_destruct(trueRefAlignmentRawSpace);
             } else {
-                trueRefRleString = rleString_constructNoRLE(trueRefRead->nucleotides);
+                trueRefRleString = rleString_construct_no_rle(trueRefRead->rleRead->rleString);
                 trueRefAlignment = trueRefAlignmentRawSpace;
             }
 
@@ -226,7 +232,7 @@ void handleHelenFeatures(
         st_logInfo(" %s Writing HELEN features with filename base: %s\n", logIdentifier, helenFeatureOutfileBase);
 
         // write the actual features (type dependent)
-        poa_writeHelenFeatures(helenFeatureType, poa, rleReads, rleNucleotides, helenFeatureOutfileBase,
+        poa_writeHelenFeatures(helenFeatureType, poa, bamChunkReads, helenFeatureOutfileBase,
                                bamChunk, trueRefAlignment, polishedRleConsensus, trueRefRleString, fullFeatureOutput,
                                splitWeightMaxRunLength, (HelenFeatureHDF5FileInfo**) helenHDF5Files);
 
@@ -279,7 +285,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
             // get data
             PoaBaseObservation *observation = stList_get(observations, o);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
-            Symbol symbol = symbol_convertCharToSymbol(bamChunkRead->nucleotides[observation->offset]);
+            Symbol symbol = poa->alphabet->convertCharToSymbol(bamChunkRead->rleRead->rleString[observation->offset]);
             bool forward = bamChunkRead->forwardStrand;
 
             // save weight
@@ -316,7 +322,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
 
                 // get feature iterator
                 PoaFeatureSimpleWeight *prevFeature = feature;
-                for (int64_t k = 0; k < strlen(insert->insert); k++) {
+                for (int64_t k = 0; k < strlen(insert->insert->rleString); k++) {
                     // get current feature (or create if necessary)
                     PoaFeatureSimpleWeight *currFeature = prevFeature->nextInsert;
                     if (currFeature == NULL) {
@@ -324,7 +330,7 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
                         prevFeature->nextInsert = currFeature;
                     }
 
-                    Symbol c = symbol_convertCharToSymbol(insert->insert[k]);
+                    Symbol c = poa->alphabet->convertCharToSymbol(insert->insert->rleString[k]);
 
                     // add weights
                     currFeature->weights[PoaFeature_SimpleWeight_charIndex(c, TRUE)] += insert->weightForwardStrand;
@@ -342,8 +348,8 @@ stList *poa_getSimpleWeightFeatures(Poa *poa, stList *bamChunkReads) {
 }
 
 
-void poa_addSplitRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *baseFeature, stList *observations,
-                                                  stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength,
+void poa_addSplitRunLengthFeaturesForObservations(Poa *poa, PoaFeatureSplitRleWeight *baseFeature, stList *observations,
+                                                  stList *bamChunkReads, const int64_t maxRunLength,
                                                   int64_t observationOffset) {
 
 
@@ -359,9 +365,9 @@ void poa_addSplitRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *base
 
             // get data
             PoaBaseObservation *observation = stList_get(observations, i);
-            RleString *rleString = stList_get(rleStrings, observation->readNo);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
-            Symbol symbol = symbol_convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
+            RleString *rleString = bamChunkRead->rleRead;
+            Symbol symbol = poa->alphabet->convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
             int64_t runLength = rleString->repeatCounts[observation->offset + observationOffset];
             bool forward = bamChunkRead->forwardStrand;
 
@@ -399,7 +405,7 @@ void poa_addSplitRunLengthFeaturesForObservations(PoaFeatureSplitRleWeight *base
 }
 
 
-stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength) {
+stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, const int64_t maxRunLength) {
     // initialize feature list
     stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_SplitRleWeight_destruct);
     for(int64_t i=1; i<stList_length(poa->nodes); i++) {
@@ -417,7 +423,7 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
         PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
 
         // save run length nodes
-        poa_addSplitRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings,
+        poa_addSplitRunLengthFeaturesForObservations(poa, feature, node->observations, bamChunkReads,
                                                      maxRunLength, 0);
 
         // Deletes
@@ -450,7 +456,7 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
 
                 // handle each insert base
                 PoaFeatureSplitRleWeight *prevFeature = feature;
-                for (int64_t o = 0; o < strlen(insert->insert); o++) {
+                for (int64_t o = 0; o < strlen(insert->insert->rleString); o++) {
 
                     // get feature iterator
                     PoaFeatureSplitRleWeight *currFeature = prevFeature->nextInsert;
@@ -460,8 +466,7 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
                     }
 
                     // save insert run lengths
-                    poa_addSplitRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads,
-                                                                 rleStrings,
+                    poa_addSplitRunLengthFeaturesForObservations(poa, currFeature, insert->observations, bamChunkReads,
                                                                  maxRunLength, o);
                 }
             }
@@ -474,8 +479,8 @@ stList *poa_getSplitRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *r
 
 
 
-void poa_addChannelRunLengthFeaturesForObservations(PoaFeatureChannelRleWeight *baseFeature, stList *observations,
-                                                    stList *bamChunkReads, stList *rleStrings, const int64_t maxRunLength,
+void poa_addChannelRunLengthFeaturesForObservations(Poa *poa, PoaFeatureChannelRleWeight *baseFeature, stList *observations,
+                                                    stList *bamChunkReads, const int64_t maxRunLength,
                                                     int64_t observationOffset) {
 
     PoaFeatureChannelRleWeight *currFeature = baseFeature;
@@ -490,9 +495,9 @@ void poa_addChannelRunLengthFeaturesForObservations(PoaFeatureChannelRleWeight *
 
             // get data
             PoaBaseObservation *observation = stList_get(observations, i);
-            RleString *rleString = stList_get(rleStrings, observation->readNo);
             BamChunkRead *bamChunkRead = stList_get(bamChunkReads, observation->readNo);
-            Symbol symbol = symbol_convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
+            RleString *rleString = bamChunkRead->rleRead;
+            Symbol symbol = poa->alphabet->convertCharToSymbol(rleString->rleString[observation->offset + observationOffset]);
             int64_t runLength = rleString->repeatCounts[observation->offset + observationOffset];
             bool forward = bamChunkRead->forwardStrand;
 
@@ -532,7 +537,7 @@ void poa_addChannelRunLengthFeaturesForObservations(PoaFeatureChannelRleWeight *
     }
 }
 
-stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList *rleStrings, int64_t maxRunLength) {
+stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, int64_t maxRunLength) {
     // initialize feature list
     stList *featureList = stList_construct3(0, (void (*)(void *)) PoaFeature_ChannelRleWeight_destruct);
     for(int64_t i=1; i<stList_length(poa->nodes); i++) {
@@ -550,7 +555,7 @@ stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList 
         PoaNode *node = stList_get(poa->nodes, i + 1); //skip the first poa node, as it's always an 'N', so featureIdx and poaIdx are off by one
 
         // save run length nodes
-        poa_addChannelRunLengthFeaturesForObservations(feature, node->observations, bamChunkReads, rleStrings,
+        poa_addChannelRunLengthFeaturesForObservations(poa, feature, node->observations, bamChunkReads,
                                                        maxRunLength, 0);
 
         // Deletes
@@ -585,7 +590,7 @@ stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList 
 
                 // handle each insert base
                 PoaFeatureChannelRleWeight *prevFeature = feature;
-                for (int64_t o = 0; o < strlen(insert->insert); o++) {
+                for (int64_t o = 0; o < strlen(insert->insert->rleString); o++) {
 
                     // get feature iterator
                     PoaFeatureChannelRleWeight *currFeature = prevFeature->nextInsert;
@@ -595,8 +600,8 @@ stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList 
                     }
 
                     // save insert run lengths
-                    poa_addChannelRunLengthFeaturesForObservations(currFeature, insert->observations, bamChunkReads,
-                                                                   rleStrings, maxRunLength, o);
+                    poa_addChannelRunLengthFeaturesForObservations(poa, currFeature, insert->observations, bamChunkReads,
+                                                                   maxRunLength, o);
                 }
             }
         }
@@ -607,7 +612,7 @@ stList *poa_getChannelRleWeightFeatures(Poa *poa, stList *bamChunkReads, stList 
 }
 
 
-void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *alignedPairs, int64_t *Xrl, int64_t *Yrl) {
+void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *alignedPairs, uint64_t *Xrl, uint64_t *Yrl) {
     // should we do run lengths
     bool handleRunLength = Xrl != NULL && Yrl != NULL;
 
@@ -968,7 +973,7 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
     free(logIdentifier);
 }
 
-void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads, stList *rleStrings,
+void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkReads,
         char *outputFileBase, BamChunk *bamChunk, stList *trueRefAlignment, RleString *consensusRleString,
         RleString *trueRefRleString, bool fullFeatureOutput, int64_t maxRunLength,
         HelenFeatureHDF5FileInfo** helenHDF5Files) {
@@ -993,14 +998,14 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            writeSimpleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx], outputFileBase, bamChunk, outputLabels,
-                    features, firstMatchedFeature, lastMatchedFeature);
+            writeSimpleWeightHelenFeaturesHDF5(poa->alphabet, helenHDF5Files[threadIdx], outputFileBase, bamChunk,
+                    outputLabels, features, firstMatchedFeature, lastMatchedFeature);
 
             break;
 
         case HFEAT_SPLIT_RLE_WEIGHT:
             // get features
-            features = poa_getSplitRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
+            features = poa_getSplitRleWeightFeatures(poa, bamChunkReads, maxRunLength);
             firstMatchedFeature = 0;
             lastMatchedFeature = stList_length(features) - 1;
 
@@ -1010,14 +1015,14 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            writeSplitRleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx],
+            writeSplitRleWeightHelenFeaturesHDF5(poa->alphabet, helenHDF5Files[threadIdx],
                     outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature, lastMatchedFeature,
                     maxRunLength);
             break;
 
         case HFEAT_CHANNEL_RLE_WEIGHT:
             // get features
-            features = poa_getChannelRleWeightFeatures(poa, bamChunkReads, rleStrings, maxRunLength);
+            features = poa_getChannelRleWeightFeatures(poa, bamChunkReads, maxRunLength);
             firstMatchedFeature = 0;
             lastMatchedFeature = stList_length(features) - 1;
 
@@ -1027,7 +1032,7 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
                                                    &firstMatchedFeature, &lastMatchedFeature);
             }
 
-            writeChannelRleWeightHelenFeaturesHDF5(helenHDF5Files[threadIdx],
+            writeChannelRleWeightHelenFeaturesHDF5(poa->alphabet, helenHDF5Files[threadIdx],
                                                  outputFileBase, bamChunk, outputLabels, features, firstMatchedFeature,
                                                  lastMatchedFeature, maxRunLength);
             break;
@@ -1201,7 +1206,7 @@ uint8_t normalizeWeightToUInt8(double totalWeight, double weight) {
 }
 
 
-void writeSimpleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
+void writeSimpleWeightHelenFeaturesHDF5(Alphabet *alphabet, HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
         BamChunk *bamChunk, bool outputLabels, stList *features, int64_t featureStartIdx,
         int64_t featureEndIdxInclusive) {
 
@@ -1269,8 +1274,8 @@ void writeSimpleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, 
 
             // potentially labels
             if (outputLabels) {
-                Symbol label = symbol_convertCharToSymbol(feature->label);
-                labelCharacterData[featureCount][0] = (uint8_t) (label == n ? 0 : label + 1);
+                Symbol label = alphabet->convertCharToSymbol(feature->label);
+                labelCharacterData[featureCount][0] = (uint8_t) (alphabet->convertSymbolToChar(label) == 'N' ? 0 : label + 1);
             }
 
             // increment
@@ -1405,7 +1410,7 @@ void writeSimpleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, 
     }
 }
 
-void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
+void writeSplitRleWeightHelenFeaturesHDF5(Alphabet *alphabet, HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase, BamChunk *bamChunk,
                                           bool outputLabels, stList *features, int64_t featureStartIdx,
                                           int64_t featureEndIdxInclusive, const int64_t maxRunLength) {
 
@@ -1481,9 +1486,11 @@ void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo
 
                 // labels
                 if (outputLabels) {
-                    Symbol label = symbol_convertCharToSymbol(rlFeature->labelChar);
-                    labelCharacterData[featureCount][0] = (uint8_t) (label == n ? 0 : label + 1);
-                    labelRunLengthData[featureCount][0] = (uint8_t) (label == n ? 0 : rlFeature->labelRunLength);
+                    Symbol label = alphabet->convertCharToSymbol(rlFeature->labelChar);
+                    labelCharacterData[featureCount][0] = (uint8_t) (alphabet->convertSymbolToChar(label) == 'N' ?
+                            0 : label + 1);
+                    labelRunLengthData[featureCount][0] = (uint8_t) (alphabet->convertSymbolToChar(label) == 'N' ?
+                            0 : rlFeature->labelRunLength);
                     if (labelRunLengthData[featureCount][0] > maxRunLength) {
                         st_errAbort("Encountered run length of %d (max %"PRId64") in chunk %s:%"PRId64"-%"PRId64,
                                     labelRunLengthData[featureCount][0], maxRunLength, bamChunk->refSeqName,
@@ -1625,7 +1632,7 @@ void writeSplitRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo
 
 
 
-void writeChannelRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
+void writeChannelRleWeightHelenFeaturesHDF5(Alphabet *alphabet, HelenFeatureHDF5FileInfo* hdf5FileInfo, char *outputFileBase,
         BamChunk *bamChunk, bool outputLabels, stList *features, int64_t featureStartIdx,
         int64_t featureEndIdxInclusive, const int64_t maxRunLength) {
 
@@ -1731,9 +1738,11 @@ void writeChannelRleWeightHelenFeaturesHDF5(HelenFeatureHDF5FileInfo* hdf5FileIn
 
                 // labels
                 if (outputLabels) {
-                    Symbol label = symbol_convertCharToSymbol(rlFeature->labelChar);
-                    labelCharacterData[featureCount][0] = (uint8_t) (label == n ? 0 : label + 1);
-                    labelRunLengthData[featureCount][0] = (uint8_t) (label == n ? 0 : rlFeature->labelRunLength);
+                    Symbol label = alphabet->convertCharToSymbol(rlFeature->labelChar);
+                    labelCharacterData[featureCount][0] = (uint8_t) (alphabet->convertSymbolToChar(label) == 'N' ?
+                            0 : label + 1);
+                    labelRunLengthData[featureCount][0] = (uint8_t) (alphabet->convertSymbolToChar(label) == 'N' ?
+                            0 : rlFeature->labelRunLength);
                     if (labelRunLengthData[featureCount][0] > maxRunLength) {
                         st_errAbort("Encountered run length of %d (max %"PRId64") in chunk %s:%"PRId64"-%"PRId64,
                                     labelRunLengthData[featureCount][0], maxRunLength, bamChunk->refSeqName,

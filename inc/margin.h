@@ -25,7 +25,9 @@
 #include "hashTableC.h"
 #include "pairwiseAligner.h"
 #include "randomSequences.h"
-#include "multipleAligner.h"
+#include "stateMachine.h"
+
+#define uint128_t __uint128_t
 
 /*
  * More function documentation is in the .c files
@@ -34,6 +36,8 @@
 /*
  * Phasing structs
  */
+typedef struct _stSite stSite;
+typedef struct _stReference stReference;
 typedef struct _stProfileSeq stProfileSeq;
 typedef struct _stRPHmm stRPHmm;
 typedef struct _stRPHmmParameters stRPHmmParameters;
@@ -42,9 +46,12 @@ typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
 typedef struct _stGenomeFragment stGenomeFragment;
-typedef struct _stReferencePriorProbs stReferencePriorProbs;
-typedef struct _stBaseMapper stBaseMapper;
-typedef struct _stReferencePositionFilter stReferencePositionFilter;
+//<<<<<<< HEAD
+//typedef struct _stReferencePriorProbs stReferencePriorProbs;
+//typedef struct _stBaseMapper stBaseMapper;
+//typedef struct _stReferencePositionFilter stReferencePositionFilter;
+//=======
+//>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
 /*
  * Polisher structs
  */
@@ -72,7 +79,6 @@ typedef struct _params Params;
 struct _params {
 	PolishParams *polishParams;
 	stRPHmmParameters *phaseParams;
-	stBaseMapper *baseMapper;
 };
 
 Params *params_readParams(char *paramsFile);
@@ -87,9 +93,9 @@ void params_printParameters(Params *params, FILE *fh);
  */
 
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
-        stList *discardedProfileSeqs, stHash *referenceNamesToReferencePriors);
+        stList *discardedProfileSeqs);
 
-stList *getRPHmms(stList *profileSeqs, stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
+stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params);
 
 stList *getTilingPaths(stSortedSet *hmms);
 
@@ -134,9 +140,9 @@ void setSubstitutionProb(uint16_t *logSubMatrix, double *logSubMatrixSlow,
         int64_t sourceCharacterIndex,
         int64_t derivedCharacterIndex, double prob);
 
-uint16_t *getSubstitutionProb(uint16_t *matrix, int64_t from, int64_t to);
+#define ALLELE_LOG_PROB_BITS 8
 
-double *getSubstitutionProbSlow(double *matrix, int64_t from, int64_t to);
+
 
 /*
  * Binary partition stuff
@@ -160,76 +166,65 @@ uint64_t invertPartition(uint64_t partition, uint64_t depth);
 
 uint64_t flipAReadsPartition(uint64_t partition, uint64_t readIndex);
 
+
+/*
+ * Reference / site definition
+ */
+
+struct _stSite {
+	uint64_t alleleNumber; // Number of alleles at the site in the reference
+	uint64_t alleleOffset; // The index of the first allele in this site
+	// in a sequence of all alleles in the reference, ordered first by site then
+	// by order in the site.
+	uint16_t *substitutionLogProbs; // Log probabilities of substitutions between the alleles
+	uint16_t *allelePriorLogProbs; // Prior log-prob on alleles, allows upweighting of reference allele
+};
+
+uint16_t *stSite_getSubstitutionProb(stSite *s, int64_t from, int64_t to);
+
+struct _stReference {
+	char *referenceName;
+	uint64_t length; // Number of sites
+	uint64_t totalAlleles; // Total number of alleles across all sites
+	stSite *sites;
+};
+
+void stReference_destruct(stReference *ref);
+
+//todo I think this goes away
+//stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
+
 /*
  * _stProfileSeq
  * Struct for profile sequence
  */
-#define FIRST_ALPHABET_CHAR 48 // Ascii symbol '0'
 
 struct _stProfileSeq {
-    char *referenceName;
+    stReference *ref;
     char *readId;
-    int64_t refStart;
-    int64_t length;
-    // The probability of alphabet characters, as specified by uint8_t
-    // Each is expressed as an 8 bit unsigned int, with 0x00 representing 0 prob and
-    // 0xFF representing 1.0 and each step between representing a linear step in probability of
-    // 1.0/255
+    uint64_t refStart; // The first site in the reference
+
+
+    uint64_t length; // Number of reference sites
+    uint64_t alleleOffset; // The index of the first allele in this sequence
+    // in a sequence of all alleles in the reference, ordered first by site then
+    // by order in the site.
+
+    // The log-probability of alleles, as specified by uint8_t
+    // Each is expressed as an 8 bit unsigned int, with the value from 0 to -255
     uint8_t *profileProbs;
 };
 
-stProfileSeq *stProfileSeq_constructEmptyProfile(char *referenceName, char *readId,
+stProfileSeq *stProfileSeq_constructEmptyProfile(stReference *ref, char *readId,
                                                  int64_t referenceStart, int64_t length);
-
-stProfileSeq *stProfileSeq_constructFromPosteriorProbs(char *refName, char *refSeq, int64_t refLength,
-													   char *readId, char *readSeq, stList *anchorAlignment,
-													   Params *params);
 
 void stProfileSeq_destruct(stProfileSeq *seq);
 
-void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle, bool includeProbs);
+void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle);
 
-float getProb(uint8_t *p, int64_t characterIndex);
-
-void printSeqs(FILE *fileHandle, stSet *profileSeqs);
-
-void printPartition(FILE *fileHandle, stSet *profileSeqs1, stSet *profileSeqs2);
+uint8_t *stProfileSeq_getProb(stProfileSeq *seq, uint64_t site, uint64_t allele);
 
 int stRPProfileSeq_cmpFn(const void *a, const void *b);
-
-
-
-/*
- * _stReferencePriorProbs
- * Struct for prior over reference positions
- */
-struct _stReferencePriorProbs {
-    char *referenceName;
-    int64_t refStart;
-    int64_t length;
-
-    // The log probability of alphabet characters, as specified by uint16_t
-    // see scaleToLogIntegerSubMatrix()
-    // and invertScaleToLogIntegerSubMatrix() to see how probabilities are stored
-    uint16_t *profileProbs;
-    uint8_t *referenceSequence; // The reference sequence
-    // Read counts for the bases seen in reads
-    double *baseCounts;
-    // Filter array of positions in the reference, used to ignore some columns in the alignment
-    bool *referencePositionsIncluded;
-};
-
-
-stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
-
-void stReferencePriorProbs_destruct(stReferencePriorProbs *seq);
-
-stHash *createEmptyReferencePriorProbabilities(stList *profileSequences);
-
-
-int64_t filterHomozygousReferencePositions(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params, int64_t *totalPositions);
-
-double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToReferencePriors, stRPHmmParameters *params);
 
 
 
@@ -237,25 +232,22 @@ double *stReferencePriorProbs_estimateReadErrorProbs(stHash *referenceNamesToRef
  * Emission probabilities methods
  */
 double emissionLogProbability(stRPColumn *column, stRPCell *cell, uint64_t *bitCountVectors,
-                                stReferencePriorProbs *referencePriorProbs,
+                                stReference *reference,
                                 stRPHmmParameters *params);
 
-double emissionLogProbabilitySlow(stRPColumn *column,
-        stRPCell *cell, uint64_t *bitCountVectors, stReferencePriorProbs *referencePriorProbs,
-        stRPHmmParameters *params, bool maxNotSum);
-
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
-        stRPColumn *column, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
+        stRPColumn *column, stRPHmmParameters *params);
 
 /*
  * Constituent functions tested and used to do bit twiddling
 */
 int popcount64(uint64_t x);
 
-uint64_t getExpectedInstanceNumber(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
-        int64_t position, int64_t characterIndex);
+uint64_t getLogProbOfAllele(uint64_t *bitCountVectors, uint64_t depth, uint64_t partition,
+							uint64_t siteOffset, uint64_t allele);
 
-uint64_t *calculateCountBitVectors(uint8_t **seqs, int64_t depth, int64_t *activePositions, int64_t totalActivePositions);
+uint64_t *calculateCountBitVectors(uint8_t **seqs, stReference *ref,
+								   uint64_t firstSite, uint64_t length, uint64_t depth);
 
 /*
  * _stRPHmmParameters
@@ -265,10 +257,6 @@ struct _stRPHmmParameters {
     /*
      * Parameters used for the HMM computation
      */
-    uint16_t *hetSubModel;
-    uint16_t *readErrorSubModel;
-    double *hetSubModelSlow;
-    double *readErrorSubModelSlow;
     bool maxNotSumTransitions;
 
     // Filters on the number of states in a column
@@ -282,79 +270,25 @@ struct _stRPHmmParameters {
     int64_t maxCoverageDepth;
     int64_t minReadCoverageToSupportPhasingBetweenHeterozygousSites;
 
-    // Training
-
-    // Number of iterations of training
-    int64_t trainingIterations;
-    // Pseudo counts used to make training of substitution matrices a bit more robust
-    double offDiagonalReadErrorPseudoCount;
-    double onDiagonalReadErrorPseudoCount;
-    // Before doing any training estimate the read error substitution parameters empirically
-    bool estimateReadErrorProbsEmpirically;
-
-    // Whether or not to filter out poorly matching reads after one round and try again
-    bool filterBadReads;
-    double filterMatchThreshold;
-
-    // Use a prior for the reference sequence
-    bool useReferencePrior;
-
-    // Verbosity options for printing
-    bool verboseTruePositives;
-    bool verboseFalsePositives;
-    bool verboseFalseNegatives;
-
     // Ensure symmetry in the HMM such that the inverted partition of each partition is included in the HMM
     bool includeInvertedPartitions;
 
-    // Options to filter which positions in the reference sequence are included in the computation
-    bool filterLikelyHomozygousSites;
-    double minSecondMostFrequentBaseFilter; // See stReferencePriorProbs_setReferencePositionFilter
-    double minSecondMostFrequentBaseLogProbFilter; //  See stReferencePriorProbs_setReferencePositionFilter
-
-    // Whether or not to make deletions gap characters (otherwise, profile probs will be flat)
-    bool gapCharactersForDeletions;
-
-    // Any read that has one of the following sam flags is ignored when parsing the reads from the SAM/BAM file.
-    // This allows the ability to optionally ignore, for example, secondary alignments.
-    uint16_t filterAReadWithAnyOneOfTheseSamFlagsSet;
-
-    // Filter out any reads with a MAPQ score less than or equal to this.
-    int64_t mapqFilter;
-
     // Number of rounds of iterative refinement to attempt to improve the partition.
     int64_t roundsOfIterativeRefinement;
-
-    // Whether or not to write a gvcf as output
-    bool writeGVCF;
-
-    // What types of file formats of split reads to output
-    bool writeSplitSams;
-    bool writeUnifiedSam;
-//    bool writeSplitBams;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
 
-void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors);
-
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH);
-
-void stRPHmmParameters_setReadErrorSubstitutionParameters(stRPHmmParameters *params, double *readErrorSubModel);
-
-void normaliseSubstitutionMatrix(double *subMatrix);
-
-double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params);
 
 /*
  * _stRPHmm
  * Struct for read partitioning hmm
  */
 struct _stRPHmm {
-    char *referenceName;
-    int64_t refStart;
-    int64_t refLength;
+	stReference *ref;
+    int64_t refStart; // First site in reference
+    int64_t refLength; // Number of sites in the reference
     stList *profileSeqs; // List of stProfileSeq
     int64_t columnNumber; // Number of columns, excluding merge columns
     int64_t maxDepth;
@@ -364,13 +298,9 @@ struct _stRPHmm {
     //Forward/backward probability calculation things
     double forwardLogProb;
     double backwardLogProb;
-    // Prior over reference bases
-    stReferencePriorProbs *referencePriorProbs;
-    // Filter used to mask column positions from consideration
-    stReferencePositionFilter *referencePositionFilter;
 };
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params);
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params);
 
 void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns);
 
@@ -402,36 +332,25 @@ void stRPHmm_resetColumnNumberAndDepth(stRPHmm *hmm);
 
 stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm);
 
-void printBaseComposition2(double *baseCounts);
-
-double *getColumnBaseComposition(stRPColumn *column, int64_t pos);
-
-void printColumnAtPosition(stRPHmm *hmm, int64_t pos);
-
-double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos);
-
-void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF);
+void logHmm(stRPHmm *hmm, stGenomeFragment *gF);
 
 /*
  * _stRPColumn
  * Column of read partitioning hmm
  */
 struct _stRPColumn {
-    int64_t refStart;
-    int64_t length;
+    int64_t refStart; // First site in the reference
+    int64_t length; // Number of sites
     int64_t depth;
     stProfileSeq **seqHeaders;
     uint8_t **seqs;
     stRPCell *head;
     stRPMergeColumn *nColumn, *pColumn;
     double totalLogProb;
-    // Record of which positions in the column are not filtered out
-    int64_t *activePositions; // List of positions that are not filtered out, relative to the start of the column in reference coordinates
-    int64_t totalActivePositions; // The length of activePositions
 };
 
 stRPColumn *stRPColumn_construct(int64_t refStart, int64_t length, int64_t depth,
-        stProfileSeq **seqHeaders, uint8_t **seqs, stReferencePriorProbs *rProbs);
+        stProfileSeq **seqHeaders, uint8_t **seqs);
 
 void stRPColumn_destruct(stRPColumn *column);
 
@@ -509,78 +428,48 @@ double stRPMergeCell_posteriorProb(stRPMergeCell *mCell, stRPMergeColumn *mColum
  * String to represent genotype and haplotype inference from an HMM
  */
 struct _stGenomeFragment {
+	// The reference coordinates of the genotypes & other read info
+	stReference *reference; // The reference this fragment refers to
+	uint64_t refStart; // First site in the reference
+	uint64_t length; // The number of sites
+
+	// Reads
+	stSet *reads1; // The reads in the first partition
+	stSet *reads2; // The reads in the second partition
+
     // A string where each element represents the predicted genotype at the corresponding
     // position.
-    // A genotype is represented by an integer in the range [0, ALPHABET_SIZE**2)
+    // A genotype is represented by an integer in the range [0, allele_number**2), where
+	// where allele_number is the number alleles at the given site
     // A genotype expresses two characters. For two characters x, y represented by two integers
-    // in [0, ALPHABET_SIZE) then the genotype is expressed as x * ALPHABET_SIZE + y if x <= y
-    // else y * ALPHABET_SIZE + x
+    // in [0, allele_number) then the genotype is expressed as x * allele_number + y if x <= y
+    // else y * allele_number + x
     uint64_t *genotypeString;
+
+    // Strings representing the predicted haplotypes, where each element is a reference to an allele
+    uint64_t *haplotypeString1;
+    uint64_t *haplotypeString2;
+    uint64_t *ancestorString; // predicted ancestral alleles
 
     // An array of genotype posterior probabilities,
     // each between 0 and 1, for the corresponding genotypes
     // in the genotype string
     float *genotypeProbs;
-    float **genotypeLikelihoods;
-
-    // Strings representing the predicted haplotypes, where each element is an alphabet character
-    // index in [0, ALPHABET_SIZE)
-    uint64_t *haplotypeString1;
-    uint64_t *haplotypeString2;
-
-    // An array of haplotype posterior probabilities,
-    // each between 0 and 1, for the corresponding haplotypes
-    // in the haplotype strings
     float *haplotypeProbs1;
     float *haplotypeProbs2;
-
-    // The reference coordinates of the genotypes & other read info
-    char *referenceName;
-    int64_t refStart;
-    int64_t length;
-    uint8_t *referenceSequence;
-
-    // Depth and allele counts
-    uint8_t *hap1Depth;
-    uint8_t *hap2Depth;
-    uint8_t *alleleCountsHap1;
-    uint8_t *alleleCountsHap2;
-    uint8_t *allele2CountsHap1;
-    uint8_t *allele2CountsHap2;
 };
+
+stGenomeFragment *stGenomeFragment_constructEmpty(stReference *ref, uint64_t refStart, uint64_t length, stSet *reads1, stSet *reads2);
 
 stGenomeFragment *stGenomeFragment_construct(stRPHmm *hmm, stList *path);
 
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 
-void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF, stSet *reads1, stSet *reads2,
+void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF,
         stRPHmm *hmm, stList *path, int64_t maxIterations);
 
 double getLogProbOfReadGivenHaplotype(uint64_t *haplotypeString, int64_t start, int64_t length,
-                                      stProfileSeq *profileSeq, stRPHmmParameters *params);
-
-/*
- * _stBaseMapper
- * Struct for alphabet and mapping bases to numbers
- */
-struct _stBaseMapper {
-    uint8_t *charToNum;
-    char *numToChar;
-    char *wildcard;
-    uint8_t size;
-};
-
-stBaseMapper* stBaseMapper_construct();
-
-void stBaseMapper_destruct(stBaseMapper *bm);
-
-void stBaseMapper_addBases(stBaseMapper *bm, char *bases);
-
-void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard);
-
-char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value);
-
-uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base);
+                                      stProfileSeq *profileSeq, stReference *ref);
 
 
 // Verbosity for what's printed.  To add more verbose options, you need to update:
@@ -637,8 +526,12 @@ void stReadHaplotypePartitionTable_destruct(stReadHaplotypePartitionTable *hpt);
 void populateReadHaplotypePartitionTable(stReadHaplotypePartitionTable *hpt, stGenomeFragment *gF, stRPHmm *hmm,
                                          stList *path);
 
+/*
+ * Parsing methods
+ */
 
-void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
+stRPHmmParameters *parseParameters(char *paramsFile);
+
 
 /*
  * Polish functions
@@ -650,15 +543,18 @@ void addProfileSeqIdsToSet(stSet *pSeqs, stSet *readIds);
 
 struct _polishParams {
 	bool useRunLengthEncoding;
+	bool poaConstructCompareRepeatCounts; // use the repeat counts in deciding if an indel can be shifted
 	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
 	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
 	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
 	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
 	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
-	Hmm *hmm; // Pair hmm used for aligning reads to the reference.
+	Hmm *hmm; // Pair hmm used for aligning sequences symmetrically.
 	StateMachine *sM; // Statemachine derived from the hmm
+	Hmm *hmmConditional; // Non-symmetrical HMM for calculating prob of one sequence given the other, used for aligning reads to the reference.
+	StateMachine *sMConditional; // Statemachine derived from the conditional hmm
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
-	RepeatSubMatrix *repeatSubMatrix; // Repeat submatrix
+	RepeatSubMatrix *repeatSubMatrix; // Repeat counts submatrix
 	// chunking configuration
 	bool includeSoftClipping;
 	uint64_t chunkSize;
@@ -671,11 +567,14 @@ struct _polishParams {
 	uint64_t minPoaConsensusIterations; // Minimum number of poa_consensus / realignment iterations
 	uint64_t maxRealignmentPolishIterations; // Maximum number of poa_polish iterations
 	uint64_t minRealignmentPolishIterations; // Minimum number of poa_polish iterations
-
 	uint64_t minReadsToCallConsensus; // Min reads to choose between consensus sequences for a region
 	uint64_t filterReadsWhileHaveAtLeastThisCoverage; // Only filter read substrings if we have at least this coverage
 	// at a locus
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
+	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
+	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
+	bool useOnlySubstitutionsForPhasing; // In creating phasing use sites where alleles only differ by substitutions
+	Alphabet *alphabet; // The alphabet object
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -689,7 +588,9 @@ void polishParams_destruct(PolishParams *polishParams);
  */
 
 struct _Poa {
-	char *refString; // The reference string
+	Alphabet *alphabet; // The alphabet of bases
+	uint64_t maxRepeatCount; // The maximum repeat count, exclusive
+	RleString *refString; // The reference string, encoded using RLE
 	stList *nodes;
 };
 
@@ -697,12 +598,14 @@ struct _poaNode {
 	stList *inserts; // Inserts that happen immediately after this position
 	stList *deletes; // Deletes that happen immediately after this position
 	char base; // Char representing base, e.g. 'A', 'C', etc.
-	double *baseWeights; // Array of length SYMBOL_NUMBER, encoding the weight given go each base, using the Symbol enum
+	uint64_t repeatCount; // Repeat count of base
+	double *baseWeights; // Weight given to each possible base
+	double *repeatCountWeights; // Weight given to each possible repeat count
 	stList *observations; // Individual events representing event, a list of PoaObservations
 };
 
 struct _poaInsert {
-	char *insert; // String representing characters of insert e.g. "GAT", etc.
+	RleString *insert; // RLE string representing characters of insert e.g. "GAT" with repeat counts "121", etc.
 	double weightForwardStrand;
 	double weightReverseStrand;
     stList *observations; // Individual events representing event, a list of PoaObservations
@@ -730,16 +633,17 @@ double poaInsert_getWeight(PoaInsert *toInsert);
 double poaDelete_getWeight(PoaDelete *toDelete);
 
 /*
- * Creates a POA representing the given reference sequence, with one node for each reference base and a
- * prefix 'N' base to represent place to add inserts/deletes that precede the first position of the reference.
+ * Creates a POA representing the given RLE reference sequence, with one node for each reference base and a
+ * prefix 'N'/1 base to represent place to add inserts/deletes that precede the first position of the reference.
  */
-Poa *poa_getReferenceGraph(char *reference);
+Poa *poa_getReferenceGraph(RleString *reference, Alphabet *alphabet, uint64_t maxRepeatCount);
 
 /*
  * Adds to given POA the matches, inserts and deletes from the alignment of the given read to the reference.
  * Adds the inserts and deletes so that they are left aligned.
  */
-void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *matches, stList *inserts, stList *deletes);
+void poa_augment(Poa *poa, RleString *read, bool readStrand, int64_t readNo, stList *matches, stList *inserts, stList *deletes,
+		PolishParams *polishParams);
 
 /*
  * Creates a POA representing the reference and the expected inserts / deletes and substitutions from the
@@ -747,7 +651,7 @@ void poa_augment(Poa *poa, char *read, bool readStrand, int64_t readNo, stList *
  * alignments between the reads and the reference sequence. There is one alignment for each read. See
  * poa_getAnchorAlignments. The anchorAlignments can be null, in which case no anchors are used.
  */
-Poa *poa_realign(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
+Poa *poa_realign(stList *bamChunkReads, stList *alignments, RleString *reference, PolishParams *polishParams);
 
 /*
  * Generates a set of anchor alignments for the reads aligned to a consensus sequence derived from the poa.
@@ -775,7 +679,7 @@ void poa_print(Poa *poa, FILE *fH,
 /*
  * Prints a tab separated version of the POA graph.
  */
-void poa_printDOT(Poa *poa, FILE *fH, stList *bamChunkReads, stList *rleStrings);
+void poa_printDOT(Poa *poa, FILE *fH, stList *bamChunkReads);
 
 /*
  * Prints a tab separated version of the POA graph.
@@ -787,8 +691,7 @@ void poa_printTSV(Poa *poa, FILE *fH,
 /*
  * Print repeat count observations.
  */
-void poa_printRepeatCounts(Poa *poa, FILE *fH,
-		stList *rleReads, stList *bamChunkReads);
+void poa_printRepeatCounts(Poa *poa, FILE *fH, stList *bamChunkReads);
 
 /*
  * Prints some summary stats on the POA.
@@ -797,45 +700,31 @@ void poa_printSummaryStats(Poa *poa, FILE *fH);
 
 /*
  * Creates a consensus reference sequence from the POA. poaToConsensusMap is a pointer to an
- * array of integers of length str(poa->refString), giving the index of the reference positions
+ * array of integers of length poa->refString->length, giving the index of the reference positions
  * alignment to the consensus sequence, or -1 if not aligned. It is initialised as a
  * return value of the function.
  */
-char *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
+RleString *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams *polishParams);
 
-Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params);
-
-char *poa_polish2(Poa *poa, stList *bamChunkReads, PolishParams *params,
+RleString *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params,
 				  int64_t **poaToConsensusMap);
 
+
 /*
- * Iteratively used poa_realign and poa_getConsensus to refine the median reference sequence
+ * Iteratively uses poa_getConsensus and poa_polish to refine the median reference sequence
  * for the given reads and the starting reference.
+ *
+ * Allows the specification of the min and max number of realignment cycles.
  */
-Poa *poa_realignIterative(stList *bamChunkReads, stList *alignments, char *reference, PolishParams *polishParams);
-
-/*
- * Ad poa_realignIterative, but allows the specification of the min and max number of realignment cycles,
- * also, can switch between the "poa_polish" and the "poa_consensus" algorithm using hmmNotRealign (poa_consensus
- * if non-zero).
- */
-Poa *poa_realignIterative2(stList *bamChunkReads,
-						   stList *anchorAlignments, char *reference,
-						   PolishParams *polishParams, bool hmmNotRealign,
-						   int64_t minIterations, int64_t maxIterations);
-
-/*
- * As poa_realignIterative, but takes a starting poa. Input poa is destroyed by function.
- */
-Poa *poa_realignIterative3(Poa *poa, stList *bamChunkReads,
+Poa *poa_realignIterative(Poa *poa, stList *bamChunkReads,
 						   PolishParams *polishParams, bool hmmMNotRealign,
 						   int64_t minIterations, int64_t maxIterations);
 
 /*
- * Convenience function that iteratively polishes sequence using poa_consensus and then poa_polish for
+ * Convenience function that iteratively polishes sequence using poa_getConsensus and then poa_polish for
  * a specified number of iterations.
  */
-Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, char *reference,
+Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, RleString *reference,
 						  PolishParams *polishParams);
 
 /*
@@ -846,13 +735,15 @@ Poa *poa_checkMajorIndelEditsGreedily(Poa *poa, stList *bamChunkReads, PolishPar
 void poa_destruct(Poa *poa);
 
 double *poaNode_getStrandSpecificBaseWeights(PoaNode *node, stList *bamChunkReads,
-											 double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight);
+		double *totalWeight, double *totalPositiveWeight, double *totalNegativeWeight, Alphabet *a);
 
 /*
  * Finds shift, expressed as a reference coordinate, that the given substring str can
  * be shifted left in the refString, starting from a match at refStart.
+ *
+ * If compareRepeatCounts is non-zero then comparison includes exact comparison of repeat counts.
  */
-int64_t getShift(char *refString, int64_t refStart, char *str, int64_t length);
+int64_t getShift(RleString *refString, int64_t refStart, RleString *str, bool compareRepeatCounts);
 
 /*
  * Get sum of weights for reference bases in poa - proxy to agreement of reads
@@ -879,37 +770,74 @@ double poa_getInsertTotalWeight(Poa *poa);
 double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa);
 
 /*
- * Functions for run-length encoding/decoding with POAs
+ * Reestimates the repeat counts of the poa backbone using the Bayesian model, repeatSubMatrix.
+ * Changes the repeat counts of the backbone bases in place
  */
+void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
+
 
 // Data structure for representing RLE strings
 struct _rleString {
 	char *rleString; //Run-length-encoded (RLE) string
-	int64_t *repeatCounts; // Count of repeat for each position in rleString
-	int64_t *rleToNonRleCoordinateMap; // For each position in the RLE string the corresponding, left-most position
-	// in the expanded non-RLE string
-	int64_t *nonRleToRleCoordinateMap; // For each position in the expanded non-RLE string the corresponding position
-	// in the RLE string
-	int64_t length; // Length of the rleString
-	int64_t nonRleLength; // Length of the expanded non-rle string
+	uint64_t *repeatCounts; // Count of repeat for each position in rleString
+	uint64_t length; // Length of the rleString
+	uint64_t nonRleLength; // Length of the expanded, non-rle string
 };
 
+/*
+ * Returns a string "cXrepeatCount", e.g. c='a', repeatCount=4 returns "aaaa".
+ */
+char *expandChar(char c, uint64_t repeatCount);
+
 RleString *rleString_construct(char *string);
-RleString *rleString_constructNoRLE(char *str);
 RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts);
+RleString *rleString_construct_no_rle(char *string);
 
 void rleString_destruct(RleString *rlString);
+
+RleString *rleString_copy(RleString *rleString);
+
+RleString *rleString_copySubstring(RleString *rleString, uint64_t start, uint64_t length);
+
+bool rleString_eq(RleString *r1, RleString *r2);
+
+/*
+ * Debug output friendly version of rleString on one line.
+ * Does not print any new lines.
+ */
+void rleString_print(RleString *rleString, FILE *f);
+
+/*
+ * Cyclic rotatation of the rle string so that the suffix of str of rotationLength is removed and made the prefix
+ * of the string.
+ */
+void rleString_rotateString(RleString *str, int64_t rotationLength);
 
 /*
  * Generates the expanded non-rle string.
  */
 char *rleString_expand(RleString *rleString);
 
+/*
+ * Gets a symbol sub-string from a given RLE string.
+ */
+SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a);
+
+/*
+ * Gets an array giving the position in the rleString of a corresponding position in the expanded string.
+ */
+uint64_t *rleString_getNonRleToRleCoordinateMap(RleString *rleString);
+
+uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities);
+
 // Data structure for storing log-probabilities of observing
 // one repeat count given another
 struct _repeatSubMatrix {
+	Alphabet *alphabet;
+	double *baseLogProbs_AT;
+	double *baseLogProbs_GC;
 	double *logProbabilities;
-	int64_t maximumRepeatLength;
+	int64_t maximumRepeatLength; // The maximum repeat count length, exclusive
 	int64_t maxEntry;
 };
 
@@ -917,7 +845,7 @@ struct _repeatSubMatrix {
  * Reads the repeat count matrix from a given input file.
  */
 
-RepeatSubMatrix *repeatSubMatrix_constructEmpty();
+RepeatSubMatrix *repeatSubMatrix_constructEmpty(Alphabet *alphabet);
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix);
 
@@ -936,28 +864,24 @@ double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base
  * Gets the log probability of observing a given set of repeat observations conditioned on an underlying repeat count and base.
  */
 double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base,
-        stList *observations, stList *rleReads, stList *bamChunkReads, int64_t underlyingRepeatCount);
+        stList *observations, stList *bamChunkReads, int64_t underlyingRepeatCount);
 
 /*
  * Gets the maximum likelihood underlying repeat count for a given set of observed read repeat counts.
  * Puts the ml log probility in *logProbabilty.
  */
 int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
-        stList *rleReads, stList *bamChunkReads, double *logProbability);
-
-/*
- * Takes a POA done in run-length space and returns the expanded consensus string in
- * non-run-length space as an RleString.
- */
-RleString *expandRLEConsensus(Poa *poa, stList *rlReads, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
+        stList *bamChunkReads, double *logProbability);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing
  * in both underlying sequences (seqX and seqY) into an equivalent run-length encoded space alignment.
  */
-stList *runLengthEncodeAlignment(stList *alignment, RleString *seqX, RleString *seqY);
-stList *runLengthEncodeAlignment2(stList *alignment, RleString *seqX, RleString *seqY,
-								  int64_t xIdx, int64_t yIdx, int64_t weightIdx);
+stList *runLengthEncodeAlignment(stList *alignment,
+		uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap);
+stList *runLengthEncodeAlignment2(stList *alignment,
+        uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap,
+		int64_t xIdx, int64_t yIdx, int64_t weightIdx);
 /*
  * Make edited string with given insert. Edit start is the index of the position to insert the string.
  */
@@ -972,8 +896,8 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
  * Generates aligned pairs and indel probs, but first crops reference to only include sequence from first
  * to last anchor position.
  */
-void getAlignedPairsWithIndelsCroppingReference(char *reference, int64_t refLength,
-		char *read, stList *anchorPairs,
+void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
+		RleString *read, stList *anchorPairs,
 		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams);
 
 /*
@@ -1007,20 +931,43 @@ typedef struct _bamChunk {
 
 typedef struct _bamChunkRead {
 	char *readName;          	// read name
-	char *nucleotides;			// nucleotide string
-	int64_t readLength;
-	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length readLength
+	RleString *rleRead; 		// rle read
+	uint8_t *qualities;			// quality scores. will be NULL if not given, else will be of length rleRead->length
 	bool forwardStrand;			// whether the alignment is matched to the forward strand
-	BamChunk *parent;        	// reference to parent chunk
 } BamChunkRead;
 
 
-BamChunkRead *bamChunkRead_construct();
-BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, BamChunk *parent);
-BamChunkRead *bamChunkRead_constructRLECopy(BamChunkRead  *read, RleString *rle);
+BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides, uint8_t *qualities, bool forwardStrand, bool useRunLengthEncoding);
+BamChunkRead *bamChunkRead_constructCopy(BamChunkRead *copy);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*
+<<<<<<< HEAD
+=======
+ * Generates the expanded non-rle version of bam chunk read nucleotide sequence.
+ */
+char *bamChunkRead_rleExpand(BamChunkRead *read);
+
+typedef struct _bamChunkReadSubstring {
+	BamChunkRead *read; // The parent read from which the substring arises from
+	uint64_t start; // The 0 based offset of the start position in the parent read (inclusive)
+	uint64_t length; // The length of the substring
+	double qualValue;
+} BamChunkReadSubstring;
+
+/*
+ * Gets the RLE substring for the bam chunk read substring.
+ */
+RleString *bamChunkReadSubstring_getRleString(BamChunkReadSubstring *readSubstring);
+
+//todo moved to htslib
+///*
+// * Converts chunk of aligned reads into list of reads and alignments.
+// */
+//uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, stList *reads, stList *alignments);
+
+/*
+>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
  * Remove overlap between two overlapping strings. Returns max weight of split point.
  */
 int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,
@@ -1103,11 +1050,119 @@ void msaView_printRepeatCounts(MsaView *view, int64_t minInsertCoverage,
 							   RleString *refString, stList *rleStrings, FILE *fh);
 
 /*
- * Phase to polish functions
+ * Bubble graphs
  */
 
-void phaseReads(char *reference, int64_t referenceLength, stList *reads, stList *anchorAlignments,
-				stList **readsPartition1, stList **readsPartition2, Params *params);
+typedef struct _bubble {
+	uint64_t refStart; //First inclusive position
+	RleString *refAllele; // The current reference allele
+	uint64_t alleleNo; // Number of alleles
+	RleString **alleles; // Array of allele strings, each an RLE string
+	uint64_t readNo; // Number of reads overlapping bubble
+	BamChunkReadSubstring **reads; // Array of read substrings aligned to the bubble
+	float *alleleReadSupports; // An array of log-likelihoods giving the support of
+	// each allele for each read, stored as [i * readNo + j], where i is the allele index
+	// and j is the index of the read
+	uint64_t alleleOffset; // The index of the first allele in this bubble
+	// in a sequence of all alleles in the bubble graph, ordered first by bubble then
+	// by order in the bubble.
+} Bubble;
+
+typedef struct _bubbleGraph {
+	RleString *refString; // The reference string
+	uint64_t bubbleNo; // The number of bubbles
+	Bubble *bubbles; // An array of bubbles
+	uint64_t totalAlleles; // Sum of alleles across bubbles
+} BubbleGraph;
+
+/*
+ * Get a consensus path through bubble graph by picking the highest
+ * likelihood allele at each bubble. Returned as a string of bg->refLength integers,
+ * each denoting a chosen allele.
+ */
+uint64_t *bubbleGraph_getConsensusPath(BubbleGraph *bg, PolishParams *polishParams);
+
+/*
+ * Get a consensus sequences from the bubble graph by picking the highest
+ * likelihood allele at each bubble.
+ */
+RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPath, int64_t **poaToConsensusMap, PolishParams *polishParams);
+
+/*
+ * Create a bubble graph from a POA.
+ */
+BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, PolishParams *params);
+
+void bubbleGraph_destruct(BubbleGraph *bg);
+
+/*
+ * Prints a quick view of the bubble graph for debugging/browsing.
+ */
+void bubbleGraph_print(BubbleGraph *bg, FILE *fh);
+
+/*
+ * The the index in b->alleles of the allele with highest likelihood
+ * given the reads
+ */
+int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b);
+
+/*
+ * Gets the likelihood of a given allele giving rise to the reads.
+ */
+double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele);
+
+/*
+ * Gets a set of profile sequences for the reads aligned to the bubble graph.
+ * Allows them to then be phased. Returns as hash of bamChunkReads to profileSeqs.
+ */
+stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref);
+
+/*
+ * Gets an stReference that can be used for phasing.
+ */
+stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *params);
+
+/*
+ * Phase bubble graph.
+ */
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
+
+/*
+ * Get Poa from bubble graph.
+ */
+Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, stList *reads, Params *params);
+
+/*
+ * Gets the strand support skew for each allele.
+ */
+void bubble_calculateStrandSkews(Bubble *b, double *skews);
+
+/*
+ * Gets the p-value for the bubble having a phased strand-skew
+ */
+double bubble_phasedStrandSkew(Bubble *b, stHash *readsToPSeqs, stGenomeFragment *gf);
+
+/*
+ * Returns fraction of bubbles with significant allele-strand phase skew.
+ */
+double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenomeFragment *gf);
+
+/*
+ * Filter bubbles to remove bubbles containing any alleles with a significant strand skew.
+ */
+void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p);
+
+/*
+ * Filter bubbles to remove bubbles encoding indels
+ */
+void bubbleGraph_filterBubblesToRemoveIndels(BubbleGraph *bg, Params *p);
+
+/*
+ * Functions for scoring strand skews using binomial model
+ */
+double binomialPValue(int64_t n, int64_t k);
+
+uint128_t bionomialCoefficient(int64_t n, int64_t k);
 
 /*
  * For logging while multithreading

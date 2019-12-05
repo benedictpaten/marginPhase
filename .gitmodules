@@ -4,6 +4,3 @@
 [submodule "externalTools/sonLib"]
 	path = externalTools/sonLib
 	url = https://github.com/benedictpaten/sonLib.git
-[submodule "externalTools/cPecan"]
-	path = externalTools/cPecan
-	url = https://github.com/benedictpaten/cPecan.git

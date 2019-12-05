@@ -20,61 +20,21 @@ inline double logAddP(double a, double b, bool maxNotSum) {
 }
 
 /*
+ * Reference and site methods
+ */
+
+void stReference_destruct(stReference *ref) {
+	free(ref->sites);
+	free(ref->referenceName);
+	free(ref);
+}
+
+/*
  * Functions for the read partitioning hmm object stRPHmm.
  */
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params) {
-    free(params->hetSubModel);
-    free(params->hetSubModelSlow);
-    free(params->readErrorSubModel);
-    free(params->readErrorSubModelSlow);
     free(params);
-}
-
-static void printMatrix(FILE *fH, double *matrixSlow, uint16_t *matrixFast) {
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\t\t\t");
-        for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-            fprintf(fH, " %f, ", exp(matrixSlow[i*ALPHABET_SIZE + j]));
-        }
-        fprintf(fH, "\n");
-    }
-}
-
-double *getColumnBaseComposition(stRPColumn *column, int64_t pos) {
-    /*
-     * Get the observed counts for each base seen at a particular position in a column
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    for (int64_t i=0; i<column->depth; i++) {
-        stProfileSeq *seq = column->seqHeaders[i];
-
-        if (pos >= seq->refStart && pos < seq->length+seq->refStart) {
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(seq->profileProbs[(pos - seq->refStart) * ALPHABET_SIZE]), j);
-            }
-        }
-    }
-    return baseCounts;
-}
-
-
-double *getProfileSequenceBaseCompositionAtPosition(stSet *profileSeqs, int64_t pos) {
-    /*
-     * Get the expected count of each alphabet character in the profile sequences, returned
-     * as an array.
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    stSetIterator *it = stSet_getIterator(profileSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        if (pos >= pSeq->refStart && pos < pSeq->refStart+pSeq->length) {
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(pSeq->profileProbs[(pos - pSeq->refStart)*ALPHABET_SIZE]), j);
-            }
-        }
-    }
-    return baseCounts;
 }
 
 void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
@@ -82,169 +42,17 @@ void stRPHmmParameters_printParameters(stRPHmmParameters *params, FILE *fH) {
      * Print the parameters in the parameters object in a human readable form.
      */
     fprintf(fH, "\tRead Partitioning HMM Parameters\n");
-    fprintf(fH, "\t\tAlphabet_size: %i\n"
+    fprintf(fH,
             "\t\tMax_read coverage_depth: %" PRIi64 "\n"
             "\t\tMax_not sum transitions?: %i\n"
             "\t\tMax_partitions in a column of an HMM: %" PRIi64 "\n"
             "\t\tMin read coverage to support phasing between heterozygous sites: %" PRIi64 "\n",
-            ALPHABET_SIZE, params->maxCoverageDepth,
+            params->maxCoverageDepth,
             (int)params->maxNotSumTransitions, params->maxPartitionsInAColumn,
             params->minReadCoverageToSupportPhasingBetweenHeterozygousSites);
 
-    fprintf(fH, "\t\tHeterozygous substitution rates:\n");
-    printMatrix(fH, params->hetSubModelSlow, params->hetSubModel);
-
-    fprintf(fH, "\t\tRead error substitution rates:\n");
-    printMatrix(fH, params->readErrorSubModelSlow, params->readErrorSubModel);
-
-    fprintf(fH, "\t\tIterations of parameter learning: %" PRIi64 "\n", params->trainingIterations);
-    fprintf(fH, "\t\tInclude deletions as gap character? : %i\n", (int) params->gapCharactersForDeletions);
-    fprintf(fH, "\t\tUse reference prior?: %i\n", (int) params->useReferencePrior);
-    fprintf(fH, "\t\tFilter bad reads?: %i\n", (int)params->filterBadReads);
-    fprintf(fH, "\t\tFilter match threshold: %f\n", params->filterMatchThreshold);
-    fprintf(fH, "\t\tFilter reads with any of these sam flags set: %d\n", params->filterAReadWithAnyOneOfTheseSamFlagsSet);
     fprintf(fH, "\t\tInclude inverted partitions?: %i\n", (int) params->includeInvertedPartitions);
-    fprintf(fH, "\t\tEstimate read error probs empirically?: %i\n", (int) params->estimateReadErrorProbsEmpirically);
-    fprintf(fH, "\t\tFiltering likely homoygous sites? : %i\n", (int)params->filterLikelyHomozygousSites);
-    fprintf(fH, "\t\tminSecondMostFrequentBaseFilter: %f\n", params->minSecondMostFrequentBaseFilter);
-    fprintf(fH, "\t\tminSecondMostFrequentBaseLogProbFilter: %f\n", params->minSecondMostFrequentBaseLogProbFilter);
     fprintf(fH, "\t\tRounds of iterative refinement: %" PRIi64 "\n", params->roundsOfIterativeRefinement);
-    fprintf(fH, "\t\tWriting gvcf? : %i\n", (int)params->writeGVCF);
-    fprintf(fH, "\t\tVerbose Attributes:\n");
-    if (params->verboseTruePositives) fprintf(fH, "\t\t\tTRUE_POSITIVES\n");
-    if (params->verboseFalsePositives) fprintf(fH, "\t\t\tFALSE_POSITIVES\n");
-    if (params->verboseFalseNegatives) fprintf(fH, "\t\t\tFALSE_NEGATIVES\n");
-}
-
-static void calculateReadErrorSubModel(double *readErrorSubModel, int64_t refStart, int64_t length, uint64_t *haplotypeSeq, stSet *reads) {
-    /*
-     * Returns a normalized substitution matrix estimating the probability of read error substitutions by ML.
-     */
-    stSetIterator *readIt = stSet_getIterator(reads);
-    stProfileSeq *pSeq;
-    int64_t end = refStart + length;
-    while((pSeq = stSet_getNext(readIt)) != NULL) {
-        // Get the overlapping interval
-        int64_t i = refStart > pSeq->refStart ? refStart : pSeq->refStart;
-        int64_t j = end < pSeq->refStart + pSeq->length ? end : pSeq->refStart + pSeq->length;
-        // For each pair of read and haplotype characters
-        for(;i<j;i++) {
-            // Check coordinates in bounds
-            assert(i - refStart >= 0 && i-refStart < length);
-            assert(i - pSeq->refStart >= 0 && i - pSeq->refStart < pSeq->length);
-            int64_t hapChar = haplotypeSeq[i - refStart];
-            for(int64_t readChar=0; readChar<ALPHABET_SIZE; readChar++) {
-                double probOfReadChar = getProb(&(pSeq->profileProbs[(i-pSeq->refStart) * ALPHABET_SIZE]), readChar);
-                *getSubstitutionProbSlow(readErrorSubModel, hapChar, readChar) += probOfReadChar;
-            }
-        }
-    }
-    stSet_destructIterator(readIt);
-}
-
-void normaliseSubstitutionMatrix(double *subMatrix) {
-    /*
-     * Normalise matrix so that counts are converted to conditional probabilities of observing
-     * derived character given source character.
-     */
-    for(int64_t fromChar=0; fromChar<ALPHABET_SIZE; fromChar++) {
-        double totalSubCount = 0.0;
-        for(int64_t toChar=0; toChar<ALPHABET_SIZE; toChar++) {
-            totalSubCount += *getSubstitutionProbSlow(subMatrix, fromChar, toChar);
-        }
-        for(int64_t toChar=0; toChar<ALPHABET_SIZE; toChar++) {
-            double p = *getSubstitutionProbSlow(subMatrix, fromChar, toChar) / totalSubCount;
-            *getSubstitutionProbSlow(subMatrix, fromChar, toChar) = p <= 0.0001 ? 0.0001 : p;
-        }
-    }
-}
-
-void stRPHmmParameters_setReadErrorSubstitutionParameters(stRPHmmParameters *params, double *readErrorSubModel) {
-    /*
-     * Set the substitution parameters of the read error substitution model from the given matrix.
-     */
-    for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-        for(int64_t k=0; k<ALPHABET_SIZE; k++) {
-            setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow, j, k,
-                    *getSubstitutionProbSlow(readErrorSubModel, j, k));
-        }
-    }
-}
-
-double *getEmptyReadErrorSubstitutionMatrix(stRPHmmParameters *params) {
-    /*
-     * Get an empty substitution matrix initializaed with the pseudo counts specified by params.
-     */
-    double *readErrorSubModel = st_calloc(ALPHABET_SIZE * ALPHABET_SIZE, sizeof(double));
-    for(int64_t j=0; j<ALPHABET_SIZE*ALPHABET_SIZE; j++) {
-        readErrorSubModel[j] = params->offDiagonalReadErrorPseudoCount;
-    }
-    for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-        readErrorSubModel[j*ALPHABET_SIZE + j] = params->onDiagonalReadErrorPseudoCount;
-    }
-    return readErrorSubModel;
-}
-
-void stRPHmmParameters_learnParameters(stRPHmmParameters *params, stList *profileSequences,
-        stHash *referenceNamesToReferencePriors) {
-    /*
-     * Learn the substitution matrices iteratively, updating the params object in place.
-     * Iterations is the number of cycles of stochastic parameter search to do.
-     */
-
-    // For each iteration construct a set of HMMs and estimate the parameters from it.
-    for(int64_t i=0; i<params->trainingIterations; i++) {
-        st_logDebug("\tStarting training iteration %" PRIi64 "\n", i);
-        // Substitution model for haplotypes to reads
-        double *readErrorSubModel = getEmptyReadErrorSubstitutionMatrix(params);
-
-        stList *hmms = getRPHmms(profileSequences, referenceNamesToReferencePriors, params);
-
-        for(int64_t j=0; j<stList_length(hmms); j++) {
-            stRPHmm *hmm = stList_get(hmms, j);
-
-            // Run the forward-backward algorithm
-            stRPHmm_forwardBackward(hmm);
-
-            // Now compute a high probability path through the hmm
-            stList *path = stRPHmm_forwardTraceBack(hmm);
-
-            // Compute the genome fragment
-            stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-
-            // Get partitioned sequences
-            stSet *reads1 = stRPHmm_partitionSequencesByStatePath(hmm, path, 1);
-            stSet *reads2 = stRPHmm_partitionSequencesByStatePath(hmm, path, 0);
-
-            // Estimate the read error substitution parameters
-            calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString1, reads1);
-            calculateReadErrorSubModel(readErrorSubModel, gF->refStart, gF->length, gF->haplotypeString2, reads2);
-
-            // Cleanup
-            stSet_destruct(reads1);
-            stSet_destruct(reads2);
-            stGenomeFragment_destruct(gF);
-            stList_destruct(path);
-        }
-
-        // Cleanup
-        stList_destruct(hmms);
-
-        // Normalise the probabilities
-        normaliseSubstitutionMatrix(readErrorSubModel);
-
-        // Update the read error substitution parameters of the parameters object
-        stRPHmmParameters_setReadErrorSubstitutionParameters(params, readErrorSubModel);
-
-        // Cleanup
-        free(readErrorSubModel);
-
-        //Log the parameters info
-        if(st_getLogLevel() == debug) {
-            st_logDebug("\tParameters learned after iteration %" PRIi64 " of training:\n", i);
-            stRPHmmParameters_printParameters(params, stderr);
-        }
-    }
 }
 
 static int cmpint64(int64_t i, int64_t j) {
@@ -259,7 +67,7 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
      *
      */
     stRPHmm *hmm1 = (stRPHmm *)a, *hmm2 = (stRPHmm *)b;
-    int i = strcmp(hmm1->referenceName, hmm2->referenceName);
+    int i = strcmp(hmm1->ref->referenceName, hmm2->ref->referenceName);
     if(i == 0) {
         i = cmpint64(hmm1->refStart,  hmm2->refStart);
         if(i == 0) {
@@ -273,7 +81,7 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
     return i;
 }
 
-stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *referencePriorProbs, stRPHmmParameters *params) {
+stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stRPHmmParameters *params) {
     /*
      * Create a read partitioning HMM representing the single sequence profile.
      */
@@ -281,7 +89,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
 
     //  Set reference coordinates
-    hmm->referenceName = stString_copy(profileSeq->referenceName);
+    hmm->ref = profileSeq->ref;
     hmm->refStart = profileSeq->refStart;
     hmm->refLength = profileSeq->length;
 
@@ -291,11 +99,6 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
 
     hmm->parameters = params; // Parameters for the model for computation, this is shared by different HMMs
 
-    hmm->referencePriorProbs = referencePriorProbs;
-    assert(stString_eq(hmm->referenceName, referencePriorProbs->referenceName));
-    assert(hmm->refStart >= referencePriorProbs->refStart);
-    assert(hmm->refStart + hmm->refLength <= referencePriorProbs->refStart + referencePriorProbs->length);
-
     hmm->columnNumber = 1; // The number of columns in the model, initially just 1
     hmm->maxDepth = 1; // The maximum number of states in a column, initially just 1
 
@@ -304,7 +107,7 @@ stRPHmm *stRPHmm_construct(stProfileSeq *profileSeq, stReferencePriorProbs *refe
     seqHeaders[0] = profileSeq;
     uint8_t **seqs = st_malloc(sizeof(uint8_t *));
     seqs[0] = profileSeq->profileProbs;
-    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs, referencePriorProbs);
+    stRPColumn *column = stRPColumn_construct(hmm->refStart, hmm->refLength, 1, seqHeaders, seqs);
     hmm->firstColumn = column;
     hmm->lastColumn = column;
 
@@ -320,7 +123,6 @@ void stRPHmm_destruct(stRPHmm *hmm, bool destructColumns) {
     /*
      * Free memory owned by the hmm, including columns.
      */
-    free(hmm->referenceName);
     stList_destruct(hmm->profileSeqs);
 
     if(destructColumns) {
@@ -438,7 +240,7 @@ void stRPHmm_print(stRPHmm *hmm, FILE *fileHandle, bool includeColumns, bool inc
     //Header line
     fprintf(fileHandle, "HMM REF_NAME: %s REF_START: %" PRIi64 " REF_LENGTH %" PRIi64
             " COLUMN_NUMBER %" PRIi64 " MAX_DEPTH: %" PRIi64 " FORWARD_PROB: %f BACKWARD_PROB: %f\n",
-            hmm->referenceName, hmm->refStart, hmm->refLength,
+            hmm->ref->referenceName, hmm->refStart, hmm->refLength,
             hmm->columnNumber, hmm->maxDepth,
             (float)hmm->forwardLogProb, (float)hmm->backwardLogProb);
 
@@ -472,7 +274,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
      */
 
     // Checks
-    if(!stString_eq(leftHmm->referenceName, rightHmm->referenceName)) {
+    if(!stString_eq(leftHmm->ref->referenceName, rightHmm->ref->referenceName)) {
         st_errAbort("Attempting to fuse two hmms not on the same reference sequence");
     }
 
@@ -487,7 +289,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     // Create a new empty hmm
     stRPHmm *hmm = st_malloc(sizeof(stRPHmm));
     // Set the reference interval
-    hmm->referenceName = stString_copy(leftHmm->referenceName);
+    hmm->ref = leftHmm->ref;
     hmm->refStart = leftHmm->refStart;
     hmm->refLength = rightHmm->refStart + rightHmm->refLength - leftHmm->refStart;
     // Create the combined list of profile seqs
@@ -502,11 +304,6 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
         st_errAbort("HMM parameters differ in fuse function, panic.");
     }
     hmm->parameters = leftHmm->parameters;
-    // Set reference position prior probabilities
-    if(leftHmm->referencePriorProbs != rightHmm->referencePriorProbs) {
-        st_errAbort("Hmm reference prior probs differ in fuse function, panic.");
-    }
-    hmm->referencePriorProbs = leftHmm->referencePriorProbs;
 
     // Make columns to fuse left hmm and right hmm's columns
     stRPMergeColumn *mColumn = stRPMergeColumn_construct(0, 0);
@@ -523,7 +320,7 @@ stRPHmm *stRPHmm_fuse(stRPHmm *leftHmm, stRPHmm *rightHmm) {
     if(gapLength > 0) {
         // Make column in the gap
         stRPColumn *column = stRPColumn_construct(leftHmm->refStart + leftHmm->refLength,
-                gapLength, 0, NULL, NULL, hmm->referencePriorProbs);
+                gapLength, 0, NULL, NULL);
 
         // Links
         mColumn->nColumn = column;
@@ -584,8 +381,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     if(hmm1->refStart < hmm2->refStart) {
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm1->refStart,
-                hmm2->refStart - hmm1->refStart,
-                0, NULL, NULL, hmm1->referencePriorProbs);
+                hmm2->refStart - hmm1->refStart, 0, NULL, NULL);
 
         // Add cell
         column->head = stRPCell_construct(0);
@@ -624,7 +420,7 @@ void stRPHmm_alignColumns(stRPHmm *hmm1, stRPHmm *hmm2) {
     if(hmm1->refLength > hmm2->refLength) {
         // Create column
         stRPColumn *column = stRPColumn_construct(hmm2->lastColumn->refStart + hmm2->lastColumn->length,
-                hmm1->refLength - hmm2->refLength, 0, NULL, NULL, hmm1->referencePriorProbs);
+                hmm1->refLength - hmm2->refLength, 0, NULL, NULL);
 
         // Add cell
         column->head = stRPCell_construct(0);
@@ -728,7 +524,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
      */
 
     // Do sanity checks that the two hmms have been aligned
-    if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
+    if(!stString_eq(hmm1->ref->referenceName, hmm2->ref->referenceName)) {
         st_errAbort("Trying to create cross product of two HMMs "
                 "on different reference sequences");
     }
@@ -749,7 +545,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
     stRPHmm *hmm = st_calloc(1, sizeof(stRPHmm));
 
     // Set the reference interval
-    hmm->referenceName = stString_copy(hmm1->referenceName);
+    hmm->ref = hmm1->ref;
     hmm->refStart = hmm1->refStart;
     hmm->refLength = hmm1->refLength;
 
@@ -765,12 +561,6 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         st_errAbort("Hmm parameters differ in fuse function, panic.");
     }
     hmm->parameters = hmm1->parameters;
-
-    // Set reference position prior probabilities
-    if(hmm1->referencePriorProbs != hmm2->referencePriorProbs) {
-        st_errAbort("Hmm reference prior probs differ in hmm cross product function, panic.");
-    }
-    hmm->referencePriorProbs = hmm1->referencePriorProbs;
 
     // For each pair of corresponding columns
     stRPColumn *column1 = hmm1->firstColumn;
@@ -803,7 +593,7 @@ stRPHmm *stRPHmm_createCrossProductOfTwoAlignedHmm(stRPHmm *hmm1, stRPHmm *hmm2)
         memcpy(&seqs[column1->depth], column2->seqs, sizeof(uint8_t *) * column2->depth);
 
         stRPColumn *column = stRPColumn_construct(column1->refStart, column1->length,
-                newColumnDepth, seqHeaders, seqs, hmm->referencePriorProbs);
+                newColumnDepth, seqHeaders, seqs);
 
         // If the there is a previous column
         if(mColumn != NULL) {
@@ -996,7 +786,7 @@ static inline void forwardCellCalc1(stRPHmm *hmm, stRPColumn *column, stRPCell *
 
     // Calculate the emission prob
     double emissionProb = emissionLogProbability(column, cell, bitCountVectors,
-            hmm->referencePriorProbs, (stRPHmmParameters *)hmm->parameters);
+            hmm->ref, (stRPHmmParameters *)hmm->parameters);
 
     // Add emission prob to forward log prob
     cell->forwardLogProb += emissionProb;
@@ -1028,8 +818,8 @@ static void stRPHmm_forward(stRPHmm *hmm) {
     // Iterate through columns from first to last
     while(1) {
         // Get the bit count vectors for the column
-        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, column->depth,
-                column->activePositions, column->totalActivePositions);
+        uint64_t *bitCountVectors = calculateCountBitVectors(column->seqs, hmm->ref,
+                column->refStart, column->length, column->depth);
 
         // Iterate through states in column
         stRPCell *cell = column->head;
@@ -1374,7 +1164,7 @@ bool stRPHmm_overlapOnReference(stRPHmm *hmm1, stRPHmm *hmm2) {
     }
 
     // Check if on the same reference sequence
-    if(!stString_eq(hmm1->referenceName, hmm2->referenceName)) {
+    if(!stString_eq(hmm1->ref->referenceName, hmm2->ref->referenceName)) {
         return 0;
     }
 
@@ -1446,7 +1236,7 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
     stRPHmm *suffixHmm = st_calloc(1, sizeof(stRPHmm));
 
     // Set the reference interval for the two hmms
-    suffixHmm->referenceName = stString_copy(hmm->referenceName);
+    suffixHmm->ref = hmm->ref;
     suffixHmm->refStart = splitPoint;
     suffixHmm->refLength = hmm->refLength + hmm->refStart - splitPoint;
     hmm->refLength = splitPoint - hmm->refStart;
@@ -1455,9 +1245,6 @@ stRPHmm *stRPHmm_split(stRPHmm *hmm, int64_t splitPoint) {
 
     // Parameters
     suffixHmm->parameters = hmm->parameters;
-
-    // Reference prior probabilities
-    suffixHmm->referencePriorProbs = hmm->referencePriorProbs;
 
     // Divide the profile sequences between the two hmms (some may end in both if they span the interval)
     suffixHmm->profileSeqs = stList_construct();
@@ -1588,86 +1375,6 @@ stList *stRPHMM_splitWherePhasingIsUncertain(stRPHmm *hmm) {
  * Functions for logging an hmm
  */
 
-double getExpectedNumberOfMatches(uint64_t *haplotypeString, int64_t start,
-                                  int64_t length, stProfileSeq *profileSeq) {
-    /*
-     * Returns the expected number of positions in the profile sequence
-     * that are identical to the given haplotype string.
-     */
-    double totalExpectedMatches = 0.0;
-
-    for(int64_t i=0; i<profileSeq->length; i++) {
-        // Get base in the haplotype sequence
-        int64_t j = i + profileSeq->refStart - start;
-        if(j >= 0 && j < length) {
-            uint64_t hapBase = haplotypeString[j];
-            assert(hapBase < ALPHABET_SIZE);
-
-            // Expectation of a match
-            totalExpectedMatches += getProb(&(profileSeq->profileProbs[i * ALPHABET_SIZE]), hapBase);
-        }
-    }
-    return totalExpectedMatches;
-}
-
-double getExpectedIdentity(uint64_t *haplotypeString, int64_t start, int64_t length, stSet *profileSeqs) {
-    /*
-     * Returns the expected fraction of positions in the profile sequences
-     * that match their corresponding position in the given haplotype string.
-     */
-    double totalExpectedNumberOfMatches = 0.0;
-    int64_t totalLength = 0;
-    stSetIterator *it = stSet_getIterator(profileSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        totalExpectedNumberOfMatches += getExpectedNumberOfMatches(haplotypeString, start, length, pSeq);
-        totalLength += pSeq->length;
-    }
-    stSet_destructIterator(it);
-    return totalExpectedNumberOfMatches/totalLength;
-}
-
-double getIdentityBetweenHaplotypesExcludingIndels(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
-    /*
-     * Returns the fraction of positions in two haplotypes that are identical.
-     */
-    int64_t totalMatches = 0;
-    int64_t numGaps = 0;
-    for(int64_t i=0; i<length; i++) {
-        if(hap1String[i] == hap2String[i]) {
-            totalMatches++;
-        } else if (hap1String[i] == ALPHABET_SIZE-1 || hap2String[i] == ALPHABET_SIZE-1) {
-            numGaps++;
-        }
-    }
-    return ((double)totalMatches)/(length - numGaps);
-}
-
-double *getHaplotypeBaseComposition(uint64_t *hapString, int64_t length) {
-    /*
-     * Get the count of each alphabet character in the haplotype sequence, returned
-     * as an array.
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    for(int64_t i=0; i<length; i++) {
-        baseCounts[hapString[i]] += 1;
-    }
-    return baseCounts;
-}
-
-void printBaseComposition(FILE *fH, double *baseCounts) {
-    /*
-     * Print the counts/fraction of each alphabet character.
-     */
-    double totalCount = 0;
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        totalCount += baseCounts[i];
-    }
-    for(int64_t i=0; i<ALPHABET_SIZE; i++) {
-        fprintf(fH, "\t\tBase %" PRIi64 " count: %f fraction: %f\n", i, baseCounts[i], baseCounts[i]/totalCount);
-    }
-}
-
 double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, int64_t length) {
     /*
      * Returns the fraction of positions in two haplotypes that are identical.
@@ -1681,73 +1388,20 @@ double getIdentityBetweenHaplotypes(uint64_t *hap1String, uint64_t *hap2String, 
     return ((double)totalMatches)/length;
 }
 
-double *getExpectedProfileSequenceBaseComposition(stSet *profileSeqs) {
-    /*
-     * Get the expected count of each alphabet character in the profile sequences, returned
-     * as an array.
-     */
-    double *baseCounts = st_calloc(ALPHABET_SIZE, sizeof(double));
-    stSetIterator *it = stSet_getIterator(profileSeqs);
-    stProfileSeq *pSeq;
-    while((pSeq = stSet_getNext(it)) != NULL) {
-        for(int64_t i=0; i<pSeq->length; i++) {
-            for(int64_t j=0; j<ALPHABET_SIZE; j++) {
-                baseCounts[j] += getProb(&(pSeq->profileProbs[i*ALPHABET_SIZE]), j);
-            }
-        }
-    }
-    stSet_destructIterator(it);
-    return baseCounts;
-}
-
-void logHmm(stRPHmm *hmm, stSet *reads1, stSet *reads2, stGenomeFragment *gF) {
+void logHmm(stRPHmm *hmm, stGenomeFragment *gF) {
     /*
      * Print debug-level logging information about an HMM and associated genome fragment.
      */
 
     if(st_getLogLevel() == debug) {
         st_logDebug("> Creating genome fragment for reference sequence: %s, start: %" PRIi64 ", length: %" PRIi64 "\n",
-                    hmm->referenceName, hmm->refStart, hmm->refLength);
+                    hmm->ref->referenceName, hmm->refStart, hmm->refLength);
         st_logDebug("\n\tThere are %" PRIi64 " reads covered by the hmm, "
                             "bipartitioned into sets of %" PRIi64 " and %" PRIi64 " reads\n",
-                    stList_length(hmm->profileSeqs), stSet_size(reads1), stSet_size(reads2));
+                    stList_length(hmm->profileSeqs), stSet_size(gF->reads1), stSet_size(gF->reads2));
 
         // Print the similarity between the two imputed haplotypes sequences
         st_logDebug("\tThe haplotypes have identity: %f \n",
                     getIdentityBetweenHaplotypes(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-        st_logDebug("\tIdentity excluding indels:    %f \n\n",
-                    getIdentityBetweenHaplotypesExcludingIndels(gF->haplotypeString1, gF->haplotypeString2, gF->length));
-
-        // Print the base composition of the haplotype sequences
-        double *hap1BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString1, gF->length);
-        st_logDebug("\tThe base composition of haplotype 1:\n");
-        printBaseComposition(stderr, hap1BaseCounts);
-        free(hap1BaseCounts);
-
-        double *hap2BaseCounts = getHaplotypeBaseComposition(gF->haplotypeString2, gF->length);
-        st_logDebug("\tThe base composition of haplotype 2:\n");
-        printBaseComposition(stderr, hap2BaseCounts);
-        free(hap2BaseCounts);
-
-        // Print the base composition of the reads
-        double *reads1BaseCounts =getExpectedProfileSequenceBaseComposition(reads1);
-        st_logDebug("\tThe base composition of reads1 set:\n");
-        printBaseComposition(stderr, reads1BaseCounts);
-        free(reads1BaseCounts);
-
-        double *reads2BaseCounts =getExpectedProfileSequenceBaseComposition(reads2);
-        st_logDebug("\tThe base composition of reads2 set:\n");
-        printBaseComposition(stderr, reads2BaseCounts);
-        free(reads2BaseCounts);
-
-        // Print some summary stats about the differences between haplotype sequences and the bipartitioned reads
-        st_logDebug("\thap1 vs. reads1 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads1));
-        st_logDebug("\thap1 vs. reads2 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString1, gF->refStart, gF->length, reads2));
-        st_logDebug("\thap2 vs. reads2 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads2));
-        st_logDebug("\thap2 vs. reads1 identity: %f\n",
-                    getExpectedIdentity(gF->haplotypeString2, gF->refStart, gF->length, reads1));
     }
 }

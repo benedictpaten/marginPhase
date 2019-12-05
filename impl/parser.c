@@ -8,77 +8,6 @@
 #include "margin.h"
 
 /*
- * stBaseMapper constructor
- */
-stBaseMapper* stBaseMapper_construct() {
-    stBaseMapper *bm = (stBaseMapper*)st_malloc(sizeof(stBaseMapper));
-    bm->charToNum = st_calloc(256, sizeof(uint8_t));
-    bm->numToChar = st_calloc(ALPHABET_SIZE, sizeof(uint8_t));
-    bm->wildcard = stString_copy("");
-    bm->size = 0;
-    return bm;
-}
-
-/*
- * stBaseMapper destructor
- */
-void stBaseMapper_destruct(stBaseMapper *bm) {
-    free(bm->charToNum);
-    free(bm->numToChar);
-    free(bm->wildcard);
-    free(bm);
-}
-
-/*
- * Add bases into the baseMapper object.
- */
-void stBaseMapper_addBases(stBaseMapper *bm, char *bases) {
-    for (uint8_t i = 0; i < strlen(bases); i++) {
-        char base = bases[i];
-        if (bm->numToChar[bm->size] == 0) bm->numToChar[bm->size] = base;
-        bm->charToNum[base] = bm->size;
-    }
-    bm->size++;
-    if (bm->size > ALPHABET_SIZE) {
-        st_errAbort("BaseMapper size has exceeded ALPHABET_SIZE parameter (%d)", ALPHABET_SIZE);
-    }
-}
-
-/*
- * Set the baseMapper wildcard.
- */
-void stBaseMapper_setWildcard(stBaseMapper* bm, char *wildcard) {
-    free(bm->wildcard);
-    bm->wildcard = stString_copy(wildcard);
-}
-
-/*
- * Given a character for a base, return the numeric value.
- */
-uint8_t stBaseMapper_getValueForChar(stBaseMapper *bm, char base) {
-    uint8_t value = bm->charToNum[base];
-    if (value >= 0) return value;
-    for (int i = 0; i < strlen(bm->wildcard); i++) {
-        if (bm->wildcard[i] == base) {
-            assert(bm->size-1 < UINT8_MAX);
-            return (uint8_t) st_randomInt(0, bm->size-1);
-        }
-    }
-    st_errAbort("Base '%c' (%d) not in alphabet", base, base);
-    return UINT8_MAX;
-}
-
-/*
- * Given the numeric value for a base, return the char.
- */
-char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value) {
-    char base = bm->numToChar[value];
-    if (base >= 0) return base;
-    st_errAbort("Value '%d' not specified in alphabet", value);
-    return -1;
-}
-
-/*
  * Get model parameters from params file.
  * Set hmm parameters.
 */
@@ -86,12 +15,6 @@ char stBaseMapper_getCharForValue(stBaseMapper *bm, uint64_t value) {
 stRPHmmParameters *stRPHmmParameters_construct() {
 	// Params object
 	stRPHmmParameters *params = st_calloc(1, sizeof(stRPHmmParameters));
-
-	// Variables for hmm parameters (initialize & set default values)
-	params->hetSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-	params->hetSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
-	params->readErrorSubModel = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(uint16_t));
-	params->readErrorSubModelSlow = st_calloc(ALPHABET_SIZE*ALPHABET_SIZE, sizeof(double));
 
 	// More variables for hmm stuff
 	params->maxCoverageDepth = MAX_READ_PARTITIONING_DEPTH;
@@ -101,42 +24,20 @@ stRPHmmParameters *stRPHmmParameters_construct() {
 	params->minPosteriorProbabilityForPartition = 0.001;
 	params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = 0;
 
-	// Hmm training options
-	params->trainingIterations = 0;
-	params->offDiagonalReadErrorPseudoCount = 1;
-	params->onDiagonalReadErrorPseudoCount = 1;
-
-	// Read filtering options
-	params->minSecondMostFrequentBaseFilter = 2;
-	params->minSecondMostFrequentBaseLogProbFilter = 0;
-	params->filterAReadWithAnyOneOfTheseSamFlagsSet = 0;
-	params->filterBadReads = false;
-	params->filterMatchThreshold = 0.90;
-	params->filterLikelyHomozygousSites = false;
-	params->mapqFilter = 0;
-
 	// Other marginPhase program options
-	params->useReferencePrior = false;
-	params->gapCharactersForDeletions = true;
-	params->estimateReadErrorProbsEmpirically = false;
 	params->roundsOfIterativeRefinement = 0;
 	params->includeInvertedPartitions = true;
-	params->writeGVCF = false;
-	params->writeSplitSams = true;
-	params->writeUnifiedSam = true;
 
 	return params;
 }
 
-stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseMapper) {
+stRPHmmParameters *parseParameters_fromJson(char *buf, size_t r) {
 	// Setup parser
 	jsmntok_t *tokens;
 	char *js;
 	int64_t tokenNumber = stJson_setupParser(buf, r, &tokens, &js);
 
 	stRPHmmParameters *params = stRPHmmParameters_construct();
-
-    setVerbosity(params, 0);
 
     //TODO: refactor the following to use the json parsing functions
 
@@ -146,54 +47,7 @@ stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseM
         jsmntok_t key = tokens[i];
         char *keyString = stJson_token_tostr(js, &key);
 
-        if (strcmp(keyString, "alphabet") == 0) {
-            jsmntok_t alphabetTok = tokens[i+1];
-            if (alphabetTok.size != ALPHABET_SIZE) {
-                st_errAbort("Alphabet size in JSON does not match constant ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = stJson_token_tostr(js, &tok);
-                stBaseMapper_addBases(baseMapper, tokStr);
-            }
-            i += ALPHABET_SIZE + 1;
-        }
-        else if (strcmp(keyString, "wildcard") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            stBaseMapper_setWildcard(baseMapper, tokStr);
-            i++;
-        }
-        else if (strcmp(keyString, "haplotypeSubstitutionModel") == 0) {
-            jsmntok_t hapSubTok = tokens[i+1];
-            if (hapSubTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("ERROR: Size of haplotype substitution model in JSON "
-                                    "does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = stJson_token_tostr(js, &tok);
-                setSubstitutionProb(params->hetSubModel, params->hetSubModelSlow,
-                                    j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
-            }
-            i += hapSubTok.size + 1;
-        }
-        else if (strcmp(keyString, "readErrorModel") == 0) {
-            jsmntok_t readErrTok = tokens[i+1];
-            if (readErrTok.size != ALPHABET_SIZE * ALPHABET_SIZE) {
-                st_errAbort("ERROR: Size of read error model in JSON "
-                                    "does not match ALPHABET_SIZE * ALPHABET_SIZE \n");
-            }
-            for (int j = 0; j < ALPHABET_SIZE * ALPHABET_SIZE; j++) {
-                jsmntok_t tok = tokens[i+j+2];
-                char *tokStr = stJson_token_tostr(js, &tok);
-                setSubstitutionProb(params->readErrorSubModel, params->readErrorSubModelSlow,
-                                    j/ALPHABET_SIZE, j%ALPHABET_SIZE, atof(tokStr));
-
-            }
-            i += readErrTok.size + 1;
-        }
-        else if (strcmp(keyString, "maxNotSumTransitions") == 0) {
+        if (strcmp(keyString, "maxNotSumTransitions") == 0) {
         	params->maxNotSumTransitions = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "minPartitionsInAColumn") == 0) {
@@ -211,24 +65,6 @@ stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseM
         else if (strcmp(keyString, "minReadCoverageToSupportPhasingBetweenHeterozygousSites") == 0) {
         	params->minReadCoverageToSupportPhasingBetweenHeterozygousSites = stJson_parseInt(js, tokens, ++i);
         }
-        else if (strcmp(keyString, "onDiagonalReadErrorPseudoCount") == 0) {
-        	params->onDiagonalReadErrorPseudoCount = stJson_parseFloat(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "offDiagonalReadErrorPseudoCount") == 0) {
-        	params->offDiagonalReadErrorPseudoCount = stJson_parseFloat(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "trainingIterations") == 0) {
-        	params->trainingIterations = stJson_parseInt(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "filterBadReads") == 0) {
-        	params->filterBadReads = stJson_parseBool(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "filterMatchThreshold") == 0) {
-        	params->filterMatchThreshold = stJson_parseFloat(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "useReferencePrior") == 0) {
-        	params->useReferencePrior = stJson_parseBool(js, tokens, ++i);
-        }
         else if (strcmp(keyString, "includeInvertedPartitions") == 0) {
         	params->includeInvertedPartitions = stJson_parseBool(js, tokens, ++i);
         }
@@ -236,50 +72,11 @@ stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseM
             jsmntok_t tok = tokens[i+1];
             char *tokStr = stJson_token_tostr(js, &tok);
             int64_t bitString = atoi(tokStr);
-            setVerbosity(params, bitString);
+            // TODO - currently does nothing
             i++;
-        }
-        else if(strcmp(keyString, "filterLikelyHomozygousSites") == 0) {
-        	params->filterLikelyHomozygousSites = stJson_parseBool(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "minSecondMostFrequentBaseFilter") == 0) {
-        	params->minSecondMostFrequentBaseFilter = stJson_parseFloat(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "minSecondMostFrequentBaseLogProbFilter") == 0) {
-        	params->minSecondMostFrequentBaseLogProbFilter = stJson_parseFloat(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "gapCharactersForDeletions") == 0) {
-        	params->gapCharactersForDeletions = stJson_parseBool(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "filterAReadWithAnyOneOfTheseSamFlagsSet") == 0) {
-            jsmntok_t tok = tokens[i+1];
-            char *tokStr = stJson_token_tostr(js, &tok);
-            int64_t bitString = atoi(tokStr);
-            if(bitString < 0 || bitString > UINT16_MAX) {
-                st_errAbort("ERROR: Attempting to set 16-bit string with invalid argument: %s", tokStr);
-            }
-            params->filterAReadWithAnyOneOfTheseSamFlagsSet = bitString;
-            i++;
-        }
-        else if (strcmp(keyString, "estimateReadErrorProbsEmpirically") == 0) {
-        	params->estimateReadErrorProbsEmpirically = stJson_parseBool(js, tokens, ++i);
         }
         else if (strcmp(keyString, "roundsOfIterativeRefinement") == 0) {
         	params->roundsOfIterativeRefinement = stJson_parseInt(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "compareVCFs") == 0) {
-            //removed, but legacy params may still contain this
-            i++;
-        }
-        else if (strcmp(keyString, "writeGVCF") == 0) {
-        	params->writeGVCF = stJson_parseBool(js, tokens, ++i);
-        } else if (strcmp(keyString, "writeSplitSams") == 0) {
-        	params->writeSplitSams = stJson_parseBool(js, tokens, ++i);
-        }else if (strcmp(keyString, "writeUnifiedSam") == 0) {
-        	params->writeUnifiedSam = stJson_parseBool(js, tokens, ++i);
-        }
-        else if (strcmp(keyString, "mapqFilter") == 0) {
-        	params->mapqFilter = stJson_parseInt(js, tokens, ++i);
         }
         else {
             st_errAbort("ERROR: Unrecognised key in params file: %s\n", keyString);
@@ -296,11 +93,107 @@ stRPHmmParameters *phaseParams_fromJson(char *buf, size_t r, stBaseMapper *baseM
 /*
  * Sets the level of verbosity for vcf comparison.
  */
-void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
-    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) != 0;
-    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) != 0;
-    params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
-}
+//void setVerbosity(stRPHmmParameters *params, int64_t bitstring) {
+//    params->verboseTruePositives = (bitstring & LOG_TRUE_POSITIVES) != 0;
+//    params->verboseFalsePositives = (bitstring & LOG_FALSE_POSITIVES) != 0;
+//    params->verboseFalseNegatives = (bitstring & LOG_FALSE_NEGATIVES) != 0;
+//}
+//
+//stRPHmmParameters *parseParameters(char *paramsFile) {
+//	char buf[BUFSIZ * 3000]; // TODO: FIX, This is terrible code, we should not assume the size of the file is less than this
+//	FILE *fh = fopen(paramsFile, "rb");
+//	if (fh == NULL) {
+//		st_errAbort("ERROR: Cannot open parameters file %s\n", paramsFile);
+//	}
+//	stRPHmmParameters *p =  parseParameters_fromJson(buf, fread(buf, sizeof(char), sizeof(buf), fh));
+//	fclose(fh);
+//	return p;
+//}
+//
+///*
+// * Counts the number of insertions and deletions in a read, given its cigar string.
+// */
+//void countIndels(uint32_t *cigar, uint32_t ncigar, int64_t *numInsertions, int64_t *numDeletions) {
+//    for (uint32_t i = 0; i < ncigar; i++) {
+//        int cigarOp = cigar[i] & BAM_CIGAR_MASK;
+//        int cigarNum = cigar[i] >> BAM_CIGAR_SHIFT;
+//        if (cigarOp == BAM_CINS) *numInsertions += cigarNum;
+//        if (cigarOp == BAM_CDEL) *numDeletions += cigarNum;
+//    }
+//}
+//
+//int64_t getAlignedReadLength3(bam1_t *aln, int64_t *start_softclip, int64_t *end_softclip, bool boundaryAtMatch) {
+//    // start read needs to be init'd to 0 (mostly this is to avoid misuse)
+//    if (*start_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper start_softclip parameter");
+//    if (*end_softclip != 0) st_errAbort("getAlignedReadLength2 invoked with improper end_softclip parameter");
+//
+//    // get relevant cigar info
+//    int64_t len = aln->core.l_qseq;
+//    uint32_t *cigar = bam_get_cigar(aln);
+//
+//    // data for tracking
+//    int64_t start_ref = 0;
+//    int64_t cig_idx = 0;
+//
+//    // Find the correct starting locations on the read and reference sequence,
+//    // to deal with things like inserts / deletions / soft clipping
+//    while (cig_idx < aln->core.n_cigar) {
+//        int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+//        int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+//
+//        if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+//            break;
+//        } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+//            if (!boundaryAtMatch) break;
+//            cig_idx++;
+//        } else if (cigarOp == BAM_CINS) {
+//            if (!boundaryAtMatch) break;
+//            *start_softclip += cigarNum;
+//            cig_idx++;
+//        } else if (cigarOp == BAM_CSOFT_CLIP) {
+//            *start_softclip += cigarNum;
+//            cig_idx++;
+//        } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+//            cig_idx++;
+//        } else {
+//            st_errAbort("Unidentifiable cigar operation\n");
+//        }
+//    }
+//
+//    // Check for soft clipping at the end
+//    cig_idx = aln->core.n_cigar - 1;
+//    while (cig_idx > 0) {
+//        int cigarOp = cigar[cig_idx] & BAM_CIGAR_MASK;
+//        int cigarNum = cigar[cig_idx] >> BAM_CIGAR_SHIFT;
+//
+//        if (cigarOp == BAM_CMATCH || cigarOp == BAM_CEQUAL || cigarOp == BAM_CDIFF) {
+//            break;
+//        } else if (cigarOp == BAM_CDEL || cigarOp == BAM_CREF_SKIP) {
+//            if (!boundaryAtMatch) break;
+//            cig_idx--;
+//        } else if (cigarOp == BAM_CINS) {
+//            if (!boundaryAtMatch) break;
+//            *end_softclip += cigarNum;
+//            cig_idx--;
+//        } else if (cigarOp == BAM_CSOFT_CLIP) {
+//            *end_softclip += cigarNum;
+//            cig_idx--;
+//        } else if (cigarOp == BAM_CHARD_CLIP || cigarOp == BAM_CPAD) {
+//            cig_idx--;
+//        } else {
+//            st_errAbort("Unidentifiable cigar operation\n");
+//        }
+//    }
+//
+//    // Count number of insertions & deletions in sequence
+//    int64_t numInsertions = 0;
+//    int64_t numDeletions = 0;
+//    countIndels(cigar, aln->core.n_cigar, &numInsertions, &numDeletions);
+//    int64_t trueLength = len - *start_softclip - *end_softclip + numDeletions - numInsertions;
+//
+//    return trueLength;
+//>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
+//}
 
 /*
  * Params object for polisher
@@ -318,14 +211,30 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 	char *js;
 	int64_t tokenNumber = stJson_setupParser(buf, r, &tokens, &js);
 
-	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty();
-
+	// TODO: Generalize to not be nucleotide only
+	RepeatSubMatrix *repeatSubMatrix = repeatSubMatrix_constructEmpty(alphabet_constructNucleotide());
+	// TODO: ADD support for Ns
 	for(int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
 		jsmntok_t key = tokens[tokenIndex];
 		char *keyString = stJson_token_tostr(js, &key);
+
+
+		if(stString_eq("baseLogRepeatCounts_AT", keyString)) {
+			tokenIndex = stJson_parseFloatArray(repeatSubMatrix->baseLogProbs_AT,
+					repeatSubMatrix->maximumRepeatLength, js, tokens, tokenIndex+1);
+			continue;
+		}
+
+		if(stString_eq("baseLogRepeatCounts_GC", keyString)) {
+			tokenIndex = stJson_parseFloatArray(repeatSubMatrix->baseLogProbs_GC,
+					repeatSubMatrix->maximumRepeatLength, js, tokens, tokenIndex+1);
+			continue;
+		}
+
 		if(strlen(keyString) != 31) {
 			st_errAbort("ERROR: Unrecognised key in repeat sub matrix json: %s\n", keyString);
 		}
+
 		char base = keyString[28];
 		if(base != 'A' && base != 'C' && base != 'G' && base != 'T') {
 			st_errAbort("ERROR: Unrecognised base in repeat sub matrix json: %s, base=%c\n", keyString, base);
@@ -334,7 +243,8 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 			st_errAbort("ERROR: Unrecognised strand in repeat sub matrix json: %s, strand:%c\n", keyString, keyString[30]);
 		}
 		bool strand = keyString[30] == 'F';
-		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix, symbol_convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
+		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix,
+				repeatSubMatrix->alphabet->convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
 	}
 
 	// Cleanup
@@ -371,7 +281,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
-	bool gotHmm = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0;
+	bool gotHmm = 0, gotHmmConditional = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0;
     for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
         jsmntok_t key = tokens[tokenIndex];
         char *keyString = stJson_token_tostr(js, &key);
@@ -410,6 +320,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotRepeatCountMatrix = 1;
         }
+        else if (strcmp(keyString, "poaConstructCompareRepeatCounts") == 0) {
+        	params->poaConstructCompareRepeatCounts = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
         else if (strcmp(keyString, "hmm") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
         	char *tokStr = stJson_token_tostr(js, &tok);
@@ -418,6 +331,14 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotHmm = 1;
         }
+        else if (strcmp(keyString, "hmmConditional") == 0) {
+			jsmntok_t tok = tokens[tokenIndex + 1];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			params->hmmConditional = hmm_jsonParse(tokStr, strlen(tokStr));
+			params->sMConditional = hmm_getStateMachine(params->hmmConditional);
+			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex + 1);
+			gotHmmConditional = 1;
+		}
         else if (strcmp(keyString, "pairwiseAlignmentParameters") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
         	char *tokStr = stJson_token_tostr(js, &tok);
@@ -454,7 +375,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: candidateVariantWeight parameter must zero or greater\n");
 			}
 			params->candidateVariantWeight = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "columnAnchorTrim") == 0) {
+		}
+        else if (strcmp(keyString, "columnAnchorTrim") == 0) {
 			if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: columnAnchorTrim parameter must zero or greater\n");
 			}
@@ -499,8 +421,28 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: minAvgBaseQuality parameter must zero or greater\n");
 			}
 			params->minAvgBaseQuality = stJson_parseFloat(js, tokens, tokenIndex);
-		}
-        else {
+		} else if (strcmp(keyString, "hetScalingParameter") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+				st_errAbort("ERROR: hetScalingParameter parameter must zero or greater\n");
+			}
+			params->hetScalingParameter = stJson_parseFloat(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "alleleStrandSkew") == 0) {
+			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
+						st_errAbort("ERROR: alleleStrandSkew parameter must zero or greater\n");
+			}
+			params->alleleStrandSkew = stJson_parseFloat(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "useOnlySubstitutionsForPhasing") == 0) {
+		            params->useOnlySubstitutionsForPhasing = stJson_parseBool(js, tokens, ++tokenIndex);
+		} else if (strcmp(keyString, "alphabet") == 0) {
+			jsmntok_t tok = tokens[++tokenIndex];
+			char *tokStr = stJson_token_tostr(js, &tok);
+			if(stString_eq(tokStr, "nucleotide")) {
+				params->alphabet = alphabet_constructNucleotide();
+			}
+			else {
+				st_errAbort("ERROR: Unrecognised alphabet type json: %s\n", tokStr);
+			}
+		} else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
     }
@@ -510,6 +452,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     }
     if(!gotHmm) {
     	st_errAbort("ERROR: Did not find HMM specified in json polish params\n");
+    }
+    if(!gotHmmConditional) {
+    	st_errAbort("ERROR: Did not find HMM conditional specified in json polish params\n");
     }
     if(!gotPairwiseAlignmentParameters) {
     	st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
@@ -533,6 +478,7 @@ void polishParams_destruct(PolishParams *params) {
 	hmm_destruct(params->hmm);
 	pairwiseAlignmentBandingParameters_destruct(params->p);
     free(params->minPosteriorProbForAlignmentAnchors);
+	alphabet_destruct(params->alphabet);
 	free(params);
 }
 
@@ -568,8 +514,7 @@ Params *params_jsonParse(char *buf, size_t r, bool requirePolish, bool requirePh
             if (requirePhase) {
                 jsmntok_t tok = tokens[tokenIndex + 1];
                 char *tokStr = stJson_token_tostr(js, &tok);
-                params->baseMapper = stBaseMapper_construct();
-                params->phaseParams = phaseParams_fromJson(tokStr, strlen(tokStr), params->baseMapper);
+                params->phaseParams = parseParameters_fromJson(tokStr, strlen(tokStr));
             }
 			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
 			gotPhase = 1;
@@ -583,8 +528,7 @@ Params *params_jsonParse(char *buf, size_t r, bool requirePolish, bool requirePh
                 gotPolish = 1;
 		    } else if (requirePhase && ! requirePolish) {
                 st_logInfo("WARN: parameters file missing 'polish' and 'phase' top-level entries.  Interpreting as 'phase'.\n");
-                params->baseMapper = stBaseMapper_construct();
-                params->phaseParams = phaseParams_fromJson(buf, r, params->baseMapper);
+                params->phaseParams = parseParameters_fromJson(buf, r);
                 tokenIndex = tokenNumber;
 		        gotPhase = 1;
 		    } else {
@@ -637,7 +581,6 @@ Params *params_readParams2(char *paramsFile, bool requirePolish, bool requirePha
 void params_destruct(Params *params) {
 	if (params->phaseParams != NULL) stRPHmmParameters_destruct(params->phaseParams);
     if (params->polishParams != NULL) polishParams_destruct(params->polishParams);
-    if (params->baseMapper != NULL) stBaseMapper_destruct(params->baseMapper);
 	free(params);
 }
 
