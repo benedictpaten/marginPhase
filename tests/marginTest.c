@@ -38,7 +38,7 @@ void test_marginIntegration(CuTest *testCase) {
 CuSuite* marginIntegrationTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_marginIntegration);
+    SUITE_ADD_TEST(suite, test_marginIntegration); //todo fails
 
 
     return suite;
