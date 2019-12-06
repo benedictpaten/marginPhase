@@ -270,10 +270,13 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	params->minPosteriorProbForAlignmentAnchors[0] = 0.9;
 	params->minPosteriorProbForAlignmentAnchors[0] = 10;
 	params->minPosteriorProbForAlignmentAnchorsLength = 2;
-    params->includeSoftClipping = FALSE; //todo add this in
+    params->includeSoftClipping = FALSE;
+    params->shuffleChunks = TRUE;
     params->chunkSize = 0;
     params->chunkBoundary = 0;
     params->maxDepth = 0;
+    params->includeSecondaryAlignments=FALSE;
+    params->includeSupplementaryAlignments=TRUE;
     params->candidateVariantWeight = 0.2;
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
@@ -349,6 +352,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
         	gotPairwiseAlignmentParameters = 1;
         }
+        else if (strcmp(keyString, "shuffleChunks") == 0) {
+            params->shuffleChunks = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
         else if (strcmp(keyString, "includeSoftClipping") == 0) {
             params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
         }
@@ -369,6 +375,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
                 st_errAbort("ERROR: maxDepth parameter must zero or greater\n");
             }
             params->maxDepth = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
+        }
+        else if (strcmp(keyString, "includeSecondaryAlignments") == 0) {
+            params->includeSecondaryAlignments = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "includeSupplementaryAlignments") == 0) {
+            params->includeSupplementaryAlignments = stJson_parseBool(js, tokens, ++tokenIndex);
         }
         else if (strcmp(keyString, "candidateVariantWeight") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {

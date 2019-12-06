@@ -948,21 +948,21 @@ void test_mergeContigChunksThreaded(CuTest *testCase) {
     chunks[15] = stString_copy("GGTTTTTTTT");
     char *truth = "AAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTTAAAAAAAACCCCCCCCGGGGGGGGTTTTTTTT";
     char* contig;
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 1, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 1, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 2, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 2, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 3, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 3, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 4, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 4, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 5, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 5, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 6, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 6, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0);
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 7, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 7, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0 );
-    contig = mergeContigChunksThreaded(chunks, 0, 16, 8, 4, params, "NNNNNN", "test");
+    contig = mergeContigChunksThreaded(chunks, 0, 16, 8, 4, params, "NNNNNN", "testContig");
     CuAssertTrue(testCase, strcmp(contig, truth) == 0 );
 }
 

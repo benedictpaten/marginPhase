@@ -1,4 +1,4 @@
-FROM ubuntu:14.04
+FROM ubuntu:18.04
 MAINTAINER Trevor Pesout, tpesout@ucsc.edu
 
 ARG git_commit

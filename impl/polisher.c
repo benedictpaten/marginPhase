@@ -1780,8 +1780,8 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 	}*/
 
 	if(stList_length(alignedPairs) == 0 && st_getLogLevel() >= info) {
-		st_logInfo("  Failed to find good overlap. Suffix-string: %s\n", &(prefixString[i]));
-		st_logInfo("  Failed to find good overlap. Prefix-string: %s\n", suffixString);
+		st_logInfo("    Failed to find good overlap. Suffix-string: %s\n", &(prefixString[i]));
+		st_logInfo("    Failed to find good overlap. Prefix-string: %s\n", suffixString);
 	}
 
 	// Remove the suffix crop
@@ -1796,7 +1796,7 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 		}
 	}
 	if(maxPair == NULL) {
-		st_logCritical("  Failed to find any aligned pairs between overlapping strings, not "
+		st_logCritical("    Failed to find any aligned pairs between overlapping strings, not "
 				"doing any trimming (approx overlap: %i, len x: %i, len y: %i)\n", approxOverlap, prefixStringLength, suffixStringLength);
 		*prefixStringCropEnd = prefixStringLength;
 		*suffixStringCropStart = 0;
