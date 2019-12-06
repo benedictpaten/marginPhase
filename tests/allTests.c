@@ -19,23 +19,24 @@ CuSuite* pairwiseAlignmentTestSuite(void);
 
 // New tests for marginPhase interface
 int marginPhaseTests(void) {
+
+	st_setLogLevel(info);
+
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-//	CuSuiteAddSuite(suite, parserTestSuite());
-	CuSuiteAddSuite(suite, polisherTestSuite());
-//	CuSuiteAddSuite(suite, viewTestSuite());
-//	CuSuiteAddSuite(suite, pairwiseAlignmentTestSuite());
-//	CuSuiteAddSuite(suite, stRPHmmTestSuite());
-//	CuSuiteAddSuite(suite, chunkingTestSuite());
-//	CuSuiteAddSuite(suite, polisherTestSuite());
-//	CuSuiteAddSuite(suite, callConsensusTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, parserTestSuite());
+	CuSuiteAddSuite(suite, polisherTestSuite()); //todo fails
+	CuSuiteAddSuite(suite, viewTestSuite());
+	CuSuiteAddSuite(suite, pairwiseAlignmentTestSuite());
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
+	CuSuiteAddSuite(suite, chunkingTestSuite());
+	CuSuiteAddSuite(suite, callConsensusTestSuite()); //todo fails
     #ifdef _HDF5
-//	CuSuiteAddSuite(suite, featureTestSuite());
+	CuSuiteAddSuite(suite, featureTestSuite()); //todo fails
     #endif
-//	CuSuiteAddSuite(suite, viewTestSuite());
-//	CuSuiteAddSuite(suite, marginIntegrationTestSuite());
+	CuSuiteAddSuite(suite, marginIntegrationTestSuite()); //todo fails
 
 	CuSuiteRun(suite);
 	CuSuiteSummary(suite, output);

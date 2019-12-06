@@ -1211,7 +1211,7 @@ CuSuite *stRPHmmTestSuite(void) {
     // Constituent function tests
     SUITE_ADD_TEST(suite, test_flipAReadsPartition);
     SUITE_ADD_TEST(suite, test_popCount64);
-    SUITE_ADD_TEST(suite, test_bitCountVectors);
+    SUITE_ADD_TEST(suite, test_bitCountVectors); //todo this fails
     SUITE_ADD_TEST(suite, test_getOverlappingComponents);
 
     return suite;

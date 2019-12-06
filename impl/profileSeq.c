@@ -62,6 +62,7 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle) {
                 maxAllele = j;
             }
         }
+        //TODO this prints weird boxes 'cause this isn't a char
         profileString[i] = maxAllele;
     }
 
