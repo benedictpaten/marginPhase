@@ -379,12 +379,11 @@ add_custom_command(
 add_custom_target(HTSLIB_CONFIGURED DEPENDS "${PROJECT_SOURCE_DIR}/externalTools/htslib/config.h")
 add_library(hts ${HTSLIB_SOURCES})
 add_dependencies(hts HTSLIB_CONFIGURED)
-target_link_libraries(hts pthread )
+target_link_libraries(hts pthread z)
 
 # Build margin library
 add_library(marginLib ${SOURCE_FILES} ${CORE_SOURCE_FILES} ${SSW_SOURCES})
 target_link_libraries(marginLib son hts)
-#target_link_libraries(margin cpecan son hts)
 if (HDF5_FOUND)
     target_link_libraries(marginLib ${HDF5_C_LIBRARIES})
 endif()
@@ -450,7 +449,6 @@ else()
             tests/allTests.c
             tests/callConsensusTest.c
             tests/chunkingTest.c
-            tests/featureTest.c
             tests/marginPhaseTest.c
             tests/marginTest.c
             tests/pairwiseAlignerTest.c
