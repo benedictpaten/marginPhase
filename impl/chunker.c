@@ -4,7 +4,6 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-#include <omp.h>
 #include "margin.h"
 #include "bedidx.h"
 

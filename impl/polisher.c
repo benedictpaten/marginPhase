@@ -5,7 +5,6 @@
  */
 
 #include "margin.h"
-#include <omp.h>
 #include <htsIntegration.h>
 #include <sonLibListPrivate.h>
 
