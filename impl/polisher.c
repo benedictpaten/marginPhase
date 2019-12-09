@@ -650,7 +650,15 @@ void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
 
 Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, RleString *reference, PolishParams *polishParams) {
 	// Build a reference graph with zero weights
-	Poa *poa = poa_getReferenceGraph(reference, polishParams->alphabet, polishParams->repeatSubMatrix->maximumRepeatLength);
+	uint64_t maximumRepeatLength = 2; // MRL is exclusive
+	if (polishParams->useRunLengthEncoding) {
+		if (polishParams->repeatSubMatrix != NULL) {
+			maximumRepeatLength = polishParams->repeatSubMatrix->maximumRepeatLength;
+		} else {
+			maximumRepeatLength = MAXIMUM_REPEAT_LENGTH;
+		}
+	}
+	Poa *poa = poa_getReferenceGraph(reference, polishParams->alphabet, maximumRepeatLength);
 
 	// For each read
 	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {

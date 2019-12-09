@@ -3,8 +3,8 @@ project(marginPhase VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 14)
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG -std=gnu99 -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=200112L -mpopcnt ")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address -static-libasan")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG -fsanitize=address -static-libasan")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fno-inline -UNDEBUG")
 
 project(marginPhase LANGUAGES C)
 
@@ -317,12 +317,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Dependencies
 
-find_package(OpenMP)
-if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+#find_package(OpenMP)
+#if (OPENMP_FOUND)
+#    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+#    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+#    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+#endif()
 
 find_package(HDF5)
 if(HDF5_FOUND)
@@ -353,7 +353,7 @@ add_library(son ${SONLIB_SOURCES})
 #target_link_libraries(cpecan m)
 
 
-# TODO evaluate "MarginCore" which was made for shasta integration 
+# TODO evaluate "MarginCore" which was made for shasta integration
 ## Build MarginCore Library (for external use)
 #add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
 #target_link_libraries(MarginCore son)

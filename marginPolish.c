@@ -10,14 +10,18 @@
 #include <memory.h>
 #include <hashTableC.h>
 #include <unistd.h>
-#include <omp.h>
 #include <time.h>
 #include <sys/stat.h>
-
 #include "marginVersion.h"
+
 #include "margin.h"
 #include "htsIntegration.h"
 #include "helenFeatures.h"
+
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 
 
@@ -416,7 +420,10 @@ int main(int argc, char *argv[]) {
     // multiproccess the chunks, save to results
     int64_t lastReportedPercentage = 0;
     time_t polishStartTime = time(NULL);
+
+    # ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic,1)
+    # endif
     for (int64_t i = 0; i < bamChunker->chunkCount; i++) {
         int64_t chunkIdx = stIntTuple_get(stList_get(chunkOrder, i), 0);
         // Time all chunks
@@ -552,8 +559,8 @@ int main(int argc, char *argv[]) {
         // Run the polishing method
         int64_t totalNucleotides = 0;
         if (st_getLogLevel() >= info) {
-            for (int64_t i = 0 ; i < stList_length(reads); i++) {
-                totalNucleotides += strlen(((BamChunkRead*)stList_get(reads, i))->rleRead->rleString);
+            for (int64_t u = 0 ; u < stList_length(reads); u++) {
+                totalNucleotides += strlen(((BamChunkRead*)stList_get(reads, u))->rleRead->rleString);
             }
             st_logInfo(">%s Running polishing algorithm with %"PRId64" reads and %"PRIu64"K nucleotides\n",
                        logIdentifier, stList_length(reads), totalNucleotides >> 10);
@@ -631,13 +638,11 @@ int main(int argc, char *argv[]) {
 
         // Cleanup
         rleString_destruct(rleReference);
-        rleString_destruct(polishedRleConsensus);
         poa_destruct(poa);
         stList_destruct(reads);
         stList_destruct(alignments);
         free(logIdentifier);
     }
-
 
     // prep for merge
     assert(bamChunker->chunkCount > 0);
