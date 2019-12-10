@@ -21,6 +21,10 @@
 #include <stdio.h>
 #include <string.h>
 
+# ifdef _OPENMP
+#include <omp.h>
+# endif
+
 #include "sonLib.h"
 #include "hashTableC.h"
 #include "pairwiseAligner.h"

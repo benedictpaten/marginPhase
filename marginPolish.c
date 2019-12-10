@@ -10,7 +10,6 @@
 #include <memory.h>
 #include <hashTableC.h>
 #include <unistd.h>
-#include <omp.h>
 #include <time.h>
 #include <sys/stat.h>
 

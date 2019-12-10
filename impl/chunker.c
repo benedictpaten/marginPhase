@@ -4,9 +4,6 @@
  * Released under the MIT license, see LICENSE.txt
  */
 
-# ifdef _OPENMP
-#include <omp.h>
-# endif
 #include "margin.h"
 #include "bedidx.h"
 
