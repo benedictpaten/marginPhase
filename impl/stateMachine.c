@@ -216,14 +216,14 @@ Hmm *hmm_jsonParse(char *buf, size_t r) {
 	// Find out type of hmm
 	char *keyString = stJson_token_tostr(js, &(tokens[1]));
 	if(strcmp(keyString, "type") != 0) {
-		st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
+		st_errAbort("ERROR: Unrecognised or unordered ('type', 'emissionsType', 'transitions', 'emissions') key in polish params json: %s\n", keyString);
 	}
 	int64_t stateMachineType = stJson_parseInt(js, tokens, 2);
 
 	// Find out emission type of hmm
 	keyString = stJson_token_tostr(js, &(tokens[3]));
 	if(strcmp(keyString, "emissionsType") != 0) {
-		st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
+		st_errAbort("ERROR: Unrecognised or unordered ('type', 'emissionsType', 'transitions', 'emissions') key in polish params json: %s\n", keyString);
 	}
 	int64_t emissionsType = stJson_parseInt(js, tokens, 4);
 
