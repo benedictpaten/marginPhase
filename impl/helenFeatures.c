@@ -982,7 +982,12 @@ void poa_writeHelenFeatures(HelenFeatureType type, Poa *poa, stList *bamChunkRea
     int64_t lastMatchedFeature = -1;
     stList *features = NULL;
     bool outputLabels = trueRefAlignment != NULL && trueRefRleString != NULL;
+
+    # ifdef _OPENMP
     int64_t threadIdx = omp_get_thread_num();
+    # else
+    int64_t threadIdx = 0;
+    # endif
 
     // handle differently based on type
     switch (type) {

@@ -17,7 +17,6 @@
 #include <time.h>
 #include <ctype.h>
 #include <unistd.h>
-//#include <util.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -30,6 +29,10 @@
 #include "pairwiseAligner.h"
 #include "randomSequences.h"
 #include "stateMachine.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #define uint128_t __uint128_t
 

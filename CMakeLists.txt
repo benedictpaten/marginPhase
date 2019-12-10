@@ -353,19 +353,20 @@ add_library(son ${SONLIB_SOURCES})
 #target_link_libraries(cpecan m)
 
 
-# Build MarginCore Library (for external use)
-add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
-target_link_libraries(MarginCore son)
-
-# Install command for MarginCore
-set_target_properties(MarginCore PROPERTIES
-        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}"
-        VERSION ${marginPhase_VERSION}
-        SOVERSION ${marginPhase_VERSION})
-install(TARGETS MarginCore
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/marginPhase
-        )
+# TODO evaluate "MarginCore" which was made for shasta integration
+## Build MarginCore Library (for external use)
+#add_library(MarginCore SHARED ${CORE_SOURCE_FILES} ${SSW_SOURCES})
+#target_link_libraries(MarginCore son)
+#
+## Install command for MarginCore
+#set_target_properties(MarginCore PROPERTIES
+#        PUBLIC_HEADER "${MARGIN_CORE_HEADERS}"
+#        VERSION ${marginPhase_VERSION}
+#        SOVERSION ${marginPhase_VERSION})
+#install(TARGETS MarginCore
+#        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+#        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/marginPhase
+#        )
 
 # HTSLIB
 add_custom_command(
