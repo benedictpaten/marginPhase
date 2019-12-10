@@ -284,7 +284,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
-	bool gotHmm = 0, gotHmmConditional = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0;
+	bool gotHmm = 0, gotHmmConditional = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0, gotAlphabet = 0;
     for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
         jsmntok_t key = tokens[tokenIndex];
         char *keyString = stJson_token_tostr(js, &key);
@@ -454,6 +454,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 			else {
 				st_errAbort("ERROR: Unrecognised alphabet type json: %s\n", tokStr);
 			}
+			gotAlphabet = TRUE;
 		} else {
             st_errAbort("ERROR: Unrecognised key in polish params json: %s\n", keyString);
         }
@@ -468,9 +469,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     if(!gotHmmConditional) {
     	st_errAbort("ERROR: Did not find HMM conditional specified in json polish params\n");
     }
-    if(!gotPairwiseAlignmentParameters) {
-    	st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
-    }
+	if(!gotPairwiseAlignmentParameters) {
+		st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
+	}
+	if(!gotAlphabet) {
+		st_errAbort("ERROR: Did not find alphabet params specified in json polish params\n");
+	}
 
     // Cleanup
     free(js);

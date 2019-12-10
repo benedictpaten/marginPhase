@@ -19,9 +19,6 @@
 #include "helenFeatures.h"
 
 
-
-
-
 //TODO move these to a better spot
 stHash *parseReferenceSequences(char *referenceFastaFile) {
     /*

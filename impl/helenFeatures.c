@@ -9,7 +9,6 @@
 #include "helenFeatures.h"
 #include "ssw.h"
 #include <hdf5.h>
-#include <omp.h>
 
 PoaFeatureSimpleWeight *PoaFeature_SimpleWeight_construct(int64_t refPos, int64_t insPos) {
     PoaFeatureSimpleWeight *feature = st_calloc(1, sizeof(PoaFeatureSimpleWeight));
