@@ -1245,7 +1245,6 @@ RleString *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams 
 	stList_reverse(consensusStrings);
 	char *expandedConsensusString = stString_join2("", consensusStrings);
 	RleString *consensusString = pp->useRunLengthEncoding ? rleString_construct(expandedConsensusString) : rleString_construct_no_rle(expandedConsensusString);
-	//st_uglyf("Got %i %i %i\n", (int)runningConsensusLength, (int)consensusString->length, (int)strlen(expandedConsensusString));
 	free(expandedConsensusString);
 	assert(runningConsensusLength == consensusString->length);
 
@@ -1506,7 +1505,7 @@ char *rleString_expand(RleString *rleString) {
 	return s;
 }
 
-int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, stList *bamChunkReads) {
+/*int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, stList *bamChunkReads) {
     stHash *runLengths = stHash_construct();
     int64_t maxCount = 0;
     int64_t maxRL = 0;
@@ -1526,7 +1525,7 @@ int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, 
     stHash_destruct(runLengths);
 
     return maxRL;
-}
+}*/
 
 void rleString_rotateString(RleString *str, int64_t rotationLength) {
 		char rotatedString[str->length];
@@ -1554,10 +1553,11 @@ static int64_t expandRLEConsensus2(Poa *poa, PoaNode *node, stList *bamChunkRead
 	}
 	char base = poa->alphabet->convertSymbolToChar(maxBaseIndex);
 
+	assert(repeatSubMatrix != NULL);
 	// for an experiment, or case with no repeat matrix
-	if (repeatSubMatrix == NULL) {
-	    return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(base), node->observations, bamChunkReads);
-	}
+	//if (repeatSubMatrix == NULL) {
+	 //   return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(base), node->observations, bamChunkReads);
+	//}
 
 	// Repeat count
 	double logProbability;
@@ -1569,6 +1569,9 @@ void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
 	poa->refString->nonRleLength = 0;
 	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
 		poa->refString->repeatCounts[i-1] = expandRLEConsensus2(poa, stList_get(poa->nodes, i), bamChunkReads, repeatSubMatrix);
+		if(poa->refString->repeatCounts[i-1] == 0) { // Prevent zero length estimates
+			poa->refString->repeatCounts[i-1] = 1;
+		}
 		poa->refString->nonRleLength += poa->refString->repeatCounts[i-1];
 	}
 }

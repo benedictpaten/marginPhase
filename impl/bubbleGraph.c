@@ -61,6 +61,7 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 		if(k < b->refStart) {
 			// Get substring
 			RleString *refSubString = rleString_copySubstring(bg->refString, k, b->refStart-k);
+			assert(refSubString->length > 0);
 			stList_append(consensusSubstrings, rleString_expand(refSubString));
 
 			// Update coordinate map between old and new reference
@@ -71,9 +72,9 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 				k++;
 			}
 
-			do {
+			while(k < b->refStart) {
 				(*poaToConsensusMap)[k++] = j++;
-			} while(k < b->refStart);
+			}
 			previousBase = refSubString->rleString[refSubString->length-1];
 
 			// Cleanup
@@ -84,6 +85,7 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 		// Noting, if there are not sufficient numbers of sequences to call the consensus
 		// use the current reference sequence
 		RleString *consensusSubstring = b->alleles[consensusPath[i]];
+		assert(consensusSubstring->length > 0);
 		stList_append(consensusSubstrings, rleString_expand(consensusSubstring));
 
 		if(st_getLogLevel() >= debug) {
@@ -116,9 +118,9 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 			if(polishParams->useRunLengthEncoding && consensusSubstring->rleString[0] == previousBase) {
 				k++;
 			}
-			do {
+			while(k < b->refStart + b->refAllele->length) {
 				(*poaToConsensusMap)[k++] = j++;
-			} while(k < b->refStart + b->refAllele->length);
+			}
 		}
 		else {
 			// Otherwise just update coordinates
@@ -137,9 +139,9 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 		if(polishParams->useRunLengthEncoding && refSubString->rleString[0] == previousBase) {
 			k++;
 		}
-		do {
+		while(k < bg->refString->length) {
 			(*poaToConsensusMap)[k++] = j++;
-		} while(k < bg->refString->length);
+		}
 
 		rleString_destruct(refSubString);
 	}
@@ -148,7 +150,6 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 	char *newExpandedConsensusString = stString_join2("", consensusSubstrings);
 	RleString *newConsensusString = polishParams->useRunLengthEncoding ? rleString_construct(newExpandedConsensusString) : rleString_construct_no_rle(newExpandedConsensusString);
 
-	//st_uglyf("Got %i %i %i %i\n", newConsensusString->length, j, (int)strlen(newExpandedConsensusString), (int)polishParams->useRunLengthEncoding);
 	assert(newConsensusString->length == j);
 
 	// Cleanup
@@ -954,8 +955,6 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 									params->polishParams->sM->emissions->alphabet);
 
 				float f = -computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
-
-				//st_uglyf("For %s %s got %f prob\n", b->alleles[j]->rleString, b->alleles[k]->rleString, f);
 
 				int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
 				l = l > 255 ? 255 : l;

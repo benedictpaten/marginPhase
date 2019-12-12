@@ -277,7 +277,6 @@ set(SSW_SOURCES
 
 set(CORE_SOURCE_FILES
 #set(SOURCE_FILES
-        impl/callConsensus.c
         impl/chunker.c
         impl/column.c
         impl/coordination.c
@@ -441,14 +440,12 @@ if (HDF5_FOUND)
             tests/polisherTest.c
             tests/marginTest.c
             tests/viewTest.c
-            tests/callConsensusTest.c
             tests/featureTest.c
             )
 else()
 
     add_executable(allTests
             tests/allTests.c
-            tests/callConsensusTest.c
             tests/chunkingTest.c
             tests/marginPhaseTest.c
             tests/marginTest.c
@@ -478,5 +475,3 @@ target_link_libraries(allTests marginLib)
 
 add_test(stRPHmm allTests)
 
-add_library(callConsensus SHARED impl/callConsensus.c ${SOURCE_FILES})
-target_link_libraries(callConsensus son hts)
