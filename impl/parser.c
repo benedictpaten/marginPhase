@@ -488,6 +488,16 @@ void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
     st_logCritical("Need to implement polishParams_printParameters\n");
 }
 
+Hmm *polishParams_convertHmmEmissionsNuclToNuclRL(Hmm *hmmNucl, RepeatSubMatrix *rlMatrix) {
+    assert(hmmNucl->emissionsType == nucleotideEmissions);
+    Hmm *hmmNuclRL = hmm_constructEmpty(0, hmmNucl->type, runlengthNucleotideEmissions);
+
+
+
+
+    return hmmNuclRL;
+}
+
 void polishParams_destruct(PolishParams *params) {
 	if (params->repeatSubMatrix != NULL) repeatSubMatrix_destruct(params->repeatSubMatrix);
 	stateMachine_destruct(params->sM);
