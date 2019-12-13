@@ -540,7 +540,7 @@ typedef struct _alignmentMetrics {
 } AlignmentMetrics;
 
 
-static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, char *reference,
+static void test_poa_realign_example(CuTest *testCase, char *trueReference, char *reference,
 		stList *originalReads, AlignmentMetrics *rleAlignmentMetrics, AlignmentMetrics *nonRleAlignmentMetrics,
 		bool rle) {
 	stList *reads = stList_construct();
@@ -548,8 +548,8 @@ static void test_poa_realign_example_rle(CuTest *testCase, char *trueReference, 
 		BamChunkRead* bcr = stList_get(originalReads, i);
 		stList_append(reads, bamChunkRead_constructCopy(bcr));
 	}
-	RleString *rleReference = rleString_construct(reference);
-	RleString *rleTrueReference = rleString_construct(trueReference);
+	RleString *rleReference = rle ? rleString_construct(reference) : rleString_construct_no_rle(reference);
+	RleString *rleTrueReference = rle ? rleString_construct(trueReference) : rleString_construct_no_rle(trueReference);
 
 	Params *params = params_readParams(polishParamsFile);
 	PolishParams *polishParams = params->polishParams;
@@ -759,7 +759,7 @@ static void test_poa_realign_examples(CuTest *testCase, const char **examples, i
 		//}
 
 		// Run poa iterative realign
-		test_poa_realign_example_rle(testCase, trueReferenceList->list[0], nucleotides->list[0], reads,
+		test_poa_realign_example(testCase, trueReferenceList->list[0], nucleotides->list[0], reads,
 				rleAlignmentMetrics, alignmentMetrics, rle);
 
 		// Cleanup
@@ -1178,8 +1178,11 @@ void test_binomialPValue(CuTest *testCase) {
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
+    SUITE_ADD_TEST(suite, test_polish5kb_rle);
 
-    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    //SUITE_ADD_TEST(suite, test_poa_realignIterative);
+
+    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_getShift);
     SUITE_ADD_TEST(suite, test_rleString_examples);
     SUITE_ADD_TEST(suite, test_rle_rotateString);
@@ -1205,7 +1208,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_polish5kb_no_region); //todo fails
     SUITE_ADD_TEST(suite, test_polish100kb);
     SUITE_ADD_TEST(suite, test_largeGap);
-    SUITE_ADD_TEST(suite, test_largeGap2);
+    SUITE_ADD_TEST(suite, test_largeGap2);*/
 
     return suite;
 }
