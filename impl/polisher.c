@@ -1505,7 +1505,7 @@ char *rleString_expand(RleString *rleString) {
 	return s;
 }
 
-/*int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, stList *bamChunkReads) {
+int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, stList *bamChunkReads) {
     stHash *runLengths = stHash_construct();
     int64_t maxCount = 0;
     int64_t maxRL = 0;
@@ -1525,7 +1525,7 @@ char *rleString_expand(RleString *rleString) {
     stHash_destruct(runLengths);
 
     return maxRL;
-}*/
+}
 
 void rleString_rotateString(RleString *str, int64_t rotationLength) {
 		char rotatedString[str->length];
@@ -1553,11 +1553,11 @@ static int64_t expandRLEConsensus2(Poa *poa, PoaNode *node, stList *bamChunkRead
 	}
 	char base = poa->alphabet->convertSymbolToChar(maxBaseIndex);
 
-	assert(repeatSubMatrix != NULL);
+//	assert(repeatSubMatrix != NULL);
 	// for an experiment, or case with no repeat matrix
-	//if (repeatSubMatrix == NULL) {
-	 //   return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(base), node->observations, bamChunkReads);
-	//}
+	if (repeatSubMatrix == NULL) {
+	    return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(base), node->observations, bamChunkReads);
+	}
 
 	// Repeat count
 	double logProbability;
@@ -2035,7 +2035,6 @@ Poa *poa_realignAll(stList *bamChunkReads, stList *anchorAlignments, RleString *
 
 	st_logInfo(" %s Took %3d seconds to generate initial POA\n", logIdentifier, (int)(time(NULL) - startTime));
 	free(logIdentifier);
-	st_logInfo("Took %f seconds to generate initial POA\n", (float)(time(NULL) - startTime));
 
 	if (polishParams->maxPoaConsensusIterations > 0) {
 		poa = poa_realignIterative(poa, bamChunkReads, polishParams, 1, polishParams->minPoaConsensusIterations,

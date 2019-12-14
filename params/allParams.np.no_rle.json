@@ -71,6 +71,8 @@
 
 		"maxDepth" : 64,
 
+		"shuffleChunks" : false,
+
 		"referenceBasePenalty" : 0.5,
 
 		"poaConstructCompareRepeatCounts" : true,

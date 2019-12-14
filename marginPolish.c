@@ -401,7 +401,7 @@ int main(int argc, char *argv[]) {
     char **chunkResults = st_calloc(bamChunker->chunkCount, sizeof(char*));
 
     // (may) need to shuffle chunks
-    stList *chunkOrder = stList_construct3(0, stIntTuple_destruct);
+    stList *chunkOrder = stList_construct3(0, (void (*)(void*))stIntTuple_destruct);
     for (int64_t i = 0; i < bamChunker->chunkCount; i++) {
         stList_append(chunkOrder, stIntTuple_construct1(i));
     }

@@ -905,9 +905,8 @@ void test_bitCountVectors(CuTest *testCase) {
             for(int64_t i=0; i<ref->length; i++) {
                 for(int64_t j=0; j<ref->sites[i].alleleNumber; j++) {
                     CuAssertIntEquals(testCase,
-          getLogProbOfAllele(countBitVectors, depth, partition, ref->sites[i].alleleOffset, j),
-                            getLogProbOfAlleleSimple(ref, seqs, partition, depth,
-                                    ref->length, i, j));
+                                      (int) getLogProbOfAllele(countBitVectors, depth, partition, ref->sites[i].alleleOffset, j),
+                                      (int) getLogProbOfAlleleSimple(ref, seqs, partition, depth, ref->length, i, j));
 //st_uglyf("Hello, site: %i allele: %i value: %i\n", i, j, getLogProbOfAlleleSimple(ref, seqs, partition, depth,
 //                ref->length, i, j));
 
