@@ -85,6 +85,10 @@ uint64_t *calculateCountBitVectors(uint8_t **seqs, stReference *ref,
      * Calculates the bit count vector for every site, allele and bit in the given range of sites.
      */
 
+    if (ref->length == 0) {
+        return st_malloc(0);
+    }
+
 	// Index of first (inclusive) and last (exclusive) allele in the column
 	uint64_t firstAllele = ref->sites[firstSite].alleleOffset;
 	uint64_t lastAllele = firstSite+length < ref->length ? ref->sites[firstSite+length].alleleOffset : ref->totalAlleles;

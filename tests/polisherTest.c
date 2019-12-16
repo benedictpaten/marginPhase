@@ -1202,11 +1202,11 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_examples_no_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
     SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
-    SUITE_ADD_TEST(suite, test_polish5kb_rle); //todo fails
-    SUITE_ADD_TEST(suite, test_polish5kb_no_region); //todo fails
-    SUITE_ADD_TEST(suite, test_polish100kb);
-    SUITE_ADD_TEST(suite, test_largeGap);
-    SUITE_ADD_TEST(suite, test_largeGap2);
+    SUITE_ADD_TEST(suite, test_polish5kb_rle); //todo fails (maybe addr sanitize)
+    SUITE_ADD_TEST(suite, test_polish5kb_no_region); //todo fails (maybe addr sanitize)
+    SUITE_ADD_TEST(suite, test_polish100kb); //todo fails (maybe addr sanitize)
+    SUITE_ADD_TEST(suite, test_largeGap); //todo fails
+    SUITE_ADD_TEST(suite, test_largeGap2);  //todo fails
 
     return suite;
 }

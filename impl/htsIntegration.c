@@ -619,22 +619,26 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference,  
                                                           bamChunk->parent->params->useRunLengthEncoding);
         stList_append(reads, chunkRead);
 
+        // save alignment
         if(bamChunk->parent->params->useRunLengthEncoding) {
-            if (ref_nonRleToRleCoordinateMap == NULL) {
-                continue;
+            // ref_nonRleToRleCoordinateMap should only be null w/ RLE in tests
+            if (ref_nonRleToRleCoordinateMap != NULL) {
+                // rle the alignment and save it
+                uint64_t *read_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(chunkRead->rleRead);
+                stList_append(alignments, runLengthEncodeAlignment(cigRepr, ref_nonRleToRleCoordinateMap, read_nonRleToRleCoordinateMap));
+                stList_destruct(cigRepr);
+                free(read_nonRleToRleCoordinateMap);
             }
-            // rle the alignment and save it
-            uint64_t *read_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(chunkRead->rleRead);
-            stList_append(alignments, runLengthEncodeAlignment(cigRepr, ref_nonRleToRleCoordinateMap, read_nonRleToRleCoordinateMap));
-            stList_destruct(cigRepr);
-            free(read_nonRleToRleCoordinateMap);
         }
         else {
             stList_append(alignments, cigRepr);
         }
-
         savedAlignments++;
 
+        // cleanup
+        free(readName);
+        free(seq);
+        if (qual != NULL) free(qual);
     }
     // the status from "get reads from iterator"
     if (result < -1) {
@@ -649,7 +653,9 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference,  
     bam_hdr_destroy(bamHdr);
     bam_destroy1(aln);
     sam_close(in);
-   return savedAlignments;
+    if (ref_nonRleToRleCoordinateMap != NULL)
+        free(ref_nonRleToRleCoordinateMap);
+    return savedAlignments;
 }
 
 bool poorMansDownsample(int64_t intendedDepth, BamChunk *bamChunk, stList *reads, stList *alignments,

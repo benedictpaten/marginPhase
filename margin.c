@@ -446,6 +446,13 @@ int main(int argc, char *argv[]) {
     stHash_destruct(referenceSequences);
     params_destruct(params);
 
+	free(bamInFile);
+	free(referenceFastaFile);
+	free(paramsFile);
+
+	if (outputBase != NULL) free(outputBase);
+	if (regionStr != NULL) free(regionStr);
+
     //while(1); // Use this for testing for memory leaks
 
     return 0;

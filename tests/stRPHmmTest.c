@@ -16,7 +16,7 @@ stSite getRandomSite(uint64_t alleleOffset) {
 	 */
 	stSite site;
 	site.alleleOffset = alleleOffset;
-	site.alleleNumber = st_randomInt(1, 10);
+	site.alleleNumber = (uint64_t) st_randomInt(1, 10);
 	site.allelePriorLogProbs = st_calloc(site.alleleNumber, sizeof(uint16_t)); // Make all the probs flat log 1.0
 	site.substitutionLogProbs = st_calloc(site.alleleNumber*site.alleleNumber, sizeof(uint16_t));
 	// todo: fix substitution costs
@@ -877,10 +877,10 @@ static uint64_t getRandomPartition(int64_t depth) {
 }
 
 void test_bitCountVectors(CuTest *testCase) {
-    for(int64_t depth=0; depth<64; depth++) {
+    for(uint64_t depth=0; depth<64; depth++) {
         for(int64_t test=0; test<100; test++) {
         	// Make reference
-        	stReference *ref = getRandomReference("ref", st_randomInt(0, 10));
+        	stReference *ref = getRandomReference("ref", (uint64_t) st_randomInt(0, 10));
 
             // Make column as set of uint8_t sequences
             uint8_t **seqs = st_malloc(sizeof(uint8_t *) * depth);
@@ -888,7 +888,7 @@ void test_bitCountVectors(CuTest *testCase) {
                 seqs[i] = st_calloc(ref->totalAlleles, sizeof(uint8_t));
                 // Initialise probs randomly
                 for(int64_t j=0; j<ref->totalAlleles; j++) {
-                    seqs[i][j] = st_randomInt(0, 255);
+                    seqs[i][j] = (uint8_t) st_randomInt(0, 255);
                 }
             }
 
@@ -1210,7 +1210,7 @@ CuSuite *stRPHmmTestSuite(void) {
     // Constituent function tests
     SUITE_ADD_TEST(suite, test_flipAReadsPartition);
     SUITE_ADD_TEST(suite, test_popCount64);
-    SUITE_ADD_TEST(suite, test_bitCountVectors); //todo this fails
+    SUITE_ADD_TEST(suite, test_bitCountVectors);
     SUITE_ADD_TEST(suite, test_getOverlappingComponents);
 
     return suite;

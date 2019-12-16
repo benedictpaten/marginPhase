@@ -501,7 +501,9 @@ Hmm *polishParams_convertHmmEmissionsNuclToNuclRL(Hmm *hmmNucl, RepeatSubMatrix 
 void polishParams_destruct(PolishParams *params) {
 	if (params->repeatSubMatrix != NULL) repeatSubMatrix_destruct(params->repeatSubMatrix);
 	stateMachine_destruct(params->sM);
-	hmm_destruct(params->hmm);
+    stateMachine_destruct(params->sMConditional);
+    hmm_destruct(params->hmm);
+    hmm_destruct(params->hmmConditional);
 	pairwiseAlignmentBandingParameters_destruct(params->p);
     free(params->minPosteriorProbForAlignmentAnchors);
 	alphabet_destruct(params->alphabet);

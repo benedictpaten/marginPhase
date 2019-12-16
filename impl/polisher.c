@@ -49,7 +49,7 @@ PoaInsert *poaInsert_construct(RleString *insert, double weight, bool strand) {
 
 void poaInsert_destruct(PoaInsert *poaInsert) {
     stList_destruct(poaInsert->observations);
-	free(poaInsert->insert);
+	rleString_destruct(poaInsert->insert);
 	free(poaInsert);
 }
 
@@ -1666,6 +1666,8 @@ double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base,
 
 void repeatSubMatrix_destruct(RepeatSubMatrix *repeatSubMatrix) {
 	alphabet_destruct(repeatSubMatrix->alphabet);
+	free(repeatSubMatrix->baseLogProbs_AT);
+	free(repeatSubMatrix->baseLogProbs_GC);
 	free(repeatSubMatrix->logProbabilities);
 	free(repeatSubMatrix);
 }

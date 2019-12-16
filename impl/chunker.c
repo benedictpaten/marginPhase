@@ -220,7 +220,7 @@ BamChunkRead *bamChunkRead_construct() {
 BamChunkRead *bamChunkRead_construct2(char *readName, char *nucleotides,
                                       uint8_t *qualities, bool forwardStrand, bool useRunLengthEncoding) {
     BamChunkRead *r = calloc(1, sizeof(BamChunkRead));
-    r->readName = readName;
+    r->readName = stString_copy(readName);
     r->forwardStrand = forwardStrand;
     assert(nucleotides != NULL);
     r->rleRead = useRunLengthEncoding ? rleString_construct(nucleotides) : rleString_construct_no_rle(nucleotides);
