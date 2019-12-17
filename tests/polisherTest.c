@@ -1178,7 +1178,7 @@ void test_binomialPValue(CuTest *testCase) {
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    //SUITE_ADD_TEST(suite, test_poa_realignIterative);
+    SUITE_ADD_TEST(suite, test_poa_realignIterative);
 
     SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_getShift);
@@ -1190,7 +1190,6 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
     SUITE_ADD_TEST(suite, test_getShift);
     SUITE_ADD_TEST(suite, test_rleString_examples);
-//    SUITE_ADD_TEST(suite, test_rleString_construct2);
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
     SUITE_ADD_TEST(suite, test_polishParams);

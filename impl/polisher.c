@@ -1818,94 +1818,6 @@ int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOver
 
 RleString *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params,
 				  int64_t **poaToConsensusMap) {
-//	/*
-//	 * As pao_polish, but returns the polished reference string and a
-//	 * map back to the input poa reference sequence.
-//	 */
-//<<<<<<< HEAD
-//
-//	// Setup
-//	double *candidateWeights = getCandidateWeights(poa, params);
-//
-//	//TODO, this could probably be debug
-//	if(st_getLogLevel() >= info) {
-//		double avgCoverage = getAvgCoverage(poa, 0, stList_length(poa->nodes));
-//		double totalCandidateWeight = 0.0;
-//		for(int64_t i=0; i<stList_length(poa->nodes); i++) {
-//			totalCandidateWeight += candidateWeights[i];
-//		}
-//		char* logIdentifier = getLogIdentifier();
-//		st_logInfo(" %s Got avg. coverage: %f for region of length: %" PRIi64 " and avg. candidate weight of: %f\n",
-//				logIdentifier, avgCoverage/PAIR_ALIGNMENT_PROB_1, stList_length(poa->nodes),
-//				totalCandidateWeight/(PAIR_ALIGNMENT_PROB_1*stList_length(poa->nodes)));
-//		free(logIdentifier);
-//	}
-//
-//	// Sort the base observations to make the getReadSubstrings function work
-//	sortBaseObservations(poa);
-//
-//	// Identify anchor points, represented as a binary array, one bit for each POA node
-//	bool *anchors = getFilteredAnchorPositions(poa, candidateWeights, params);
-//
-//	// Map to track alignment between the new consensus sequence and the poa reference sequence
-//	*poaToConsensusMap = st_malloc((stList_length(poa->nodes)-1) * sizeof(int64_t));
-//	for(int64_t i=0; i<stList_length(poa->nodes)-1; i++) {
-//		(*poaToConsensusMap)[i] = -1;
-//	}
-//
-//	// Substrings of the consensus string that when concatenated form the overall consensus string
-//	stList *consensusSubstrings = stList_construct3(0, free);
-//	int64_t j=0; // Length of the growing consensus substring
-//
-//	// Enumerate candidate variant combinations between anchors
-//
-//	int64_t pAnchor = 0; // Previous anchor, starting from first position of POA, which is the prefix "N"
-//	for(int64_t i=1; i<stList_length(poa->nodes); i++) {
-//		if(anchors[i]) { // If position i is an anchor
-//			// In case anchors are trivially adjacent
-//			if(i-pAnchor == 1)  {
-//				stList_append(consensusSubstrings, stString_print("%c", ((PoaNode *)stList_get(poa->nodes, pAnchor))->base));
-//				if(i > 0 && j > 0) {
-//					(*poaToConsensusMap)[i-1] = j-1;
-//				}
-//				j++;
-//			}
-//			else {
-//				poa_polishP(poa, bamChunkReads, pAnchor, i,
-//							consensusSubstrings, &j, *poaToConsensusMap, candidateWeights, params);
-//			}
-//
-//			// Update previous anchor
-//			pAnchor = i;
-//		}
-//	}
-//
-//	// Deal with the suffix
-//	poa_polishP(poa, bamChunkReads, pAnchor, stList_length(poa->nodes),
-//				consensusSubstrings, &j, *poaToConsensusMap, candidateWeights, params);
-//
-//	// Build the new consensus string by concatenating the constituent pieces
-//	char *newConsensusString = stString_join2("", consensusSubstrings);
-//
-//	// Remove the prefix "N" character (which is the first position of any POA)
-//	assert(strlen(newConsensusString) >= 1);
-//	assert(newConsensusString[0] == 'N');
-//	char *c = newConsensusString;
-//	newConsensusString = stString_copy(&(newConsensusString[1]));
-//	free(c);
-//
-//	// Cleanup
-//	free(candidateWeights);
-//	free(anchors);
-//	stList_destruct(consensusSubstrings);
-//
-//	return newConsensusString;
-//}
-//
-//Poa *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params) {
-//	/*
-//=======
-//>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
 	/*
 	 * "Polishes" the given POA reference string to create a new consensus reference string.
 	 * Algorithm starts by dividing the reference into anchor points - points where the majority
@@ -1921,34 +1833,8 @@ RleString *poa_polish(Poa *poa, stList *bamChunkReads, PolishParams *params,
 	uint64_t *consensusPath = bubbleGraph_getConsensusPath(bg, params);
 	RleString *newConsensusString = bubbleGraph_getConsensusString(bg, consensusPath, poaToConsensusMap, params);
 
-//<<<<<<< HEAD
-//
-//	int64_t *poaToConsensusMap;
-//	char *newConsensusString = poa_polish2(poa, bamChunkReads, params, &poaToConsensusMap);
-//
-//	// Get anchor alignments
-//	stList *anchorAlignments = poa_getAnchorAlignments(poa, poaToConsensusMap, stList_length(bamChunkReads), params);
-//
-//	// Generated updated poa
-//	Poa *poa2 = poa_realign(bamChunkReads, anchorAlignments, newConsensusString, params);
-//
-//	// Cleanup
-//	free(newConsensusString);
-//	stList_destruct(anchorAlignments);
-//	free(poaToConsensusMap);
-//
-//	if(st_getLogLevel() >= info) {
-//        char *logIdentifier = getLogIdentifier();
-//		double score = poa_getReferenceNodeTotalMatchWeight(poa) - poa_getTotalErrorWeight(poa);
-//		double score2 = poa_getReferenceNodeTotalMatchWeight(poa2) - poa_getTotalErrorWeight(poa2);
-//		st_logInfo(" %s Took %3d seconds to do a round of polishing, got score: %6.4f (%f score diff)\n",
-//					logIdentifier, (int)(time(NULL) - startTime), score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
-//        free(logIdentifier);
-//    }
-//=======
 	free(consensusPath);
 	bubbleGraph_destruct(bg);
-//>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
 
 	return newConsensusString;
 }
