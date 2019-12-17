@@ -1,3 +1,4 @@
+a new line
 /*
  * Copyright (C) 2018 by Benedict Paten (benedictpaten@gmail.com)
  *
