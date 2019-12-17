@@ -1,5 +1,5 @@
 FROM ubuntu:18.04
-MAINTAINER Trevor Pesout, tpesout@ucsc.edu
+MAINTAINER Kishwar Shafin, kishwar.shafin@gmail.com
 
 ARG git_commit
 
@@ -28,6 +28,8 @@ RUN git clone https://github.com/UCSC-nanopore-cgl/MarginPolish.git && \
 
 WORKDIR /opt/MarginPolish/build
 RUN cmake .. && make && ./marginPolish
+RUN ln -s /opt/MarginPolish/build/marginPolish /usr/local/bin/marginPolish
+
 
 # setup entrypoint
 COPY wrapper.sh /opt/wrapper.sh
