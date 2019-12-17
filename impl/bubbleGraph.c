@@ -1157,8 +1157,10 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	// Cleanup
 	stRPHmm_destruct(hmm, 1);
 	stList_destruct(path);
+	stList_setDestructor(profileSeqs, (void(*)(void*))stProfileSeq_destruct);
 	stList_destruct(profileSeqs);
 	stHash_destruct(readsToPSeqs);
+	stReference_destruct(ref);
 
 	return gF;
 }

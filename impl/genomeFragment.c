@@ -197,24 +197,8 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     free(genomeFragment->ancestorString);
 
     // Reads
-//TODO
-//    stProfileSeq *profileSeq;
-//    stSetIterator *itor = stSet_getIterator(genomeFragment->reads1);
-//    while ((profileSeq = (stProfileSeq*) stSet_getNext(itor)) != NULL) {
-//        stProfileSeq_destruct(profileSeq);
-//    }
-//    stSet_destructIterator(itor);
-//    itor = stSet_getIterator(genomeFragment->reads2);
-//    while ((profileSeq = (stProfileSeq*) stSet_getNext(itor)) != NULL) {
-//        stProfileSeq_destruct(profileSeq);
-//    }
-//    stSet_destructIterator(itor);
     stSet_destruct(genomeFragment->reads1);
     stSet_destruct(genomeFragment->reads2);
-
-    // Ref
-//TODO
-//    stReference_destruct(genomeFragment->reference);
 
     free(genomeFragment);
 }
