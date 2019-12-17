@@ -931,7 +931,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 	ref->sites = st_calloc(bg->bubbleNo, sizeof(stSite));
 	ref->totalAlleles = 0;
 
-	stList *anchorPairs = stList_construct(); // Currently empty
+	stList *anchorPairs = stList_construct3(0, (void(*)(void*))stIntTuple_destruct); // Currently empty
 	for(uint64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &bg->bubbles[i];
 		stSite *s = &ref->sites[i];
@@ -969,6 +969,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 			symbolString_destruct(aS);
 		}
 	}
+	stList_destruct(anchorPairs);
 
 	return ref;
 }
@@ -1108,7 +1109,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 			" to achieve maximum coverage depth of %" PRIi64 "\n",
 			stList_length(discardedProfileSeqs), stList_length(profileSeqs),
 			params->phaseParams->maxCoverageDepth);
-	stList_setDestructor(profileSeqs, NULL);
+    stList_setDestructor(profileSeqs, NULL);
 	stList_destruct(profileSeqs);
 	profileSeqs = filteredProfileSeqs;
 
@@ -1338,7 +1339,12 @@ uint64_t bubbleGraph_filterBubbles(BubbleGraph *bg,
 	uint64_t filteredBubbles = bg->bubbleNo - j;
 	bg->bubbleNo = j;
 	bg->totalAlleles = alleleOffset;
-	bg->bubbles = st_realloc(bg->bubbles, sizeof(Bubble)*bg->bubbleNo); // Resize bubbles array
+	if (bg->bubbleNo == 0) {
+		free(bg->bubbles);
+		bg->bubbles = st_malloc(0);
+	} else {
+		bg->bubbles = st_realloc(bg->bubbles, sizeof(Bubble) * bg->bubbleNo); // Resize bubbles array
+	}
 
 	return filteredBubbles;
 }

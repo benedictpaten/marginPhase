@@ -24,6 +24,11 @@ inline double logAddP(double a, double b, bool maxNotSum) {
  */
 
 void stReference_destruct(stReference *ref) {
+    for (int64_t i = 0; i < ref->length; i++) {
+        stSite s = ref->sites[i];
+        free(s.allelePriorLogProbs);
+        free(s.substitutionLogProbs);
+    }
 	free(ref->sites);
 	free(ref->referenceName);
 	free(ref);
