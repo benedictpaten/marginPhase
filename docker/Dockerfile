@@ -1,8 +1,6 @@
 FROM ubuntu:18.04
 MAINTAINER Kishwar Shafin, kishwar.shafin@gmail.com
 
-ARG git_commit
-
 # update and install dependencies
 RUN apt-get update && \
     apt-get -y install time git make wget autoconf gcc g++ zlib1g-dev libcurl4-openssl-dev libbz2-dev libhdf5-dev && \
@@ -22,7 +20,8 @@ WORKDIR /opt
 RUN git clone https://github.com/UCSC-nanopore-cgl/MarginPolish.git && \
     cd /opt/MarginPolish && \
     git fetch && \
-    git checkout $git_commit && \
+    git checkout master && \
+    git pull origin master && \
     git submodule update --init && \
     rm -rf /opt/MarginPolish/.git
 
