@@ -117,15 +117,6 @@ stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2);
 double logAddP(double a, double b, bool maxNotSum);
 
 /*
- * Alphabet
- */
-#define ALPHABET_SIZE 5
-#define ALPHABET_MAX_PROB 255
-#define ALPHABET_MIN_PROB 0
-#define ALPHABET_CHARACTER_BITS 8
-#define ALPHABET_MIN_SUBSTITUTION_PROB 65535 // 2^16 -1
-
-/*
  * Strandedness
  */
 #define POS_STRAND_IDX 1
@@ -197,9 +188,6 @@ struct _stReference {
 };
 
 void stReference_destruct(stReference *ref);
-
-//todo I think this goes away
-//stReferencePriorProbs *stReferencePriorProbs_constructEmptyProfile(char *referenceName, int64_t referenceStart, int64_t length);
 
 /*
  * _stProfileSeq
@@ -491,11 +479,6 @@ void setVerbosity(stRPHmmParameters *params, int64_t bitstring);
  */
 
 void writeParamFile(char *outputFilename, stRPHmmParameters *params);
-
-
-// Tag definitions (for haplotype output)
-#define HAPLOTYPE_TAG "ht"
-#define MARGIN_PHASE_TAG "mp"
 
 /*
  * _stReadHaplotypeSequence
@@ -954,8 +937,6 @@ BamChunkRead *bamChunkRead_constructCopy(BamChunkRead *copy);
 void bamChunkRead_destruct(BamChunkRead *bamChunkRead);
 
 /*
-<<<<<<< HEAD
-=======
  * Generates the expanded non-rle version of bam chunk read nucleotide sequence.
  */
 char *bamChunkRead_rleExpand(BamChunkRead *read);
@@ -972,14 +953,7 @@ typedef struct _bamChunkReadSubstring {
  */
 RleString *bamChunkReadSubstring_getRleString(BamChunkReadSubstring *readSubstring);
 
-//todo moved to htslib
-///*
-// * Converts chunk of aligned reads into list of reads and alignments.
-// */
-//uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference, stList *reads, stList *alignments);
-
 /*
->>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
  * Remove overlap between two overlapping strings. Returns max weight of split point.
  */
 int64_t removeOverlap(char *prefixString, char *suffixString, int64_t approxOverlap, PolishParams *polishParams,

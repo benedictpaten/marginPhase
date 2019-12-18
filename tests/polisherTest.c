@@ -1188,7 +1188,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_poa_realign_tiny_example1);
     SUITE_ADD_TEST(suite, test_poa_realign);
     SUITE_ADD_TEST(suite, test_poa_realignIterative);
-    SUITE_ADD_TEST(suite, test_getShift);
+    SUITE_ADD_TEST(suite, test_getShift); //todo this sporadically fails :/
     SUITE_ADD_TEST(suite, test_rleString_examples);
     SUITE_ADD_TEST(suite, test_addInsert);
     SUITE_ADD_TEST(suite, test_removeDelete);
