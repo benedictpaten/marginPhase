@@ -25,13 +25,12 @@ int marginPhaseTests(void) {
 	CuString *output = CuStringNew();
 	CuSuite* suite = CuSuiteNew();
 
-	CuSuiteAddSuite(suite, stRPHmmTestSuite()); //todo fails
+	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, parserTestSuite());
-    CuSuiteAddSuite(suite, polisherTestSuite()); //todo fails
-    CuSuiteAddSuite(suite, marginIntegrationTestSuite()); //todo fails
+    CuSuiteAddSuite(suite, polisherTestSuite());
+    CuSuiteAddSuite(suite, marginIntegrationTestSuite());
 	CuSuiteAddSuite(suite, viewTestSuite());
     CuSuiteAddSuite(suite, pairwiseAlignmentTestSuite());
-	CuSuiteAddSuite(suite, stRPHmmTestSuite());
 	CuSuiteAddSuite(suite, chunkingTestSuite());
     #ifdef _HDF5
     CuSuiteAddSuite(suite, featureTestSuite()); //todo fails
