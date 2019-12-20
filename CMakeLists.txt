@@ -272,8 +272,8 @@ target_link_libraries(marginLib son hts)
 add_executable(margin margin.c )
 target_link_libraries(margin marginLib)
 
-file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+#file(COPY "${PROJECT_SOURCE_DIR}/externalTools/sonLib/bin/cPecanLastz"
+#     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 enable_testing()
 add_executable(allTests
