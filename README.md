@@ -155,11 +155,11 @@ Across 13 whole-genome runs, we averaged roughly 350 CPU hours per gigabase of a
 
 
 ### Docker ###
-There is a MarginPolish Docker container provided at `docker.io/tpesout/margin_polish`.  To run, the directory with your input files must be mounted onto the `/data` directory in the container.  An example run:
+There is a MarginPolish Docker container provided at `docker.io/kishwars/margin_polish`.  To run, the directory with your input files must be mounted onto the `/data` directory in the container.  An example run:
 
 ```
-docker run -v </your/current/directory>:/data tpesout/margin_polish:latest --help
-docker run -v </your/current/directory>:/data tpesout/margin_polish:latest input.bam input.assembly params.json -t 16 -f
+docker run -it --rm --user=`id -u`:`id -g` --cpus="16" -v </your/current/directory>:/data kishwars/margin_polish:latest --help
+docker run -it --rm --user=`id -u`:`id -g` --cpus="16" -v </your/current/directory>:/data kishwars/margin_polish:latest input.bam input.fasta /opt/MarginPolish/params/<model_name.json> -t 32 -o /data/ -f
 ```
 
 The entrypoint is to a script which redirects output to a file called `marginPolish.log`.  This also contains output from the `time` program documenting runtime and max memory usage.
@@ -167,7 +167,7 @@ The entrypoint is to a script which redirects output to a file called `marginPol
 The image can be built by navigating to the `docker/` directory and running `make`.  Alternatively, the image can be acquired by running
  
 ```
-docker pull tpesout/margin_polish:latest
+docker pull kishwars/margin_polish:latest
 ```
 
 ## Miscellaneous ##
