@@ -442,7 +442,7 @@ typedef struct _rleNucleotideEmissions {
 
 static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
 		const double *repeatLengthGapProbs, Symbol i) {
-    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)) + repeatLengthGapProbs[symbol_getRepeatLength(i)];
+    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)) + 0.2 * repeatLengthGapProbs[symbol_getRepeatLength(i)];
 }
 
 static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
@@ -454,7 +454,7 @@ static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Sym
 }
 
 static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
-    return getNucleotideMatchProb(&(rlene->ne), symbol_stripRepeatCount(x), symbol_stripRepeatCount(y)) + rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
+    return getNucleotideMatchProb(&(rlene->ne), symbol_stripRepeatCount(x), symbol_stripRepeatCount(y)) + 0.2 * rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
 }
 
 Emissions *rleNucleotideEmissions_construct() {

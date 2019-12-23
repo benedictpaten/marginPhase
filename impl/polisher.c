@@ -398,7 +398,9 @@ void poa_augment(Poa *poa, RleString *read, bool readStrand, int64_t readNo, stL
 				// At this point k (inclusive) and l (inclusive) represent a complete-insert
 
 				// Calculate weight and label, including repeat counts
+				assert(stIntTuple_get(insertStart, 2) + k - i == stIntTuple_get(stList_get(inserts, k), 2));
 				assert(stIntTuple_get(stList_get(inserts, k), 2) >= 0);
+
 				RleString *insert = rleString_copySubstring(read, stIntTuple_get(stList_get(inserts, k), 2), l+1-k);
 				double insertWeight = UINT_MAX;
 				for(int64_t m=k; m<l+1; m++) {
@@ -426,7 +428,7 @@ void poa_augment(Poa *poa, RleString *read, bool readStrand, int64_t readNo, stL
 				
 				// Add insert to graph at leftmost position
 				addToInserts(stList_get(poa->nodes, insertPosition), insert, insertWeight, readStrand,
-							 poaBaseObservation_construct(readNo, stIntTuple_get(insertStart, 2), insertWeight));
+							 poaBaseObservation_construct(readNo, stIntTuple_get(stList_get(inserts, k), 2), insertWeight));
 
 				// Cleanup
 				rleString_destruct(insert);
@@ -1265,16 +1267,6 @@ RleString *poa_getConsensus(Poa *poa, int64_t **poaToConsensusMap, PolishParams 
 	return consensusString;
 }
 
-/*
-typedef _
-
-struct _expandableRleString {
-	char *rleString;
-	uint64_t *repeatCounts;
-	int64_t *maxLength;
-	int64_t length;
-};*/
-
 char *addInsert(char *string, char *insertString, int64_t editStart) {
 	int64_t insertLength = strlen(insertString);
 	int64_t stringLength = strlen(string);
@@ -1396,6 +1388,7 @@ RleString *rleString_constructPreComputed(char *rleChars, uint8_t *rleCounts) {
 	rleString->length = strlen(rleChars);
 	rleString->nonRleLength = 0;
 	for (int64_t i = 0; i < rleString->length; i++) {
+		assert(rleCounts[i] >= 1);
 		rleString->nonRleLength += rleCounts[i];
 	}
 
@@ -1505,6 +1498,19 @@ char *rleString_expand(RleString *rleString) {
 	return s;
 }
 
+void rleString_rotateString(RleString *str, int64_t rotationLength) {
+	char rotatedString[str->length];
+	uint64_t rotatedRepeatCounts[str->length];
+	for(int64_t i=0; i<str->length; i++) {
+		rotatedString[(i+rotationLength)%str->length] = str->rleString[i];
+		rotatedRepeatCounts[(i+rotationLength)%str->length] = str->repeatCounts[i];
+	}
+	for(int64_t i=0; i<str->length; i++) {
+		str->rleString[i] = rotatedString[i];
+		str->repeatCounts[i] = rotatedRepeatCounts[i];
+	}
+}
+
 int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, stList *bamChunkReads) {
     stHash *runLengths = stHash_construct();
     int64_t maxCount = 0;
@@ -1526,19 +1532,6 @@ int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, 
 
     return maxRL;
 }
-
-void rleString_rotateString(RleString *str, int64_t rotationLength) {
-		char rotatedString[str->length];
-		uint64_t rotatedRepeatCounts[str->length];
-		for(int64_t i=0; i<str->length; i++) {
-			rotatedString[(i+rotationLength)%str->length] = str->rleString[i];
-			rotatedRepeatCounts[(i+rotationLength)%str->length] = str->repeatCounts[i];
-		}
-		for(int64_t i=0; i<str->length; i++) {
-			str->rleString[i] = rotatedString[i];
-			str->repeatCounts[i] = rotatedRepeatCounts[i];
-		}
-	}
 
 //static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
 static int64_t expandRLEConsensus2(Poa *poa, PoaNode *node, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
@@ -1616,31 +1609,24 @@ uint64_t *rleString_getNonRleToRleCoordinateMap(RleString *rleString) {
 	return nonRleToRleCoordinateMap;
 }
 
-stList *runLengthEncodeAlignment(stList *alignment, uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap) {
-    return runLengthEncodeAlignment2(alignment, seqXNonRleToRleCoordinateMap, seqYNonRleToRleCoordinateMap, 0, 1, 2);
-}
-stList *runLengthEncodeAlignment2(stList *alignment, uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap,
-        int64_t xIdx, int64_t yIdx, int64_t weightIdx) {
-    stList *rleAlignment = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
+stList *runLengthEncodeAlignment(stList *alignment,
+		uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap) {
+	stList *rleAlignment = stList_construct3(0, (void (*)(void *))stIntTuple_destruct);
 
 	int64_t x=-1, y=-1;
 	for(int64_t i=0; i<stList_length(alignment); i++) {
 		stIntTuple *alignedPair = stList_get(alignment, i);
 
-		int64_t x2 = seqXNonRleToRleCoordinateMap[stIntTuple_get(alignedPair, xIdx)];
-		int64_t y2 = seqYNonRleToRleCoordinateMap[stIntTuple_get(alignedPair, yIdx)];
+		int64_t x2 = seqXNonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 0)];
+		int64_t y2 = seqYNonRleToRleCoordinateMap[stIntTuple_get(alignedPair, 1)];
 
 		if(x2 > x && y2 > y) {
-            stIntTuple *it = stIntTuple_construct3(-1, -1, -1);
-            it[xIdx + 1] = x2;
-            it[yIdx + 1] = y2;
-            it[weightIdx + 1] = stIntTuple_get(alignedPair, weightIdx);
-            stList_append(rleAlignment, it);
-            x = x2; y = y2;
+			stList_append(rleAlignment, stIntTuple_construct3(x2, y2, stIntTuple_get(alignedPair, 2)));
+			x = x2; y = y2;
 		}
 	}
 
-    return rleAlignment;
+	return rleAlignment;
 }
 
 /*

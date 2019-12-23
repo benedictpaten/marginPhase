@@ -30,10 +30,6 @@
 #include "randomSequences.h"
 #include "stateMachine.h"
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
 #define uint128_t __uint128_t
 
 /*
@@ -53,12 +49,7 @@ typedef struct _stRPCell stRPCell;
 typedef struct _stRPMergeColumn stRPMergeColumn;
 typedef struct _stRPMergeCell stRPMergeCell;
 typedef struct _stGenomeFragment stGenomeFragment;
-//<<<<<<< HEAD
-//typedef struct _stReferencePriorProbs stReferencePriorProbs;
-//typedef struct _stBaseMapper stBaseMapper;
-//typedef struct _stReferencePositionFilter stReferencePositionFilter;
-//=======
-//>>>>>>> 38cbd8720b51472c90061b42658b6e5665bd1106
+
 /*
  * Polisher structs
  */
@@ -198,8 +189,6 @@ struct _stProfileSeq {
     stReference *ref;
     char *readId;
     uint64_t refStart; // The first site in the reference
-
-
     uint64_t length; // Number of reference sites
     uint64_t alleleOffset; // The index of the first allele in this sequence
     // in a sequence of all alleles in the reference, ordered first by site then
@@ -220,8 +209,6 @@ void stProfileSeq_print(stProfileSeq *seq, FILE *fileHandle);
 uint8_t *stProfileSeq_getProb(stProfileSeq *seq, uint64_t site, uint64_t allele);
 
 int stRPProfileSeq_cmpFn(const void *a, const void *b);
-
-
 
 /*
  * Emission probabilities methods

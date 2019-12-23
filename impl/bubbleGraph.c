@@ -931,7 +931,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 	ref->sites = st_calloc(bg->bubbleNo, sizeof(stSite));
 	ref->totalAlleles = 0;
 
-	stList *anchorPairs = stList_construct3(0, (void(*)(void*))stIntTuple_destruct); // Currently empty
+	stList *anchorPairs = stList_construct(); // Currently empty, and no anchor pairs will be created
 	for(uint64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &bg->bubbles[i];
 		stSite *s = &ref->sites[i];
