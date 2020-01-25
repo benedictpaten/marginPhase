@@ -59,7 +59,7 @@
 		
 		  "includeSoftClipping" : false,
 		
-		  "chunkSize" : 100000,
+		  "chunkSize" : 200000,
 		
 		  "chunkBoundary" : 50,
 
@@ -81,9 +81,9 @@
 		  
 		  "minPoaConsensusIterations" : 0,
 			
-		  "maxRealignmentPolishIterations" : 2,
+		  "maxRealignmentPolishIterations" : 1,
 		
-		  "minRealignmentPolishIterations" : 2, 
+		  "minRealignmentPolishIterations" : 1, 
 		  
 		  "minReadsToCallConsensus" : 5,
 		  

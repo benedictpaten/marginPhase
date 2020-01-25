@@ -90,6 +90,11 @@ void params_printParameters(Params *params, FILE *fh);
  * Overall coordination functions
  */
 
+
+// temp hack
+void stateMachine_addRepeatSubMatrix(StateMachine *stateMachine, RepeatSubMatrix *repeatSubMatrix);
+
+
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
         stList *discardedProfileSeqs);
 
@@ -432,6 +437,10 @@ struct _stGenomeFragment {
     uint64_t *haplotypeString1;
     uint64_t *haplotypeString2;
     uint64_t *ancestorString; // predicted ancestral alleles
+
+    // Number of reads supporting each allele
+    uint64_t *readsSupportingHaplotype1;
+    uint64_t *readsSupportingHaplotype2;
 
     // An array of genotype posterior probabilities,
     // each between 0 and 1, for the corresponding genotypes
@@ -1077,12 +1086,12 @@ void bubbleGraph_print(BubbleGraph *bg, FILE *fh);
  * The the index in b->alleles of the allele with highest likelihood
  * given the reads
  */
-int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b);
+int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b, PolishParams *p);
 
 /*
  * Gets the likelihood of a given allele giving rise to the reads.
  */
-double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele);
+double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele, PolishParams *p);
 
 /*
  * Gets a set of profile sequences for the reads aligned to the bubble graph.

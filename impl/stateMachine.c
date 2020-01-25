@@ -438,11 +438,12 @@ typedef struct _rleNucleotideEmissions {
 	double repeatLengthSubstitutionProbs[RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH];
 	double repeatLengthGapXProbs[RLENE_MAX_REPEAT_LENGTH];
 	double repeatLengthGapYProbs[RLENE_MAX_REPEAT_LENGTH];
+	RepeatSubMatrix *repeatSubMatrix;
 } RleNucleotideEmissions;
 
 static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
 		const double *repeatLengthGapProbs, Symbol i) {
-    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)) + 0.2 * repeatLengthGapProbs[symbol_getRepeatLength(i)];
+    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)); // + 1.0 * repeatLengthGapProbs[symbol_getRepeatLength(i)];
 }
 
 static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
@@ -450,11 +451,17 @@ static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Sym
 }
 
 static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
-    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, rlene->repeatLengthGapYProbs, y);
+    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, rlene->repeatLengthGapYProbs, y);// + 2.3025 * rlene->repeatSubMatrix->baseLogProbs_AT[symbol_getRepeatLength(y)];
 }
 
 static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
-    return getNucleotideMatchProb(&(rlene->ne), symbol_stripRepeatCount(x), symbol_stripRepeatCount(y)) + 0.2 * rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
+	Symbol xBase = symbol_stripRepeatCount(x);
+    return getNucleotideMatchProb(&(rlene->ne), xBase, symbol_stripRepeatCount(y)) +
+    		2.3025 * repeatSubMatrix_getLogProb(rlene->repeatSubMatrix, xBase, 1, symbol_getRepeatLength(y), symbol_getRepeatLength(x));
+    		//0.0;
+    		//(symbol_getRepeatLength(x) == symbol_getRepeatLength(y) ? 0.0 : -4.0);
+    		//-1.0 * abs(symbol_getRepeatLength(x) - symbol_getRepeatLength(y));
+    		//1.0 * rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
 }
 
 Emissions *rleNucleotideEmissions_construct() {
@@ -696,6 +703,11 @@ StateMachine *hmm_getStateMachine(Hmm *hmm) {
         return (StateMachine *) sM3;
     }
     return NULL;
+}
+
+void stateMachine_addRepeatSubMatrix(StateMachine *stateMachine, RepeatSubMatrix *repeatSubMatrix) {
+	RleNucleotideEmissions *rleEmissions = (RleNucleotideEmissions *)stateMachine->emissions;
+	rleEmissions->repeatSubMatrix = repeatSubMatrix;
 }
 
 void stateMachine_destruct(StateMachine *stateMachine) {

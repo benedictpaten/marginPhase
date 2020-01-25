@@ -45,7 +45,7 @@ def main():
             xLen = len([ i for i in x if i != '-'])
             yLen = len([ i for i in y if i != '-' ])
             
-            if xLen > 20000 and yLen > 20000:
+            if xLen > 50000 and yLen > 50000:
                 xGaps = len(x) - xLen
                 yGaps = len(y) - yLen
                 mismatches = sum([ 1 if (x[i] != y[i] and x[i] != '-' and y[i] != '-') else 0 for i in range(len(x)) ])

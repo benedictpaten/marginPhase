@@ -372,6 +372,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 		st_errAbort("ERROR: Did not find alphabet params specified in json polish params\n");
 	}
 
+	stateMachine_addRepeatSubMatrix(params->sMConditional, params->repeatSubMatrix);
+	stateMachine_addRepeatSubMatrix(params->sM, params->repeatSubMatrix);
+
     // Cleanup
     free(js);
     free(tokens);

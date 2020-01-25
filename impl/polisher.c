@@ -1633,7 +1633,7 @@ stList *runLengthEncodeAlignment(stList *alignment,
  * Functions for modeling repeat counts
  */
 
-double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
+inline double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
     if (base >= repeatSubMatrix->alphabet->alphabetSize) {
         st_errAbort("[repeatSubMatrix_setLogProb] base 'Nn' not supported for repeat estimation\n");
     }
@@ -1644,7 +1644,7 @@ double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base
 	return &(repeatSubMatrix->logProbabilities[idx]);
 }
 
-double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
+inline double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
 	double *loc = repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, observedRepeatCount, underlyingRepeatCount);
 //	printf("%p\n", loc);
 	return *loc;
@@ -1720,7 +1720,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	for(int64_t i=minRepeatLength+1; i<maxRepeatLength+1; i++) {
 		double p = repeatSubMatrix_getLogProbForGivenRepeatCount(repeatSubMatrix, base, observations,
 		        bamChunkReads, i);
-		if(p > mlLogProb) {
+		if(p >= mlLogProb) {
 			mlLogProb = p;
 			mlRepeatLength = i;
 		}

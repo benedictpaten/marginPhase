@@ -282,6 +282,13 @@ static void fillInPredictedGenomePosition(stGenomeFragment *gF, uint64_t siteInd
 	gF->genotypeProbs[k] = -((float)maxLogColumnProb);
 	gF->haplotypeProbs1[k] = -(float)alleleLogProbsHap1[hapAllele1];
 	gF->haplotypeProbs2[k] = -(float)alleleLogProbsHap2[hapAllele2];
+
+	// Fill in read coverages
+	assert(column->depth >= popcount64(partition));
+	gF->readsSupportingHaplotype1[k] = popcount64(partition);
+	gF->readsSupportingHaplotype2[k] = column->depth - popcount64(partition);
+	st_uglyf(" Hello %i %i %i %f %f \n", (int)popcount64(partition), (int)column->depth, (int)column->depth - popcount64(partition),
+			(float)binomialPValue(column->depth, popcount64(partition)), (float)binomialPValue(column->depth, column->depth-popcount64(partition)));
 }
 
 void fillInPredictedGenome(stGenomeFragment *gF, uint64_t partition,
