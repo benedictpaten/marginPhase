@@ -861,9 +861,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
  */
 stList *runLengthEncodeAlignment(stList *alignment,
 		uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap);
-stList *runLengthEncodeAlignment2(stList *alignment,
-        uint64_t *seqXNonRleToRleCoordinateMap, uint64_t *seqYNonRleToRleCoordinateMap,
-		int64_t xIdx, int64_t yIdx, int64_t weightIdx);
+
 /*
  * Make edited string with given insert. Edit start is the index of the position to insert the string.
  */

@@ -185,8 +185,8 @@ void handleHelenFeatures(
 
                 uint64_t *polishedRleConsensus_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(polishedRleConsensus);
                 uint64_t *trueRefRleString_nonRleToRleCoordinateMap = rleString_getNonRleToRleCoordinateMap(trueRefRleString);
-                trueRefAlignment = runLengthEncodeAlignment2(trueRefAlignmentRawSpace, polishedRleConsensus_nonRleToRleCoordinateMap,
-                                                             trueRefRleString_nonRleToRleCoordinateMap, 1, 2, 0);
+                trueRefAlignment = runLengthEncodeAlignment(trueRefAlignmentRawSpace, polishedRleConsensus_nonRleToRleCoordinateMap,
+                                                             trueRefRleString_nonRleToRleCoordinateMap);
                 free(polishedRleConsensus_nonRleToRleCoordinateMap);
                 free(trueRefRleString_nonRleToRleCoordinateMap);
 
@@ -639,14 +639,14 @@ void printMEAAlignment(char *X, char *Y, int64_t lX, int64_t lY, stList *aligned
     // iterate over alignment
     stListIterator *alignmentItor = stList_getIterator(alignedPairs);
     stIntTuple *currAlign = stList_getNext(alignmentItor);
-    int64_t posX = stIntTuple_get(currAlign, 1);
-    int64_t posY = stIntTuple_get(currAlign, 2);
+    int64_t posX = stIntTuple_get(currAlign, 0);
+    int64_t posY = stIntTuple_get(currAlign, 1);
     int64_t outStrPos = 0;
 
     while (TRUE) {
         if (currAlign == NULL) break;
-        int64_t currAlignPosX = stIntTuple_get(currAlign, 1);
-        int64_t currAlignPosY = stIntTuple_get(currAlign, 2);
+        int64_t currAlignPosX = stIntTuple_get(currAlign, 0);
+        int64_t currAlignPosY = stIntTuple_get(currAlign, 1);
         // Y gap / X insert
         if (posX < currAlignPosX) {
             alnXStr[outStrPos] = X[posX];
@@ -749,8 +749,8 @@ void poa_annotateHelenFeaturesWithTruth(stList *features, HelenFeatureType featu
      the position in the trueRefRleString.  So we can iterate over features and the true alignment to assign truth
      labels to each feature.
      */
-    static int FEATURE_POS = 1;
-    static int REFERENCE_POS = 2;
+    static int FEATURE_POS = 0;
+    static int REFERENCE_POS = 1;
     *firstMatchedFeaure = -1;
     *lastMatchedFeature = -1;
     char *logIdentifier = getLogIdentifier();
@@ -1108,7 +1108,7 @@ stList *alignConsensusAndTruth(char *consensusStr, char *truthStr) {
 
             if (letter == 'M') {
                 for (int32_t matchIdx = 0; matchIdx < length; matchIdx++) {
-                    stList_append(alignedPairs, stIntTuple_construct3(0, consensusPos, truthPos));
+                    stList_append(alignedPairs, stIntTuple_construct3(consensusPos, truthPos, 0));
                     consensusPos++;
                     truthPos++;
                 }
