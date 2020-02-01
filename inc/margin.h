@@ -90,11 +90,6 @@ void params_printParameters(Params *params, FILE *fh);
  * Overall coordination functions
  */
 
-
-// temp hack
-void stateMachine_addRepeatSubMatrix(StateMachine *stateMachine, RepeatSubMatrix *repeatSubMatrix);
-
-
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params, stList *filteredProfileSeqs,
         stList *discardedProfileSeqs);
 
@@ -488,6 +483,7 @@ struct _stReadHaplotypeSequence {
     int8_t haplotype;
     void *next;
 };
+
 stReadHaplotypeSequence *stReadHaplotypeSequence_construct(int64_t readStart, int64_t phaseBlock, int64_t length,
                                                            int8_t haplotype);
 
@@ -529,18 +525,16 @@ stRPHmmParameters *parseParameters(char *paramsFile);
 
 struct _polishParams {
 	bool useRunLengthEncoding;
-	bool poaConstructCompareRepeatCounts; // use the repeat counts in deciding if an indel can be shifted
-	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
-	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
-	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
-	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
-	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
-	Hmm *hmm; // Pair hmm used for aligning sequences symmetrically.
-	StateMachine *sM; // Statemachine derived from the hmm
-	Hmm *hmmConditional; // Non-symmetrical HMM for calculating prob of one sequence given the other, used for aligning reads to the reference.
-	StateMachine *sMConditional; // Statemachine derived from the conditional hmm
+
+	// Models for comparing sequences
+	Alphabet *alphabet; // The alphabet object
+	StateMachine *stateMachineForGenomeComparison; // Statemachine for comparing two haplotypes
+	StateMachine *stateMachineForForwardStrandRead; // Statemachine for a forward strand read aligned to a reference assembly.
+	StateMachine *stateMachineForReverseStrandRead; // Statemachine for a reverse strand read aligned to a reference assembly.
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
-	RepeatSubMatrix *repeatSubMatrix; // Repeat counts submatrix
+	RepeatSubMatrix *repeatSubMatrix; // Repeat counts model used for predicting repeat counts of RLE sequences
+	bool useRepeatCountsInAlignment; // Use repeat counts in comparing reads to a reference
+
 	// chunking configuration
 	bool shuffleChunks;
 	bool includeSoftClipping;
@@ -565,7 +559,14 @@ struct _polishParams {
 	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
 	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
 	bool useOnlySubstitutionsForPhasing; // In creating phasing use sites where alleles only differ by substitutions
-	Alphabet *alphabet; // The alphabet object
+
+	// Poa parameters
+	bool poaConstructCompareRepeatCounts; // use the repeat counts in deciding if an indel can be shifted
+	double referenceBasePenalty; // used by poa_getConsensus to weight against picking the reference base
+	double *minPosteriorProbForAlignmentAnchors; // used by by poa_getAnchorAlignments to determine which alignment pairs
+	// to use for alignment anchors during poa_realignIterative, of the form of even-length array of form
+	// [ min_posterio_anchor_prob_1, diagonal_expansion_1,  min_posterio_anchor_prob_2, diagonal_expansion_2, ... ]
+	int64_t minPosteriorProbForAlignmentAnchorsLength;  // Length of array minPosteriorProbForAlignmentAnchors
 };
 
 PolishParams *polishParams_readParams(FILE *fileHandle);
@@ -812,7 +813,7 @@ char *rleString_expand(RleString *rleString);
 /*
  * Gets a symbol sub-string from a given RLE string.
  */
-SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a);
+SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a, bool includeRepeatCounts);
 
 /*
  * Gets an array giving the position in the rleString of a corresponding position in the expanded string.
@@ -888,7 +889,7 @@ char *removeDelete(char *string, int64_t deleteLength, int64_t editStart);
  * to last anchor position.
  */
 void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
-		RleString *read, stList *anchorPairs,
+		RleString *read, bool readStrand, stList *anchorPairs,
 		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams);
 
 /*
@@ -1150,6 +1151,11 @@ uint128_t bionomialCoefficient(int64_t n, int64_t k);
  * For logging while multithreading
  */
 char *getLogIdentifier();
+
+/*
+ * Run length encoded model emission model for state machine that uses a repeat sub matrix.
+ */
+Emissions *rleNucleotideEmissions_construct(Emissions *emissions, RepeatSubMatrix *repeatSubMatrix, bool strand);
 
 /*
  * HELEN Features

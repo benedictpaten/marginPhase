@@ -138,9 +138,10 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 		if(keyString[30] != 'F' && keyString[30] != 'R') {
 			st_errAbort("ERROR: Unrecognised strand in repeat sub matrix json: %s, strand:%c\n", keyString, keyString[30]);
 		}
-		bool strand = keyString[30] == 'F';
+		assert(keyString[30] == 'F');
+		// This sets the probs for the forward strand
 		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix,
-				repeatSubMatrix->alphabet->convertCharToSymbol(base), strand, js, tokens, tokenIndex+1);
+				repeatSubMatrix->alphabet->convertCharToSymbol(base), 1, js, tokens, tokenIndex+1);
 	}
 
 	// Cleanup
@@ -177,10 +178,13 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
     params->repeatSubMatrix = NULL;
+    params->stateMachineForGenomeComparison = stateMachine3_constructNucleotide(threeStateAsymmetric);
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
-	bool gotHmm = 0, gotHmmConditional = 0, gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0, gotAlphabet = 0;
+	bool gotHmmForwardStrandReadGivenReference = 0;
+	bool gotPairwiseAlignmentParameters = 0, gotRepeatCountMatrix = 0, gotAlphabet = 0;
+
     for (int64_t tokenIndex=1; tokenIndex < tokenNumber; tokenIndex++) {
         jsmntok_t key = tokens[tokenIndex];
         char *keyString = stJson_token_tostr(js, &key);
@@ -222,21 +226,16 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         else if (strcmp(keyString, "poaConstructCompareRepeatCounts") == 0) {
         	params->poaConstructCompareRepeatCounts = stJson_parseBool(js, tokens, ++tokenIndex);
         }
-        else if (strcmp(keyString, "hmm") == 0) {
-        	jsmntok_t tok = tokens[tokenIndex+1];
-        	char *tokStr = stJson_token_tostr(js, &tok);
-        	params->hmm = hmm_jsonParse(tokStr, strlen(tokStr));
-        	params->sM = hmm_getStateMachine(params->hmm);
-        	tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex+1);
-        	gotHmm = 1;
-        }
-        else if (strcmp(keyString, "hmmConditional") == 0) {
+        else if (strcmp(keyString, "hmmForwardStrandReadGivenReference") == 0) {
 			jsmntok_t tok = tokens[tokenIndex + 1];
 			char *tokStr = stJson_token_tostr(js, &tok);
-			params->hmmConditional = hmm_jsonParse(tokStr, strlen(tokStr));
-			params->sMConditional = hmm_getStateMachine(params->hmmConditional);
+			Hmm *hmmForwardStrandReadGivenReference = hmm_jsonParse(tokStr, strlen(tokStr));
 			tokenIndex += stJson_getNestedTokenCount(tokens, tokenIndex + 1);
-			gotHmmConditional = 1;
+			gotHmmForwardStrandReadGivenReference = 1;
+			params->stateMachineForForwardStrandRead = hmm_getStateMachine(hmmForwardStrandReadGivenReference);
+			params->stateMachineForReverseStrandRead = hmm_getStateMachine(hmmForwardStrandReadGivenReference);
+			nucleotideEmissions_reverseComplement((NucleotideEmissions *)params->stateMachineForReverseStrandRead->emissions);
+			hmm_destruct(hmmForwardStrandReadGivenReference);
 		}
         else if (strcmp(keyString, "pairwiseAlignmentParameters") == 0) {
         	jsmntok_t tok = tokens[tokenIndex+1];
@@ -253,6 +252,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         }
         else if (strcmp(keyString, "includeSoftClipping") == 0) {
             params->includeSoftClipping = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "useRepeatCountsInAlignment") == 0) {
+        	params->useRepeatCountsInAlignment = stJson_parseBool(js, tokens, ++tokenIndex);
         }
         else if (strcmp(keyString, "chunkSize") == 0) {
             if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
@@ -359,11 +361,8 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     if(!gotRepeatCountMatrix && params->useRunLengthEncoding) {
     	st_logCritical("  ERROR: Did not find repeat counts specified in json polish params! Will default to MODE estimation\n");
     }
-    if(!gotHmm) {
-    	st_errAbort("ERROR: Did not find HMM specified in json polish params\n");
-    }
-    if(!gotHmmConditional) {
-    	st_errAbort("ERROR: Did not find HMM conditional specified in json polish params\n");
+    if(!gotHmmForwardStrandReadGivenReference) {
+    	st_errAbort("ERROR: Did not find HMM for alignment of read to a reference specified in json polish params\n");
     }
 	if(!gotPairwiseAlignmentParameters) {
 		st_errAbort("ERROR: Did not find pairwise alignment params specified in json polish params\n");
@@ -372,8 +371,17 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 		st_errAbort("ERROR: Did not find alphabet params specified in json polish params\n");
 	}
 
-	stateMachine_addRepeatSubMatrix(params->sMConditional, params->repeatSubMatrix);
-	stateMachine_addRepeatSubMatrix(params->sM, params->repeatSubMatrix);
+	if(params->useRepeatCountsInAlignment) {
+		if(!params->useRunLengthEncoding) {
+			st_errAbort("ERROR: Trying to use repeat counts in read to reference alignment but not using run length encoding\n");
+		}
+		if(!gotRepeatCountMatrix) {
+			st_errAbort("ERROR: Did not find find repeat counts specified in json but trying to use repeat counts in read to reference alignment\n");
+		}
+		// Replace the emission models of the read to reference state machines
+		params->stateMachineForForwardStrandRead->emissions = rleNucleotideEmissions_construct(params->stateMachineForForwardStrandRead->emissions, params->repeatSubMatrix, 1);
+		params->stateMachineForReverseStrandRead->emissions = rleNucleotideEmissions_construct(params->stateMachineForReverseStrandRead->emissions, params->repeatSubMatrix, 0);
+	}
 
     // Cleanup
     free(js);
@@ -383,26 +391,23 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 }
 
 void polishParams_printParameters(PolishParams *polishParams, FILE *fh) {
-    //TODO
-    st_logCritical("Need to implement polishParams_printParameters\n");
-}
+    //TODO - complete this - currently this is quite incomplete
 
-Hmm *polishParams_convertHmmEmissionsNuclToNuclRL(Hmm *hmmNucl, RepeatSubMatrix *rlMatrix) {
-    assert(hmmNucl->emissionsType == nucleotideEmissions);
-    Hmm *hmmNuclRL = hmm_constructEmpty(0, hmmNucl->type, runlengthNucleotideEmissions);
+	fprintf(fh, "State machine for forward strand read:\n");
+	polishParams->stateMachineForForwardStrandRead->printFn(polishParams->stateMachineForForwardStrandRead, fh);
 
+	fprintf(fh, "State machine for reverse strand read:\n");
+	polishParams->stateMachineForReverseStrandRead->printFn(polishParams->stateMachineForReverseStrandRead, fh);
 
-
-
-    return hmmNuclRL;
+	fprintf(fh, "State machine for haplotype comparison:\n");
+	polishParams->stateMachineForGenomeComparison->printFn(polishParams->stateMachineForGenomeComparison, fh);
 }
 
 void polishParams_destruct(PolishParams *params) {
 	if (params->repeatSubMatrix != NULL) repeatSubMatrix_destruct(params->repeatSubMatrix);
-	stateMachine_destruct(params->sM);
-    stateMachine_destruct(params->sMConditional);
-    hmm_destruct(params->hmm);
-    hmm_destruct(params->hmmConditional);
+	stateMachine_destruct(params->stateMachineForGenomeComparison);
+	stateMachine_destruct(params->stateMachineForForwardStrandRead);
+	stateMachine_destruct(params->stateMachineForReverseStrandRead);
 	pairwiseAlignmentBandingParameters_destruct(params->p);
     free(params->minPosteriorProbForAlignmentAnchors);
 	alphabet_destruct(params->alphabet);

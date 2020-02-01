@@ -172,12 +172,12 @@ void test_viewExamples(CuTest *testCase) {
 		// Get an alignment between the inferred reference and the true reference and add it
 
 		// Make symbol strings
-		SymbolString sX = rleString_constructSymbolString(poa->refString, 0, poa->refString->length, params->polishParams->alphabet);
-		SymbolString sY = rleString_constructSymbolString(rleTrueReference, 0, rleTrueReference->length, params->polishParams->alphabet);
+		SymbolString sX = rleString_constructSymbolString(poa->refString, 0, poa->refString->length, params->polishParams->alphabet, params->polishParams->useRepeatCountsInAlignment);
+		SymbolString sY = rleString_constructSymbolString(rleTrueReference, 0, rleTrueReference->length, params->polishParams->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
 		double alignmentScore;
 		stList *refToTrueRefAlignment = getShiftedMEAAlignment(sX, sY, stList_construct(),
-															   params->polishParams->p, params->polishParams->sM, 0, 0, &alignmentScore);
+															   params->polishParams->p, params->polishParams->stateMachineForGenomeComparison, 0, 0, &alignmentScore);
 
 		symbolString_destruct(sX);
 		symbolString_destruct(sY);

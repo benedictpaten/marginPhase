@@ -256,9 +256,10 @@ static void test_poa_realign_tiny_example1(CuTest *testCase) {
 	PolishParams *polishParams = params->polishParams;
 	
 	// This test used the default state machine in cPecan
-	stateMachine_destruct(polishParams->sM);
-	polishParams->sM = stateMachine3_construct(threeState, rleNucleotideEmissions_construct());
-	polishParams->sMConditional = stateMachine3_construct(threeState, rleNucleotideEmissions_construct());
+	stateMachine_destruct(polishParams->stateMachineForGenomeComparison);
+	stateMachine_destruct(polishParams->stateMachineForForwardStrandRead);
+	polishParams->stateMachineForGenomeComparison = stateMachine3_construct(threeState, nucleotideEmissions_construct());
+	polishParams->stateMachineForForwardStrandRead = stateMachine3_construct(threeState, nucleotideEmissions_construct());
 
 	/*
 	// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
@@ -409,15 +410,18 @@ static void test_poa_realign(CuTest *testCase) {
 		double *repeatCountWeights = st_calloc(poa->maxRepeatCount*reference_rle->length, sizeof(double));
 
 		for(int64_t i=0; i<readNumber; i++) {
-			RleString *read = ((BamChunkRead*)stList_get(reads, i))->rleRead;
+			BamChunkRead *bamChunkRead = stList_get(reads, i);
+			RleString *read = bamChunkRead->rleRead;
 
 			// Make symbol strings
-			SymbolString sX = rleString_constructSymbolString(reference_rle, 0, reference_rle->length, poa->alphabet);
-			SymbolString sY = rleString_constructSymbolString(read, 0, read->length, poa->alphabet);
+			SymbolString sX = rleString_constructSymbolString(reference_rle, 0, reference_rle->length, poa->alphabet, polishParams->useRepeatCountsInAlignment);
+			SymbolString sY = rleString_constructSymbolString(read, 0, read->length, poa->alphabet, polishParams->useRepeatCountsInAlignment);
 
 			// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 			stList *matches = NULL, *inserts = NULL, *deletes = NULL;
-			getAlignedPairsWithIndels(polishParams->sMConditional, sX, sY, polishParams->p, &matches, &deletes, &inserts, 0, 0);
+			getAlignedPairsWithIndels(bamChunkRead->forwardStrand ?
+					polishParams->stateMachineForForwardStrandRead :
+					polishParams->stateMachineForReverseStrandRead, sX, sY, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 
 			// Collate matches
 			for(int64_t j=0; j<stList_length(matches); j++) {
@@ -1179,10 +1183,10 @@ void test_binomialPValue(CuTest *testCase) {
 CuSuite* polisherTestSuite(void) {
     CuSuite* suite = CuSuiteNew();
 
-    SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
+    //SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_rle);
     //SUITE_ADD_TEST(suite, test_poa_realign_ecoli_many_examples_no_rle);
 
-    /*SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
+    SUITE_ADD_TEST(suite, test_poa_getReferenceGraph);
     SUITE_ADD_TEST(suite, test_getShift);
     SUITE_ADD_TEST(suite, test_rleString_examples);
     SUITE_ADD_TEST(suite, test_rle_rotateString);
@@ -1207,7 +1211,7 @@ CuSuite* polisherTestSuite(void) {
     SUITE_ADD_TEST(suite, test_polish5kb_no_region);
     SUITE_ADD_TEST(suite, test_polish100kb);
     SUITE_ADD_TEST(suite, test_largeGap); //todo fails
-    SUITE_ADD_TEST(suite, test_largeGap2);  //todo fails*/
+    SUITE_ADD_TEST(suite, test_largeGap2);  //todo fails
 
     return suite;
 }

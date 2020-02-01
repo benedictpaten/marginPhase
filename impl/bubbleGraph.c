@@ -22,7 +22,7 @@ int64_t bubble_getReferenceAlleleIndex(Bubble *b) {
 double rleString_calcLogProb(RleString *allele, PolishParams *p) {
 	double lProb = 0.0;
 	for(int64_t i=0; i<allele->length; i++) {
-		lProb += log(0.25) + 2.3025 * p->repeatSubMatrix->baseLogProbs_AT[allele->repeatCounts[i]] + log(0.01);
+		lProb += log(0.25) + log(0.01) + 2.3025 * p->repeatSubMatrix->baseLogProbs_AT[allele->repeatCounts[i]];
 	}
 	return lProb;
 }
@@ -896,7 +896,8 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 
 						SymbolString alleleSymbolStrings[b->alleleNo];
 						for(int64_t j=0; j<b->alleleNo; j++) {
-							alleleSymbolStrings[j] = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length, params->alphabet);
+							alleleSymbolStrings[j] = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
+									params->alphabet, params->useRepeatCountsInAlignment);
 						}
 
 						stHash *cachedScores = stHash_construct3(rleString_stringKey, rleString_expandedStringEqualKey,
@@ -904,7 +905,9 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 
 						for(int64_t k=0; k<b->readNo; k++) {
 							RleString *readSubstring = bamChunkReadSubstring_getRleString(b->reads[k]);
-							SymbolString rS = rleString_constructSymbolString(readSubstring, 0, readSubstring->length, params->alphabet);
+							SymbolString rS = rleString_constructSymbolString(readSubstring, 0, readSubstring->length,
+									params->alphabet, params->useRepeatCountsInAlignment);
+							StateMachine *sM = b->reads[k]->read->forwardStrand ? params->stateMachineForForwardStrandRead : params->stateMachineForReverseStrandRead;
 
 							uint64_t *index = stHash_search(cachedScores, readSubstring);
 							if(index != NULL) {
@@ -918,7 +921,7 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 								*index = k;
 								stHash_insert(cachedScores, readSubstring, index);
 								for(int64_t j=0; j<b->alleleNo; j++) {
-									b->alleleReadSupports[j*b->readNo + k] = computeForwardProbability(alleleSymbolStrings[j], rS, anchorPairs, params->p, params->sMConditional, 0, 0);
+									b->alleleReadSupports[j*b->readNo + k] = computeForwardProbability(alleleSymbolStrings[j], rS, anchorPairs, params->p, sM, 0, 0);
 								}
 							}
 
@@ -1123,13 +1126,13 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 		for(uint64_t j=0; j<b->alleleNo; j++) {
 
 			SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
-					params->polishParams->sM->emissions->alphabet);
+					params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
 			for(uint64_t k=j; k<b->alleleNo; k++) {
 				SymbolString aS2 = rleString_constructSymbolString(b->alleles[k], 0, b->alleles[k]->length,
-									params->polishParams->sM->emissions->alphabet);
+									params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
-				float f = computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
+				float f = computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->stateMachineForGenomeComparison, 0, 0);
 
 				alleleLogSubstitutionProbs[j * b->alleleNo + k] = f;
 				alleleLogSubstitutionProbs[k * b->alleleNo + j] = f;
