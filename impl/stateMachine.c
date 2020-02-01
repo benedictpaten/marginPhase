@@ -709,7 +709,7 @@ static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Sym
 static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
 	Symbol base = symbol_stripRepeatCount(y);
 	double *repeatProbs = (base == 0 || base == 3) ? rlene->repeatSubMatrix->baseLogProbs_AT : rlene->repeatSubMatrix->baseLogProbs_GC;
-	return getNucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, base) + 2.3025 * repeatProbs[symbol_getRepeatLength(y)];
+	return getNucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, base); // + 2.3025 * repeatProbs[symbol_getRepeatLength(y)];
 }
 
 static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
