@@ -600,7 +600,7 @@ static void adjustAnchors(stList *anchorPairs, int64_t index, int64_t adjustment
  * to last anchor position.
  */
 void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
-		RleString *read, stList *anchorPairs,
+		RleString *read, bool readStrand, stList *anchorPairs,
 		stList **matches, stList **inserts, stList **deletes, PolishParams *polishParams) {
 	// Crop reference, to avoid long unaligned prefix and suffix
 	// that generates a lot of delete pairs
@@ -628,11 +628,12 @@ void getAlignedPairsWithIndelsCroppingReference(RleString *reference,
 	adjustAnchors(anchorPairs, 0, -firstRefPosition);
 
 	// Get symbol strings
-	SymbolString sX = rleString_constructSymbolString(reference, firstRefPosition, endRefPosition-firstRefPosition, polishParams->alphabet);
-	SymbolString sY = rleString_constructSymbolString(read, 0, read->length, polishParams->alphabet);
+	SymbolString sX = rleString_constructSymbolString(reference, firstRefPosition, endRefPosition-firstRefPosition, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
+	SymbolString sY = rleString_constructSymbolString(read, 0, read->length, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
 
 	// Get alignment
-	getAlignedPairsWithIndelsUsingAnchors(polishParams->sMConditional, sX, sY,
+	getAlignedPairsWithIndelsUsingAnchors(readStrand ? polishParams->stateMachineForForwardStrandRead :
+										  polishParams->stateMachineForReverseStrandRead, sX, sY,
 										  anchorPairs, polishParams->p, matches, deletes, inserts, 0, 0);
 	//TODO are the delete and insert lists inverted here?
 
@@ -669,17 +670,18 @@ Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, RleString *ref
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
 		if(anchorAlignments == NULL) {
-			SymbolString sX = rleString_constructSymbolString(reference, 0, reference->length, polishParams->alphabet);
-			SymbolString sY = rleString_constructSymbolString(chunkRead->rleRead, 0, chunkRead->rleRead->length, polishParams->alphabet);
+			SymbolString sX = rleString_constructSymbolString(reference, 0, reference->length, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
+			SymbolString sY = rleString_constructSymbolString(chunkRead->rleRead, 0, chunkRead->rleRead->length, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
 
-			getAlignedPairsWithIndels(polishParams->sMConditional, sX, sY, polishParams->p,
-                                      &matches, &deletes, &inserts, 0, 0);
+			getAlignedPairsWithIndels(chunkRead->forwardStrand ? polishParams->stateMachineForForwardStrandRead :
+					polishParams->stateMachineForReverseStrandRead,
+					sX, sY, polishParams->p, &matches, &deletes, &inserts, 0, 0);
 
 			symbolString_destruct(sX);
 			symbolString_destruct(sY);
 		}
 		else {
-			getAlignedPairsWithIndelsCroppingReference(reference, chunkRead->rleRead, stList_get(anchorAlignments, i),
+			getAlignedPairsWithIndelsCroppingReference(reference, chunkRead->rleRead, chunkRead->forwardStrand, stList_get(anchorAlignments, i),
                                                        &matches, &inserts, &deletes, polishParams);
 		}
 
@@ -1306,13 +1308,13 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, Polish
 	stList *alignments = stList_construct3(0, (void (*)(void *))stList_destruct);
 
 	// Make the MEA alignments
-	SymbolString refSymbolString = rleString_constructSymbolString(poa->refString, 0, poa->refString->length, polishParams->alphabet);
+	SymbolString refSymbolString = rleString_constructSymbolString(poa->refString, 0, poa->refString->length, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
 	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
 		BamChunkRead* read = stList_get(bamChunkReads, i);
 
 		// Generate the posterior alignment probabilities
 		stList *matches, *inserts, *deletes;
-		getAlignedPairsWithIndelsCroppingReference(poa->refString, read->rleRead,
+		getAlignedPairsWithIndelsCroppingReference(poa->refString, read->rleRead, read->forwardStrand,
 				stList_get(anchorAlignments, i), &matches, &inserts, &deletes, polishParams);
 
 		// Get the MEA alignment
@@ -1321,7 +1323,7 @@ stList *poa_getReadAlignmentsToConsensus(Poa *poa, stList *bamChunkReads, Polish
 				poa->refString->length, read->rleRead->length, &alignmentScore, polishParams->p);
 
 		// Symbol strings
-		SymbolString readSymbolString = rleString_constructSymbolString(read->rleRead, 0, read->rleRead->length, polishParams->alphabet);
+		SymbolString readSymbolString = rleString_constructSymbolString(read->rleRead, 0, read->rleRead->length, polishParams->alphabet, polishParams->useRepeatCountsInAlignment);
 
 		// Left shift the alignment
 		stList *leftShiftedAlignment = leftShiftAlignment(alignment, refSymbolString, readSymbolString);
@@ -1633,18 +1635,18 @@ stList *runLengthEncodeAlignment(stList *alignment,
  * Functions for modeling repeat counts
  */
 
-double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
+inline double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
     if (base >= repeatSubMatrix->alphabet->alphabetSize) {
         st_errAbort("[repeatSubMatrix_setLogProb] base 'Nn' not supported for repeat estimation\n");
     }
-    int64_t idx = (2 * base + (strand ? 1 : 0)) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
+    int64_t idx = (strand ? base : 3-base) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
             underlyingRepeatCount * repeatSubMatrix->maximumRepeatLength +
             observedRepeatCount;
     assert(idx < repeatSubMatrix->maxEntry);
 	return &(repeatSubMatrix->logProbabilities[idx]);
 }
 
-double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
+inline double repeatSubMatrix_getLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
 	double *loc = repeatSubMatrix_setLogProb(repeatSubMatrix, base, strand, observedRepeatCount, underlyingRepeatCount);
 //	printf("%p\n", loc);
 	return *loc;
@@ -1664,7 +1666,7 @@ RepeatSubMatrix *repeatSubMatrix_constructEmpty(Alphabet *alphabet) {
 	repeatSubMatrix->maximumRepeatLength = MAXIMUM_REPEAT_LENGTH;
 	repeatSubMatrix->baseLogProbs_AT = st_calloc(repeatSubMatrix->maximumRepeatLength, sizeof(double));
 	repeatSubMatrix->baseLogProbs_GC = st_calloc(repeatSubMatrix->maximumRepeatLength, sizeof(double));
-	repeatSubMatrix->maxEntry = 2 * repeatSubMatrix->alphabet->alphabetSize * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
+	repeatSubMatrix->maxEntry = repeatSubMatrix->alphabet->alphabetSize * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength;
 	repeatSubMatrix->logProbabilities = st_calloc(repeatSubMatrix->maxEntry, sizeof(double));
 	return repeatSubMatrix;
 }
@@ -1720,7 +1722,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	for(int64_t i=minRepeatLength+1; i<maxRepeatLength+1; i++) {
 		double p = repeatSubMatrix_getLogProbForGivenRepeatCount(repeatSubMatrix, base, observations,
 		        bamChunkReads, i);
-		if(p > mlLogProb) {
+		if(p >= mlLogProb) {
 			mlLogProb = p;
 			mlRepeatLength = i;
 		}

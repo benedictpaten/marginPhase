@@ -566,10 +566,10 @@ void test_alignedPairs(CuTest *testCase, char *sX, char *sY) {
 
 	//Now do alignment
 
-	SymbolString sX2 = rleString_constructSymbolString(rleX, 0, rleX->length, params->polishParams->alphabet);
-	SymbolString sY2 = rleString_constructSymbolString(rleY, 0, rleY->length, params->polishParams->alphabet);
+	SymbolString sX2 = rleString_constructSymbolString(rleX, 0, rleX->length, params->polishParams->alphabet, params->polishParams->useRepeatCountsInAlignment);
+	SymbolString sY2 = rleString_constructSymbolString(rleY, 0, rleY->length, params->polishParams->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
-	stList *alignedPairs = getAlignedPairs(params->polishParams->sMConditional, sX2, sY2, params->polishParams->p, 0, 0);
+	stList *alignedPairs = getAlignedPairs(params->polishParams->stateMachineForForwardStrandRead, sX2, sY2, params->polishParams->p, 0, 0);
 
 	//Check the aligned pairs.
 	checkAlignedPairs(testCase, alignedPairs, rleX->length, rleY->length, 0, 0);

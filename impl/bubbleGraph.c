@@ -10,20 +10,37 @@
  * Bubble graphs
  */
 
-double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele) {
+int64_t bubble_getReferenceAlleleIndex(Bubble *b) {
+	for(int64_t i=0; i<b->alleleNo; i++) {
+		if(rleString_eq(b->refAllele, b->alleles[i])) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+double rleString_calcLogProb(RleString *allele, PolishParams *p) {
+	double lProb = 0.0;
+	for(int64_t i=0; i<allele->length; i++) {
+		lProb += log(0.25) + log(0.01) + 2.3025 * p->repeatSubMatrix->baseLogProbs_AT[allele->repeatCounts[i]];
+	}
+	return lProb;
+}
+
+double bubble_getLogLikelihoodOfAllele(Bubble *b, int64_t allele, PolishParams *p) {
 	double logLikelihood = 0.0;
 	for(int64_t i=0; i<b->readNo; i++) {
 		logLikelihood += b->alleleReadSupports[allele*b->readNo + i];
 	}
-	return logLikelihood;
+	return logLikelihood; // + rleString_calcLogProb(b->alleles[allele], p);
 }
 
-int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b) {
+int64_t bubble_getIndexOfHighestLikelihoodAllele(Bubble *b, PolishParams *p) {
 	int64_t maxAllele = 0;
 	assert(b->alleleNo > 0);
-	double maxAlleleLikelihood = bubble_getLogLikelihoodOfAllele(b, 0);
+	double maxAlleleLikelihood = bubble_getLogLikelihoodOfAllele(b, 0, p);
 	for(int64_t i=1; i<b->alleleNo; i++) {
-		double alleleLikelihood = bubble_getLogLikelihoodOfAllele(b, i);
+		double alleleLikelihood = bubble_getLogLikelihoodOfAllele(b, i, p);
 		if(alleleLikelihood > maxAlleleLikelihood) {
 			maxAllele = i;
 			maxAlleleLikelihood = alleleLikelihood;
@@ -36,7 +53,7 @@ uint64_t *bubbleGraph_getConsensusPath(BubbleGraph *bg, PolishParams *polishPara
 	uint64_t *consensusPath = st_calloc(bg->bubbleNo, sizeof(uint64_t));
 	for(int64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &(bg->bubbles[i]);
-		consensusPath[i] = bubble_getIndexOfHighestLikelihoodAllele(b);
+		consensusPath[i] = bubble_getIndexOfHighestLikelihoodAllele(b, polishParams);
 	}
 	return consensusPath;
 }
@@ -54,6 +71,7 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 	char previousBase = '-';
 	int64_t j=0; // Index in the consensus substring
 	int64_t k=0; // Index in the reference string
+	int64_t totalDiffs = 0; // Index to keep track of number of alleles changed for debug printing
 	for(int64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &(bg->bubbles[i]);
 
@@ -90,7 +108,7 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 
 		if(st_getLogLevel() >= debug) {
 			if(!rleString_eq(consensusSubstring, b->refAllele)) {
-				st_logDebug("In bubbleGraph_getConsensus, from: %" PRIi64 " to: %" PRIi64 ", \nexisting string:\t", k, k+b->refAllele->length);
+				st_logDebug("In bubbleGraph_getConsensus (diff %" PRIi64 " , from: %" PRIi64 " to: %" PRIi64 ", \nexisting string:\t", totalDiffs++, k, k+b->refAllele->length);
 				rleString_print(b->refAllele, stderr);
 				st_logDebug("\nnew string:\t\t");
 				rleString_print(consensusSubstring, stderr);
@@ -99,7 +117,7 @@ RleString *bubbleGraph_getConsensusString(BubbleGraph *bg, uint64_t *consensusPa
 				for(int64_t l=0; l<b->alleleNo; l++) {
 					st_logDebug("\tGot allele: \t");
 					rleString_print(b->alleles[l], stderr);
-					st_logDebug(" with log-likelihood: %f\n", bubble_getLogLikelihoodOfAllele(b, l));
+					st_logDebug(" with log-likelihood: %f\n", bubble_getLogLikelihoodOfAllele(b, l, polishParams));
 				}
 
 				for(int64_t l=0; l<b->readNo; l++) {
@@ -676,6 +694,108 @@ bool *getFilteredAnchorPositions(Poa *poa, double *candidateWeights, PolishParam
 	return anchors;
 }
 
+uint64_t rleString_stringKey(const void *k) {
+	return stHash_stringKey(((RleString *)k)->rleString);
+}
+
+int rleString_stringEqualKey(const void *key1, const void *key2) {
+    return stString_eq(((RleString *)key1)->rleString, ((RleString *)key2)->rleString);
+}
+
+int rleString_expandedStringEqualKey(const void *key1, const void *key2) {
+    if(!rleString_stringEqualKey(key1, key2)) {
+    	return 0;
+    }
+    RleString *r1 = (RleString *)key1;
+    RleString *r2 = (RleString *)key2;
+    if(r1->length != r2->length) {
+    	return 0;
+    }
+    for(int64_t i=0; i<r1->length; i++) {
+    	if(r1->repeatCounts[i] != r2->repeatCounts[i]) {
+    		return 0;
+    	}
+    }
+    return 1;
+}
+
+stHash *groupRleStrings(stList *rleStrings) {
+	/*
+	 * Input is a list of RleStrings. Returns a map whose keys are the compressed RLE strings and whose values are lists of the RleStrings with the given
+	 * compressed RLE string.
+	 */
+
+	stHash *h = stHash_construct3(rleString_stringKey, rleString_stringEqualKey,
+			NULL, (void (*)(void *))stList_destruct);
+
+	for(uint64_t i=0; i<stList_length(rleStrings); i++) {
+		RleString *rleString = stList_get(rleStrings, i);
+		stList *l = stHash_search(h, rleString);
+		if(l == NULL) {
+			l = stList_construct();
+			stHash_insert(h, rleString, l);
+		}
+		stList_append(l, rleString);
+	}
+
+	return h;
+}
+
+RleString *getConsensusRleString(stList *rleStrings) {
+	/*
+	 * For a list of RleStrings all with the same RLE string return a
+	 * consensus RleString with consensus repeat counts.
+	 */
+	assert(stList_length(rleStrings) > 0);
+	RleString *r = stList_peek(rleStrings);
+	uint8_t repeatCounts[r->length];
+
+	for(int64_t j=0; j<r->length; j++) {
+		uint64_t k=0;
+		for(int64_t i=0; i<stList_length(rleStrings); i++) {
+			RleString *s = stList_get(rleStrings, i);
+			assert(s->length == r->length);
+			k+=s->repeatCounts[j];
+		}
+		k = roundf(((float)k)/stList_length(rleStrings));
+		repeatCounts[j] = k == 0 ? 1 : (k > 255 ? 255 : k);
+	}
+
+	return rleString_constructPreComputed(r->rleString, repeatCounts);
+}
+
+stList *getCandidateAllelesFromReadSubstrings(stList *readSubstrings, PolishParams *p) {
+	// Get the rle strings for the bamChunkReadSubstrings
+	stList *rleStrings = stList_construct3(0, (void (*)(void *))rleString_destruct);
+	for(int64_t i=0; i<stList_length(readSubstrings); i++) {
+		BamChunkReadSubstring *r = stList_get(readSubstrings, i);
+		stList_append(rleStrings, bamChunkReadSubstring_getRleString(r));
+	}
+
+	// Group together the RleString by RLE string
+	stHash *h = groupRleStrings(rleStrings);
+
+	// For each RLE string get the consensus, expanded allele string
+	stHashIterator *it = stHash_getIterator(h);
+	RleString *rleString;
+	stList *alleles = stList_construct();
+	while((rleString = stHash_getNext(it)) != NULL) {
+		stList *l = stHash_search(h, rleString);
+		assert(l != NULL);
+		//if(stList_length(l) > 1) {
+			RleString *r = getConsensusRleString(l);
+			stList_append(alleles, rleString_expand(r));
+			rleString_destruct(r);
+		//}
+	}
+
+	// Cleanup
+	stHash_destructIterator(it);
+	stHash_destruct(h);
+	stList_destruct(rleStrings);
+
+	return alleles;
+}
 
 BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, PolishParams *params) {
 	// Setup
@@ -707,77 +827,122 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 			if(i-pAnchor != 1)  { // In case anchors are not trivially adjacent there exists a potential bubble
 				// with start coordinate on the reference sequence of pAnchor and length pAnchor-i
 
-				// Calculate the list of alleles
-				stList *alleles = NULL;
-				double weightAdjustment = 1.0;
-				do {
-					alleles = getCandidateConsensusSubstrings(poa, pAnchor+1, i,
-							candidateWeights, weightAdjustment, params->maxConsensusStrings);
-					weightAdjustment *= 1.5; // Increase the candidate weight by 50%
-				} while(alleles == NULL);
 
-				// Get existing reference string
-				assert(i-1-pAnchor > 0);
-				RleString *existingRefSubstring = rleString_copySubstring(poa->refString, pAnchor, i-1-pAnchor);
-				assert(existingRefSubstring->length == i-pAnchor-1);
-				char *expandedExistingRefSubstring = rleString_expand(existingRefSubstring);
+				// Get read substrings
+				stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, pAnchor+1, i, params);
 
-				// If it is not trivial because it contains more than one allele, or an allele different
-				// to the reference
-				if(stList_length(alleles) > 1 || !stString_eq(stList_peek(alleles), expandedExistingRefSubstring)) {
+				//
+				if(stList_length(readSubstrings) > 0) {
 
-					Bubble *b = st_malloc(sizeof(Bubble)); // Make a bubble and add to list of bubbles
-					stList_append(bubbles, b);
+					stList *alleles = getCandidateAllelesFromReadSubstrings(readSubstrings, params);
 
-					// Set the coordinates
-					b->refStart = pAnchor;
+					// Calculate the list of alleles
+					/*stList *alleles = NULL;
+										double weightAdjustment = 1.0;
+										do {
+											alleles = getCandidateConsensusSubstrings(poa, pAnchor+1, i,
+													candidateWeights, weightAdjustment, params->maxConsensusStrings);
+											weightAdjustment *= 1.5; // Increase the candidate weight by 50%
+										} while(alleles == NULL);*/
 
-					// The reference allele
-					b->refAllele = existingRefSubstring;
+					// Get existing reference string
+					assert(i-1-pAnchor > 0);
+					RleString *existingRefSubstring = rleString_copySubstring(poa->refString, pAnchor, i-1-pAnchor);
+					assert(existingRefSubstring->length == i-pAnchor-1);
+					char *expandedExistingRefSubstring = rleString_expand(existingRefSubstring);
 
-					// Now copy the alleles list to the bubble's array of alleles
-					b->alleleNo = stList_length(alleles);
-					b->alleles = st_malloc(sizeof(RleString *) * b->alleleNo);
-					for(int64_t j=0; j<b->alleleNo; j++) {
-						b->alleles[j] = params->useRunLengthEncoding ? rleString_construct(stList_get(alleles, j)) : rleString_construct_no_rle(stList_get(alleles, j));
+					// Check if the reference allele is in the set of alleles and add it if not
+					bool seenRefAllele = 0;
+					for(int64_t j=0; j<stList_length(alleles); j++) {
+						if(stString_eq(expandedExistingRefSubstring, stList_get(alleles, j))) {
+							seenRefAllele = 1;
+							break;
+						}
+					}
+					if(!seenRefAllele) {
+						stList_append(alleles, stString_copy(expandedExistingRefSubstring));
 					}
 
-					// Get read substrings
-					stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, pAnchor+1, i, params);
-					b->readNo = stList_length(readSubstrings);
-					b->reads = st_malloc(sizeof(BamChunkReadSubstring *) * b->readNo);
-					for(int64_t j=0; j<b->readNo; j++) {
-						b->reads[j] = stList_pop(readSubstrings);
-					}
-					stList_destruct(readSubstrings);
+					// If it is not trivial because it contains more than one allele
+					if(stList_length(alleles) > 1) {
 
-					// Get allele supports
-					b->alleleReadSupports = st_calloc(b->readNo*b->alleleNo, sizeof(float));
-					stList *anchorPairs = stList_construct(); // Currently empty
-					for(int64_t j=0; j<b->alleleNo; j++) {
-						SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length, params->alphabet);
+						Bubble *b = st_malloc(sizeof(Bubble)); // Make a bubble and add to list of bubbles
+						stList_append(bubbles, b);
+
+						// Set the coordinates
+						b->refStart = pAnchor;
+
+						// The reference allele
+						b->refAllele = existingRefSubstring;
+
+						// Add read substrings
+						b->readNo = stList_length(readSubstrings);
+						b->reads = st_malloc(sizeof(BamChunkReadSubstring *) * b->readNo);
+						for(int64_t j=0; j<b->readNo; j++) {
+							b->reads[j] = stList_pop(readSubstrings);
+						}
+
+						// Now copy the alleles list to the bubble's array of alleles
+						b->alleleNo = stList_length(alleles);
+						b->alleles = st_malloc(sizeof(RleString *) * b->alleleNo);
+						for(int64_t j=0; j<b->alleleNo; j++) {
+							b->alleles[j] = params->useRunLengthEncoding ? rleString_construct(stList_get(alleles, j)) : rleString_construct_no_rle(stList_get(alleles, j));
+						}
+
+						// Get allele supports
+						b->alleleReadSupports = st_calloc(b->readNo*b->alleleNo, sizeof(float));
+
+						stList *anchorPairs = stList_construct(); // Currently empty
+
+						SymbolString alleleSymbolStrings[b->alleleNo];
+						for(int64_t j=0; j<b->alleleNo; j++) {
+							alleleSymbolStrings[j] = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
+									params->alphabet, params->useRepeatCountsInAlignment);
+						}
+
+						stHash *cachedScores = stHash_construct3(rleString_stringKey, rleString_expandedStringEqualKey,
+																					(void (*)(void *))rleString_destruct, free);
+
 						for(int64_t k=0; k<b->readNo; k++) {
 							RleString *readSubstring = bamChunkReadSubstring_getRleString(b->reads[k]);
+							SymbolString rS = rleString_constructSymbolString(readSubstring, 0, readSubstring->length,
+									params->alphabet, params->useRepeatCountsInAlignment);
+							StateMachine *sM = b->reads[k]->read->forwardStrand ? params->stateMachineForForwardStrandRead : params->stateMachineForReverseStrandRead;
 
-							SymbolString rS = rleString_constructSymbolString(readSubstring, 0, readSubstring->length, params->alphabet);
+							uint64_t *index = stHash_search(cachedScores, readSubstring);
+							if(index != NULL) {
+								for(int64_t j=0; j<b->alleleNo; j++) {
+									b->alleleReadSupports[j*b->readNo + k] = b->alleleReadSupports[j*b->readNo + *index];
+								}
+								rleString_destruct(readSubstring);
+							}
+							else {
+								index = st_malloc(sizeof(uint64_t));
+								*index = k;
+								stHash_insert(cachedScores, readSubstring, index);
+								for(int64_t j=0; j<b->alleleNo; j++) {
+									b->alleleReadSupports[j*b->readNo + k] = computeForwardProbability(alleleSymbolStrings[j], rS, anchorPairs, params->p, sM, 0, 0);
+								}
+							}
 
-							b->alleleReadSupports[j*b->readNo + k] =
-					computeForwardProbability(aS, rS, anchorPairs, params->p, params->sMConditional, 0, 0);
-
-							// TODO : Make this all more efficient with less copying
 							symbolString_destruct(rS);
-							rleString_destruct(readSubstring);
 						}
-						symbolString_destruct(aS);
+
+						stHash_destruct(cachedScores);
+						for(int64_t j=0; j<b->alleleNo; j++) {
+							symbolString_destruct(alleleSymbolStrings[j]);
+						}
+						stList_destruct(anchorPairs);
 					}
-					stList_destruct(anchorPairs);
+					// Cleanup
+					else {
+						rleString_destruct(existingRefSubstring);
+					}
+
+					free(expandedExistingRefSubstring);
+					stList_destruct(alleles);
+					stList_destruct(readSubstrings);
 				}
-				// Cleanup
-				else {
-					rleString_destruct(existingRefSubstring);
-				}
-				free(expandedExistingRefSubstring);
-				stList_destruct(alleles);
 			}
 			// Update previous anchor
 			pAnchor = i;
@@ -906,12 +1071,23 @@ stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref) {
 			// For each allele in bubble add the prob that the read was generated by
 			// the read
 
+			// First calculate the total log probability of the read given the alleles, to normalize
+			// the log probabilities
+			// This acts as a normalizing constant
+			double totalLogProb = LOG_ZERO;
+			for(uint64_t k=0; k<b->alleleNo; k++) {
+				totalLogProb = stMath_logAddExact(totalLogProb, b->alleleReadSupports[b->readNo * k + j]);
+			}
+
 			// Set prob as diff to most probable allele
 			uint64_t alleleOffset = b->alleleOffset-pSeq->alleleOffset;
 			for(uint64_t k=0; k<b->alleleNo; k++) {
-				int64_t l = -roundf(b->alleleReadSupports[b->readNo * k + j]);
-				//int64_t l = roundf(2.0 * (maxLogProb - b->alleleReadSupports[b->readNo * k + j]));
+				float logProb = b->alleleReadSupports[b->readNo * k + j];
+				assert(logProb <= totalLogProb);
+				//int64_t l = -roundf(b->alleleReadSupports[b->readNo * k + j]);
+				int64_t l = roundf(30.0 * (totalLogProb - logProb));
 				assert(l >= 0);
+				//st_uglyf("Hello, %f %f %i\n", (float)totalLogProb, logProb, (int)l);
 				pSeq->profileProbs[alleleOffset+k] = l > 255 ? 255 : l;
 			}
 		}
@@ -942,32 +1118,61 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 		s->allelePriorLogProbs = st_calloc(b->alleleNo, sizeof(uint16_t));
 		s->substitutionLogProbs = st_calloc(b->alleleNo*b->alleleNo, sizeof(uint16_t));
 
-		// We set the probability of a substitution between two different alleles to -evoScale multiplied by the forward probability of the
-		// alignment of the two alleles, rounded to the nearest integer
+		// We set the probability of a substitution between two different alleles proportional to the forward probability of the
+		// alignment of the two alleles
 
+		// First calculate the log probability of the alignment between each pair of alleles
+		float alleleLogSubstitutionProbs[b->alleleNo * b->alleleNo];
 		for(uint64_t j=0; j<b->alleleNo; j++) {
 
 			SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
-					params->polishParams->sM->emissions->alphabet);
+					params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
 			for(uint64_t k=j; k<b->alleleNo; k++) {
 				SymbolString aS2 = rleString_constructSymbolString(b->alleles[k], 0, b->alleles[k]->length,
-									params->polishParams->sM->emissions->alphabet);
+									params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
 
-				float f = -computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->sM, 0, 0);
+				float f = computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->stateMachineForGenomeComparison, 0, 0);
 
-				int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
-				l = l > 255 ? 255 : l;
-				assert(l >= 0);
-				assert(l <= 255);
-
-				s->substitutionLogProbs[j * b->alleleNo + k] = l;
-				s->substitutionLogProbs[k * b->alleleNo + j] = l;
+				alleleLogSubstitutionProbs[j * b->alleleNo + k] = f;
+				alleleLogSubstitutionProbs[k * b->alleleNo + j] = f;
 
 				symbolString_destruct(aS2);
 			}
 			symbolString_destruct(aS);
 		}
+
+		// Now set the normalized substitution probabilities
+		for(uint64_t j=0; j<b->alleleNo; j++) {
+
+			// Calculate the total log prob of creating the other allles given allele j
+			double totalLogProb = LOG_ZERO;
+			for(uint64_t k=0; k<b->alleleNo; k++) {
+				totalLogProb = stMath_logAddExact(totalLogProb, alleleLogSubstitutionProbs[j * b->alleleNo + k]);
+			}
+
+			// Now set the normalized log substitution probabilities
+			for(uint64_t k=0; k<b->alleleNo; k++) {
+				float logProb = alleleLogSubstitutionProbs[j * b->alleleNo + k];
+				assert(logProb <= totalLogProb);
+
+				int64_t l = roundf(30.0 * (totalLogProb - logProb));
+				assert(l >= 0);
+
+				//int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
+
+				//st_uglyf(" Hello probs: %i %i %f %f %i\n", (int)j, (int)k, logProb, totalLogProb, (int)l);
+
+				l = l > 255 ? 255 : l;
+				assert(l >= 0);
+				assert(l <= 255);
+
+				s->substitutionLogProbs[j * b->alleleNo + k] = l;
+
+				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : 150; //l;
+			}
+		}
+
 	}
 	stList_destruct(anchorPairs);
 
@@ -1006,13 +1211,16 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			assert(gF->haplotypeString2[i] < b->alleleNo);
 			//assert(column->depth >= b->readNo);
 
-			if(gF->haplotypeString1[i] != gF->haplotypeString2[i]) {
+			RleString *hap1 = b->alleles[gF->haplotypeString1[i]];
+			RleString *hap2 = b->alleles[gF->haplotypeString2[i]];
+
+			if(gF->haplotypeString1[i] != gF->haplotypeString2[i] || !rleString_eq(b->refAllele, hap1) || 1) {
 				stRPCell *cell = stList_get(path, colIndex);
 
 				double strandSkew = bubble_phasedStrandSkew(b, readsToPSeqs, gF);
 
-				st_logDebug(">>Phasing Bubble Graph: At site: %i (of %i) with %i potential alleles got %s (%i) (log-prob: %f) for hap1 with %i reads and %s (%i) (log-prob: %f) for hap2 with %i reads (total depth %i), and ancestral allele %s (%i), genotype prob: %f, strand-skew p-value: %f\n",
-						(int)i, (int)gF->length, (int)b->alleleNo,
+				st_logDebug(">>Phasing Bubble Graph: (Het: %s) At site: %i (of %i) with %i potential alleles got %s (%i) (log-prob: %f) for hap1 with %i reads and %s (%i) (log-prob: %f) for hap2 with %i reads (total depth %i), and ancestral allele %s (%i), genotype prob: %f, strand-skew p-value: %f\n",
+						gF->haplotypeString1[i] != gF->haplotypeString2[i] ? "True" : "False", (int)i, (int)gF->length, (int)b->alleleNo,
 						b->alleles[gF->haplotypeString1[i]]->rleString, (int)gF->haplotypeString1[i], gF->haplotypeProbs1[i], popcount64(cell->partition),
 						b->alleles[gF->haplotypeString2[i]]->rleString, (int)gF->haplotypeString2[i], gF->haplotypeProbs2[i], (int)(column->depth-popcount64(cell->partition)), (int)column->depth,
 						b->alleles[gF->ancestorString[i]]->rleString, (int)gF->ancestorString[i], gF->genotypeProbs[i], (float)strandSkew);
@@ -1021,7 +1229,13 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 				bubble_calculateStrandSkews(b, strandSkews);
 
 				for(uint64_t j=0; j<b->alleleNo; j++) {
-					st_logDebug("\t>>Allele %i\t strand-skew: %f \t%s\t ", (int)j, (float)strandSkews[j], b->alleles[j]->rleString);
+					st_logDebug("\t>>Allele %i (ref allele: %s)\t strand-skew: %f \t", (int)j,
+								rleString_eq(b->refAllele, b->alleles[j]) ? "True" : "False",
+								(float)strandSkews[j]);
+					rleString_print(b->alleles[j], stderr);
+					char *expandedAllele = rleString_expand(b->alleles[j]);
+					st_logDebug("\t%s\t", expandedAllele);
+					free(expandedAllele);
 					for(uint64_t k=0; k<b->alleleNo; k++) {
 						st_logDebug("%i \t", (int)s->substitutionLogProbs[j * b->alleleNo + k]);
 					}
@@ -1045,11 +1259,13 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 
 							for(uint64_t m=0; m<b->alleleNo; m++) {
 								st_logDebug("%f\t", b->alleleReadSupports[m*b->readNo + j]);
-								supports[m] += roundf(b->alleleReadSupports[m*b->readNo + j]);
+								supports[m] += b->alleleReadSupports[m*b->readNo + j];
 							}
 
 							RleString *readSubstring = bamChunkReadSubstring_getRleString(s);
-							st_logDebug("%s\n", readSubstring->rleString);
+							//st_logDebug("%s\n", readSubstring->rleString);
+							rleString_print(readSubstring, stderr);
+							st_logDebug("\n");
 							rleString_destruct(readSubstring);
 						}
 					}
@@ -1133,7 +1349,23 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 
 	// Refine the genome fragment by repartitoning the reads iteratively
 	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
-		stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
+		//stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
+	}
+
+	// Set any homozygous alts back to being homozygous reference
+
+	// This is really a hack because sometimes the phasing algorithm picks a non-reference allele for a homozygous
+	// position
+	for(uint64_t i=0; i<gF->length; i++) {
+		Bubble *b = &bg->bubbles[gF->refStart+i];
+		if(gF->haplotypeString1[i] == gF->haplotypeString2[i] || binomialPValue(gF->readsSupportingHaplotype1[i] + gF->readsSupportingHaplotype2[i],
+				gF->readsSupportingHaplotype1[i]) < 0.05) { // gF->readsSupportingHaplotype1[i] < 5 || gF->readsSupportingHaplotype2[i] < 5) { // is homozygous
+			int64_t refAlleleIndex = bubble_getReferenceAlleleIndex(b);
+			if(refAlleleIndex != -1) { // is homozygous alt
+				gF->haplotypeString1[i] = refAlleleIndex; // set to reference allele
+				gF->haplotypeString2[i] = refAlleleIndex;
+			}
+		}
 	}
 
 	// Sanity checks
@@ -1160,7 +1392,6 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	stList_setDestructor(profileSeqs, (void(*)(void*))stProfileSeq_destruct);
 	stList_destruct(profileSeqs);
 	stHash_destruct(readsToPSeqs);
-	stReference_destruct(ref);
 
 	return gF;
 }
@@ -1362,12 +1593,12 @@ void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p) {
 }
 
 bool filterByBubbleIndel(Bubble *b, void *extraArg) {
-	if(b->alleleNo != 2) {
+	if(b->alleleNo > 5) {
 		return 1;
 	}
 	for(int64_t i=1; i<b->alleleNo; i++) {
 		if(b->alleles[i]->nonRleLength != b->alleles[i-1]->nonRleLength) {
-			return 1;
+			//return 1;
 		}
 	}
 	return 0;

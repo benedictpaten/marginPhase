@@ -122,7 +122,7 @@ PolishedReferenceSequence *polishedReferenceSequence_construct(Params *params, c
 void polishedReferenceSequence_processChunkSequence(PolishedReferenceSequence *rSeq,
 		BamChunk *bamChunk, Poa *poa, stList *reads, Params *params) {
 	// Do run-length decoding
-	poa_estimateRepeatCountsUsingBayesianModel(poa, reads, params->polishParams->repeatSubMatrix);
+	//poa_estimateRepeatCountsUsingBayesianModel(poa, reads, params->polishParams->repeatSubMatrix);
 	char *polishedReferenceString = rleString_expand(poa->refString);
 
 	// Log info about the POA
@@ -367,9 +367,9 @@ int main(int argc, char *argv[]) {
 		// If diploid
 		if(diploid) {
 			//params->polishParams->candidateVariantWeight = 0.1;
-			params->polishParams->columnAnchorTrim = 3;
-			params->polishParams->alleleStrandSkew = 5.0;
-			params->polishParams->hetScalingParameter = 1.0;
+			//params->polishParams->columnAnchorTrim = 3;
+			params->polishParams->alleleStrandSkew = 1.0;
+			params->polishParams->hetScalingParameter = 20.0;
 			//params->phaseParams->roundsOfIterativeRefinement = 0;
 
 			// Get the bubble graph representation
@@ -377,7 +377,7 @@ int main(int argc, char *argv[]) {
 
 			// Filter bubbles to remove indels
 			if(params->polishParams->useOnlySubstitutionsForPhasing) {
-				bubbleGraph_filterBubblesToRemoveIndels(bg, params);
+				//bubbleGraph_filterBubblesToRemoveIndels(bg, params);
 			}
 
 			// Filter bubbles to remove bubbles with alleles with strand-skew
@@ -389,11 +389,14 @@ int main(int argc, char *argv[]) {
 			// Debug report of hets
 			uint64_t totalHets = 0;
 			for(uint64_t i=0; i<gf->length; i++) {
+				Bubble *b = &bg->bubbles[i+gf->refStart];
 				if(gf->haplotypeString1[i] != gf->haplotypeString2[i]) {
-					RleString *allele_hap1 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString1[i]];
-					RleString *allele_hap2 = bg->bubbles[i].alleles[gf->refStart+gf->haplotypeString2[i]];
-					st_logDebug("Got predicted het at bubble %i %s %s\n", (int)i+gf->refStart, allele_hap1->rleString, allele_hap2->rleString);
+					st_logDebug("Got predicted het at bubble %i %s %s\n", (int)i+gf->refStart, b->alleles[gf->haplotypeString1[i]]->rleString,
+							b->alleles[gf->haplotypeString2[i]]->rleString);
 					totalHets++;
+				}
+				else if(!rleString_eq(b->alleles[gf->haplotypeString1[i]], b->refAllele)) {
+					st_logDebug("Got predicted hom alt at bubble %i %i\n", (int)i+gf->refStart, (int)gf->haplotypeString1[i]);
 				}
 			}
 			st_logInfo("In phasing chunk, got: %i hets from: %i total sites (fraction: %f)\n", (int)totalHets, (int)gf->length, (float)totalHets/gf->length);

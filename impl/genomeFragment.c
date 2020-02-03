@@ -29,6 +29,10 @@ stGenomeFragment *stGenomeFragment_constructEmpty(stReference *ref, uint64_t ref
 	gF->haplotypeString2 = st_calloc(gF->length, sizeof(uint64_t));
 	gF->ancestorString = st_calloc(gF->length, sizeof(uint64_t));
 
+	// Allocate haplotype read coverage arrays
+	gF->readsSupportingHaplotype1 = st_calloc(gF->length, sizeof(uint64_t));
+	gF->readsSupportingHaplotype2 = st_calloc(gF->length, sizeof(uint64_t));
+
 	return gF;
 }
 
@@ -199,6 +203,10 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Reads
     stSet_destruct(genomeFragment->reads1);
     stSet_destruct(genomeFragment->reads2);
+
+    // Coverages
+    free(genomeFragment->readsSupportingHaplotype1);
+    free(genomeFragment->readsSupportingHaplotype2);
 
     free(genomeFragment);
 }

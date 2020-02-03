@@ -60,7 +60,6 @@ Alphabet *alphabet_constructRLENucleotide();
 typedef enum {
     nucleotideEmissions=0,
 	nucleotideEmissionsSymmetric=1,
-	runlengthNucleotideEmissions=2
 } EmissionType;
 
 struct _emissions {
@@ -71,11 +70,20 @@ struct _emissions {
     double (*gapEmissionX)(Emissions *e, Symbol cX);
 
     double (*gapEmissionY)(Emissions *e, Symbol cY);
+
+    void (*printFn)(Emissions *e, FILE *f);
 };
 
-Emissions *nucleotideEmissions_construct();
+typedef struct _nucleotideEmissions {
+	Emissions e;
+	double EMISSION_MATCH_PROBS[16]; //Match emission probs
+	double EMISSION_GAP_X_PROBS[4]; //Gap X emission probs
+	double EMISSION_GAP_Y_PROBS[4]; //Gap Y emission probs
+} NucleotideEmissions;
 
-Emissions *rleNucleotideEmissions_construct();
+void nucleotideEmissions_reverseComplement(NucleotideEmissions *ne);
+
+Emissions *nucleotideEmissions_construct();
 
 Emissions *emissions_construct(Hmm *hmm);
 
@@ -111,6 +119,8 @@ struct _stateMachine {
     //Cells (states at a given coordinate(
     void (*cellCalculate)(StateMachine *sM, double *current, double *lower, double *middle, double *upper, Symbol cX, Symbol cY,
             void(*doTransition)(double *, double *, int64_t, int64_t, double, double, void *), void *extraArgs);
+
+    void (*printFn)(StateMachine *e, FILE *f);
 };
 
 StateMachine *hmm_getStateMachine(Hmm *hmm);

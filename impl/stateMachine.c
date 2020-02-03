@@ -7,8 +7,6 @@
 
 #include "margin.h"
 
-#define RLENE_MAX_REPEAT_LENGTH 51
-
 typedef enum {
     match = 0, shortGapX = 1, shortGapY = 2, longGapX = 3, longGapY = 4
 } State;
@@ -129,13 +127,16 @@ Symbol symbol_addRepeatCount(Symbol character, uint64_t runLength) {
 	return (runLength << 8) | character;
 }
 
-SymbolString rleString_constructSymbolString(RleString *s, int64_t start, int64_t length, Alphabet *a) {
+SymbolString rleString_constructSymbolString(RleString *s,
+		int64_t start, int64_t length, Alphabet *a, bool includeRepeatCounts) {
 	assert(start+length <= s->length);
 	SymbolString symbolString;
 	symbolString.alphabet = a;
 	symbolString.sequence = symbol_convertStringToSymbols(s->rleString, start, length, a);
-	for (int64_t i = 0; i < length; i++) {
-		symbolString.sequence[i] = symbol_addRepeatCount(symbolString.sequence[i], s->repeatCounts[i+start]);
+	if(includeRepeatCounts) {
+		for (int64_t i = 0; i < length; i++) {
+			symbolString.sequence[i] = symbol_addRepeatCount(symbolString.sequence[i], s->repeatCounts[i+start]);
+		}
 	}
 	symbolString.length = length;
 	return symbolString;
@@ -170,15 +171,10 @@ Hmm *hmm_constructEmpty(double pseudoExpectation, StateMachineType type, Emissio
     switch (emissionType) {
     case nucleotideEmissions:
     	for(int64_t i=0; i<hmm->stateNumber; i++) {
-    		hmm->emissionNoPerState[i] = 16;
+    		hmm->emissionNoPerState[i] = 4;
     	}
+    	hmm->emissionNoPerState[match] = 16;
     	break;
-    case runlengthNucleotideEmissions:
-    	for(int64_t i=0; i<hmm->stateNumber; i++) {
-    		hmm->emissionNoPerState[i] = 4 + RLENE_MAX_REPEAT_LENGTH;
-    	}
-    	hmm->emissionNoPerState[match] = 16 + RLENE_MAX_REPEAT_LENGTH * RLENE_MAX_REPEAT_LENGTH;
-		break;
     default:
          st_errAbort("Unrecognised emission type: %i\n", type);
     }
@@ -358,13 +354,6 @@ void hmm_randomise(Hmm *hmm) {
 ///////////////////////////////////
 ///////////////////////////////////
 
-typedef struct _nucleotideEmissions {
-	Emissions e;
-	double EMISSION_MATCH_PROBS[16]; //Match emission probs
-	double EMISSION_GAP_X_PROBS[4]; //Gap X emission probs
-	double EMISSION_GAP_Y_PROBS[4]; //Gap Y emission probs
-} NucleotideEmissions;
-
 static inline double getNucleotideGapProb(const double *emissionGapProbs, Symbol i) {
     if(i >= 4) {
         return -1.386294361; // log(0.25) ambiguous character
@@ -385,6 +374,30 @@ static inline double getNucleotideMatchProb(NucleotideEmissions *e, Symbol x, Sy
         return -2.772588722; //log(0.25**2)
     }
     return e->EMISSION_MATCH_PROBS[x * 4 + y];
+}
+
+void nucleotideEmissions_print(NucleotideEmissions *ne, FILE *f) {
+	// Matches
+	fprintf(f, "\tSubstitution matrix: \n");
+	for(int64_t i=0; i<4; i++) {
+		fprintf(f, "\t\t");
+		for(int64_t j=0; j<4; j++) {
+			fprintf(f, " %.5f", exp(ne->EMISSION_MATCH_PROBS[i*4 + j]));
+		}
+		fprintf(f, "\n");
+	}
+	//x-gaps
+	fprintf(f, "\tX gaps: \n");
+	for(int64_t i=0; i<4; i++) {
+		fprintf(f, " %.5f", exp(ne->EMISSION_GAP_X_PROBS[i]));
+	}
+	fprintf(f, "\n");
+	//y-gaps
+	fprintf(f, "\tY gaps: \n");
+	for(int64_t i=0; i<4; i++) {
+		fprintf(f, " %.5f", exp(ne->EMISSION_GAP_Y_PROBS[i]));
+	}
+	fprintf(f, "\n");
 }
 
 static void setNucleotideEmissionMatchProbsToDefaults(double *emissionMatchProbs) {
@@ -419,6 +432,8 @@ Emissions *nucleotideEmissions_construct() {
 	ne->e.emission = (double (*)(Emissions *, Symbol, Symbol)) getNucleotideMatchProb;
 	ne->e.gapEmissionX = (double (*)(Emissions *, Symbol)) getNucleotideGapProbX;
 	ne->e.gapEmissionY = (double (*)(Emissions *, Symbol)) getNucleotideGapProbY;
+	ne->e.printFn = (void (*)(Emissions *, FILE *))nucleotideEmissions_print;
+
 
 	setNucleotideEmissionMatchProbsToDefaults(ne->EMISSION_MATCH_PROBS);
 	setNucleotideEmissionGapProbsToDefaults(ne->EMISSION_GAP_X_PROBS);
@@ -427,55 +442,28 @@ Emissions *nucleotideEmissions_construct() {
 	return (Emissions *)ne;
 }
 
-///////////////////////////////////
-///////////////////////////////////
-//RLE Emissions
-///////////////////////////////////
-///////////////////////////////////
-
-typedef struct _rleNucleotideEmissions {
-	NucleotideEmissions ne;
-	double repeatLengthSubstitutionProbs[RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH];
-	double repeatLengthGapXProbs[RLENE_MAX_REPEAT_LENGTH];
-	double repeatLengthGapYProbs[RLENE_MAX_REPEAT_LENGTH];
-} RleNucleotideEmissions;
-
-static inline double getRLENucleotideGapProb(const double *nucleotideGapProbs,
-		const double *repeatLengthGapProbs, Symbol i) {
-    return getNucleotideGapProb(nucleotideGapProbs, symbol_stripRepeatCount(i)) + 0.2 * repeatLengthGapProbs[symbol_getRepeatLength(i)];
+static void swap(double *d, double *e) {
+	double f = d[0];
+	d[0] = e[0];
+	e[0] = f;
 }
 
-static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
-    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_X_PROBS, rlene->repeatLengthGapXProbs, x);
-}
-
-static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
-    return getRLENucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, rlene->repeatLengthGapYProbs, y);
-}
-
-static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
-    return getNucleotideMatchProb(&(rlene->ne), symbol_stripRepeatCount(x), symbol_stripRepeatCount(y)) + 0.2 * rlene->repeatLengthSubstitutionProbs[symbol_getRepeatLength(x) * RLENE_MAX_REPEAT_LENGTH + symbol_getRepeatLength(y)];
-}
-
-Emissions *rleNucleotideEmissions_construct() {
-	RleNucleotideEmissions *rlene = st_calloc(1, sizeof(RleNucleotideEmissions));
-	NucleotideEmissions *ne = (NucleotideEmissions *)nucleotideEmissions_construct();
-	rlene->ne = *ne;
-	free(ne);
-	rlene->ne.e.emission = (double (*)(Emissions *, Symbol, Symbol)) getRleNucleotideMatchProb;
-	rlene->ne.e.gapEmissionX = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbX;
-	rlene->ne.e.gapEmissionY = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbY;
-
-	// Default to making all probs 1.
-	for(int64_t i=0; i<RLENE_MAX_REPEAT_LENGTH; i++) {
-		rlene->repeatLengthGapXProbs[i] = LOG_ONE;
-		rlene->repeatLengthGapYProbs[i] = LOG_ONE;
-		for(int64_t j=0; j<RLENE_MAX_REPEAT_LENGTH; j++) {
-			rlene->repeatLengthSubstitutionProbs[i*RLENE_MAX_REPEAT_LENGTH+j] = LOG_ONE;
+void nucleotideEmissions_reverseComplement(NucleotideEmissions *ne) {
+	// Matches
+	for(int64_t i=0; i<4; i++) {
+		for(int64_t j=i+1; j<4; j++) {
+			swap(&(ne->EMISSION_MATCH_PROBS[i*4 + j]), &(ne->EMISSION_MATCH_PROBS[(3-i)*4 + (3-j)]));
 		}
 	}
+	swap(&(ne->EMISSION_MATCH_PROBS[0]), &(ne->EMISSION_MATCH_PROBS[15])); // swap A-A and T-T
+	swap(&(ne->EMISSION_MATCH_PROBS[5]), &(ne->EMISSION_MATCH_PROBS[10]));  // swap C-C and G-G
 
-	return (Emissions *)rlene;
+	for(int64_t i=0; i<2; i++) {
+		// Gap x
+		swap(&(ne->EMISSION_GAP_X_PROBS[i]), &(ne->EMISSION_GAP_X_PROBS[3-i]));
+		// Gap y
+		swap(&(ne->EMISSION_GAP_Y_PROBS[i]), &(ne->EMISSION_GAP_Y_PROBS[3-i]));
+	}
 }
 
 ///////////////////////////////////
@@ -491,23 +479,6 @@ Emissions *emissions_construct(Hmm *hmm) {
 		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_X_PROBS, 1, 0, 4);
 		hmm_emissions_loadProbs(hmm, ne->EMISSION_GAP_Y_PROBS, 2, 0, 4);
 		return (Emissions *)ne;
-	}
-	else if(hmm->emissionsType == runlengthNucleotideEmissions) {
-		RleNucleotideEmissions *rlene = (RleNucleotideEmissions *)rleNucleotideEmissions_construct();
-
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_MATCH_PROBS, 0, 0, 16);
-		hmm_emissions_loadProbs(hmm, rlene->repeatLengthSubstitutionProbs, 0, 16,
-				RLENE_MAX_REPEAT_LENGTH*RLENE_MAX_REPEAT_LENGTH);
-
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_X_PROBS, 1, 0, 4);
-		hmm_emissions_loadProbs(hmm, rlene->repeatLengthGapXProbs, 1, 4,
-				RLENE_MAX_REPEAT_LENGTH);
-
-		hmm_emissions_loadProbs(hmm, rlene->ne.EMISSION_GAP_Y_PROBS, 2, 0, 4);
-		hmm_emissions_loadProbs(hmm, rlene->repeatLengthGapYProbs, 2, 4,
-				RLENE_MAX_REPEAT_LENGTH);
-
-		return (Emissions *)rlene;
 	}
 	st_errAbort("Load from hmm: unrecognized emission type");
 	return NULL;
@@ -606,6 +577,21 @@ static void stateMachine3_cellCalculate(StateMachine *sM, double *current, doubl
     }
 }
 
+void stateMachine3_print(StateMachine3 *sM3, FILE *f) {
+	fprintf(f, "State machine3: \n");
+	fprintf(f, "\t TRANSITION_MATCH_CONTINUE: %.5f (exp: %.5f)\n", sM3->TRANSITION_MATCH_CONTINUE, exp(sM3->TRANSITION_MATCH_CONTINUE));
+	fprintf(f, "\t TRANSITION_MATCH_FROM_GAP_X: %.5f (exp: %.5f)\n", sM3->TRANSITION_MATCH_FROM_GAP_X, exp(sM3->TRANSITION_MATCH_FROM_GAP_X));
+	fprintf(f, "\t TRANSITION_MATCH_FROM_GAP_Y: %.5f (exp: %.5f)\n", sM3->TRANSITION_MATCH_FROM_GAP_Y, exp(sM3->TRANSITION_MATCH_FROM_GAP_Y));
+	fprintf(f, "\t TRANSITION_GAP_OPEN_X: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_OPEN_X, exp(sM3->TRANSITION_GAP_OPEN_X));
+	fprintf(f, "\t TRANSITION_GAP_OPEN_Y: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_OPEN_Y, exp(sM3->TRANSITION_GAP_OPEN_Y));
+	fprintf(f, "\t TRANSITION_GAP_EXTEND_X: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_EXTEND_X, exp(sM3->TRANSITION_GAP_EXTEND_X));
+	fprintf(f, "\t TRANSITION_GAP_EXTEND_Y: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_EXTEND_Y, exp(sM3->TRANSITION_GAP_EXTEND_Y));
+	fprintf(f, "\t TRANSITION_GAP_SWITCH_TO_X: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_SWITCH_TO_X, exp(sM3->TRANSITION_GAP_SWITCH_TO_X));
+	fprintf(f, "\t TRANSITION_GAP_SWITCH_TO_Y: %.5f (exp: %.5f)\n", sM3->TRANSITION_GAP_SWITCH_TO_Y, exp(sM3->TRANSITION_GAP_SWITCH_TO_Y));
+	fprintf(f, "State machine3: emissions\n");
+	sM3->model.emissions->printFn(sM3->model.emissions, f);
+}
+
 StateMachine *stateMachine3_construct(StateMachineType type, Emissions *e) {
     StateMachine3 *sM3 = st_malloc(sizeof(StateMachine3));
     sM3->TRANSITION_MATCH_CONTINUE = -0.030064059121770816; //0.9703833696510062f
@@ -631,6 +617,7 @@ StateMachine *stateMachine3_construct(StateMachineType type, Emissions *e) {
     sM3->model.raggedEndStateProb = stateMachine3_raggedEndStateProb;
     sM3->model.cellCalculate = stateMachine3_cellCalculate;
     sM3->model.emissions = e;
+    sM3->model.printFn = (void (*)(StateMachine *, FILE *))stateMachine3_print;
 
     return (StateMachine *) sM3;
 }
@@ -702,3 +689,46 @@ void stateMachine_destruct(StateMachine *stateMachine) {
 	emissions_destruct(stateMachine->emissions);
     free(stateMachine);
 }
+
+///////////////////////////////////
+///////////////////////////////////
+//RLE Emissions
+///////////////////////////////////
+///////////////////////////////////
+
+typedef struct _rleNucleotideEmissions {
+	NucleotideEmissions ne;
+	RepeatSubMatrix *repeatSubMatrix;
+	bool strand;
+} RleNucleotideEmissions;
+
+static inline double getRleNucleotideGapProbX(RleNucleotideEmissions *rlene, Symbol x) {
+	return getNucleotideGapProb(rlene->ne.EMISSION_GAP_X_PROBS, symbol_stripRepeatCount(x));
+}
+
+static inline double getRleNucleotideGapProbY(RleNucleotideEmissions *rlene, Symbol y) {
+	Symbol base = symbol_stripRepeatCount(y);
+	double *repeatProbs = (base == 0 || base == 3) ? rlene->repeatSubMatrix->baseLogProbs_AT : rlene->repeatSubMatrix->baseLogProbs_GC;
+	return getNucleotideGapProb(rlene->ne.EMISSION_GAP_Y_PROBS, base); // + 2.3025 * repeatProbs[symbol_getRepeatLength(y)];
+}
+
+static inline double getRleNucleotideMatchProb(RleNucleotideEmissions *rlene, Symbol x, Symbol y) {
+	Symbol xBase = symbol_stripRepeatCount(x);
+    return getNucleotideMatchProb(&(rlene->ne), xBase, symbol_stripRepeatCount(y)) +
+    		2.3025 * repeatSubMatrix_getLogProb(rlene->repeatSubMatrix, xBase, rlene->strand, symbol_getRepeatLength(y), symbol_getRepeatLength(x));
+}
+
+Emissions *rleNucleotideEmissions_construct(Emissions *emissions, RepeatSubMatrix *repeatSubMatrix, bool strand) {
+	RleNucleotideEmissions *rlene = st_calloc(1, sizeof(RleNucleotideEmissions));
+	rlene->repeatSubMatrix = repeatSubMatrix;
+	rlene->strand = strand;
+	NucleotideEmissions *ne = (NucleotideEmissions *)emissions;
+	rlene->ne = *ne;
+	free(emissions);
+	rlene->ne.e.emission = (double (*)(Emissions *, Symbol, Symbol)) getRleNucleotideMatchProb;
+	rlene->ne.e.gapEmissionX = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbX;
+	rlene->ne.e.gapEmissionY = (double (*)(Emissions *, Symbol)) getRleNucleotideGapProbY;
+
+	return (Emissions *)rlene;
+}
+
