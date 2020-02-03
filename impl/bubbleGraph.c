@@ -778,7 +778,7 @@ stList *getCandidateAllelesFromReadSubstrings(stList *readSubstrings, PolishPara
 	// For each RLE string get the consensus, expanded allele string
 	stHashIterator *it = stHash_getIterator(h);
 	RleString *rleString;
-	stList *alleles = stList_construct();
+	stList *alleles = stList_construct3(0, (void(*)(void*)) free);
 	while((rleString = stHash_getNext(it)) != NULL) {
 		stList *l = stHash_search(h, rleString);
 		assert(l != NULL);
