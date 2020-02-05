@@ -169,6 +169,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 	params->minPosteriorProbForAlignmentAnchorsLength = 2;
     params->includeSoftClipping = FALSE;
     params->shuffleChunks = TRUE;
+    params->useRepeatCountsInAlignment = FALSE;
     params->chunkSize = 0;
     params->chunkBoundary = 0;
     params->maxDepth = 0;

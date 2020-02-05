@@ -61,6 +61,16 @@
 
 		"minAvgBaseQuality" : 10,
 
+		"useRepeatCountsInAlignment" : true,
+
+		"poaConstructCompareRepeatCounts" : true,
+
+		"hetScalingParameter" : 1.0,
+
+		"alleleStrandSkew" : 1.5,
+
+		"useOnlySubstitutionsForPhasing" : true,
+
 		"pairwiseAlignmentParameters" : {
 			"threshold" : 0.01,
 			"minDiagsBetweenTraceBack" : 10000,
