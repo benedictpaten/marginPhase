@@ -135,10 +135,9 @@ RepeatSubMatrix *repeatSubMatrix_jsonParse(char *buf, size_t r) {
 		if(base != 'A' && base != 'C' && base != 'G' && base != 'T') {
 			st_errAbort("ERROR: Unrecognised base in repeat sub matrix json: %s, base=%c\n", keyString, base);
 		}
-		if(keyString[30] != 'F' && keyString[30] != 'R') {
+		if(keyString[30] != 'F') {
 			st_errAbort("ERROR: Unrecognised strand in repeat sub matrix json: %s, strand:%c\n", keyString, keyString[30]);
 		}
-		assert(keyString[30] == 'F');
 		// This sets the probs for the forward strand
 		tokenIndex = repeatSubMatrix_parseLogProbabilities(repeatSubMatrix,
 				repeatSubMatrix->alphabet->convertCharToSymbol(base), 1, js, tokens, tokenIndex+1);
