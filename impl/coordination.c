@@ -444,6 +444,11 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
     // Cleanup
     stList_destruct(tilingPaths);
 
+    st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
+    			" to achieve maximum coverage depth of %" PRIi64 "\n",
+    			stList_length(discardedProfileSeqs), stList_length(profileSeqs),
+    			params->maxCoverageDepth);
+
     return filteredProfileSeqs;
 }
 

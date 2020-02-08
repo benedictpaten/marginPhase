@@ -99,6 +99,10 @@ stList *getTilingPaths(stSortedSet *hmms);
 
 stSet *getOverlappingComponents(stList *tilingPath1, stList *tilingPath2);
 
+stList *mergeTwoTilingPaths(stList *tilingPath1, stList *tilingPath2);
+
+stRPHmm *fuseTilingPath(stList *tilingPath);
+
 /*
  * Math
  */
@@ -534,6 +538,7 @@ struct _polishParams {
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
 	RepeatSubMatrix *repeatSubMatrix; // Repeat counts model used for predicting repeat counts of RLE sequences
 	bool useRepeatCountsInAlignment; // Use repeat counts in comparing reads to a reference
+	bool useReadAlleles; //
 
 	// chunking configuration
 	bool shuffleChunks;
@@ -1109,6 +1114,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
  * Phase bubble graph.
  */
 stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
+stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
 
 /*
  * Get Poa from bubble graph.

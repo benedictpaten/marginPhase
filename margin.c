@@ -367,9 +367,10 @@ int main(int argc, char *argv[]) {
 		// If diploid
 		if(diploid) {
 			//params->polishParams->candidateVariantWeight = 0.1;
-			//params->polishParams->columnAnchorTrim = 3;
+			params->polishParams->columnAnchorTrim = 2;
 			params->polishParams->alleleStrandSkew = 1.0;
 			params->polishParams->hetScalingParameter = 20.0;
+			params->polishParams->useReadAlleles = 0;
 			//params->phaseParams->roundsOfIterativeRefinement = 0;
 
 			// Get the bubble graph representation
@@ -381,10 +382,10 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Filter bubbles to remove bubbles with alleles with strand-skew
-			bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
+			//bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
 
 			// Now make a POA for each of the haplotypes
-			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraph(bg, bamChunk->refSeqName, reads, params);
+			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraphAlt(bg, bamChunk->refSeqName, reads, params);
 
 			// Debug report of hets
 			uint64_t totalHets = 0;

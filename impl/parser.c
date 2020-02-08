@@ -179,6 +179,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->maxConsensusStrings = 100;
     params->repeatSubMatrix = NULL;
     params->stateMachineForGenomeComparison = stateMachine3_constructNucleotide(threeStateAsymmetric);
+    params->useReadAlleles = 1;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
