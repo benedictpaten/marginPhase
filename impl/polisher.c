@@ -666,6 +666,13 @@ Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, RleString *ref
 	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
         BamChunkRead *chunkRead = stList_get(bamChunkReads, i);
 
+        //TODO there must be a better way to ensure maximumRepeatLength is not exceeded in reads
+        for (int64_t j=0; j < chunkRead->rleRead->length; j++) {
+            if (chunkRead->rleRead->repeatCounts[j] >= maximumRepeatLength) {
+                chunkRead->rleRead->repeatCounts[j] = maximumRepeatLength - 1;
+            }
+        }
+
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
