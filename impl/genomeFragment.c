@@ -188,6 +188,25 @@ void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF,stRPHmm *hmm, st
     }
 }
 
+void stGenomeFragment_phaseBamChunkReads(stGenomeFragment *gf, stHash *readsToPSeqs, stList *reads, stSet **readsBelongingToHap1, stSet **readsBelongingToHap2) {
+	*readsBelongingToHap1 = stSet_construct();
+	*readsBelongingToHap2 = stSet_construct();
+
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		BamChunkRead *read = stList_get(reads, i);
+		stProfileSeq *pSeq = stHash_search(readsToPSeqs, read);
+		if(pSeq != NULL) { // Some reads do not get converted to pSeqs because they are too low quality at every aligned site they
+			// overlap
+
+			// Checks
+			assert(stSet_search(gf->reads1, pSeq) != NULL || stSet_search(gf->reads2, pSeq) != NULL);
+			assert(stSet_search(gf->reads1, pSeq) == NULL || stSet_search(gf->reads2, pSeq) == NULL);
+
+			stSet_insert(stSet_search(gf->reads1, pSeq) != NULL ? *readsBelongingToHap1 : *readsBelongingToHap2, read);
+		}
+	}
+}
+
 void stGenomeFragment_destruct(stGenomeFragment *genomeFragment) {
     // Genotypes
     free(genomeFragment->genotypeString);

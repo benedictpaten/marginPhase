@@ -458,6 +458,8 @@ void stGenomeFragment_destruct(stGenomeFragment *genomeFragment);
 void stGenomeFragment_refineGenomeFragment(stGenomeFragment *gF,
         stRPHmm *hmm, stList *path, int64_t maxIterations);
 
+void stGenomeFragment_phaseBamChunkReads(stGenomeFragment *gf, stHash *readsToPSeqs, stList *reads, stSet **readsBelongingToHap1, stSet **readsBelongingToHap2);
+
 double getLogProbOfReadGivenHaplotype(uint64_t *haplotypeString, int64_t start, int64_t length,
                                       stProfileSeq *profileSeq, stReference *ref);
 
@@ -772,6 +774,11 @@ double poa_getReferenceNodeTotalDisagreementWeight(Poa *poa);
  */
 void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix);
 
+/*
+ * As poa_estimateRepeatCountsUsingBayesianModel, but using a phasing.
+ */
+void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
+		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2);
 
 // Data structure for representing RLE strings
 struct _rleString {
@@ -831,6 +838,7 @@ uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities);
 // one repeat count given another
 struct _repeatSubMatrix {
 	Alphabet *alphabet;
+	double *repeatCountSubstitutionLogProb;
 	double *baseLogProbs_AT;
 	double *baseLogProbs_GC;
 	double *logProbabilities;
@@ -869,6 +877,12 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
  */
 int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
         stList *bamChunkReads, double *logProbability);
+
+/*
+ * As repeatSubMatrix_getMLRepeatCount, but for a phasing of the reads.
+ */
+int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, int64_t existingRepeatCount, Symbol base, stList *observations,
+		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing
@@ -1113,8 +1127,8 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 /*
  * Phase bubble graph.
  */
-stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
-stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params);
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs);
+stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs);
 
 /*
  * Get Poa from bubble graph.

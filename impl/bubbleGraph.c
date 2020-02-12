@@ -1216,7 +1216,7 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			RleString *hap1 = b->alleles[gF->haplotypeString1[i]];
 			RleString *hap2 = b->alleles[gF->haplotypeString2[i]];
 
-			if(gF->haplotypeString1[i] != gF->haplotypeString2[i] || !rleString_eq(b->refAllele, hap1)) {
+			if(gF->haplotypeString1[i] != gF->haplotypeString2[i] || !rleString_eq(b->refAllele, hap1) || 1) {
 				stRPCell *cell = stList_get(path, colIndex);
 
 				double strandSkew = bubble_phasedStrandSkew(b, readsToPSeqs, gF);
@@ -1338,7 +1338,8 @@ stSet *filterReadsByCoverageDepth2(stList *profileSeqs, Params *params) {
 	return discardedReadsSet;
 }
 
-stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params) {
+stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params,
+		stHash **readsToPSeqs) {
 	/*
 	 * Runs phasing algorithm to split the reads embedded in the bubble graph into two partitions.
 	 *
@@ -1349,8 +1350,8 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	// Generate profile sequences and reference
 	stReference *ref = bubbleGraph_getReference(bg, refSeqName, params);
 	assert(ref->length == bg->bubbleNo);
-	stHash *readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
-	stList *profileSeqs = stHash_getValues(readsToPSeqs);
+	*readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
+	stList *profileSeqs = stHash_getValues(*readsToPSeqs);
 
 	assert(stList_length(reads) >= stList_length(profileSeqs));
 	if(stList_length(reads) != stList_length(profileSeqs)) {
@@ -1367,10 +1368,10 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	st_logInfo("> Partitioning reads by strand for phasing\n");
 	stList *forwardStrandProfileSeqs = stList_construct();
 	stList *reverseStrandProfileSeqs = stList_construct();
-	stHashIterator *hashIt = stHash_getIterator(readsToPSeqs);
+	stHashIterator *hashIt = stHash_getIterator(*readsToPSeqs);
 	BamChunkRead *r;
 	while((r = stHash_getNext(hashIt)) != NULL) {
-		stProfileSeq *pSeq = stHash_search(readsToPSeqs, r);
+		stProfileSeq *pSeq = stHash_search(*readsToPSeqs, r);
 		if(stSet_search(discardedReadsSet, pSeq) == NULL) { // If not one of the filtered reads
 			if(r->forwardStrand) {
 				stList_append(forwardStrandProfileSeqs, pSeq);
@@ -1451,7 +1452,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	}
 
 	// Check / log the result
-	bubbleGraph_logPhasedBubbleGraph(bg, hmm, path, readsToPSeqs, profileSeqs, gF);
+	bubbleGraph_logPhasedBubbleGraph(bg, hmm, path, *readsToPSeqs, profileSeqs, gF);
 
 	// Cleanup
 	stSet_destruct(discardedReadsSet);
@@ -1459,7 +1460,6 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	stList_destruct(reverseStrandProfileSeqs);
 	stList_setDestructor(profileSeqs, (void(*)(void*))stProfileSeq_destruct);
 	stList_destruct(profileSeqs);
-	stHash_destruct(readsToPSeqs);
 
 	return gF;
 }
@@ -1628,7 +1628,7 @@ void unifyGenomeFragments(BubbleGraph *bg, stGenomeFragment *gFP, stGenomeFragme
 	}*/
 }
 
-stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params) {
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs2) {
 	/*
 	 * Runs phasing algorithm to split the reads embedded in the bubble graph into two partitions.
 	 */
@@ -1637,6 +1637,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	stReference *ref = bubbleGraph_getReference(bg, refSeqName, params);
 	assert(ref->length == bg->bubbleNo);
 	stHash *readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
+	*readsToPSeqs2 = readsToPSeqs;
 	stList *profileSeqs = stHash_getValues(readsToPSeqs);
 
 	assert(stList_length(reads) >= stList_length(profileSeqs));
@@ -1680,10 +1681,10 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 
 	// Cleanup
 	//stList_setDestructor(profileSeqs, (void(*)(void*))stProfileSeq_destruct);
-	stList_destruct(profileSeqs);
-	stHash_destruct(readsToPSeqs);
+	//stList_destruct(profileSeqs);
+	//stHash_destruct(readsToPSeqs);
 	//stGenomeFragment_destruct(gFP);
-	stGenomeFragment_destruct(gFR);
+	//stGenomeFragment_destruct(gFR);
 
 	return gFP;
 }

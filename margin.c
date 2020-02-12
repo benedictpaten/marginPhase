@@ -385,7 +385,14 @@ int main(int argc, char *argv[]) {
 			//bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
 
 			// Now make a POA for each of the haplotypes
-			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraphAlt(bg, bamChunk->refSeqName, reads, params);
+			stHash *readsToPSeqs;
+			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraphAlt(bg, bamChunk->refSeqName, reads, params, &readsToPSeqs);
+
+			stSet *readsBelongingToHap1, *readsBelongingToHap2;
+			stGenomeFragment_phaseBamChunkReads(gf, readsToPSeqs, reads, &readsBelongingToHap1, &readsBelongingToHap2);
+			st_logInfo("After phasing, of %i reads got %i reads partitioned into hap1 and %i reads partitioned into hap2 (%i unphased)\n",
+			(int)stList_length(reads), (int)stSet_size(readsBelongingToHap1), (int)stSet_size(readsBelongingToHap2), 
+			(int)(stList_length(reads) - stSet_size(readsBelongingToHap1)- stSet_size(readsBelongingToHap2)));
 
 			// Debug report of hets
 			uint64_t totalHets = 0;
@@ -402,12 +409,21 @@ int main(int argc, char *argv[]) {
 			}
 			st_logInfo("In phasing chunk, got: %i hets from: %i total sites (fraction: %f)\n", (int)totalHets, (int)gf->length, (float)totalHets/gf->length);
 
+			st_logInfo("Building POA for each haplotype\n");
 			uint64_t *hap1 = getPaddedHaplotypeString(gf->haplotypeString1, gf, bg, params);
 			uint64_t *hap2 = getPaddedHaplotypeString(gf->haplotypeString2, gf, bg, params);
 
 			Poa *poa_hap1 = bubbleGraph_getNewPoa(bg, hap1, poa, reads, params);
 			Poa *poa_hap2 = bubbleGraph_getNewPoa(bg, hap2, poa, reads, params);
 
+			st_logInfo("Using read phasing to re0estimate repeat counts in phased manner\n");
+			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap1, reads,
+					params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2);
+
+			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap2, reads,
+					params->polishParams->repeatSubMatrix, readsBelongingToHap2, readsBelongingToHap1);
+
+			// Output
 			polishedReferenceSequence_processChunkSequence(rSeq1, bamChunk, poa_hap1, reads, params);
 			polishedReferenceSequence_processChunkSequence(rSeq2, bamChunk, poa_hap2, reads, params);
 
@@ -418,6 +434,10 @@ int main(int argc, char *argv[]) {
 			stGenomeFragment_destruct(gf);
 			poa_destruct(poa_hap1);
 			poa_destruct(poa_hap2);
+			stSet_destruct(readsBelongingToHap1);
+			stSet_destruct(readsBelongingToHap2);
+			stHash_destruct(readsToPSeqs);
+
 		}
 		else {
 			polishedReferenceSequence_processChunkSequence(rSeq1, bamChunk, poa, reads, params);

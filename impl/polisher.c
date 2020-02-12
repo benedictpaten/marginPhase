@@ -1571,6 +1571,26 @@ void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
 	}
 }
 
+void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
+		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2) {
+	poa->refString->nonRleLength = 0;
+	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
+		PoaNode *node = stList_get(poa->nodes, i);
+
+		// Repeat count
+		double logProbability;
+
+		poa->refString->repeatCounts[i-1] = repeatSubMatrix_getPhasedMLRepeatCount(repeatSubMatrix, poa->refString->repeatCounts[i-1], poa->alphabet->convertCharToSymbol(node->base), node->observations,
+				bamChunkReads, &logProbability, readsBelongingToHap1, readsBelongingToHap2);
+
+		if(poa->refString->repeatCounts[i-1] == 0) { // Prevent zero length estimates
+			poa->refString->repeatCounts[i-1] = 1;
+		}
+
+		poa->refString->nonRleLength += poa->refString->repeatCounts[i-1];
+	}
+}
+
 uint8_t *rleString_rleQualities(RleString *rleString, uint8_t *qualities) {
 	// calculate read qualities (if set)
 	//TODO unit test this
@@ -1688,46 +1708,144 @@ double repeatSubMatrix_getLogProbForGivenRepeatCount(RepeatSubMatrix *repeatSubM
 		        observedRepeatCount, underlyingRepeatCount) * observation->weight;
 	}
 
-	return logProb;
+	return logProb/PAIR_ALIGNMENT_PROB_1;
 }
 
-int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
-		stList *bamChunkReads, double *logProbability) {
-	if(stList_length(observations) == 0) {
-		return 0; // The case that we have no alignments, we assume there is no sequence there/
-	}
-
+void repeatSubMatrix_getMinAndMaxRepeatCountObservations(RepeatSubMatrix *repeatSubMatrix, stList *observations,
+		stList *bamChunkReads, int64_t *minRepeatLength, int64_t *maxRepeatLength) {
 	// Get the range or repeat observations, used to avoid calculating all repeat lengths, heuristically
-	int64_t minRepeatLength=repeatSubMatrix->maximumRepeatLength-1, maxRepeatLength=0; // Mins and maxs inclusive
+	*minRepeatLength=repeatSubMatrix->maximumRepeatLength;
+	*maxRepeatLength=0;
 	for(int64_t i=0; i<stList_length(observations); i++) {
 		PoaBaseObservation *observation = stList_get(observations, i);
 		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
 		int64_t observedRepeatCount = read->rleRead->repeatCounts[observation->offset];
-		if(observedRepeatCount < minRepeatLength) {
-			minRepeatLength = observedRepeatCount;
+		if(observedRepeatCount < *minRepeatLength) {
+			*minRepeatLength = observedRepeatCount;
 		}
-		if(observedRepeatCount > maxRepeatLength) {
-			maxRepeatLength = observedRepeatCount;
+		if(observedRepeatCount > *maxRepeatLength) {
+			*maxRepeatLength = observedRepeatCount;
 		}
 	}
-	if(maxRepeatLength >= repeatSubMatrix->maximumRepeatLength) {
+	if(*maxRepeatLength >= repeatSubMatrix->maximumRepeatLength) {
 		st_logInfo("Got overlong repeat observation: %" PRIi64 ", ignoring this and cutting off overlong repeat counts to max\n", maxRepeatLength);
-		maxRepeatLength = repeatSubMatrix->maximumRepeatLength-1;
+		*maxRepeatLength = repeatSubMatrix->maximumRepeatLength-1;
 	}
+}
+
+void repeatSubMatrix_getRepeatCountProbs(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
+		stList *bamChunkReads, double *logProbabilities, int64_t minRepeatLength, int64_t maxRepeatLength) {
+	for(int64_t i=minRepeatLength; i<=maxRepeatLength; i++) {
+		logProbabilities[i-minRepeatLength] =
+				repeatSubMatrix_getLogProbForGivenRepeatCount(repeatSubMatrix, base, observations, bamChunkReads, i);
+	}
+}
+
+static int64_t getMLRepeatCount(double *logProbabilities, int64_t minRepeatLength, int64_t maxRepeatLength,
+		double *logProbability) {
 
 	// Calc the range of repeat observations
-	double mlLogProb = repeatSubMatrix_getLogProbForGivenRepeatCount(repeatSubMatrix, base, observations,
-	        bamChunkReads, minRepeatLength);
+	double mlLogProb = logProbabilities[0];
 	int64_t mlRepeatLength = minRepeatLength;
-	for(int64_t i=minRepeatLength+1; i<maxRepeatLength+1; i++) {
-		double p = repeatSubMatrix_getLogProbForGivenRepeatCount(repeatSubMatrix, base, observations,
-		        bamChunkReads, i);
+	for(int64_t i=minRepeatLength+1; i<=maxRepeatLength; i++) {
+		if(logProbabilities[i-minRepeatLength] >= mlLogProb) {
+			mlLogProb = logProbabilities[i-minRepeatLength];
+			mlRepeatLength = i;
+		}
+	}
+	*logProbability = mlLogProb;
+	return mlRepeatLength;
+}
+
+
+int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
+		stList *bamChunkReads, double *logProbability) {
+	int64_t minRepeatLength, maxRepeatLength;
+	double logProbabilities[repeatSubMatrix->maximumRepeatLength];
+
+	// Calculate range of repeat counts observed
+	repeatSubMatrix_getMinAndMaxRepeatCountObservations(repeatSubMatrix, observations,
+					bamChunkReads, &minRepeatLength, &maxRepeatLength);
+
+	if(minRepeatLength == repeatSubMatrix->maximumRepeatLength) {
+		*logProbability = LOG_ZERO;
+		return 0; // Case we have no valid observations, so assume repeat length of 0
+	}
+
+	// Get the prob for each repeat count
+	repeatSubMatrix_getRepeatCountProbs(repeatSubMatrix, base, observations,
+			bamChunkReads, logProbabilities, minRepeatLength, maxRepeatLength);
+
+	return getMLRepeatCount(logProbabilities, minRepeatLength, maxRepeatLength, logProbability);
+}
+
+double getRepeatLengthProbForHaplotype(int64_t repeatLength, double *logProbabilitiesHap1, double *logProbabilitiesHap2,
+		int64_t minRepeatLength, double logProbMLHap2, double logProbSubstitution) {
+	double logProbHap2Same = logProbabilitiesHap2[repeatLength-minRepeatLength];
+	return logProbabilitiesHap1[repeatLength-minRepeatLength] +
+			((logProbHap2Same > logProbMLHap2 + logProbSubstitution) ? logProbHap2Same : logProbMLHap2 + logProbSubstitution);
+}
+
+int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, int64_t existingRepeatCount, Symbol base, stList *observations,
+		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2) {
+	// Calculate range of repeat counts observed
+	int64_t minRepeatLength, maxRepeatLength;
+	repeatSubMatrix_getMinAndMaxRepeatCountObservations(repeatSubMatrix, observations,
+						bamChunkReads, &minRepeatLength, &maxRepeatLength);
+
+	if(minRepeatLength == repeatSubMatrix->maximumRepeatLength) {
+		*logProbability = LOG_ZERO;
+		return 0; // Case we have no valid observations, so assume repeat length of 0
+	}
+
+	// Split observations between haplotypes
+	stList *observationsHap1 = stList_construct();
+	stList *observationsHap2 = stList_construct();
+	for(int64_t i=0; i<stList_length(observations); i++) {
+		PoaBaseObservation *observation = stList_get(observations, i);
+		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
+		stList_append(stSet_search(readsBelongingToHap1, read) != NULL ? observationsHap1 : observationsHap2, observation);
+	}
+
+	// Get probs for hap 1
+	double logProbabilitiesHap1[repeatSubMatrix->maximumRepeatLength];
+	repeatSubMatrix_getRepeatCountProbs(repeatSubMatrix, base, observationsHap1,
+				bamChunkReads, logProbabilitiesHap1, minRepeatLength, maxRepeatLength);
+
+	// Get probs for hap 2
+	double logProbabilitiesHap2[repeatSubMatrix->maximumRepeatLength];
+	repeatSubMatrix_getRepeatCountProbs(repeatSubMatrix, base, observationsHap2,
+				bamChunkReads, logProbabilitiesHap2, minRepeatLength, maxRepeatLength);
+
+	// Get ML prob for haplotype 2
+	double logProbMLHap2;
+	int64_t mLRepeatLengthHap2 = getMLRepeatCount(logProbabilitiesHap2, minRepeatLength, maxRepeatLength, &logProbMLHap2);
+
+	// Calculate ML probability of repeat length for haplotype1
+	double mlLogProb = getRepeatLengthProbForHaplotype(minRepeatLength, logProbabilitiesHap1, logProbabilitiesHap2,
+			minRepeatLength, logProbMLHap2, log(0.0001));
+	int64_t mlRepeatLength = minRepeatLength;
+	for(int64_t i=minRepeatLength+1; i<=maxRepeatLength; i++) {
+		double p = getRepeatLengthProbForHaplotype(i, logProbabilitiesHap1, logProbabilitiesHap2,
+				minRepeatLength, logProbMLHap2, log(0.0001));
 		if(p >= mlLogProb) {
 			mlLogProb = p;
 			mlRepeatLength = i;
 		}
 	}
 	*logProbability = mlLogProb;
+
+	if(mlRepeatLength != existingRepeatCount) {
+		st_uglyf("Got %i repeat length, other hap repeat length %i, log prob:%f, log prob hap1: %f log prob hap2: %f (min rl: %i max: %i) (total obs: %i, hap1: %i, hap2 : %i)\n",
+			(int)mlRepeatLength, (int)mLRepeatLengthHap2, (float)*logProbability, (float)logProbabilitiesHap1[mlRepeatLength-minRepeatLength],
+			(float)logProbMLHap2, (int)minRepeatLength, (int)maxRepeatLength,
+			(int)stList_length(observations), (int)stList_length(observationsHap1), (int)stList_length(observationsHap2));
+	}
+
+	// Cleanup
+	stList_destruct(observationsHap1);
+	stList_destruct(observationsHap2);
+
 	return mlRepeatLength;
 }
 
