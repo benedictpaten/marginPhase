@@ -7,12 +7,12 @@ import os
 import math
 
 def main():
-    trueAssembly = sys.argv[1]
-    assembly = open(sys.argv[2]).readlines()
+    trueAssembly = open(sys.argv[1]).readlines()
+    assembly = sys.argv[2]
     verbose = True if len(sys.argv) == 4 and sys.argv[-1] == "verbose" else False
     
     read = []
-    for line in assembly[1:]:
+    for line in trueAssembly[1:]:
         if ">" in line:
             break
         read.append(line[:-1])
@@ -30,7 +30,7 @@ def main():
     fh.write(">hello\n%s\n" % read)
     fh.close()
     
-    subprocess.call("cPecanLastz %s temp.fa --format=axt > temp.axt" % (trueAssembly,), shell=True)
+    subprocess.call("cPecanLastz temp.fa %s --format=axt > temp.axt" % (assembly,), shell=True)
     
     axt = open("temp.axt", "r").readlines()
     axt = [ i for i in axt if i[0] != '#']
@@ -84,7 +84,7 @@ def main():
                 print(" Mismatch", location, xString, yString)
 
     print("total-xLen: %s, total-yLen: %s, total-matches: %s, total-identity: %s, total-mismatches: %s, total-xGaps: %s, total-yGaps: %s, total-xGapEvents: %s, total-yGapEvents: %s" % 
-		(totalXLen, totalYLen, totalMatches, 2.0*totalMatches/float(totalXLen + totalYLen + 0.0001), totalMismatches, totalXGaps, totalYGaps, totalXGapEvents, totalYGapEvents))
+        (totalXLen, totalYLen, totalMatches, 2.0*totalMatches/float(totalXLen + totalYLen + 0.0001), totalMismatches, totalXGaps, totalYGaps, totalXGapEvents, totalYGapEvents))
 
 if __name__ == '__main__':
     main()

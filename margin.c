@@ -366,8 +366,8 @@ int main(int argc, char *argv[]) {
 
 		// If diploid
 		if(diploid) {
-			//params->polishParams->candidateVariantWeight = 0.1;
-			params->polishParams->columnAnchorTrim = 2;
+			//params->polishParams->candidateVariantWeight = 0.25;
+			params->polishParams->columnAnchorTrim = 3;
 			params->polishParams->alleleStrandSkew = 1.0;
 			params->polishParams->hetScalingParameter = 20.0;
 			params->polishParams->useReadAlleles = 0;

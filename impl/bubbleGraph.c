@@ -1165,13 +1165,13 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 
 				//st_uglyf(" Hello probs: %i %i %f %f %i\n", (int)j, (int)k, logProb, totalLogProb, (int)l);
 
-				l = l > 255 ? 255 : l;
-				assert(l >= 0);
-				assert(l <= 255);
+				//l = l > 255 ? 255 : l;
+				//assert(l >= 0);
+				//assert(l <= 255);
 
 				s->substitutionLogProbs[j * b->alleleNo + k] = l;
 
-				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : 600; //l;
+				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : 100;
 			}
 		}
 
@@ -1315,8 +1315,8 @@ static stList *getHMMTilingPath(stList *profileSeqs, Params *params) {
 		// Prune down to a single path
 		int64_t minPartitions = params->phaseParams->minPartitionsInAColumn;
 		int64_t maxPartitions = params->phaseParams->maxPartitionsInAColumn;
-		params->phaseParams->minPartitionsInAColumn = 1;
-		params->phaseParams->maxPartitionsInAColumn = 1;
+		params->phaseParams->minPartitionsInAColumn = 10;
+		params->phaseParams->maxPartitionsInAColumn = 10;
 		stRPHmm_prune(hmm);
 		params->phaseParams->minPartitionsInAColumn = minPartitions;
 		params->phaseParams->maxPartitionsInAColumn = maxPartitions;

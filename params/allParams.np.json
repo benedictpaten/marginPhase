@@ -94,9 +94,9 @@
 	"phase" : {
 		  "maxNotSumTransitions" : true,
 		
-		  "minPartitionsInAColumn" : 100,
+		  "minPartitionsInAColumn" : 200,
 		
-		  "maxPartitionsInAColumn" : 100,
+		  "maxPartitionsInAColumn" : 200,
 		
 		  "minPosteriorProbabilityForPartition" : 0.0,
 		
