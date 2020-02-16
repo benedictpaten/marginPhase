@@ -27,6 +27,7 @@ stRPHmmParameters *stRPHmmParameters_construct() {
 	// Other marginPhase program options
 	params->roundsOfIterativeRefinement = 0;
 	params->includeInvertedPartitions = true;
+	params->includeAncestorSubProb = true;
 
 	return params;
 }
@@ -180,6 +181,9 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->repeatSubMatrix = NULL;
     params->stateMachineForGenomeComparison = stateMachine3_constructNucleotide(threeStateAsymmetric);
     params->useReadAlleles = 1;
+    params->useReadAllelesInPhasing = 0;
+    params->hetSubstitutionProbability = 0.0001;
+    params->hetRunLengthSubstitutionProbability = 0.0001;
 
 	// Parse tokens, starting at token 1
     // (token 0 is entire object)
@@ -332,19 +336,24 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
 				st_errAbort("ERROR: minAvgBaseQuality parameter must zero or greater\n");
 			}
 			params->minAvgBaseQuality = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "hetScalingParameter") == 0) {
+		} else if (strcmp(keyString, "hetSubstitutionProbability") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
 				st_errAbort("ERROR: hetScalingParameter parameter must zero or greater\n");
 			}
-			params->hetScalingParameter = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "alleleStrandSkew") == 0) {
+			params->hetSubstitutionProbability = stJson_parseFloat(js, tokens, tokenIndex);
+		} else if (strcmp(keyString, "hetRunLengthSubstitutionProbability") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {
-						st_errAbort("ERROR: alleleStrandSkew parameter must zero or greater\n");
+				st_errAbort("ERROR: hetRunLengthSubstitutionProbability parameter must zero or greater\n");
 			}
-			params->alleleStrandSkew = stJson_parseFloat(js, tokens, tokenIndex);
-		} else if (strcmp(keyString, "useOnlySubstitutionsForPhasing") == 0) {
-		            params->useOnlySubstitutionsForPhasing = stJson_parseBool(js, tokens, ++tokenIndex);
-		} else if (strcmp(keyString, "alphabet") == 0) {
+			params->hetRunLengthSubstitutionProbability = stJson_parseFloat(js, tokens, tokenIndex);
+		}
+		else if (strcmp(keyString, "useReadAlleles") == 0) {
+		    params->useReadAlleles = stJson_parseBool(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "useReadAllelesInPhasing") == 0) {
+			params->useReadAllelesInPhasing = stJson_parseBool(js, tokens, ++tokenIndex);
+		}
+		else if (strcmp(keyString, "alphabet") == 0) {
 			jsmntok_t tok = tokens[++tokenIndex];
 			char *tokStr = stJson_token_tostr(js, &tok);
 			if(stString_eq(tokStr, "nucleotide")) {

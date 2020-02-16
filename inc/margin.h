@@ -69,7 +69,6 @@ typedef struct _refMsaView MsaView;
  */
 typedef struct _params Params;
 
-
 /*
  * Combined parameter object for phase, polish, view, etc.
  */
@@ -261,6 +260,9 @@ struct _stRPHmmParameters {
 
     // Number of rounds of iterative refinement to attempt to improve the partition.
     int64_t roundsOfIterativeRefinement;
+
+    // Flag used to determine if the ancestor substitution probabilities are used
+    bool includeAncestorSubProb;
 };
 
 void stRPHmmParameters_destruct(stRPHmmParameters *params);
@@ -540,7 +542,8 @@ struct _polishParams {
 	PairwiseAlignmentParameters *p; // Parameters object used for aligning
 	RepeatSubMatrix *repeatSubMatrix; // Repeat counts model used for predicting repeat counts of RLE sequences
 	bool useRepeatCountsInAlignment; // Use repeat counts in comparing reads to a reference
-	bool useReadAlleles; //
+	bool useReadAlleles; // Use read substrings rather than substrings (alleles) sampled from paths in the POA in the polish algorithm
+	bool useReadAllelesInPhasing; // Use read substrings rather than substrings (alleles) sampled from paths in the POA in the phasing algorithm
 
 	// chunking configuration
 	bool shuffleChunks;
@@ -563,9 +566,8 @@ struct _polishParams {
 	uint64_t filterReadsWhileHaveAtLeastThisCoverage; // Only filter read substrings if we have at least this coverage
 	// at a locus
 	double minAvgBaseQuality; // Minimum average base quality to include a substring for consensus finding
-	double hetScalingParameter; // The amount to scale the -log prob of two alleles as having diverged from one another
-	double alleleStrandSkew; // The number of standard deviations above the mean to allow an allele with a strand bias before filtering.
-	bool useOnlySubstitutionsForPhasing; // In creating phasing use sites where alleles only differ by substitutions
+	double hetSubstitutionProbability; // The probability of a heterozygous variant
+	double hetRunLengthSubstitutionProbability; // The probability of a heterozygous run length
 
 	// Poa parameters
 	bool poaConstructCompareRepeatCounts; // use the repeat counts in deciding if an indel can be shifted
@@ -778,7 +780,7 @@ void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
  * As poa_estimateRepeatCountsUsingBayesianModel, but using a phasing.
  */
 void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
-		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2);
+		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params);
 
 // Data structure for representing RLE strings
 struct _rleString {
@@ -882,7 +884,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
  * As repeatSubMatrix_getMLRepeatCount, but for a phasing of the reads.
  */
 int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, int64_t existingRepeatCount, Symbol base, stList *observations,
-		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2);
+		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params);
 
 /*
  * Translate a sequence of aligned pairs (as stIntTuples) whose coordinates are monotonically increasing
@@ -1098,11 +1100,6 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 void bubbleGraph_destruct(BubbleGraph *bg);
 
 /*
- * Prints a quick view of the bubble graph for debugging/browsing.
- */
-void bubbleGraph_print(BubbleGraph *bg, FILE *fh);
-
-/*
  * The the index in b->alleles of the allele with highest likelihood
  * given the reads
  */
@@ -1128,7 +1125,6 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
  * Phase bubble graph.
  */
 stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs);
-stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs);
 
 /*
  * Get Poa from bubble graph.
@@ -1149,16 +1145,6 @@ double bubble_phasedStrandSkew(Bubble *b, stHash *readsToPSeqs, stGenomeFragment
  * Returns fraction of bubbles with significant allele-strand phase skew.
  */
 double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenomeFragment *gf);
-
-/*
- * Filter bubbles to remove bubbles containing any alleles with a significant strand skew.
- */
-void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p);
-
-/*
- * Filter bubbles to remove bubbles encoding indels
- */
-void bubbleGraph_filterBubblesToRemoveIndels(BubbleGraph *bg, Params *p);
 
 /*
  * Functions for scoring strand skews using binomial model

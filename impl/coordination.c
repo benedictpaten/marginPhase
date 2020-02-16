@@ -468,6 +468,9 @@ stList *getRPHmms(stList *profileSeqs, stRPHmmParameters *params) {
                             " with configured maximum of %" PRIi64 "\n",
                 stList_length(tilingPaths), MAX_READ_PARTITIONING_DEPTH, params->maxCoverageDepth);
     }
+    else {
+    	st_logDebug("Got %i tiling paths from which to build hmms for max coverage depth of: %i\n", (int)stList_length(tilingPaths), (int)params->maxCoverageDepth);
+    }
 
     // Merge together the tiling paths into one merged tiling path, merging the individual hmms when
     // they overlap on the reference

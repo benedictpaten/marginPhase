@@ -1572,7 +1572,7 @@ void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
 }
 
 void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
-		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2) {
+		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params) {
 	poa->refString->nonRleLength = 0;
 	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
 		PoaNode *node = stList_get(poa->nodes, i);
@@ -1581,7 +1581,7 @@ void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunk
 		double logProbability;
 
 		poa->refString->repeatCounts[i-1] = repeatSubMatrix_getPhasedMLRepeatCount(repeatSubMatrix, poa->refString->repeatCounts[i-1], poa->alphabet->convertCharToSymbol(node->base), node->observations,
-				bamChunkReads, &logProbability, readsBelongingToHap1, readsBelongingToHap2);
+				bamChunkReads, &logProbability, readsBelongingToHap1, readsBelongingToHap2, params);
 
 		if(poa->refString->repeatCounts[i-1] == 0) { // Prevent zero length estimates
 			poa->refString->repeatCounts[i-1] = 1;
@@ -1787,7 +1787,7 @@ double getRepeatLengthProbForHaplotype(int64_t repeatLength, double *logProbabil
 }
 
 int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, int64_t existingRepeatCount, Symbol base, stList *observations,
-		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2) {
+		stList *bamChunkReads, double *logProbability, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params) {
 	// Calculate range of repeat counts observed
 	int64_t minRepeatLength, maxRepeatLength;
 	repeatSubMatrix_getMinAndMaxRepeatCountObservations(repeatSubMatrix, observations,
@@ -1823,11 +1823,11 @@ int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix,
 
 	// Calculate ML probability of repeat length for haplotype1
 	double mlLogProb = getRepeatLengthProbForHaplotype(minRepeatLength, logProbabilitiesHap1, logProbabilitiesHap2,
-			minRepeatLength, logProbMLHap2, log(0.0001));
+			minRepeatLength, logProbMLHap2, log(params->hetRunLengthSubstitutionProbability));
 	int64_t mlRepeatLength = minRepeatLength;
 	for(int64_t i=minRepeatLength+1; i<=maxRepeatLength; i++) {
 		double p = getRepeatLengthProbForHaplotype(i, logProbabilitiesHap1, logProbabilitiesHap2,
-				minRepeatLength, logProbMLHap2, log(0.0001));
+				minRepeatLength, logProbMLHap2, log(params->hetRunLengthSubstitutionProbability));
 		if(p >= mlLogProb) {
 			mlLogProb = p;
 			mlRepeatLength = i;

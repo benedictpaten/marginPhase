@@ -161,8 +161,21 @@ static inline void ancestorHapProbabilities(stSite *site, uint64_t *alleleLogPro
     }
 }
 
+static inline uint64_t getMaxAlleleLogProb(stSite *site, uint64_t *alleleLogProbs) {
+    /*
+     * Get the min -log probability of an allele.
+     */
+
+    // Calculate the probability of haplotype alleles and read alleles for each ancestor allele
+    uint64_t p = alleleLogProbs[0];
+	for(uint64_t i=1; i<site->alleleNumber; i++) {
+		p = minP(p, alleleLogProbs[i]);
+	}
+	return p;
+}
+
 static inline uint64_t genotypeLogProbability(stRPColumn *column, stSite *site, uint64_t siteOffset,
-                                                 uint64_t partition, uint64_t *bitCountVectors) {
+                                                 uint64_t partition, uint64_t *bitCountVectors, bool includeAncestorSubProb) {
     /*
      * Get the -log probability of the alleles in a given position within a column for a given partition.
      */
@@ -174,6 +187,10 @@ static inline uint64_t genotypeLogProbability(stRPColumn *column, stSite *site, 
 	alleleLogHapProbabilities(column, site, siteOffset, partition, bitCountVectors, alleleLogProbsHap1);
 	uint64_t alleleLogProbsHap2[site->alleleNumber];
 	alleleLogHapProbabilities(column, site, siteOffset, ~partition, bitCountVectors, alleleLogProbsHap2);
+
+	if(!includeAncestorSubProb) {
+		return getMaxAlleleLogProb(site, alleleLogProbsHap1) + getMaxAlleleLogProb(site, alleleLogProbsHap2);
+	}
 
     uint64_t ancestorAlleleProbsHap1[site->alleleNumber];
     ancestorHapProbabilities(site, alleleLogProbsHap1, ancestorAlleleProbsHap1);
@@ -204,7 +221,8 @@ double emissionLogProbability(stRPColumn *column,
     	uint64_t siteOffset = site->alleleOffset - firstAllele;
 
         // Get the reference prior probabilities
-        logPartitionProb += genotypeLogProbability(column, site, siteOffset, cell->partition, bitCountVectors);
+        logPartitionProb += genotypeLogProbability(column, site, siteOffset, cell->partition, bitCountVectors,
+        		params->includeAncestorSubProb);
     }
 
     return -((double)logPartitionProb);

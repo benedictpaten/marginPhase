@@ -61,12 +61,14 @@
 		  
 		  "filterReadsWhileHaveAtLeastThisCoverage" : 15,
 		  
-		  "hetScalingParameter" : 1.0,
+		  "hetSubstitutionProbability" : 0.0001,
 		  
-		  "alleleStrandSkew" : 1.5,
+		  "hetRunLengthSubstitutionProbability" : 0.01,
 		  
-		  "useOnlySubstitutionsForPhasing" : true,  
-	
+		  "useReadAlleles" : true,
+		  
+		  "useReadAllelesInPhasing" : false,
+		  
 		  "minAvgBaseQuality" : 10,
 		  
 		  "pairwiseAlignmentParameters" : {

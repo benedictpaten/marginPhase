@@ -366,27 +366,15 @@ int main(int argc, char *argv[]) {
 
 		// If diploid
 		if(diploid) {
-			//params->polishParams->candidateVariantWeight = 0.1;
-			params->polishParams->columnAnchorTrim = 2;
-			params->polishParams->alleleStrandSkew = 1.0;
-			params->polishParams->hetScalingParameter = 20.0;
-			params->polishParams->useReadAlleles = 0;
-			//params->phaseParams->roundsOfIterativeRefinement = 0;
-
 			// Get the bubble graph representation
+			bool useReadAlleles = params->polishParams->useReadAlleles;
+			params->polishParams->useReadAlleles = params->polishParams->useReadAllelesInPhasing;
 			BubbleGraph *bg = bubbleGraph_constructFromPoa(poa, reads, params->polishParams);
-
-			// Filter bubbles to remove indels
-			if(params->polishParams->useOnlySubstitutionsForPhasing) {
-				//bubbleGraph_filterBubblesToRemoveIndels(bg, params);
-			}
-
-			// Filter bubbles to remove bubbles with alleles with strand-skew
-			//bubbleGraph_filterBubblesByAlleleStrandSkew(bg, params);
+			params->polishParams->useReadAlleles = useReadAlleles;
 
 			// Now make a POA for each of the haplotypes
 			stHash *readsToPSeqs;
-			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraphAlt(bg, bamChunk->refSeqName, reads, params, &readsToPSeqs);
+			stGenomeFragment *gf = bubbleGraph_phaseBubbleGraph(bg, bamChunk->refSeqName, reads, params, &readsToPSeqs);
 
 			stSet *readsBelongingToHap1, *readsBelongingToHap2;
 			stGenomeFragment_phaseBamChunkReads(gf, readsToPSeqs, reads, &readsBelongingToHap1, &readsBelongingToHap2);
@@ -418,10 +406,10 @@ int main(int argc, char *argv[]) {
 
 			st_logInfo("Using read phasing to re0estimate repeat counts in phased manner\n");
 			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap1, reads,
-					params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2);
+					params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2, params->polishParams);
 
 			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap2, reads,
-					params->polishParams->repeatSubMatrix, readsBelongingToHap2, readsBelongingToHap1);
+					params->polishParams->repeatSubMatrix, readsBelongingToHap2, readsBelongingToHap1, params->polishParams);
 
 			// Output
 			polishedReferenceSequence_processChunkSequence(rSeq1, bamChunk, poa_hap1, reads, params);

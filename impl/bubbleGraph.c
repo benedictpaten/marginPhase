@@ -827,11 +827,9 @@ BubbleGraph *bubbleGraph_constructFromPoa(Poa *poa, stList *bamChunkReads, Polis
 			if(i-pAnchor != 1)  { // In case anchors are not trivially adjacent there exists a potential bubble
 				// with start coordinate on the reference sequence of pAnchor and length pAnchor-i
 
-
 				// Get read substrings
 				stList *readSubstrings = getReadSubstrings(bamChunkReads, poa, pAnchor+1, i, params);
 
-				//
 				if(stList_length(readSubstrings) > 0) {
 					stList *alleles = NULL;
 					if(params->useReadAlleles) {
@@ -1005,10 +1003,6 @@ void bubbleGraph_destruct(BubbleGraph *bg) {
 	free(bg);
 }
 
-void bubbleGraph_print(BubbleGraph *bg, FILE *fh) {
-
-}
-
 stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref) {
 	// First calculate the length of all the profile sequences
 
@@ -1086,10 +1080,8 @@ stHash *bubbleGraph_getProfileSeqs(BubbleGraph *bg, stReference *ref) {
 			for(uint64_t k=0; k<b->alleleNo; k++) {
 				float logProb = b->alleleReadSupports[b->readNo * k + j];
 				assert(logProb <= totalLogProb);
-				//int64_t l = -roundf(b->alleleReadSupports[b->readNo * k + j]);
 				int64_t l = roundf(30.0 * (totalLogProb - logProb));
 				assert(l >= 0);
-				//st_uglyf("Hello, %f %f %i\n", (float)totalLogProb, logProb, (int)l);
 				pSeq->profileProbs[alleleOffset+k] = l > 255 ? 255 : l;
 			}
 		}
@@ -1109,74 +1101,21 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 	ref->sites = st_calloc(bg->bubbleNo, sizeof(stSite));
 	ref->totalAlleles = 0;
 
-	stList *anchorPairs = stList_construct(); // Currently empty, and no anchor pairs will be created
+	//stList *anchorPairs = stList_construct(); // Currently empty, and no anchor pairs will be created
 	for(uint64_t i=0; i<bg->bubbleNo; i++) {
 		Bubble *b = &bg->bubbles[i];
 		stSite *s = &ref->sites[i];
 		s->alleleNumber = b->alleleNo;
 		s->alleleOffset = b->alleleOffset;
 		ref->totalAlleles += b->alleleNo;
-		//TODO: fix: make probs proper
-		s->allelePriorLogProbs = st_calloc(b->alleleNo, sizeof(uint16_t));
+		s->allelePriorLogProbs = st_calloc(b->alleleNo, sizeof(uint16_t)); // These are all set equal 
 		s->substitutionLogProbs = st_calloc(b->alleleNo*b->alleleNo, sizeof(uint16_t));
 
-		// We set the probability of a substitution between two different alleles proportional to the forward probability of the
-		// alignment of the two alleles
-
-		// First calculate the log probability of the alignment between each pair of alleles
-		float alleleLogSubstitutionProbs[b->alleleNo * b->alleleNo];
 		for(uint64_t j=0; j<b->alleleNo; j++) {
-
-			SymbolString aS = rleString_constructSymbolString(b->alleles[j], 0, b->alleles[j]->length,
-					params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
-
-			for(uint64_t k=j; k<b->alleleNo; k++) {
-				SymbolString aS2 = rleString_constructSymbolString(b->alleles[k], 0, b->alleles[k]->length,
-									params->polishParams->stateMachineForGenomeComparison->emissions->alphabet, params->polishParams->useRepeatCountsInAlignment);
-
-				float f = computeForwardProbability(aS, aS2, anchorPairs, params->polishParams->p, params->polishParams->stateMachineForGenomeComparison, 0, 0);
-
-				alleleLogSubstitutionProbs[j * b->alleleNo + k] = f;
-				alleleLogSubstitutionProbs[k * b->alleleNo + j] = f;
-
-				symbolString_destruct(aS2);
-			}
-			symbolString_destruct(aS);
-		}
-
-		// Now set the normalized substitution probabilities
-		for(uint64_t j=0; j<b->alleleNo; j++) {
-
-			// Calculate the total log prob of creating the other allles given allele j
-			double totalLogProb = LOG_ZERO;
 			for(uint64_t k=0; k<b->alleleNo; k++) {
-				totalLogProb = stMath_logAddExact(totalLogProb, alleleLogSubstitutionProbs[j * b->alleleNo + k]);
-			}
-
-			// Now set the normalized log substitution probabilities
-			for(uint64_t k=0; k<b->alleleNo; k++) {
-				float logProb = alleleLogSubstitutionProbs[j * b->alleleNo + k];
-				assert(logProb <= totalLogProb);
-
-				int64_t l = roundf(30.0 * (totalLogProb - logProb));
-				assert(l >= 0);
-
-				//int64_t l = roundf(k == j ? 0 : f * params->polishParams->hetScalingParameter);
-
-				//st_uglyf(" Hello probs: %i %i %f %f %i\n", (int)j, (int)k, logProb, totalLogProb, (int)l);
-
-				l = l > 255 ? 255 : l;
-				assert(l >= 0);
-				assert(l <= 255);
-
-				s->substitutionLogProbs[j * b->alleleNo + k] = l;
-
-				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : 600; //l;
+				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : roundf(-log(params->polishParams->hetSubstitutionProbability)*30.0); //l;
 			}
 		}
-
-	}
-	stList_destruct(anchorPairs);
 
 	return ref;
 }
@@ -1216,7 +1155,7 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 			RleString *hap1 = b->alleles[gF->haplotypeString1[i]];
 			RleString *hap2 = b->alleles[gF->haplotypeString2[i]];
 
-			if(gF->haplotypeString1[i] != gF->haplotypeString2[i] || !rleString_eq(b->refAllele, hap1) || 1) {
+			if(gF->haplotypeString1[i] != gF->haplotypeString2[i] || !rleString_eq(b->refAllele, hap1)) {
 				stRPCell *cell = stList_get(path, colIndex);
 
 				double strandSkew = bubble_phasedStrandSkew(b, readsToPSeqs, gF);
@@ -1294,37 +1233,6 @@ void bubbleGraph_logPhasedBubbleGraph(BubbleGraph *bg, stRPHmm *hmm, stList *pat
 	}
 }
 
-static stList *getHMMTilingPath(stList *profileSeqs, Params *params) {
-	/*
-	 * Get a tiling path of hmms.
-	 */
-	// Deal with empty case
-	assert(stList_length(profileSeqs) > 0);
-
-	// Run phasing
-	stList *hmmTilingPath = getRPHmms(profileSeqs, params->phaseParams);
-	stList_setDestructor(hmmTilingPath, NULL);
-
-	for(int64_t i=0; i<stList_length(hmmTilingPath); i++) {
-		// For each hmm
-		stRPHmm *hmm = stList_get(hmmTilingPath, i);
-
-		// Run the forward-backward algorithm
-		stRPHmm_forwardBackward(hmm);
-
-		// Prune down to a single path
-		int64_t minPartitions = params->phaseParams->minPartitionsInAColumn;
-		int64_t maxPartitions = params->phaseParams->maxPartitionsInAColumn;
-		params->phaseParams->minPartitionsInAColumn = 1;
-		params->phaseParams->maxPartitionsInAColumn = 1;
-		stRPHmm_prune(hmm);
-		params->phaseParams->minPartitionsInAColumn = minPartitions;
-		params->phaseParams->maxPartitionsInAColumn = maxPartitions;
-	}
-
-	return hmmTilingPath;
-}
-
 stSet *filterReadsByCoverageDepth2(stList *profileSeqs, Params *params) {
 	stList *filteredProfileSeqs = stList_construct();
 	stList *discardedProfileSeqs = stList_construct();
@@ -1338,7 +1246,7 @@ stSet *filterReadsByCoverageDepth2(stList *profileSeqs, Params *params) {
 	return discardedReadsSet;
 }
 
-stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params,
+stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params,
 		stHash **readsToPSeqs) {
 	/*
 	 * Runs phasing algorithm to split the reads embedded in the bubble graph into two partitions.
@@ -1391,21 +1299,22 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	}
 
 	// Run phasing for each strand partition
+	params->phaseParams->includeAncestorSubProb = 0; // Switch off using ancestor substitution probabilities in calculating the hmm probs
+
 	st_logInfo("> Phasing forward strand reads\n");
-	stList *tilingPathForward = getHMMTilingPath(forwardStrandProfileSeqs, params);
+	stList *tilingPathForward = getRPHmms(forwardStrandProfileSeqs, params->phaseParams);
+	stList_setDestructor(tilingPathForward, NULL);
 
 	st_logInfo("> Phasing reverse strand reads\n");
-	stList *tilingPathReverse = getHMMTilingPath(reverseStrandProfileSeqs, params);
+	stList *tilingPathReverse = getRPHmms(reverseStrandProfileSeqs, params->phaseParams);
+	stList_setDestructor(tilingPathReverse, NULL);
 
 	// Join the hmms
 	st_logInfo("> Joining forward and reverse strand phasing\n");
-	bool includeInvertedPartitions = params->phaseParams->includeInvertedPartitions;
-	params->phaseParams->includeInvertedPartitions = 1;
-	stList *tilingPath = mergeTwoTilingPaths(tilingPathForward, tilingPathReverse);
-	params->phaseParams->includeInvertedPartitions = includeInvertedPartitions;
-	stRPHmm *hmm = fuseTilingPath(tilingPath);
+	stRPHmm *hmm = fuseTilingPath(mergeTwoTilingPaths(tilingPathForward, tilingPathReverse));
 
 	// Run the forward-backward algorithm
+	params->phaseParams->includeAncestorSubProb = 1; // Now switch on using ancestor substitution probabilities in calculating the final, root hmm probs
 	stRPHmm_forwardBackward(hmm);
 
 	// Now compute a high probability path through the hmm
@@ -1442,7 +1351,9 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	// position
 	for(uint64_t i=0; i<gF->length; i++) {
 		Bubble *b = &bg->bubbles[gF->refStart+i];
-		if(gF->haplotypeString1[i] == gF->haplotypeString2[i]) { // gF->readsSupportingHaplotype1[i] < 5 || gF->readsSupportingHaplotype2[i] < 5) { // is homozygous
+
+		if(gF->haplotypeString1[i] == gF->haplotypeString2[i]) {
+		  //|| binomialPValue(gF->readsSupportingHaplotype1[i] + gF->readsSupportingHaplotype2[i], gF->readsSupportingHaplotype1[i]) < 0.05) { // gF->readsSupportingHaplotype1[i] < 5 || gF->readsSupportingHaplotype2[i] < 5) { // is homozygous
 			int64_t refAlleleIndex = bubble_getReferenceAlleleIndex(b);
 			if(refAlleleIndex != -1) { // is homozygous alt
 				gF->haplotypeString1[i] = refAlleleIndex; // set to reference allele
@@ -1462,231 +1373,6 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraphAlt(BubbleGraph *bg, char *refSeqN
 	stList_destruct(profileSeqs);
 
 	return gF;
-}
-
-stGenomeFragment *bubbleGraph_phaseBubbleGraph2(BubbleGraph *bg, stReference *ref, stHash *readsToPSeqs, stList *profileSeqs, Params *params, stRPHmm **hmmP, stList **pathP) {
-	// Deal with empty case
-	if(stList_length(profileSeqs) == 0) {
-		stGenomeFragment *gf = stGenomeFragment_constructEmpty(ref, 0, 0, stSet_construct(), stSet_construct());
-		return gf;
-	}
-
-	// Filter reads so that the maximum coverage depth does not exceed params->maxCoverageDepth
-	st_logInfo("> Filtering reads by coverage depth\n");
-	stList *filteredProfileSeqs = stList_construct();
-	stList *discardedProfileSeqs = stList_construct();
-	filterReadsByCoverageDepth(profileSeqs, params->phaseParams, filteredProfileSeqs, discardedProfileSeqs);
-	st_logInfo("\tFiltered %" PRIi64 " reads of %" PRIi64
-			" to achieve maximum coverage depth of %" PRIi64 "\n",
-			stList_length(discardedProfileSeqs), stList_length(profileSeqs),
-			params->phaseParams->maxCoverageDepth);
-
-	// Run phasing
-	stList *hmms = getRPHmms(filteredProfileSeqs, params->phaseParams);
-	stRPHmm *hmm = stList_pop(hmms);
-	assert(stList_length(hmms) == 0);
-	stList_destruct(hmms);
-
-	// Run the forward-backward algorithm
-	stRPHmm_forwardBackward(hmm);
-
-	// Now compute a high probability path through the hmm
-	stList *path = stRPHmm_forwardTraceBack(hmm);
-
-	assert(hmm->refStart >= 0);
-	assert(hmm->refStart + hmm->refLength <= bg->bubbleNo);
-
-	// Compute the genome fragment
-	stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
-
-	// Refine the genome fragment by re-partitioning the reads iteratively
-	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
-		stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
-	}
-
-	// Sanity checks
-	assert(gF->refStart >= 0);
-	assert(gF->refStart + gF->length <= bg->bubbleNo);
-	assert(gF->length == hmm->refLength);
-
-	// For reads that exceeded the coverage depth, add them back to the haplotype they fit best
-	while(stList_length(discardedProfileSeqs) > 0) {
-		stProfileSeq *pSeq = stList_pop(discardedProfileSeqs);
-		double i = getLogProbOfReadGivenHaplotype(gF->haplotypeString1, gF->refStart, gF->length, pSeq, gF->reference);
-		double j = getLogProbOfReadGivenHaplotype(gF->haplotypeString2, gF->refStart, gF->length, pSeq, gF->reference);
-		stSet_insert(i < j ? gF->reads2 : gF->reads1, pSeq);
-	}
-
-	// Check / log the result
-	//bubbleGraph_logPhasedBubbleGraph(bg, hmm, path, readsToPSeqs, profileSeqs, gF);
-
-	// Cleanup
-	stList_destruct(discardedProfileSeqs);
-	stList_destruct(filteredProfileSeqs);
-
-	*hmmP = hmm;
-	*pathP = path;
-	//stRPHmm_destruct(hmm, 1);
-	//stList_destruct(path);
-
-	return gF;
-}
-
-void unifyGenomeFragments(BubbleGraph *bg, stGenomeFragment *gFP, stGenomeFragment *gFR) {
-	/*
-	 * Set any het sites that are not the same in both genome-fragments to be homozygous reference.
-	 */
-
-	uint64_t forwardHets = 0, backwardHets = 0, intersectionHets = 0, total = 0, fullAgreeHets = 0;
-	uint64_t fullAgreeHetsPos = 0, fullAgreeHetsNegs = 0;
-
-	for(int64_t i=0; i<gFP->length; i++) {
-		Bubble *b = &bg->bubbles[gFP->refStart+i];
-
-		int64_t j = i + gFP->refStart - gFR->refStart;
-		if(j < 0 || j >= gFR->length) {
-			int64_t refAlleleIndex = bubble_getReferenceAlleleIndex(b);
-			if(refAlleleIndex != -1) { // is homozygous alt
-				gFP->haplotypeString1[i] = refAlleleIndex; // set to reference allele
-				gFP->haplotypeString2[i] = refAlleleIndex;
-			}
-			else {
-				st_logCritical("Could not find the reference allele\n");
-			}
-			continue;
-		}
-
-		bool trueHet = 0;
-		if(gFP->haplotypeString1[i] != gFP->haplotypeString2[i] && gFP->readsSupportingHaplotype1[i] >= 5 && gFP->readsSupportingHaplotype2[i] >= 5) { // Is het in forward strand read phasing
-			forwardHets++;
-
-			if(gFR->haplotypeString1[j] != gFR->haplotypeString2[j]  && gFR->readsSupportingHaplotype1[j] >= 5 && gFR->readsSupportingHaplotype2[j] >= 5) { // Is also het in the reverse strand read phasing
-				intersectionHets++;
-
-				st_uglyf("Combined het: %i %i %i %i supports: %i %i %i %i \n", (int)gFP->haplotypeString1[i],
-						(int)gFP->haplotypeString2[i], (int)gFR->haplotypeString1[j], (int)gFR->haplotypeString2[j], (int)gFP->readsSupportingHaplotype1[i],
-						(int)gFP->readsSupportingHaplotype2[i], (int)gFR->readsSupportingHaplotype1[j],
-						(int)gFR->readsSupportingHaplotype2[j]);
-				rleString_print(b->alleles[gFP->haplotypeString1[i]], stderr);
-				fprintf(stderr, "\n");
-				rleString_print(b->alleles[gFP->haplotypeString2[i]], stderr);
-				fprintf(stderr, "\n");
-				rleString_print(b->alleles[gFR->haplotypeString1[j]], stderr);
-				fprintf(stderr, "\n");
-				rleString_print(b->alleles[gFR->haplotypeString2[j]], stderr);
-				fprintf(stderr, "\n");
-
-				if(gFP->haplotypeString1[i] == gFR->haplotypeString2[j] && gFP->haplotypeString2[i] == gFR->haplotypeString1[j]) { // Hets have the same alleles, first orientation
-					trueHet = 1;
-					fullAgreeHets++;
-					fullAgreeHetsPos++;
-				}
-				else if(gFP->haplotypeString1[i] == gFR->haplotypeString1[j] && gFP->haplotypeString2[i] == gFR->haplotypeString2[j]) { // Hets have the same alleles, reverse orientation
-					trueHet = 1;
-					fullAgreeHets++;
-					fullAgreeHetsNegs++;
-				}
-
-			}
-		}
-
-		if(gFR->haplotypeString1[j] != gFR->haplotypeString2[j]  && gFR->readsSupportingHaplotype1[j] >= 5 && gFR->readsSupportingHaplotype2[j] >= 5) {
-			backwardHets++;
-		}
-
-		if(!trueHet) {
-			int64_t refAlleleIndex = bubble_getReferenceAlleleIndex(b);
-			if(refAlleleIndex != -1) { // is homozygous alt
-				gFP->haplotypeString1[i] = refAlleleIndex; // set to reference allele
-				gFP->haplotypeString2[i] = refAlleleIndex;
-				gFR->haplotypeString1[j] = refAlleleIndex; // set to reference allele
-				gFR->haplotypeString2[j] = refAlleleIndex;
-			}
-			else {
-				st_logCritical("Could not find the reference allele\n");
-			}
-		}
-	}
-
-	st_uglyf("boo f hets: %i, b hets: %i, intersection hets: %i total: %i total sites: %i, full agree hets: %i, pos agree: %i, neg agree: %i\n", (int)forwardHets, (int)backwardHets,
-			(int)intersectionHets, (int)total, (int)bg->bubbleNo, (int)fullAgreeHets, (int)fullAgreeHetsPos, (int)fullAgreeHetsNegs);
-
-
-	// Set any homozygous alts back to being homozygous reference
-	// This is really a hack because sometimes the phasing algorithm picks a non-reference allele for a homozygous
-	// position
-	/*for(uint64_t i=0; i<gF->length; i++) {
-		Bubble *b = &bg->bubbles[gF->refStart+i];
-		if(gF->haplotypeString1[i] == gF->haplotypeString2[i] || binomialPValue(gF->readsSupportingHaplotype1[i] + gF->readsSupportingHaplotype2[i],
-				gF->readsSupportingHaplotype1[i]) < 0.05) { // gF->readsSupportingHaplotype1[i] < 5 || gF->readsSupportingHaplotype2[i] < 5) { // is homozygous
-			int64_t refAlleleIndex = bubble_getReferenceAlleleIndex(b);
-			if(refAlleleIndex != -1) { // is homozygous alt
-				gF->haplotypeString1[i] = refAlleleIndex; // set to reference allele
-				gF->haplotypeString2[i] = refAlleleIndex;
-			}
-		}
-	}*/
-}
-
-stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName, stList *reads, Params *params, stHash **readsToPSeqs2) {
-	/*
-	 * Runs phasing algorithm to split the reads embedded in the bubble graph into two partitions.
-	 */
-
-	// Generate profile sequences and reference
-	stReference *ref = bubbleGraph_getReference(bg, refSeqName, params);
-	assert(ref->length == bg->bubbleNo);
-	stHash *readsToPSeqs = bubbleGraph_getProfileSeqs(bg, ref);
-	*readsToPSeqs2 = readsToPSeqs;
-	stList *profileSeqs = stHash_getValues(readsToPSeqs);
-
-	assert(stList_length(reads) >= stList_length(profileSeqs));
-	if(stList_length(reads) != stList_length(profileSeqs)) {
-		st_logInfo("In converting from reads to profile sequences have %" PRIi64 " reads and %" PRIi64 " profile sequences\n",
-				stList_length(reads), stList_length(profileSeqs));
-	}
-
-	// Partition reads based upon strand
-	stList *forwardStrandProfileSeqs = stList_construct();
-	stList *reverseStrandProfileSeqs = stList_construct();
-	stHashIterator *hashIt = stHash_getIterator(readsToPSeqs);
-	BamChunkRead *r;
-	while((r = stHash_getNext(hashIt)) != NULL) {
-		stProfileSeq *pSeq = stHash_search(readsToPSeqs, r);
-		if(r->forwardStrand) {
-			stList_append(forwardStrandProfileSeqs, pSeq);
-		}
-		else {
-			stList_append(reverseStrandProfileSeqs, pSeq);
-		}
-	}
-	stHash_destructIterator(hashIt);
-
-	// Run phasing for each strand partition
-	st_logInfo("> Phasing forward strand reads\n");
-	stRPHmm *hmmF;
-	stList *pathF;
-	stGenomeFragment *gFP = bubbleGraph_phaseBubbleGraph2(bg, ref, readsToPSeqs, forwardStrandProfileSeqs, params, &hmmF, &pathF);
-	st_logInfo("> Phasing reverse strand reads\n");
-	stRPHmm *hmmR;
-	stList *pathR;
-	stGenomeFragment *gFR = bubbleGraph_phaseBubbleGraph2(bg, ref, readsToPSeqs, reverseStrandProfileSeqs, params, &hmmR, &pathR);
-
-	// Unify
-	unifyGenomeFragments(bg, gFP, gFR);
-
-	bubbleGraph_logPhasedBubbleGraph(bg, hmmF, pathF, readsToPSeqs, profileSeqs, gFP);
-
-	bubbleGraph_logPhasedBubbleGraph(bg, hmmR, pathR, readsToPSeqs, profileSeqs, gFR);
-
-	// Cleanup
-	//stList_setDestructor(profileSeqs, (void(*)(void*))stProfileSeq_destruct);
-	//stList_destruct(profileSeqs);
-	//stHash_destruct(readsToPSeqs);
-	//stGenomeFragment_destruct(gFP);
-	//stGenomeFragment_destruct(gFR);
-
-	return gFP;
 }
 
 Poa *bubbleGraph_getNewPoa(BubbleGraph *bg, uint64_t *consensusPath, Poa *poa, stList *reads, Params *params) {
@@ -1745,45 +1431,6 @@ void bubble_calculateStrandSkews(Bubble *b, double *skews) {
 	}
 }
 
-double *bubbleGraph_getAlleleStrandSkews(BubbleGraph *bg) {
-	double *skews = st_calloc(bg->totalAlleles, sizeof(double));
-	for(int64_t i=0; i<bg->bubbleNo; i++) {
-		Bubble *b = &bg->bubbles[i];
-		bubble_calculateStrandSkews(b, &skews[b->alleleOffset]);
-	}
-
-	return skews;
-}
-
-double bubbleGraph_getAlleleStrandSkewCutoff(BubbleGraph *bg, Params *p) {
-	double *skews = bubbleGraph_getAlleleStrandSkews(bg);
-
-	// Calc average skew
-	double avgSkew = 0.0;
-	for(int64_t i=0; i<bg->totalAlleles; i++) {
-		avgSkew += fabs(skews[i]);
-	}
-	avgSkew /= bg->totalAlleles;
-
-	// Calc variance
-	double variance = 0.0;
-	for(int64_t i=0; i<bg->totalAlleles; i++) {
-		double d = skews[i] - avgSkew;
-		variance += d * d;
-	}
-	variance /= bg->totalAlleles;
-
-	double sd = sqrt(variance);
-	double cutoff = avgSkew + p->polishParams->alleleStrandSkew * sd;
-
-	st_logDebug("Got avg. allele skew: %f, variance: %f, standard-deviation: %f, cutoff: %f from %i alleles across %i bubbles (alleleStrandSkew parameter: %f)\n",
-			avgSkew, variance, sd, cutoff, (int)bg->totalAlleles, (int)bg->bubbleNo, (float)p->polishParams->alleleStrandSkew);
-
-	free(skews);
-
-	return cutoff;
-}
-
 uint128_t bionomialCoefficient(int64_t n, int64_t k) {
 	uint128_t ans=1;
     k=k>n-k?n-k:k;
@@ -1836,72 +1483,5 @@ double bubbleGraph_skewedBubbles(BubbleGraph *bg, stHash *readsToPSeqs, stGenome
 		skewedBubbles += bubble_phasedStrandSkew(&bg->bubbles[i], readsToPSeqs, gf) < 0.05 ? 1 : 0;
 	}
 	return ((float)skewedBubbles)/bg->bubbleNo;
-}
-
-bool filterByBubbleStrandSkew(Bubble *b, double *alleleSkewCutoff) {
-	double skews[b->alleleNo];
-	bubble_calculateStrandSkews(b, skews);
-	for(int64_t i=0; i<b->alleleNo; i++) {
-		if(fabs(skews[i]) > *alleleSkewCutoff) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-uint64_t bubbleGraph_filterBubbles(BubbleGraph *bg,
-		bool (*filterFn)(Bubble *, void *), void *extraArg) {
-	uint64_t j=0, alleleOffset = 0;
-	for(int64_t i=0; i<bg->bubbleNo; i++) {
-		if(!filterFn(&bg->bubbles[i], extraArg)) {
-			bg->bubbles[j] = bg->bubbles[i];
-			bg->bubbles[j].alleleOffset = alleleOffset;
-			alleleOffset += bg->bubbles[j++].alleleNo;
-		}
-		else {
-			bubble_destruct(bg->bubbles[i]);
-		}
-	}
-	uint64_t filteredBubbles = bg->bubbleNo - j;
-	bg->bubbleNo = j;
-	bg->totalAlleles = alleleOffset;
-	if (bg->bubbleNo == 0) {
-		free(bg->bubbles);
-		bg->bubbles = st_malloc(0);
-	} else {
-		bg->bubbles = st_realloc(bg->bubbles, sizeof(Bubble) * bg->bubbleNo); // Resize bubbles array
-	}
-
-	return filteredBubbles;
-}
-
-void bubbleGraph_filterBubblesByAlleleStrandSkew(BubbleGraph *bg, Params *p) {
-	double alleleStrandSkewCutoff = bubbleGraph_getAlleleStrandSkewCutoff(bg, p);
-
-	uint64_t bubblesFiltered = bubbleGraph_filterBubbles(bg, (bool (*)(Bubble *, void *))filterByBubbleStrandSkew,
-			&alleleStrandSkewCutoff);
-
-	st_logDebug(">Allele strand skew filtering: Filtered %i bubbles of %i total bubbles using allele skew cut off of: %f\n",
-			(int)bubblesFiltered, (int)(bg->bubbleNo+bubblesFiltered), alleleStrandSkewCutoff);
-}
-
-bool filterByBubbleIndel(Bubble *b, void *extraArg) {
-	if(b->alleleNo > 5) {
-		return 1;
-	}
-	for(int64_t i=1; i<b->alleleNo; i++) {
-		if(b->alleles[i]->nonRleLength != b->alleles[i-1]->nonRleLength) {
-			//return 1;
-		}
-	}
-	return 0;
-}
-
-void bubbleGraph_filterBubblesToRemoveIndels(BubbleGraph *bg, Params *p) {
-	uint64_t bubblesFiltered = bubbleGraph_filterBubbles(bg, (bool (*)(Bubble *, void *))filterByBubbleIndel,
-				NULL);
-
-	st_logDebug("> Indel filtering: Filtered %i bubbles of %i total bubbles using indel filter\n",
-				(int)bubblesFiltered, (int)(bg->bubbleNo+bubblesFiltered));
 }
 

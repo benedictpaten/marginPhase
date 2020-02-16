@@ -63,11 +63,13 @@
 
 		"filterReadsWhileHaveAtLeastThisCoverage" : 15,
 
-		"hetScalingParameter" : 1.0,
-
-		"alleleStrandSkew" : 1.5,
-
-		"useOnlySubstitutionsForPhasing" : true,
+		"hetSubstitutionProbability" : 0.0001,
+		  
+		"hetRunLengthSubstitutionProbability" : 0.0001,
+		
+		"useReadAlleles" : true,
+		  
+		"useReadAllelesInPhasing" : false,
 
 		"minAvgBaseQuality" : 10,
 
@@ -87,9 +89,9 @@
 
 		"maxNotSumTransitions" : true,
 
-		"minPartitionsInAColumn" : 100,
+		"minPartitionsInAColumn" : 200,
 
-		"maxPartitionsInAColumn" : 100,
+		"maxPartitionsInAColumn" : 200,
 
 		"minPosteriorProbabilityForPartition" : 0.0,
 
