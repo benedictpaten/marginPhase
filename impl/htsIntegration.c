@@ -406,6 +406,8 @@ uint32_t convertToReadsAndAlignments(BamChunk *bamChunk, RleString *reference,  
             continue; //secondary
         if (!bamChunk->parent->params->includeSupplementaryAlignments && (aln->core.flag & (uint16_t) 0x800) != 0)
             continue; //supplementary
+        if(aln->core.qual < bamChunk->parent->params->filterAlignmentsWithMapQBelowThisThreshold)
+        	continue; //low mapping quality
 
         //data
         char *chr = bamHdr->target_name[aln->core.tid];

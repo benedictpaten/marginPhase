@@ -175,6 +175,7 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
     params->maxDepth = 0;
     params->includeSecondaryAlignments=FALSE;
     params->includeSupplementaryAlignments=TRUE;
+    params->filterAlignmentsWithMapQBelowThisThreshold = 30;
     params->candidateVariantWeight = 0.2;
     params->columnAnchorTrim = 5;
     params->maxConsensusStrings = 100;
@@ -284,6 +285,12 @@ PolishParams *polishParams_jsonParse(char *buf, size_t r) {
         }
         else if (strcmp(keyString, "includeSupplementaryAlignments") == 0) {
             params->includeSupplementaryAlignments = stJson_parseBool(js, tokens, ++tokenIndex);
+        }
+        else if (strcmp(keyString, "filterAlignmentsWithMapQBelowThisThreshold") == 0) {
+        	if (stJson_parseInt(js, tokens, ++tokenIndex) < 0) {
+        		st_errAbort("ERROR: filterAlignmentsWithMapQBelowThisThreshold parameter must zero or greater\n");
+        	}
+            params->filterAlignmentsWithMapQBelowThisThreshold = (uint64_t) stJson_parseInt(js, tokens, tokenIndex);
         }
         else if (strcmp(keyString, "candidateVariantWeight") == 0) {
 			if (stJson_parseFloat(js, tokens, ++tokenIndex) < 0) {

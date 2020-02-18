@@ -72,6 +72,12 @@
 		"useReadAllelesInPhasing" : false,
 
 		"minAvgBaseQuality" : 10,
+		
+		"filterAlignmentsWithMapQBelowThisThreshold" : 60,
+		  
+		"includeSecondaryAlignments" : false,
+		  
+		"includeSupplementaryAlignments" : false,
 
 		"pairwiseAlignmentParameters" : {
 			"threshold" : 0.01,

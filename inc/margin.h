@@ -554,6 +554,7 @@ struct _polishParams {
 	uint64_t maxDepth;
 	bool includeSecondaryAlignments;
 	bool includeSupplementaryAlignments;
+	uint64_t filterAlignmentsWithMapQBelowThisThreshold;
 	// other configuration
 	double candidateVariantWeight; // The fraction (from 0 to 1) of the average position coverage needed to define a candidate variant
 	uint64_t columnAnchorTrim; // The min distance between a column anchor and a candidate variant
