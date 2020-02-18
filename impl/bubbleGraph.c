@@ -1116,6 +1116,7 @@ stReference *bubbleGraph_getReference(BubbleGraph *bg, char *refName, Params *pa
 				s->substitutionLogProbs[j * b->alleleNo + k] = j == k ? 0 : roundf(-log(params->polishParams->hetSubstitutionProbability)*30.0); //l;
 			}
 		}
+	}
 
 	return ref;
 }
@@ -1276,11 +1277,10 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	st_logInfo("> Partitioning reads by strand for phasing\n");
 	stList *forwardStrandProfileSeqs = stList_construct();
 	stList *reverseStrandProfileSeqs = stList_construct();
-	stHashIterator *hashIt = stHash_getIterator(*readsToPSeqs);
-	BamChunkRead *r;
-	while((r = stHash_getNext(hashIt)) != NULL) {
+	for(int64_t i=0; i<stList_length(reads); i++) {
+		BamChunkRead *r = stList_get(reads, i);
 		stProfileSeq *pSeq = stHash_search(*readsToPSeqs, r);
-		if(stSet_search(discardedReadsSet, pSeq) == NULL) { // If not one of the filtered reads
+		if(pSeq != NULL && stSet_search(discardedReadsSet, pSeq) == NULL) { // Has a pSeq and is not one of the filtered reads
 			if(r->forwardStrand) {
 				stList_append(forwardStrandProfileSeqs, pSeq);
 			}
@@ -1289,7 +1289,8 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 			}
 		}
 	}
-	stHash_destructIterator(hashIt);
+	st_logInfo("Got %" PRIi64 " forward strand reads for phasing and %" PRIi64 " negative strand reads for phasing\n",
+				stList_length(forwardStrandProfileSeqs), stList_length(reverseStrandProfileSeqs));
 
 	// Deal with the case that the alignment is empty
 	if(stList_length(profileSeqs) == 0) {
@@ -1317,6 +1318,8 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	params->phaseParams->includeAncestorSubProb = 1; // Now switch on using ancestor substitution probabilities in calculating the final, root hmm probs
 	stRPHmm_forwardBackward(hmm);
 
+	st_logInfo("Forward probability of the hmm: %f, backward prob: %f\n", (float)hmm->forwardLogProb, (float)hmm->backwardLogProb);
+
 	// Now compute a high probability path through the hmm
 	stList *path = stRPHmm_forwardTraceBack(hmm);
 
@@ -1327,9 +1330,7 @@ stGenomeFragment *bubbleGraph_phaseBubbleGraph(BubbleGraph *bg, char *refSeqName
 	stGenomeFragment *gF = stGenomeFragment_construct(hmm, path);
 
 	// Refine the genome fragment by re-partitioning the reads iteratively
-	if(params->phaseParams->roundsOfIterativeRefinement > 0) {
-		stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
-	}
+	stGenomeFragment_refineGenomeFragment(gF, hmm, path, params->phaseParams->roundsOfIterativeRefinement);
 
 	// Sanity checks
 	assert(gF->refStart >= 0);

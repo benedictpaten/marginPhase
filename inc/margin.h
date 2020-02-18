@@ -782,6 +782,12 @@ void poa_estimateRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
 void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunkReads,
 		RepeatSubMatrix *repeatSubMatrix, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params);
 
+/*
+ * Uses phasing to estimate ML bases.
+ */
+void poa_estimatePhasedBasesUsingBayesianModel(Poa *poa, stList *bamChunkReads,
+		stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params);
+
 // Data structure for representing RLE strings
 struct _rleString {
 	char *rleString; //Run-length-encoded (RLE) string

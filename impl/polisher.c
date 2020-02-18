@@ -1535,28 +1535,16 @@ int64_t getRunLengthMode(Alphabet *alphabet, Symbol base, stList *observations, 
     return maxRL;
 }
 
-//static int64_t expandRLEConsensus2(PoaNode *node, stList *rleReads, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
 static int64_t expandRLEConsensus2(Poa *poa, PoaNode *node, stList *bamChunkReads, RepeatSubMatrix *repeatSubMatrix) {
-	// Pick the base
-	double maxBaseWeight = node->baseWeights[0];
-	uint16_t maxBaseIndex = 0;
-	for (uint16_t j=1; j<poa->alphabet->alphabetSize; j++) {
-		if(node->baseWeights[j] > maxBaseWeight) {
-			maxBaseWeight = node->baseWeights[j];
-			maxBaseIndex = j;
-		}
-	}
-	char base = poa->alphabet->convertSymbolToChar(maxBaseIndex);
-
 //	assert(repeatSubMatrix != NULL);
 	// for an experiment, or case with no repeat matrix
 	if (repeatSubMatrix == NULL) {
-	    return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(base), node->observations, bamChunkReads);
+	    return getRunLengthMode(poa->alphabet, poa->alphabet->convertCharToSymbol(node->base), node->observations, bamChunkReads);
 	}
 
 	// Repeat count
 	double logProbability;
-	return repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, maxBaseIndex, node->observations,
+	return repeatSubMatrix_getMLRepeatCount(repeatSubMatrix, poa->alphabet->convertCharToSymbol(node->base), node->observations,
 			bamChunkReads, &logProbability);
 }
 
@@ -1579,8 +1567,8 @@ void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunk
 
 		// Repeat count
 		double logProbability;
-
-		poa->refString->repeatCounts[i-1] = repeatSubMatrix_getPhasedMLRepeatCount(repeatSubMatrix, poa->refString->repeatCounts[i-1], poa->alphabet->convertCharToSymbol(node->base), node->observations,
+		poa->refString->repeatCounts[i-1] = repeatSubMatrix_getPhasedMLRepeatCount(repeatSubMatrix, poa->refString->repeatCounts[i-1],
+				poa->alphabet->convertCharToSymbol(node->base), node->observations,
 				bamChunkReads, &logProbability, readsBelongingToHap1, readsBelongingToHap2, params);
 
 		if(poa->refString->repeatCounts[i-1] == 0) { // Prevent zero length estimates
@@ -1588,6 +1576,111 @@ void poa_estimatePhasedRepeatCountsUsingBayesianModel(Poa *poa, stList *bamChunk
 		}
 
 		poa->refString->nonRleLength += poa->refString->repeatCounts[i-1];
+	}
+}
+
+
+/*
+ * Code to restimate bases using the phasing
+ */
+
+static int64_t getMax(double *values, int64_t length,
+		double *maxValue) {
+	// Calc the range of repeat observations
+	assert(length > 0);
+	double max = values[0];
+	int64_t maxIndex = 0;
+	for(int64_t i=1; i<length; i++) {
+		if(values[i] > max) {
+			max = values[i];
+			maxIndex = i;
+		}
+	}
+	*maxValue = max;
+	return maxIndex;
+}
+
+void getPhasedBaseWeights(double *logProbabilitiesHap, stList *observations, Poa *poa, stList *bamChunkReads) {
+	for(int64_t i=0; i<poa->alphabet->alphabetSize; i++) { // Initialize memory
+		logProbabilitiesHap[i] = 0.0;
+	}
+	for(int64_t i=0; i<stList_length(observations); i++) {
+		PoaBaseObservation *observation = stList_get(observations, i);
+		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
+		int64_t base = poa->alphabet->convertCharToSymbol(read->rleRead->rleString[observation->offset]);
+		assert(base >= 0);;
+		assert(base <poa->alphabet->alphabetSize);
+		logProbabilitiesHap[base] += observation->weight;
+	}
+	for(int64_t i=0; i<poa->alphabet->alphabetSize; i++) { // Normalize
+		logProbabilitiesHap[i] /= PAIR_ALIGNMENT_PROB_1;
+	}
+}
+
+double getBaseProbForHaplotype(int64_t base, double *logProbabilitiesHap1, double *logProbabilitiesHap2,
+		double logProbMLHap2, double logProbSubstitution) {
+	double logProbHap2Same = logProbabilitiesHap2[base];
+	return logProbabilitiesHap1[base] +
+			((logProbHap2Same > logProbMLHap2 + logProbSubstitution) ? logProbHap2Same : logProbMLHap2 + logProbSubstitution);
+}
+
+uint64_t poaNode_getPhasedMLBase(PoaNode *node, stList *bamChunkReads,
+		Poa *poa, stSet *readsBelongingToHap1, stSet *readsBelongingToHap2) {
+
+	// Split observations between haplotypes
+	stList *observationsHap1 = stList_construct();
+	stList *observationsHap2 = stList_construct();
+	for(int64_t i=0; i<stList_length(node->observations); i++) {
+		PoaBaseObservation *observation = stList_get(node->observations, i);
+		BamChunkRead *read = stList_get(bamChunkReads, observation->readNo);
+		stList_append(stSet_search(readsBelongingToHap1, read) != NULL ? observationsHap1 : observationsHap2, observation);
+	}
+
+	// Get probs for hap 1
+	double logProbabilitiesHap1[poa->alphabet->alphabetSize];
+	getPhasedBaseWeights(logProbabilitiesHap1, observationsHap1, poa, bamChunkReads);
+
+	// Get probs for hap 2
+	double logProbabilitiesHap2[poa->alphabet->alphabetSize];
+	getPhasedBaseWeights(logProbabilitiesHap2, observationsHap2, poa, bamChunkReads);
+
+	// Get ML prob for haplotype 2
+	double logProbMLHap2;
+	int64_t mLBaseHap2 = getMax(logProbabilitiesHap2, poa->alphabet->alphabetSize, &logProbMLHap2);
+
+	// Calculate ML probability of repeat length for haplotype1
+	double mlLogProb = getBaseProbForHaplotype(0, logProbabilitiesHap1, logProbabilitiesHap2,
+			logProbMLHap2, log(0.1));
+	int64_t mlBase=0;
+	for(int64_t i=1; i<poa->alphabet->alphabetSize; i++) {
+		double p = getBaseProbForHaplotype(i, logProbabilitiesHap1, logProbabilitiesHap2,
+				logProbMLHap2, log(0.1));
+		if(p > mlLogProb) {
+			mlLogProb = p;
+			mlBase = i;
+		}
+	}
+
+	if(mlBase != poa->alphabet->convertCharToSymbol(node->base)) {
+		st_logDebug("Got %c base, previous base: %c, other hap ML base: %c (observation # hap1: %i, observqtion # hap2: %i\n",
+			poa->alphabet->convertSymbolToChar(mlBase), node->base, poa->alphabet->convertSymbolToChar(mLBaseHap2), (int)stList_length(observationsHap1), (int)stList_length(observationsHap2));
+	}
+
+	// Cleanup
+	stList_destruct(observationsHap1);
+	stList_destruct(observationsHap2);
+
+	return mlBase;
+}
+
+void poa_estimatePhasedBasesUsingBayesianModel(Poa *poa, stList *bamChunkReads,
+		stSet *readsBelongingToHap1, stSet *readsBelongingToHap2, PolishParams *params) {
+	poa->refString->nonRleLength = 0;
+	for(uint64_t i=1; i<stList_length(poa->nodes); i++) {
+		PoaNode *node = stList_get(poa->nodes, i);
+		node->base = poa->alphabet->convertSymbolToChar(poaNode_getPhasedMLBase(node, bamChunkReads,
+				poa, readsBelongingToHap1, readsBelongingToHap2));
+		poa->refString->rleString[i-1] = node->base;
 	}
 }
 
@@ -1741,23 +1834,6 @@ void repeatSubMatrix_getRepeatCountProbs(RepeatSubMatrix *repeatSubMatrix, Symbo
 	}
 }
 
-static int64_t getMLRepeatCount(double *logProbabilities, int64_t minRepeatLength, int64_t maxRepeatLength,
-		double *logProbability) {
-
-	// Calc the range of repeat observations
-	double mlLogProb = logProbabilities[0];
-	int64_t mlRepeatLength = minRepeatLength;
-	for(int64_t i=minRepeatLength+1; i<=maxRepeatLength; i++) {
-		if(logProbabilities[i-minRepeatLength] >= mlLogProb) {
-			mlLogProb = logProbabilities[i-minRepeatLength];
-			mlRepeatLength = i;
-		}
-	}
-	*logProbability = mlLogProb;
-	return mlRepeatLength;
-}
-
-
 int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbol base, stList *observations,
 		stList *bamChunkReads, double *logProbability) {
 	int64_t minRepeatLength, maxRepeatLength;
@@ -1776,7 +1852,7 @@ int64_t repeatSubMatrix_getMLRepeatCount(RepeatSubMatrix *repeatSubMatrix, Symbo
 	repeatSubMatrix_getRepeatCountProbs(repeatSubMatrix, base, observations,
 			bamChunkReads, logProbabilities, minRepeatLength, maxRepeatLength);
 
-	return getMLRepeatCount(logProbabilities, minRepeatLength, maxRepeatLength, logProbability);
+	return getMax(logProbabilities, maxRepeatLength-minRepeatLength+1, logProbability)+minRepeatLength;
 }
 
 double getRepeatLengthProbForHaplotype(int64_t repeatLength, double *logProbabilitiesHap1, double *logProbabilitiesHap2,
@@ -1819,7 +1895,7 @@ int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix,
 
 	// Get ML prob for haplotype 2
 	double logProbMLHap2;
-	int64_t mLRepeatLengthHap2 = getMLRepeatCount(logProbabilitiesHap2, minRepeatLength, maxRepeatLength, &logProbMLHap2);
+	int64_t mLRepeatLengthHap2 = getMax(logProbabilitiesHap2, maxRepeatLength-minRepeatLength+1, &logProbMLHap2)+minRepeatLength;
 
 	// Calculate ML probability of repeat length for haplotype1
 	double mlLogProb = getRepeatLengthProbForHaplotype(minRepeatLength, logProbabilitiesHap1, logProbabilitiesHap2,
@@ -1836,7 +1912,7 @@ int64_t repeatSubMatrix_getPhasedMLRepeatCount(RepeatSubMatrix *repeatSubMatrix,
 	*logProbability = mlLogProb;
 
 	if(mlRepeatLength != existingRepeatCount) {
-		st_uglyf("Got %i repeat length, other hap repeat length %i, log prob:%f, log prob hap1: %f log prob hap2: %f (min rl: %i max: %i) (total obs: %i, hap1: %i, hap2 : %i)\n",
+		st_logDebug("Got %i repeat length, other hap repeat length %i, log prob:%f, log prob hap1: %f log prob hap2: %f (min rl: %i max: %i) (total obs: %i, hap1: %i, hap2 : %i)\n",
 			(int)mlRepeatLength, (int)mLRepeatLengthHap2, (float)*logProbability, (float)logProbabilitiesHap1[mlRepeatLength-minRepeatLength],
 			(float)logProbMLHap2, (int)minRepeatLength, (int)maxRepeatLength,
 			(int)stList_length(observations), (int)stList_length(observationsHap1), (int)stList_length(observationsHap2));

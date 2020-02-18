@@ -63,7 +63,7 @@
 		  
 		  "hetSubstitutionProbability" : 0.0001,
 		  
-		  "hetRunLengthSubstitutionProbability" : 0.01,
+		  "hetRunLengthSubstitutionProbability" : 0.001,
 		  
 		  "useReadAlleles" : true,
 		  

@@ -79,7 +79,15 @@ inline int stRPHmm_cmpFn(const void *a, const void *b) {
             // Sort by descending order of length
             i = cmpint64(hmm2->refLength,  hmm1->refLength);
             if(i == 0) {
-                i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
+            	// Compare by id of first profile sequence
+            	if(stList_length(hmm1->profileSeqs) > 0 && stList_length(hmm2->profileSeqs) > 0) {
+            		stProfileSeq *pSeq1 = stList_get(hmm1->profileSeqs, 0);
+            		stProfileSeq *pSeq2 = stList_get(hmm2->profileSeqs, 0);
+            		i = strcmp(pSeq1->readId, pSeq2->readId);
+            	}
+            	if(i == 0) { // If still 0
+            		i = hmm1 > hmm2 ? 1 : (hmm1 < hmm2 ? -1 : 0);
+            	}
             }
         }
     }
@@ -174,6 +182,8 @@ stList *stRPHmm_forwardTraceBack(stRPHmm *hmm) {
             maxCell = cell;
         }
     }
+
+    st_logDebug("Maximum probability of hmm: %f\n", maxProb);
 
     stList_append(path, maxCell); // Add chosen cell to output
 

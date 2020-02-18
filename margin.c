@@ -404,7 +404,14 @@ int main(int argc, char *argv[]) {
 			Poa *poa_hap1 = bubbleGraph_getNewPoa(bg, hap1, poa, reads, params);
 			Poa *poa_hap2 = bubbleGraph_getNewPoa(bg, hap2, poa, reads, params);
 
-			st_logInfo("Using read phasing to re0estimate repeat counts in phased manner\n");
+			/*st_logInfo("Using read phasing to reestimate bases in phased manner\n");
+			poa_estimatePhasedBasesUsingBayesianModel(poa_hap1, reads,
+					readsBelongingToHap1, readsBelongingToHap2, params->polishParams);
+
+			poa_estimatePhasedBasesUsingBayesianModel(poa_hap2, reads,
+								readsBelongingToHap2, readsBelongingToHap1, params->polishParams);*/
+
+			st_logInfo("Using read phasing to reestimate repeat counts in phased manner\n");
 			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap1, reads,
 					params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2, params->polishParams);
 
@@ -425,7 +432,6 @@ int main(int argc, char *argv[]) {
 			stSet_destruct(readsBelongingToHap1);
 			stSet_destruct(readsBelongingToHap2);
 			stHash_destruct(readsToPSeqs);
-
 		}
 		else {
 			polishedReferenceSequence_processChunkSequence(rSeq1, bamChunk, poa, reads, params);

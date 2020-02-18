@@ -421,6 +421,27 @@ static void getProfileSeqs(stList *tilingPath, stList *pSeqs) {
     stList_destruct(tilingPath);
 }
 
+static int64_t tilingPathSize(stList *tilingPath) {
+	/*
+	 * Returns the sum of the length of the profile sequences the tiling path contains
+	 */
+	int64_t totalLength = 0;
+	for(int64_t i=0; i<stList_length(tilingPath); i++) {
+        stRPHmm *hmm = stList_get(tilingPath, i);
+        assert(stList_length(hmm->profileSeqs) == 1);
+        stProfileSeq *pSeq = stList_peek(hmm->profileSeqs);
+        totalLength += pSeq->length;
+    }
+    return totalLength;
+}
+
+int tilingPathsCmpFn(stList *tilingPath1, stList *tilingPath2, stHash *tilingPathLengths) {
+	int64_t length1 = *(int64_t *)stHash_search(tilingPathLengths, tilingPath1);
+	int64_t length2 = *(int64_t *)stHash_search(tilingPathLengths, tilingPath2);
+
+	return length1 < length2 ? 1 : (length1 > length2 ? -1 : 0);
+}
+
 stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *params,
         stList *filteredProfileSeqs, stList *discardedProfileSeqs) {
     /*
@@ -431,10 +452,24 @@ stList *filterReadsByCoverageDepth(stList *profileSeqs, stRPHmmParameters *param
 
     // Create a set of tiling paths
     stList *tilingPaths = getTilingPaths2(profileSeqs, params);
+    st_logDebug("Got maximum tiling depth of: %i\n", (int)stList_length(tilingPaths));
+
+    // Sort tiling paths my numbers of reads included
+    stHash *tilingPathLengths = stHash_construct2(NULL, free);
+    for(int64_t i=0; i<stList_length(tilingPaths); i++) {
+    	stList *tilingPath = stList_get(tilingPaths, i);
+    	int64_t *length = st_calloc(1, sizeof(int64_t));
+    	*length = tilingPathSize(tilingPath);
+    	stHash_insert(tilingPathLengths, tilingPath, length);
+    }
+    stList_sort2(tilingPaths, (int (*)(const void *, const void *, const void *))tilingPathsCmpFn, tilingPathLengths);
+    stHash_destruct(tilingPathLengths);
 
     // Eliminate reads until the maximum coverage depth to less than the give threshold
     while(stList_length(tilingPaths) > params->maxCoverageDepth) {
-        getProfileSeqs(stList_pop(tilingPaths), discardedProfileSeqs);
+    	stList *tilingPath = stList_pop(tilingPaths);
+    	st_logDebug("Discarding %i profiling sequences of total length: %i\n", (int)stList_length(tilingPath), (int)tilingPathSize(tilingPath));
+    	getProfileSeqs(tilingPath, discardedProfileSeqs);
     }
 
     while(stList_length(tilingPaths) > 0) {
