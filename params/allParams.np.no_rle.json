@@ -31,7 +31,7 @@
 
 		"includeSoftClipping" : false,
 
-		"chunkSize" : 1000,
+		"chunkSize" : 200000,
 
 		"chunkBoundary" : 50,
 
@@ -55,9 +55,11 @@
 
 		"minPoaConsensusIterations" : 0,
 
-		"maxRealignmentPolishIterations" : 2,
+		"maxRealignmentPolishIterations" : 1,
 
-		"minRealignmentPolishIterations" : 2,
+		"minRealignmentPolishIterations" : 1,
+		
+		"useReadAlleles" : true,
 
 		"minReadsToCallConsensus" : 5,
 
@@ -66,8 +68,6 @@
 		"hetSubstitutionProbability" : 0.0001,
 		  
 		"hetRunLengthSubstitutionProbability" : 0.0001,
-		
-		"useReadAlleles" : true,
 		  
 		"useReadAllelesInPhasing" : false,
 

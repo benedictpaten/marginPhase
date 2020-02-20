@@ -411,12 +411,14 @@ int main(int argc, char *argv[]) {
 			poa_estimatePhasedBasesUsingBayesianModel(poa_hap2, reads,
 								readsBelongingToHap2, readsBelongingToHap1, params->polishParams);*/
 
-			st_logInfo("Using read phasing to reestimate repeat counts in phased manner\n");
-			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap1, reads,
-					params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2, params->polishParams);
+			if(params->polishParams->useRunLengthEncoding) {
+				st_logInfo("Using read phasing to reestimate repeat counts in phased manner\n");
+				poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap1, reads,
+						params->polishParams->repeatSubMatrix, readsBelongingToHap1, readsBelongingToHap2, params->polishParams);
 
-			poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap2, reads,
-					params->polishParams->repeatSubMatrix, readsBelongingToHap2, readsBelongingToHap1, params->polishParams);
+				poa_estimatePhasedRepeatCountsUsingBayesianModel(poa_hap2, reads,
+						params->polishParams->repeatSubMatrix, readsBelongingToHap2, readsBelongingToHap1, params->polishParams);
+			}
 
 			// Output
 			polishedReferenceSequence_processChunkSequence(rSeq1, bamChunk, poa_hap1, reads, params);
