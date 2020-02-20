@@ -2087,7 +2087,7 @@ Poa *poa_realignIterative(Poa *poa, stList *bamChunkReads,
 					logIdentifier, (int)(time(NULL) - realignStartTime), i, score2/PAIR_ALIGNMENT_PROB_1, (score2-score)/PAIR_ALIGNMENT_PROB_1);
 
 		// Stop if score decreases (greedy stopping)
-		if(score2 <= score && i >= minIterations) {
+		if(score2 <= score && i > minIterations) {
 			poa_destruct(poa2);
 			break;
 		}

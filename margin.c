@@ -347,7 +347,7 @@ int main(int argc, char *argv[]) {
     // For each chunk of the BAM
 	for (int64_t chunkIdx = 0; chunkIdx < bamChunker->chunkCount; chunkIdx++) {
 		BamChunk *bamChunk = bamChunker_getChunk(bamChunker, chunkIdx);
-    	RleString *reference = bamChunk_getReferenceSubstring(bamChunk, referenceSequences, params);
+    		RleString *reference = bamChunk_getReferenceSubstring(bamChunk, referenceSequences, params);
 
         st_logInfo("> Going to process a chunk for reference sequence: %s, starting at: %i and ending at: %i\n",
         		   bamChunk->refSeqName, (int)bamChunk->chunkBoundaryStart,
@@ -448,7 +448,7 @@ int main(int argc, char *argv[]) {
 
     polishedReferenceSequence_destruct(rSeq1);
     if(diploid) {
-    	polishedReferenceSequence_destruct(rSeq2);
+    		polishedReferenceSequence_destruct(rSeq2);
     }
 
     // Cleanup

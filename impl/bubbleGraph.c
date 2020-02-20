@@ -704,17 +704,17 @@ int rleString_stringEqualKey(const void *key1, const void *key2) {
 
 int rleString_expandedStringEqualKey(const void *key1, const void *key2) {
     if(!rleString_stringEqualKey(key1, key2)) {
-    	return 0;
+    		return 0;
     }
     RleString *r1 = (RleString *)key1;
     RleString *r2 = (RleString *)key2;
     if(r1->length != r2->length) {
-    	return 0;
+    		return 0;
     }
     for(int64_t i=0; i<r1->length; i++) {
-    	if(r1->repeatCounts[i] != r2->repeatCounts[i]) {
-    		return 0;
-    	}
+		if(r1->repeatCounts[i] != r2->repeatCounts[i]) {
+			return 0;
+		}
     }
     return 1;
 }
@@ -725,7 +725,7 @@ stHash *groupRleStrings(stList *rleStrings) {
 	 * compressed RLE string.
 	 */
 
-	stHash *h = stHash_construct3(rleString_stringKey, rleString_stringEqualKey,
+	stHash *h = stHash_construct3(rleString_stringKey, rleString_expandedStringEqualKey, // rleString_stringEqualKey, //
 			NULL, (void (*)(void *))stList_destruct);
 
 	for(uint64_t i=0; i<stList_length(rleStrings); i++) {
