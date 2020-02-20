@@ -666,6 +666,13 @@ Poa *poa_realign(stList *bamChunkReads, stList *anchorAlignments, RleString *ref
 	for(int64_t i=0; i<stList_length(bamChunkReads); i++) {
         BamChunkRead *chunkRead = stList_get(bamChunkReads, i);
 
+        //TODO there must be a better way to ensure maximumRepeatLength is not exceeded in reads
+        for (int64_t j=0; j < chunkRead->rleRead->length; j++) {
+            if (chunkRead->rleRead->repeatCounts[j] >= maximumRepeatLength) {
+                chunkRead->rleRead->repeatCounts[j] = maximumRepeatLength - 1;
+            }
+        }
+
 		// Generate set of posterior probabilities for matches, deletes and inserts with respect to reference.
 		stList *matches = NULL, *inserts = NULL, *deletes = NULL;
 
@@ -1749,13 +1756,14 @@ stList *runLengthEncodeAlignment(stList *alignment,
  */
 
 inline double *repeatSubMatrix_setLogProb(RepeatSubMatrix *repeatSubMatrix, Symbol base, bool strand, int64_t observedRepeatCount, int64_t underlyingRepeatCount) {
-    if (base >= repeatSubMatrix->alphabet->alphabetSize) {
+    if (base >= repeatSubMatrix->alphabet->alphabetSize - 1) {
         st_errAbort("[repeatSubMatrix_setLogProb] base 'Nn' not supported for repeat estimation\n");
     }
     int64_t idx = (strand ? base : 3-base) * repeatSubMatrix->maximumRepeatLength * repeatSubMatrix->maximumRepeatLength +
             underlyingRepeatCount * repeatSubMatrix->maximumRepeatLength +
             observedRepeatCount;
     assert(idx < repeatSubMatrix->maxEntry);
+    assert(idx >= 0);
 	return &(repeatSubMatrix->logProbabilities[idx]);
 }
 

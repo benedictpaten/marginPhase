@@ -1,7 +1,5 @@
 FROM ubuntu:18.04
-MAINTAINER Trevor Pesout, tpesout@ucsc.edu
-
-ARG git_commit
+MAINTAINER Kishwar Shafin, kishwar.shafin@gmail.com
 
 # update and install dependencies
 RUN apt-get update && \
@@ -22,12 +20,15 @@ WORKDIR /opt
 RUN git clone https://github.com/UCSC-nanopore-cgl/MarginPolish.git && \
     cd /opt/MarginPolish && \
     git fetch && \
-    git checkout $git_commit && \
+    git checkout master && \
+    git pull origin master && \
     git submodule update --init && \
     rm -rf /opt/MarginPolish/.git
 
 WORKDIR /opt/MarginPolish/build
 RUN cmake .. && make && ./marginPolish
+RUN ln -s /opt/MarginPolish/build/marginPolish /usr/local/bin/marginPolish
+
 
 # setup entrypoint
 COPY wrapper.sh /opt/wrapper.sh
